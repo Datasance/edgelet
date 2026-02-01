@@ -1,0 +1,342 @@
+package config
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/eclipse-iofog/agent-go/internal/models"
+	"github.com/eclipse-iofog/agent-go/internal/utils"
+)
+
+// Config represents the runtime configuration
+type Config struct {
+	mu sync.RWMutex
+
+	// YAML config
+	yamlConfig     *models.YamlConfig
+	currentProfile utils.ConfigSwitcherState
+	configPath     string // Path to the config file
+
+	// Directly configurable params
+	IOFogUUID                   string
+	PrivateKey                  string
+	ControllerURL               string
+	ControllerCert              string
+	NetworkInterface            string
+	DockerURL                   string
+	DiskLimit                   float64
+	MemoryLimit                 float64
+	DiskDirectory               string
+	CPULimit                    float64
+	LogDiskLimit                float64
+	LogDiskDirectory            string
+	LogFileCount                int
+	LogLevel                    string
+	StatusFrequency             int
+	ChangeFrequency             int
+	DeviceScanFrequency         int
+	PostDiagnosticsFreq         int
+	WatchdogEnabled             bool
+	EdgeGuardFrequency          int64
+	GPSDevice                   string
+	GPSScanFrequency            int64
+	GPSCoordinates              string
+	GPSMode                     string
+	Arch                        string
+	SecureMode                  bool
+	IPAddressExternal           string
+	RouterHost                  string
+	RouterPort                  int
+	RouterUUID                  string
+	IsRouterInterior            bool
+	DockerPruningFrequency      int64
+	AvailableDiskThreshold      int64
+	ReadyToUpgradeScanFrequency int
+	DevMode                     bool
+	TimeZone                    string
+	Namespace                   string
+	CACert                      string
+	TLSCert                     string
+	TLSKey                      string
+	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
+	// This prevents triggering SIGHUP/reload when signature is updated
+
+	// Automatic configurable params (calculated)
+	StatusReportFreqSeconds            int
+	PingControllerFreqSeconds          int
+	SpeedCalculationFreqMinutes        int
+	MonitorContainersStatusFreqSeconds int
+	MonitorRegistriesStatusFreqSeconds int
+	GetUsageDataFreqSeconds            int64
+	DockerAPIVersion                   string
+	SetSystemTimeFreqSeconds           int
+	MonitorSSHTunnelStatusFreqSeconds  int
+
+	// Debugging flag
+	Debugging bool
+
+	// Reload callback
+	reloadCallback func() error
+}
+
+var (
+	instance *Config
+	once     sync.Once
+)
+
+// GetInstance returns the singleton config instance
+func GetInstance() *Config {
+	once.Do(func() {
+		instance = &Config{
+			Debugging: false,
+		}
+	})
+	return instance
+}
+
+// SetReloadCallback sets the callback for configuration reload
+func (c *Config) SetReloadCallback(cb func() error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reloadCallback = cb
+}
+
+// TriggerReloadCallback triggers the configuration reload callback
+func (c *Config) TriggerReloadCallback() error {
+	c.mu.RLock()
+	cb := c.reloadCallback
+	c.mu.RUnlock()
+
+	if cb != nil {
+		return cb()
+	}
+	return nil
+}
+
+// GetYamlConfig returns the YAML config (thread-safe)
+func (c *Config) GetYamlConfig() *models.YamlConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.yamlConfig
+}
+
+// SetYamlConfig sets the YAML config (thread-safe)
+func (c *Config) SetYamlConfig(yc *models.YamlConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.yamlConfig = yc
+}
+
+// GetCurrentProfile returns the current profile (thread-safe)
+func (c *Config) GetCurrentProfile() utils.ConfigSwitcherState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.currentProfile
+}
+
+// SetCurrentProfile sets the current profile (thread-safe)
+func (c *Config) SetCurrentProfile(profile utils.ConfigSwitcherState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.currentProfile = profile
+}
+
+// SetConfigPath sets the config file path (thread-safe)
+func (c *Config) SetConfigPath(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.configPath = path
+}
+
+// GetConfigPath returns the config file path (thread-safe)
+func (c *Config) GetConfigPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.configPath
+}
+
+// GetProperty gets a property from the current profile
+func (c *Config) GetProperty(key string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.yamlConfig == nil {
+		return ""
+	}
+
+	profile := c.yamlConfig.GetProfile(c.currentProfile.FullValue())
+	if profile == nil {
+		return ""
+	}
+
+	return profile.GetProperty(key)
+}
+
+// SetProperty sets a property in the current profile
+func (c *Config) SetProperty(key, value string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.yamlConfig == nil {
+		return ErrConfigNotLoaded
+	}
+
+	profile := c.yamlConfig.GetProfile(c.currentProfile.FullValue())
+	if profile == nil {
+		return ErrProfileNotFound
+	}
+
+	profile.SetProperty(key, value)
+	return nil
+}
+
+// GetConfigReport returns a formatted config report string (for info endpoint)
+// Uses IPAddressExternal from config
+func (c *Config) GetConfigReport() string {
+	return c.GetConfigReportWithIP(c.IPAddressExternal)
+}
+
+// GetConfigReportWithIP returns a formatted config report string with provided IP address
+func (c *Config) GetConfigReportWithIP(ipAddress string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var result strings.Builder
+
+	// Helper function to build report line
+	buildLine := func(label, value string) {
+		// Right pad label to 40 characters
+		paddedLabel := label
+		if len(paddedLabel) < 40 {
+			paddedLabel += strings.Repeat(" ", 40-len(paddedLabel))
+		}
+		result.WriteString(paddedLabel)
+		result.WriteString(" : ")
+		result.WriteString(value)
+		result.WriteString("\n")
+	}
+
+	// IP address is passed as parameter
+	if ipAddress == "" {
+		ipAddress = "unable to retrieve ip address"
+	}
+
+	// iofog UUID
+	if c.IOFogUUID != "" {
+		buildLine("ioFog UUID", c.IOFogUUID)
+	} else {
+		buildLine("ioFog UUID", "not provisioned")
+	}
+
+	// IP address
+	buildLine("IP Address", ipAddress)
+
+	// Network interface
+	buildLine("Network Interface", c.NetworkInterface)
+
+	// Secure mode
+	secureModeStr := "off"
+	if c.SecureMode {
+		secureModeStr = "on"
+	}
+	buildLine("Secure Mode", secureModeStr)
+
+	// Controller URL
+	buildLine("Controller URL", c.ControllerURL)
+
+	// Controller cert
+	buildLine("Controller Cert", c.ControllerCert)
+
+	// Docker URL
+	buildLine("Docker URL", c.DockerURL)
+
+	// Disk limit
+	buildLine("Disk Usage Limit", fmt.Sprintf("%.2f GiB", c.DiskLimit))
+
+	// Disk directory
+	buildLine("Disk Directory", c.DiskDirectory)
+
+	// Memory limit
+	buildLine("Memory RAM Limit", fmt.Sprintf("%.2f MiB", c.MemoryLimit))
+
+	// CPU limit
+	buildLine("CPU Usage Limit", fmt.Sprintf("%.2f%%", c.CPULimit))
+
+	// Log disk limit
+	buildLine("Log Disk Limit", fmt.Sprintf("%.2f GiB", c.LogDiskLimit))
+
+	// Log directory
+	buildLine("Log File Directory", c.LogDiskDirectory)
+
+	// Log file count
+	buildLine("Log Files Count", fmt.Sprintf("%d", c.LogFileCount))
+
+	// Log level
+	buildLine("Log Files Level", c.LogLevel)
+
+	// Status frequency
+	buildLine("Status Update Frequency", fmt.Sprintf("%d", c.StatusFrequency))
+
+	// Change frequency
+	buildLine("Change Update Frequency", fmt.Sprintf("%d", c.ChangeFrequency))
+
+	// Device scan frequency
+	buildLine("Scan Devices Frequency", fmt.Sprintf("%d", c.DeviceScanFrequency))
+
+	// Post diagnostics frequency
+	buildLine("Post Diagnostics Frequency", fmt.Sprintf("%d", c.PostDiagnosticsFreq))
+
+	// Watchdog enabled
+	watchdogStr := "off"
+	if c.WatchdogEnabled {
+		watchdogStr = "on"
+	}
+	buildLine("Watchdog Enabled", watchdogStr)
+
+	// Edge guard frequency
+	buildLine("Edge Guard Frequency", fmt.Sprintf("%d", c.EdgeGuardFrequency))
+
+	// GPS device
+	buildLine("GPS Device", c.GPSDevice)
+
+	// GPS scan frequency
+	buildLine("GPS Scan Frequency", fmt.Sprintf("%d", c.GPSScanFrequency))
+
+	// GPS mode
+	buildLine("GPS Mode", strings.ToLower(c.GPSMode))
+
+	// GPS coordinates
+	buildLine("GPS Coordinates", c.GPSCoordinates)
+
+	// Architecture
+	buildLine("Fog Type", strings.ToLower(c.Arch))
+
+	// Docker pruning frequency
+	buildLine("Docker Pruning Frequency", fmt.Sprintf("%d", c.DockerPruningFrequency))
+
+	// Available disk threshold
+	buildLine("Available Disk Threshold", fmt.Sprintf("%d", c.AvailableDiskThreshold))
+
+	// Ready to upgrade scan frequency
+	buildLine("Ready To Upgrade Scan Frequency", fmt.Sprintf("%d", c.ReadyToUpgradeScanFrequency))
+
+	// Dev mode
+	devModeStr := "off"
+	if c.DevMode {
+		devModeStr = "on"
+	}
+	buildLine("Developer's Mode", devModeStr)
+
+	// Time zone
+	buildLine("Time Zone", c.TimeZone)
+
+	// Namespace
+	namespace := c.Namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+	buildLine("Namespace", namespace)
+
+	return result.String()
+}

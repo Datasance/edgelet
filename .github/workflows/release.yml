@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+      
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md <<EOF
+          # ioFog Agent ${{ steps.version.outputs.version }}
+          
+          ## Changes
+          
+          See [CHANGELOG.md](CHANGELOG.md) for full details.
+          
+          ## Downloads
+          
+          ### Binaries
+          - Linux AMD64: \`iofog-agent-linux-amd64\`, \`iofog-agentd-linux-amd64\`
+          - Linux ARM64: \`iofog-agent-linux-arm64\`, \`iofog-agentd-linux-arm64\`
+          - Linux ARMv7: \`iofog-agent-linux-arm\`, \`iofog-agentd-linux-arm\`
+          
+          ### Packages
+          - DEB: \`iofog-agent_${{ steps.version.outputs.version }}_amd64.deb\`
+          - RPM: \`iofog-agent-${{ steps.version.outputs.version }}-1.x86_64.rpm\`
+          
+          ### Docker
+          \`\`\`bash
+          docker pull iofog/agent:${{ steps.version.outputs.version }}
+          \`\`\`
+          EOF
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            artifacts/**/*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}

@@ -1,0 +1,118 @@
+package gps
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/eclipse-iofog/agent-go/internal/config"
+	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+)
+
+const (
+	webHandlerModuleName = "GPS Web Handler"
+	ipAPIURL             = "http://ip-api.com/json"
+	timeout              = 10 * time.Second
+)
+
+// WebHandler handles IP-based GPS location
+type WebHandler struct {
+	manager *Manager
+	config  *config.Config
+	client  *http.Client
+}
+
+// NewWebHandler creates a new WebHandler
+func NewWebHandler(manager *Manager) *WebHandler {
+	return &WebHandler{
+		manager: manager,
+		config:  config.GetInstance(),
+		client: &http.Client{
+			Timeout: timeout,
+		},
+	}
+}
+
+// Start starts the web handler
+func (w *WebHandler) Start() error {
+	logging.LogDebug(webHandlerModuleName, "Starting GPS Web Handler")
+	// Initial coordinate update
+	return w.UpdateCoordinates()
+}
+
+// Stop stops the web handler
+func (w *WebHandler) Stop() error {
+	logging.LogDebug(webHandlerModuleName, "Stopping GPS Web Handler")
+	return nil
+}
+
+// UpdateCoordinates updates coordinates using IP-based location service
+func (w *WebHandler) UpdateCoordinates() error {
+	logging.LogDebug(webHandlerModuleName, "Updating coordinates from IP-based location service")
+
+	req, err := http.NewRequest("GET", ipAPIURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get location: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var locationData struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+
+	if err := json.Unmarshal(body, &locationData); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Format coordinates as "lat,lon"
+	coordinates := fmt.Sprintf("%.5f,%.5f", locationData.Latitude, locationData.Longitude)
+	w.config.GPSCoordinates = coordinates
+
+	logging.LogDebug(webHandlerModuleName, fmt.Sprintf("Updated GPS coordinates: %s", coordinates))
+	return nil
+}
+
+// GetCoordinates returns the current coordinates
+func (w *WebHandler) GetCoordinates() string {
+	coords := w.config.GPSCoordinates
+	if coords == "" {
+		return "0.00000,0.00000"
+	}
+	return coords
+}
+
+// ParseCoordinates parses coordinates string "lat,lon" into latitude and longitude
+func ParseCoordinates(coords string) (float64, float64, error) {
+	parts := strings.Split(coords, ",")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid coordinates format: %s", coords)
+	}
+
+	var lat, lon float64
+	if _, err := fmt.Sscanf(parts[0], "%f", &lat); err != nil {
+		return 0, 0, fmt.Errorf("invalid latitude: %w", err)
+	}
+	if _, err := fmt.Sscanf(parts[1], "%f", &lon); err != nil {
+		return 0, 0, fmt.Errorf("invalid longitude: %w", err)
+	}
+
+	return lat, lon, nil
+}

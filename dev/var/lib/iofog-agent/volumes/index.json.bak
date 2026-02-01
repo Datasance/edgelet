@@ -1,0 +1,50 @@
+{
+  "checksum": "eb59cf9850ccc24a237b8f24beea598d8f46da2247e9d024294d878fff7e4237",
+  "data": {
+    "6763bc23-81f5-46d2-ae02-6ee9a83cdbe2": {
+      "data": {
+        "ca.crt": "ca.crt",
+        "tls.crt": "tls.crt",
+        "tls.key": "tls.key"
+      },
+      "microservices": [],
+      "name": "db36ff94-2533-4189-9c5d-eee38199d918-local-agent",
+      "type": "secret",
+      "version": 1
+    },
+    "68e95631-823b-447f-9595-df6cb17de490": {
+      "data": {
+        "ca.crt": "ca.crt",
+        "tls.crt": "tls.crt",
+        "tls.key": "tls.key"
+      },
+      "microservices": [],
+      "name": "db36ff94-2533-4189-9c5d-eee38199d918-local-server",
+      "type": "secret",
+      "version": 1
+    },
+    "74b7abda-c29f-4a08-bb3c-ee65ad19e5a8": {
+      "data": {
+        "ca.crt": "ca.crt",
+        "tls.crt": "tls.crt",
+        "tls.key": "tls.key"
+      },
+      "microservices": [],
+      "name": "db36ff94-2533-4189-9c5d-eee38199d918-site-server",
+      "type": "secret",
+      "version": 1
+    },
+    "ffc34a65-71e1-4313-bdb6-a00cd0bf7df0": {
+      "data": {
+        "ca.crt": "ca.crt",
+        "tls.crt": "tls.crt",
+        "tls.key": "tls.key"
+      },
+      "microservices": [],
+      "name": "tls-test-secret",
+      "type": "secret",
+      "version": 1
+    }
+  },
+  "timestamp": 1769727189085
+}

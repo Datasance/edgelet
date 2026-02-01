@@ -1,0 +1,689 @@
+package fieldagent
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/eclipse-iofog/agent-go/internal/auth"
+	"github.com/eclipse-iofog/agent-go/internal/config"
+	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/gorilla/websocket"
+	"github.com/vmihailenco/msgpack/v5"
+)
+
+const (
+	logWebSocketModuleName  = "Log Session WebSocket Handler"
+	logMaxReconnectAttempts = 5
+	logReconnectDelay       = 5 * time.Second
+	logPingInterval         = 30 * time.Second
+	logHandshakeTimeout     = 10 * time.Second
+	logMaxFrameSize         = 65536
+	logMaxBufferSize        = 1024 * 1024 // 1MB
+	logMaxBufferedFrames    = 1000
+)
+
+// LogMessageType constants
+const (
+	LogTypeLogLine  byte = 6
+	LogTypeLogStart byte = 7
+	LogTypeLogStop  byte = 8
+	LogTypeLogError byte = 9
+)
+
+// LogConnectionState represents the WebSocket connection state
+type LogConnectionState int
+
+const (
+	LogStateDisconnected LogConnectionState = iota
+	LogStateConnecting
+	LogStateConnected
+	LogStatePending // Connected but waiting for LOG_START
+	LogStateActive  // Connected and streaming logs
+)
+
+// LogSessionWebSocketHandler manages the WebSocket connection for log sessions
+type LogSessionWebSocketHandler struct {
+	controllerWsURL   string
+	sessionID         string
+	microserviceUUID  string
+	iofogUUID         string
+	isMicroserviceLog bool
+	conn              *websocket.Conn
+	connMu            sync.RWMutex
+	writeMu           sync.Mutex // Protects concurrent writes to websocket
+	isConnected       atomic.Bool
+	isActive          atomic.Bool
+	state             atomic.Value // LogConnectionState
+	reconnectAttempts int
+	outputBuffer      chan []byte
+	bufferedSize      atomic.Int64
+	bufferedFrames    atomic.Int32
+	ctx               context.Context
+	cancel            context.CancelFunc
+	wg                sync.WaitGroup
+	pingTicker        *time.Ticker
+	config            *config.Config
+	jwtManager        *auth.JWTManager
+	controllerCert    *x509.Certificate
+	logSessionManager *LogSessionManager // Reference to start tailing when ready (matching Java)
+}
+
+var (
+	activeLogHandlers sync.Map // map[string]*LogSessionWebSocketHandler
+)
+
+// GetLogSessionWebSocketHandler gets or creates a LogSessionWebSocketHandler for a session
+func GetLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string, isMicroserviceLog bool) *LogSessionWebSocketHandler {
+	key := sessionID
+	handler, _ := activeLogHandlers.LoadOrStore(key, newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID, isMicroserviceLog))
+	return handler.(*LogSessionWebSocketHandler)
+}
+
+// newLogSessionWebSocketHandler creates a new LogSessionWebSocketHandler
+func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string, isMicroserviceLog bool) *LogSessionWebSocketHandler {
+	cfg := config.GetInstance()
+	controllerURL := cfg.ControllerURL
+	if controllerURL == "" {
+		logging.LogError(logWebSocketModuleName, "Controller URL is not configured", fmt.Errorf("controller URL is empty"))
+		return nil
+	}
+
+	// Convert HTTP/HTTPS URL to WebSocket URL
+	wsURL := convertToWebSocketURL(controllerURL)
+	var controllerWsURL string
+	if isMicroserviceLog {
+		controllerWsURL = wsURL + "/agent/logs/microservice/" + microserviceUUID + "/" + sessionID
+	} else {
+		controllerWsURL = wsURL + "/agent/logs/iofog/" + iofogUUID + "/" + sessionID
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	handler := &LogSessionWebSocketHandler{
+		controllerWsURL:   controllerWsURL,
+		sessionID:         sessionID,
+		microserviceUUID:  microserviceUUID,
+		iofogUUID:         iofogUUID,
+		isMicroserviceLog: isMicroserviceLog,
+		outputBuffer:      make(chan []byte, logMaxBufferedFrames),
+		ctx:               ctx,
+		cancel:            cancel,
+		config:            cfg,
+		jwtManager:        auth.GetJWTManager(),
+	}
+
+	handler.state.Store(LogStateDisconnected)
+	handler.isConnected.Store(false)
+	handler.isActive.Store(false)
+
+	// Load controller certificate only if using WSS (secure WebSocket)
+	// Matching Java: only load cert if controllerWsUrl.startsWith("wss")
+	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
+		if cfg.ControllerCert != "" {
+			cert, err := auth.LoadCertificateFromBase64(cfg.ControllerCert)
+			if err != nil {
+				// Try loading as PEM string directly
+				cert, err = auth.LoadCertificateFromPEM([]byte(cfg.ControllerCert))
+				if err != nil {
+					logging.LogError(logWebSocketModuleName, "Failed to load controller certificate", err)
+				} else {
+					handler.controllerCert = cert
+				}
+			} else {
+				handler.controllerCert = cert
+			}
+		}
+	}
+
+	return handler
+}
+
+// Connect establishes the WebSocket connection to the controller
+func (h *LogSessionWebSocketHandler) Connect() error {
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
+
+	if h.isConnected.Load() {
+		return nil
+	}
+
+	if !h.transitionState(LogStateDisconnected, LogStateConnecting) {
+		return fmt.Errorf("cannot connect: invalid state transition")
+	}
+
+	// Generate JWT token
+	token, err := h.jwtManager.GenerateJWT()
+	if err != nil {
+		h.transitionState(LogStateConnecting, LogStateDisconnected)
+		return fmt.Errorf("failed to generate JWT: %w", err)
+	}
+
+	// Create WebSocket dialer
+	dialer := websocket.Dialer{
+		HandshakeTimeout: logHandshakeTimeout,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: !h.config.SecureMode,
+		},
+	}
+
+	// Add certificate to TLS config only if using WSS and certificate is available
+	// Matching Java: only add SSL handler if controllerWsUrl.startsWith("wss") && sslContext != null
+	if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
+		certPool := x509.NewCertPool()
+		certPool.AddCert(h.controllerCert)
+		dialer.TLSClientConfig = &tls.Config{
+			RootCAs:            certPool,
+			InsecureSkipVerify: !h.config.SecureMode,
+		}
+	}
+
+	// Set headers with JWT token
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+token)
+
+	// Connect
+	conn, resp, err := dialer.Dial(h.controllerWsURL, headers)
+	if err != nil {
+		h.transitionState(LogStateConnecting, LogStateDisconnected)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	h.conn = conn
+	h.isConnected.Store(true)
+	h.reconnectAttempts = 0
+	// Transition to PENDING state after handshake (matching Java line 286: CONNECTING -> PENDING)
+	// PENDING means connected but waiting for LOG_START message
+	if h.transitionState(LogStateConnecting, LogStatePending) {
+		logging.LogInfo(logWebSocketModuleName, "Connection is now pending LOG_START message")
+	}
+
+	// Start ping ticker
+	h.pingTicker = time.NewTicker(logPingInterval)
+	h.wg.Add(2)
+	go h.pingWorker()
+	go h.readWorker()
+
+	// NO initial message for log sessions - wait for LOG_START from controller (matching Java line 289)
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket connection established for log session: %s", h.sessionID))
+	return nil
+}
+
+// transitionState safely transitions connection state
+func (h *LogSessionWebSocketHandler) transitionState(from, to LogConnectionState) bool {
+	current := h.state.Load().(LogConnectionState)
+	if current == from {
+		h.state.Store(to)
+		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Connection state transition: %v -> %v", from, to))
+		return true
+	}
+	return false
+}
+
+// SendMessage sends a log message to the controller
+func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) error {
+	if !h.isConnected.Load() {
+		logging.LogWarn(logWebSocketModuleName, "Cannot send message - not connected")
+		return fmt.Errorf("not connected")
+	}
+
+	// If not active, buffer the output
+	if !h.isActive.Load() {
+		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Buffering log output while connection is not active: type=%d, length=%d", msgType, len(data)))
+
+		// Check buffer limits
+		if h.bufferedFrames.Load() >= logMaxBufferedFrames {
+			logging.LogWarn(logWebSocketModuleName, "Buffer full, dropping frame")
+			return fmt.Errorf("buffer full")
+		}
+		if h.bufferedSize.Load()+int64(len(data)) > logMaxBufferSize {
+			logging.LogWarn(logWebSocketModuleName, "Buffer size limit reached, dropping frame")
+			return fmt.Errorf("buffer size limit reached")
+		}
+
+		// Create a copy of data for buffering
+		bufferedData := make([]byte, len(data))
+		copy(bufferedData, data)
+
+		select {
+		case h.outputBuffer <- bufferedData:
+			h.bufferedFrames.Add(1)
+			h.bufferedSize.Add(int64(len(data)))
+		default:
+			logging.LogWarn(logWebSocketModuleName, "Buffer channel full, dropping frame")
+			return fmt.Errorf("buffer channel full")
+		}
+		return nil
+	}
+
+	// Pack message using MessagePack
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+
+	// Pack as map with 6 key-value pairs (matching Java: always includes both microserviceUuid and iofogUuid, one as nil)
+	err := enc.EncodeMapLen(6)
+	if err != nil {
+		return fmt.Errorf("failed to encode map length: %w", err)
+	}
+
+	// Type
+	err = enc.EncodeString("type")
+	if err != nil {
+		return fmt.Errorf("failed to encode type key: %w", err)
+	}
+	err = enc.EncodeUint8(msgType)
+	if err != nil {
+		return fmt.Errorf("failed to encode type value: %w", err)
+	}
+
+	// Data
+	err = enc.EncodeString("data")
+	if err != nil {
+		return fmt.Errorf("failed to encode data key: %w", err)
+	}
+	err = enc.EncodeBytes(data)
+	if err != nil {
+		return fmt.Errorf("failed to encode data value: %w", err)
+	}
+
+	// Session ID
+	err = enc.EncodeString("sessionId")
+	if err != nil {
+		return fmt.Errorf("failed to encode sessionId key: %w", err)
+	}
+	err = enc.EncodeString(h.sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to encode sessionId value: %w", err)
+	}
+
+	// Microservice UUID and Iofog UUID (matching Java: always include both, one as nil)
+	if h.isMicroserviceLog && h.microserviceUUID != "" {
+		// Microservice log: include microserviceUuid, set iofogUuid to nil
+		err = enc.EncodeString("microserviceUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid key: %w", err)
+		}
+		err = enc.EncodeString(h.microserviceUUID)
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid value: %w", err)
+		}
+		err = enc.EncodeString("iofogUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid key: %w", err)
+		}
+		err = enc.EncodeNil() // nil for microservice logs
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid nil: %w", err)
+		}
+	} else if !h.isMicroserviceLog && h.iofogUUID != "" {
+		// Fog log: set microserviceUuid to nil, include iofogUuid
+		err = enc.EncodeString("microserviceUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid key: %w", err)
+		}
+		err = enc.EncodeNil() // nil for fog logs
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid nil: %w", err)
+		}
+		err = enc.EncodeString("iofogUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid key: %w", err)
+		}
+		err = enc.EncodeString(h.iofogUUID)
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid value: %w", err)
+		}
+	} else {
+		// Fallback: both nil (shouldn't happen, but handle gracefully)
+		err = enc.EncodeString("microserviceUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid key: %w", err)
+		}
+		err = enc.EncodeNil()
+		if err != nil {
+			return fmt.Errorf("failed to encode microserviceUuid nil: %w", err)
+		}
+		err = enc.EncodeString("iofogUuid")
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid key: %w", err)
+		}
+		err = enc.EncodeNil()
+		if err != nil {
+			return fmt.Errorf("failed to encode iofogUuid nil: %w", err)
+		}
+	}
+
+	// Timestamp
+	err = enc.EncodeString("timestamp")
+	if err != nil {
+		return fmt.Errorf("failed to encode timestamp key: %w", err)
+	}
+	err = enc.EncodeInt64(time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("failed to encode timestamp value: %w", err)
+	}
+
+	// Send as binary WebSocket frame
+	h.connMu.RLock()
+	conn := h.conn
+	h.connMu.RUnlock()
+
+	if conn != nil {
+		h.writeMu.Lock()
+		defer h.writeMu.Unlock()
+		err = conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+		if err != nil {
+			return fmt.Errorf("failed to write message: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// pingWorker sends ping frames periodically
+func (h *LogSessionWebSocketHandler) pingWorker() {
+	defer h.wg.Done()
+	defer func() {
+		if h.pingTicker != nil {
+			h.pingTicker.Stop()
+		}
+	}()
+
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-h.pingTicker.C:
+			if h.isConnected.Load() {
+				h.connMu.RLock()
+				conn := h.conn
+				h.connMu.RUnlock()
+
+				if conn != nil {
+					h.writeMu.Lock()
+					err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(time.Second))
+					h.writeMu.Unlock()
+					if err != nil {
+						logging.LogError(logWebSocketModuleName, "Failed to send ping", err)
+						h.handleConnectionFailure()
+					}
+				}
+			}
+		}
+	}
+}
+
+// readWorker reads messages from the WebSocket
+func (h *LogSessionWebSocketHandler) readWorker() {
+	defer h.wg.Done()
+
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		default:
+			h.connMu.RLock()
+			conn := h.conn
+			h.connMu.RUnlock()
+
+			if conn == nil {
+				return
+			}
+
+			// Set read deadline
+			conn.SetReadDeadline(time.Now().Add(logPingInterval * 2))
+
+			messageType, data, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					logging.LogError(logWebSocketModuleName, "WebSocket read error", err)
+				}
+				h.handleConnectionFailure()
+				return
+			}
+
+			if messageType == websocket.BinaryMessage {
+				h.handleMessage(data)
+			} else if messageType == websocket.PongMessage {
+				// Handle pong
+				logging.LogDebug(logWebSocketModuleName, "Received pong")
+			}
+		}
+	}
+}
+
+// handleMessage processes incoming messages (matching Java: handleMessage())
+func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
+	dec := msgpack.NewDecoder(bytes.NewReader(data))
+
+	// Decode map
+	mapLen, err := dec.DecodeMapLen()
+	if err != nil {
+		logging.LogError(logWebSocketModuleName, "Failed to decode map length", err)
+		return
+	}
+
+	var msgType byte
+	var msgData []byte
+	var sessionID string
+
+	// Decode all fields (matching Java: reads all key-value pairs)
+	for i := 0; i < mapLen; i++ {
+		key, err := dec.DecodeString()
+		if err != nil {
+			logging.LogError(logWebSocketModuleName, "Failed to decode key", err)
+			return
+		}
+
+		switch key {
+		case "type":
+			val, err := dec.DecodeUint8()
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to decode type", err)
+				return
+			}
+			msgType = val
+		case "data":
+			val, err := dec.DecodeBytes()
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to decode data", err)
+				return
+			}
+			msgData = val
+		case "sessionId":
+			val, err := dec.DecodeString()
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to decode sessionId", err)
+				return
+			}
+			sessionID = val
+		case "microserviceUuid", "iofogUuid", "timestamp":
+			// Skip these fields (not needed for processing)
+			err = dec.Skip()
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to skip value", err)
+				return
+			}
+		default:
+			// Skip unknown keys
+			err = dec.Skip()
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to skip value", err)
+				return
+			}
+		}
+	}
+
+	// Handle message based on type (matching Java: handleMessage() switch)
+	switch msgType {
+	case LogTypeLogStart:
+		h.handleLogStart(msgData, sessionID)
+	case LogTypeLogStop:
+		logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Received LOG_STOP message for session: %s", sessionID))
+		h.handleClose()
+	case LogTypeLogError:
+		h.handleLogError(msgData)
+	default:
+		logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Unknown message type: %d", msgType))
+	}
+}
+
+// handleLogStart handles LOG_START message (matching Java: handleLogStart())
+func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID string) {
+	if data == nil {
+		logging.LogWarn(logWebSocketModuleName, "LOG_START message has no data")
+		return
+	}
+
+	// Parse tailConfig from data (matching Java: parse JSON from data)
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		logging.LogError(logWebSocketModuleName, "Failed to parse LOG_START data as JSON", err)
+		return
+	}
+
+	tailConfigMap, ok := config["tailConfig"].(map[string]interface{})
+	if !ok {
+		logging.LogWarn(logWebSocketModuleName, "LOG_START message missing tailConfig")
+	}
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Received LOG_START message with tailConfig: sessionId=%s", sessionID))
+	// Transition from PENDING to ACTIVE (matching Java line 399: PENDING -> ACTIVE)
+	if h.transitionState(LogStatePending, LogStateActive) {
+		h.isActive.Store(true)
+
+		// Trigger log streaming start in LogSessionManager with tailConfig from LOG_START
+		// (matching Java: logSessionManager.startLogStreamingOnActivation())
+		if h.logSessionManager != nil {
+			logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Triggering log streaming start on WebSocket activation: sessionId=%s", sessionID))
+			h.logSessionManager.StartLogStreamingOnActivation(sessionID, tailConfigMap)
+		} else {
+			logging.LogWarn(logWebSocketModuleName, "LogSessionManager not set, cannot start log streaming")
+		}
+
+		// Flush buffered output
+		go h.flushBuffer()
+	}
+}
+
+// handleLogError handles LOG_ERROR message (matching Java: handleLogError())
+func (h *LogSessionWebSocketHandler) handleLogError(data []byte) {
+	if data != nil {
+		errorMsg := string(data)
+		logging.LogError(logWebSocketModuleName, fmt.Sprintf("Received LOG_ERROR: %s", errorMsg), fmt.Errorf(errorMsg))
+	}
+}
+
+// SetLogSessionManager sets the LogSessionManager reference (matching Java: setLogSessionManager())
+func (h *LogSessionWebSocketHandler) SetLogSessionManager(lsm *LogSessionManager) {
+	h.logSessionManager = lsm
+}
+
+// flushBuffer sends all buffered messages
+func (h *LogSessionWebSocketHandler) flushBuffer() {
+	for {
+		select {
+		case data := <-h.outputBuffer:
+			msgType := LogTypeLogLine // Default to log line
+			err := h.SendMessage(msgType, data)
+			if err != nil {
+				logging.LogError(logWebSocketModuleName, "Failed to send buffered message", err)
+			} else {
+				h.bufferedFrames.Add(-1)
+				h.bufferedSize.Add(-int64(len(data)))
+			}
+		default:
+			return
+		}
+	}
+}
+
+// handleConnectionFailure handles connection failures and attempts reconnection
+func (h *LogSessionWebSocketHandler) handleConnectionFailure() {
+	h.connMu.Lock()
+	if h.conn != nil {
+		h.conn.Close()
+		h.conn = nil
+	}
+	h.connMu.Unlock()
+
+	h.isConnected.Store(false)
+	h.transitionState(LogStateConnected, LogStateDisconnected)
+
+	if h.reconnectAttempts < logMaxReconnectAttempts {
+		h.reconnectAttempts++
+		backoff := time.Duration(h.reconnectAttempts) * logReconnectDelay
+		logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Reconnecting in %v (attempt %d/%d)", backoff, h.reconnectAttempts, logMaxReconnectAttempts))
+
+		time.Sleep(backoff)
+		go h.Connect()
+	} else {
+		logging.LogError(logWebSocketModuleName, "Max reconnection attempts reached", fmt.Errorf("reconnection failed"))
+	}
+}
+
+// Disconnect closes the WebSocket connection
+func (h *LogSessionWebSocketHandler) Disconnect() {
+	h.cancel()
+
+	h.connMu.Lock()
+	if h.conn != nil {
+		h.conn.Close()
+		h.conn = nil
+	}
+	h.connMu.Unlock()
+
+	h.isConnected.Store(false)
+	h.isActive.Store(false)
+	h.transitionState(LogStateConnected, LogStateDisconnected)
+
+	h.wg.Wait()
+
+	if h.pingTicker != nil {
+		h.pingTicker.Stop()
+	}
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for log session: %s", h.sessionID))
+}
+
+// IsConnected returns whether the WebSocket is connected
+func (h *LogSessionWebSocketHandler) IsConnected() bool {
+	return h.isConnected.Load()
+}
+
+// IsActive returns whether the log session is active
+func (h *LogSessionWebSocketHandler) IsActive() bool {
+	return h.isActive.Load()
+}
+
+// handleClose handles WebSocket close (matching Java: handleClose())
+func (h *LogSessionWebSocketHandler) handleClose() {
+	if !h.isConnected.Load() {
+		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Already disconnected for session: %s", h.sessionID))
+		return
+	}
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Handling close for session: %s, connectionState=%v, reconnectAttempts=%d",
+		h.sessionID, h.state.Load(), h.reconnectAttempts))
+
+	h.isConnected.Store(false)
+	// Cleanup connection
+	h.Disconnect()
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Close handling completed for session: %s", h.sessionID))
+}

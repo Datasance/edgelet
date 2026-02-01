@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# Clean up on purge
+if [ "$1" = "purge" ]; then
+    # Remove configuration (optional, user may want to keep it)
+    # rm -rf /etc/iofog-agent
+    # rm -rf /var/lib/iofog-agent
+    
+    # Remove logs
+    rm -rf /var/log/iofog-agent
+    
+    # Remove runtime files
+    rm -rf /var/run/iofog-agent
+fi
+
+exit 0

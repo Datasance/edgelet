@@ -1,0 +1,14 @@
+Package: iofog-agent
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: docker.io (>= 20.10) | docker-ce (>= 20.10) | podman (>= 3.0), ca-certificates
+Maintainer: Eclipse ioFog <iofog@eclipse.org>
+Description: ioFog Agent - Edge computing agent for ioFog platform
+ The ioFog Agent manages microservices on edge devices, providing
+ container orchestration, message routing, and communication with
+ the ioFog Controller.
+ .
+ This is the Go implementation of the ioFog Agent, providing improved
+ performance and reduced resource usage compared to the Java version.
