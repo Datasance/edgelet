@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/supervisor"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/supervisor"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 // TestAgentStartup tests full agent startup sequence
@@ -119,7 +119,7 @@ func TestMultiModuleInteraction(t *testing.T) {
 
 	// This test would verify that modules can communicate properly
 	// For example: FieldAgent -> ProcessManager, MessageBus -> LocalAPI, etc.
-	
+
 	configPath := utils.ConfigYAMLPath
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Skipf("Config file not found at %s, skipping test", configPath)

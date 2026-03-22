@@ -3,8 +3,8 @@ package integration
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 // TestDockerConnection tests basic Docker connectivity
@@ -15,7 +15,7 @@ func TestDockerConnection(t *testing.T) {
 
 	cfg := config.GetInstance()
 	client := docker.GetInstance()
-	
+
 	// Initialize Docker client
 	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestDockerImagePull(t *testing.T) {
 
 	cfg := config.GetInstance()
 	client := docker.GetInstance()
-	
+
 	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
@@ -73,7 +73,7 @@ func TestDockerContainerLifecycle(t *testing.T) {
 
 	cfg := config.GetInstance()
 	client := docker.GetInstance()
-	
+
 	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)

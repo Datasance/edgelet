@@ -1,6 +1,7 @@
 package gps
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -53,7 +54,7 @@ func (w *WebHandler) Stop() error {
 func (w *WebHandler) UpdateCoordinates() error {
 	logging.LogDebug(webHandlerModuleName, "Updating coordinates from IP-based location service")
 
-	req, err := http.NewRequest("GET", ipAPIURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ipAPIURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

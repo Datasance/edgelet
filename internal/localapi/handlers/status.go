@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -45,7 +46,9 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(statusHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(statusHandlerModuleName, "Finished status Api Handler call")
 }
 
@@ -54,7 +57,7 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 func parseStatusReport(statusReport string) map[string]string {
 	result := make(map[string]string)
 	lines := strings.Split(statusReport, "\n")
-	
+
 	for _, line := range lines {
 		parts := strings.SplitN(line, " : ", 2)
 		if len(parts) == 2 {
@@ -64,6 +67,6 @@ func parseStatusReport(statusReport string) map[string]string {
 			result[key] = value
 		}
 	}
-	
+
 	return result
 }

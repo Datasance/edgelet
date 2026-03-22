@@ -12,10 +12,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
 	nat "github.com/docker/go-connections/nat"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 // Container represents a Docker container
@@ -36,7 +37,7 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 	}
 
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.Arg("name", utils.IOFogDockerContainerNamePrefix+microserviceUUID)),
 	})
@@ -60,6 +61,11 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 	}, nil
 }
 
+// GetAllContainers returns all containers regardless of state
+func (c *Client) GetAllContainers() ([]Container, error) {
+	return c.GetRunningContainers()
+}
+
 // GetRunningContainers returns all running containers
 func (c *Client) GetRunningContainers() ([]Container, error) {
 	cli := c.GetClient()
@@ -68,7 +74,7 @@ func (c *Client) GetRunningContainers() ([]Container, error) {
 	}
 
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
 		All: true,
 	})
 
@@ -124,7 +130,7 @@ func (c *Client) StartContainer(containerID string) error {
 	}
 
 	ctx := c.GetContext()
-	return cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	return cli.ContainerStart(ctx, containerID, container.StartOptions{})
 }
 
 // StopContainer stops a container
@@ -156,7 +162,7 @@ func (c *Client) RemoveContainer(containerID string, removeVolumes bool) error {
 	}
 
 	ctx := c.GetContext()
-	return cli.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{
+	return cli.ContainerRemove(ctx, containerID, container.RemoveOptions{
 		Force:         true,
 		RemoveVolumes: removeVolumes,
 	})
@@ -343,7 +349,7 @@ func (c *Client) GetInspectContainersImage(containerID string) (string, error) {
 }
 
 // GetMicroserviceStatus gets the microservice status from container inspection
-func (c *Client) GetMicroserviceStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error) {
+func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.MicroserviceStatus, error) {
 	cli := c.GetClient()
 	if cli == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
@@ -400,7 +406,7 @@ func (c *Client) GetMicroserviceStatus(containerID, microserviceUUID string) (*m
 
 	// Get exec session IDs if container is running
 	if state == "running" {
-		if inspect.ExecIDs != nil && len(inspect.ExecIDs) > 0 {
+		if len(inspect.ExecIDs) > 0 {
 			status.ExecSessionIDs = inspect.ExecIDs
 		} else {
 			status.ExecSessionIDs = []string{}
@@ -472,26 +478,23 @@ func (c *Client) isPortMappingEqual(inspect types.ContainerJSON, ms *models.Micr
 	return true
 }
 
-// isNetworkModeEqual compares if microservice network mode matches container network mode
-// If microservice has host network mode, container must have NetworkMode 'host'
-// Otherwise, container must have ExtraHosts
+// isNetworkModeEqual compares if microservice network mode matches container network mode.
+// host-network microservice → container must have NetworkMode "host"
+// non-host-network microservice → container must be on the "iofog" user-defined bridge
 func (c *Client) isNetworkModeEqual(inspect types.ContainerJSON, ms *models.Microservice) bool {
-	isHostNetworkMode := ms.HostNetworkMode
 	hostConfig := inspect.HostConfig
-
 	if hostConfig == nil {
 		return false
 	}
 
 	containerNetworkMode := string(hostConfig.NetworkMode)
-	hasExtraHosts := hostConfig.ExtraHosts != nil && len(hostConfig.ExtraHosts) > 0
 
-	if isHostNetworkMode {
+	if ms.HostNetworkMode {
 		return containerNetworkMode == "host"
 	}
 
-	// If not host network mode, container should have ExtraHosts
-	return hasExtraHosts
+	// All non-host-network containers must be on the "iofog" network.
+	return containerNetworkMode == "iofog"
 }
 
 // isEnvVarsEqual compares if microservice environment variables are equal to container environment variables
@@ -505,13 +508,11 @@ func (c *Client) isEnvVarsEqual(inspect types.ContainerJSON, ms *models.Microser
 	// Get container environment variables from inspect info
 	containerEnvArray := inspect.Config.Env
 	containerEnvVars := make(map[string]string)
-	if containerEnvArray != nil {
-		for _, envVar := range containerEnvArray {
-			if envVar != "" {
-				parts := strings.SplitN(envVar, "=", 2)
-				if len(parts) == 2 {
-					containerEnvVars[parts[0]] = parts[1]
-				}
+	for _, envVar := range containerEnvArray {
+		if envVar != "" {
+			parts := strings.SplitN(envVar, "=", 2)
+			if len(parts) == 2 {
+				containerEnvVars[parts[0]] = parts[1]
 			}
 		}
 	}
@@ -551,13 +552,13 @@ func (c *Client) getContainerPorts(inspect types.ContainerJSON) []*models.PortMa
 
 	portMappings := make([]*models.PortMapping, 0)
 	for port, bindings := range hostConfig.PortBindings {
-		if bindings == nil || len(bindings) == 0 {
+		if len(bindings) == 0 {
 			continue
 		}
 
 		// Get protocol (tcp or udp)
 		isUDP := port.Proto() == "udp"
-		insidePort := int(port.Int())
+		insidePort := port.Int()
 
 		// Process each binding
 		for _, binding := range bindings {
@@ -602,6 +603,15 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
+	// Ensure the "iofog" bridge network exists before attempting container creation.
+	// This guards against races where the network hasn't been created yet (e.g. after
+	// a Docker client re-init) — matches Java's synchronous ensureIoFogNetworkExists().
+	if !ms.HostNetworkMode {
+		if err := c.ensureIoFogNetworkExists(); err != nil {
+			return "", fmt.Errorf("failed to ensure iofog network: %w", err)
+		}
+	}
+
 	ctx := c.GetContext()
 
 	// Get config instance (needed for TZ and other config values)
@@ -610,13 +620,13 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	// Build container config
 	// Matches Java: List<String> envVars = new ArrayList<>(Arrays.asList("SELFNAME=" + microservice.getMicroserviceUuid()));
 	envVars := []string{fmt.Sprintf("SELFNAME=%s", ms.MicroserviceUUID)}
-	
+
 	// Add user-defined env vars (matching Java: envVars.addAll(microservice.getEnvVars()...))
-	if ms.EnvVars != nil && len(ms.EnvVars) > 0 {
+	if len(ms.EnvVars) > 0 {
 		userEnvVars := buildEnvironmentVariables(ms.EnvVars)
 		envVars = append(envVars, userEnvVars...)
 	}
-	
+
 	// Add TZ if not already present (matching Java: if (envVars.stream().filter(str -> str.trim().contains("TZ")).count() == 0))
 	hasTZ := false
 	for _, env := range envVars {
@@ -650,11 +660,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		config.User = *ms.RunAsUser
 	}
 
-	// Set platform
-	if ms.Platform != nil && *ms.Platform != "" {
-		// Platform is set via ContainerCreate options, not Config
-		// We'll handle it in ContainerCreate call
-	}
+	// Platform is set via ContainerCreate options, not Config
 
 	// Set labels
 	labels := make(map[string]string)
@@ -662,13 +668,16 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	if ms.IsRouter {
 		labels["iofog-router"] = "true"
 	}
+	if ms.IsNats {
+		labels["iofog-nats"] = "true"
+	}
 	config.Labels = labels
 
-	// Build host config
+	// Build host config — NetworkMode is set later after ExtraHosts are resolved,
+	// matching Java: networkMode("iofog") is only applied when extraHosts is non-empty.
 	hostConfig := &container.HostConfig{
-		NetworkMode:     buildNetworkMode(ms.HostNetworkMode),
 		Privileged:      ms.IsPrivileged,
-		PublishAllPorts: false, // We'll handle port bindings explicitly
+		PublishAllPorts: false,
 	}
 
 	// Set runtime if specified
@@ -685,7 +694,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		Type: "json-file",
 		Config: map[string]string{
 			"max-file": fmt.Sprintf("%d", logFiles),
-			"max-size": "2m",
+			"max-size": "100m",
 		},
 	}
 
@@ -762,7 +771,21 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 			}
 		}
 	}
-	hostConfig.ExtraHosts = validHosts
+	// Apply network mode + extra hosts — matches Java's conditional logic:
+	//   hostNetworkMode → NetworkMode "host"  (no ExtraHosts, no iofog network)
+	//   else            → NetworkMode "iofog" (always; ExtraHosts only when non-empty)
+	//
+	// All non-host-network containers must be on the "iofog" user-defined bridge so that
+	// Docker DNS aliases (service discovery) work correctly.  ExtraHosts are independent
+	// — they add entries to /etc/hosts and are only set when there are valid entries.
+	if ms.HostNetworkMode {
+		hostConfig.NetworkMode = container.NetworkMode("host")
+	} else {
+		hostConfig.NetworkMode = container.NetworkMode("iofog")
+		if len(validHosts) > 0 {
+			hostConfig.ExtraHosts = validHosts
+		}
+	}
 
 	// Set PID mode
 	if ms.PidMode != nil {
@@ -775,8 +798,8 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	}
 
 	// Set CPU set
-	if ms.CpuSetCpus != nil && *ms.CpuSetCpus != "" {
-		hostConfig.CpusetCpus = *ms.CpuSetCpus
+	if ms.CPUSetCpus != nil && *ms.CPUSetCpus != "" {
+		hostConfig.CpusetCpus = *ms.CPUSetCpus
 	}
 
 	// Set CDI devices if specified
@@ -824,13 +847,20 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	// Container name
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
 
-	// Build platform option if specified
-	// Note: Docker API uses spec.Platform, but ContainerCreate accepts platform as string
-	// For now, we'll pass nil and handle platform via image pull
-	// Platform is typically handled during image pull, not container create
+	// Build networking config with DNS alias for service discovery
+	var networkingConfig *network.NetworkingConfig
+	if !ms.HostNetworkMode && ms.ApplicationName != "" && ms.MicroserviceName != "" {
+		networkingConfig = &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				"iofog": {
+					Aliases: []string{ms.ApplicationName + "." + ms.MicroserviceName},
+				},
+			},
+		}
+	}
 
 	// Create container
-	createResp, err := cli.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
+	createResp, err := cli.ContainerCreate(ctx, config, hostConfig, networkingConfig, nil, containerName)
 	if err != nil {
 		return "", err
 	}
@@ -854,13 +884,6 @@ func buildEnvironmentVariables(envVars []*models.EnvVar) []string {
 		}
 	}
 	return result
-}
-
-func buildNetworkMode(hostNetworkMode bool) container.NetworkMode {
-	if hostNetworkMode {
-		return container.NetworkMode("host")
-	}
-	return container.NetworkMode("bridge")
 }
 
 func buildPortBindings(portMappings []*models.PortMapping) (nat.PortMap, error) {

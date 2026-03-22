@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package edgeguard
@@ -10,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 // collectSystemInfo collects system/motherboard/BIOS info from /sys/class/dmi/id
@@ -20,7 +21,7 @@ func collectSystemInfo(ctx context.Context) string {
 
 	// System information from /sys/class/dmi/id
 	dmiBase := "/sys/class/dmi/id"
-	
+
 	// System info
 	data.WriteString("System:\n")
 	if manufacturer := readDMIFile(dmiBase, "sys_vendor"); manufacturer != "" {
@@ -162,7 +163,7 @@ func collectPciInfo(ctx context.Context) string {
 	for _, entry := range entries {
 		deviceName := entry.Name()
 		devicePath := filepath.Join(pciDir, deviceName)
-		
+
 		// Check if it's a graphics card (class 0x03)
 		class := readSysFile(filepath.Join(devicePath, "class"))
 		if !strings.HasPrefix(class, "0x03") {
@@ -172,7 +173,7 @@ func collectPciInfo(ctx context.Context) string {
 		vendor := readSysFile(filepath.Join(devicePath, "vendor"))
 		device := readSysFile(filepath.Join(devicePath, "device"))
 		name := readSysFile(filepath.Join(devicePath, "uevent"))
-		
+
 		// Extract name from uevent if available
 		if name != "" {
 			lines := strings.Split(name, "\n")
@@ -198,7 +199,7 @@ func collectPciInfo(ctx context.Context) string {
 	for _, entry := range entries {
 		deviceName := entry.Name()
 		devicePath := filepath.Join(pciDir, deviceName)
-		
+
 		// Check if it's a sound card (class 0x04)
 		class := readSysFile(filepath.Join(devicePath, "class"))
 		if !strings.HasPrefix(class, "0x04") {
@@ -207,7 +208,7 @@ func collectPciInfo(ctx context.Context) string {
 
 		name := readSysFile(filepath.Join(devicePath, "uevent"))
 		driver := readSysFile(filepath.Join(devicePath, "driver"))
-		
+
 		// Extract name from uevent if available
 		if name != "" {
 			lines := strings.Split(name, "\n")
@@ -244,7 +245,7 @@ func collectStorageInfo(ctx context.Context) string {
 
 	for _, entry := range entries {
 		deviceName := entry.Name()
-		
+
 		// Skip virtual and special devices
 		if strings.HasPrefix(deviceName, "vd") || // Virtual disks
 			strings.HasPrefix(deviceName, "loop") || // Loop devices
@@ -259,7 +260,7 @@ func collectStorageInfo(ctx context.Context) string {
 			strings.HasPrefix(deviceName, "mmc") || // SD/eMMC
 			strings.HasPrefix(deviceName, "nvme") || // NVMe
 			strings.HasPrefix(deviceName, "hd") { // IDE
-			
+
 			devicePath := filepath.Join(blockDir, deviceName)
 			model := readSysFile(filepath.Join(devicePath, "device/model"))
 			vendor := readSysFile(filepath.Join(devicePath, "device/vendor"))
@@ -311,7 +312,7 @@ func collectNetworkInfo(ctx context.Context) string {
 
 	for _, entry := range entries {
 		ifaceName := entry.Name()
-		
+
 		// Apply hybrid filtering: whitelist + blacklist (same as manager.go)
 		// Always filter, not just in containers
 		if !isPhysicalNetworkInterfaceLinux(ifaceName) {
@@ -324,7 +325,7 @@ func collectNetworkInfo(ctx context.Context) string {
 		speed := readSysFile(filepath.Join(ifacePath, "speed"))
 		duplex := readSysFile(filepath.Join(ifacePath, "duplex"))
 		driver := readSysFile(filepath.Join(ifacePath, "device/driver"))
-		
+
 		// Extract driver name from path
 		driverName := ""
 		if driver != "" {

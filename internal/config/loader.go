@@ -3,13 +3,16 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"gopkg.in/yaml.v3"
 )
+
+const configLoaderModuleName = "Config Loader"
 
 // LoadConfig loads configuration from YAML file
 func LoadConfig(configPath string) error {
@@ -26,7 +29,7 @@ func LoadConfig(configPath string) error {
 			logging.LogWarn("Config Loader", "Config file not found, creating default config")
 			yamlConfig = createDefaultYamlConfigForLoader()
 			// Try to save the default config (create directory if needed)
-			if err := os.MkdirAll(utils.ConfigDir, 0755); err == nil {
+			if err := os.MkdirAll(utils.ConfigDir, 0700); err == nil {
 				if saveErr := SaveConfig(configPath); saveErr != nil {
 					logging.LogWarn("Config Loader", fmt.Sprintf("Failed to save default config: %v", saveErr))
 				}
@@ -67,7 +70,7 @@ func LoadConfig(configPath string) error {
 
 // loadYAMLFile loads a YAML file
 func loadYAMLFile(path string) (*models.YamlConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- path is from config loader, not user input
 	if err != nil {
 		return nil, err
 	}
@@ -116,35 +119,37 @@ func loadConfigValues(cfg *Config) {
 	cfg.GPSMode = getProp("gpsMode", "auto")
 	cfg.GPSCoordinates = getProp("gpsCoordinates", "")
 	cfg.Arch = getProp("arch", "auto")
-	cfg.RouterHost = getProp("routerHost", "")
 	cfg.Namespace = getProp("namespace", "default")
 	cfg.TimeZone = getProp("timeZone", "")
-	cfg.CACert = getProp("caCert", "")
-	cfg.TLSCert = getProp("tlsCert", "")
-	cfg.TLSKey = getProp("tlsKey", "")
 	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 	// cfg.HWSignature = getProp("hwSignature", "")
 
-	// Parse numeric values (simplified - should handle errors properly)
+	// Parse numeric values
 	parseFloat := func(key, defaultValue string) float64 {
 		val := getProp(key, defaultValue)
 		var result float64
-		fmt.Sscanf(val, "%f", &result)
+		if _, err := fmt.Sscanf(val, "%f", &result); err != nil {
+			logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to parse config value for %s: %v", key, err))
+		}
 		return result
 	}
 
 	parseInt := func(key, defaultValue string) int {
 		val := getProp(key, defaultValue)
 		var result int
-		fmt.Sscanf(val, "%d", &result)
+		if _, err := fmt.Sscanf(val, "%d", &result); err != nil {
+			logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to parse config value for %s: %v", key, err))
+		}
 		return result
 	}
 
 	parseInt64 := func(key, defaultValue string) int64 {
 		val := getProp(key, defaultValue)
 		var result int64
-		fmt.Sscanf(val, "%d", &result)
+		if _, err := fmt.Sscanf(val, "%d", &result); err != nil {
+			logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to parse config value for %s: %v", key, err))
+		}
 		return result
 	}
 
@@ -161,7 +166,6 @@ func loadConfigValues(cfg *Config) {
 	cfg.EdgeGuardFrequency = parseInt64("edgeGuardFrequency", "0")
 	cfg.GPSScanFrequency = parseInt64("gpsScanFrequency", "60")
 	cfg.SecureMode = getProp("secureMode", "off") != "off"
-	cfg.RouterPort = parseInt("routerPort", "0")
 	cfg.DockerPruningFrequency = parseInt64("dockerPruningFrequency", "0")
 	cfg.AvailableDiskThreshold = parseInt64("availableDiskThreshold", "20")
 	cfg.ReadyToUpgradeScanFrequency = parseInt("readyToUpgradeScanFrequency", "24")
@@ -251,7 +255,7 @@ func SaveConfigWithYaml(configPath string, yamlConfig *models.YamlConfig) error 
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

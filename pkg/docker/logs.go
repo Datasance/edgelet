@@ -1,13 +1,14 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
@@ -63,7 +64,7 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 	}
 
 	// Build log options
-	options := types.ContainerLogsOptions{
+	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     follow,
@@ -110,7 +111,9 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 		// Close logsReader when goroutine exits (matching Java: reader is closed when callback completes)
 		defer func() {
 			if logsReader != nil {
-				logsReader.Close()
+				if err := logsReader.Close(); err != nil {
+					_ = err // best-effort close of log stream
+				}
 			}
 			if handler != nil {
 				handler.OnComplete(sessionID)
@@ -125,8 +128,12 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 		demuxDone := make(chan error, 1)
 		go func() {
 			_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logsReader)
-			stdoutWriter.Close()
-			stderrWriter.Close()
+			if cerr := stdoutWriter.Close(); cerr != nil {
+				_ = cerr // best-effort close of pipe writer
+			}
+			if cerr := stderrWriter.Close(); cerr != nil {
+				_ = cerr // best-effort close of pipe writer
+			}
 			demuxDone <- err
 		}()
 
@@ -146,7 +153,7 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 						}
 					}
 				}
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					stdoutDone <- nil
 					break
 				}
@@ -173,7 +180,7 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 						}
 					}
 				}
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					stderrDone <- nil
 					break
 				}
@@ -187,13 +194,13 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 		// Wait for demux to complete or error
 		select {
 		case err := <-demuxDone:
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				if handler != nil {
 					handler.OnError(sessionID, err)
 				}
 			}
 		case <-ctx.Done():
-			// Context cancelled, stop tailing
+			// Context canceled, stop tailing
 		}
 
 		// Wait for readers to finish

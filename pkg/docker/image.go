@@ -9,11 +9,13 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/eclipse-iofog/agent-go/internal/models"
+	"github.com/docker/docker/api/types/image"
+	dockerregistry "github.com/docker/docker/api/types/registry"
+	"github.com/eclipse-iofog/agent/internal/models"
 )
 
 // PullImage pulls an image from a registry with authentication
-func (c *Client) PullImage(imageName, microserviceUUID, platform string, registry *models.Registry, progressCallback func(float32)) error {
+func (c *Client) PullImage(imageName, _ string, platform string, registry *models.Registry, progressCallback func(float32)) error {
 	cli := c.GetClient()
 	if cli == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -23,16 +25,16 @@ func (c *Client) PullImage(imageName, microserviceUUID, platform string, registr
 	c.logger.Infof("Pull image name \"%s\"", imageName)
 
 	// Parse image name and tag
-	image := imageName
+	imgRef := imageName
 	tag := "latest"
 
 	if parts := strings.Split(imageName, ":"); len(parts) > 1 {
-		image = parts[0]
+		imgRef = parts[0]
 		tag = parts[1]
 	}
 
 	// Build pull options
-	opts := types.ImagePullOptions{}
+	opts := image.PullOptions{}
 
 	// Set platform if specified
 	if platform != "" {
@@ -42,7 +44,7 @@ func (c *Client) PullImage(imageName, microserviceUUID, platform string, registr
 	// Set authentication if registry is not public
 	if !registry.IsPublic && registry.URL != "from_cache" {
 		// Build auth config
-		authConfig := types.AuthConfig{
+		authConfig := dockerregistry.AuthConfig{
 			Username:      registry.UserName,
 			Password:      registry.Password,
 			ServerAddress: registry.URL,
@@ -60,7 +62,7 @@ func (c *Client) PullImage(imageName, microserviceUUID, platform string, registr
 	}
 
 	// Pull image
-	pullResp, err := cli.ImagePull(ctx, fmt.Sprintf("%s:%s", image, tag), opts)
+	pullResp, err := cli.ImagePull(ctx, fmt.Sprintf("%s:%s", imgRef, tag), opts)
 	if err != nil {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
@@ -88,7 +90,7 @@ func (c *Client) FindLocalImage(imageName string) (bool, error) {
 	}
 
 	ctx := c.GetContext()
-	images, err := cli.ImageList(ctx, types.ImageListOptions{})
+	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -112,7 +114,7 @@ func (c *Client) RemoveImage(imageID string) error {
 	}
 
 	ctx := c.GetContext()
-	_, err := cli.ImageRemove(ctx, imageID, types.ImageRemoveOptions{
+	_, err := cli.ImageRemove(ctx, imageID, image.RemoveOptions{
 		Force: true,
 	})
 	return err
@@ -156,14 +158,14 @@ func (c *Client) GetImageInspect(imageName string) (*types.ImageInspect, error) 
 }
 
 // GetImages returns all Docker images
-func (c *Client) GetImages() ([]types.ImageSummary, error) {
+func (c *Client) GetImages() ([]image.Summary, error) {
 	cli := c.GetClient()
 	if cli == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
 	}
 
 	ctx := c.GetContext()
-	images, err := cli.ImageList(ctx, types.ImageListOptions{})
+	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

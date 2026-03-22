@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -172,9 +172,9 @@ func (a *AptPackageManager) GetScript(command VersionCommand) string {
 
 func (a *AptPackageManager) getDevVersion() (string, error) {
 	cmd := fmt.Sprintf("(apt-cache policy %s-dev && apt-cache policy %s) | grep -A1 ^iofog | awk '$2 ~ /^[0-9]/ {print a}{a=$0}' | sed -e 's/iofog-agent\\(.*\\):/\\1/'", packageName, packageName)
-	stdout, _, err := utils.ExecuteCommand(cmd)
-	if err != nil || stdout == "" {
-		return "", nil // Return empty if not found
+	stdout, _, _ := utils.ExecuteCommand(cmd)
+	if stdout == "" {
+		return "", nil
 	}
 
 	return strings.TrimSpace(stdout), nil
@@ -245,8 +245,8 @@ func (d *DnfPackageManager) GetScript(command VersionCommand) string {
 
 func (d *DnfPackageManager) getDevVersion() (string, error) {
 	cmd := fmt.Sprintf("(dnf --showduplicates list installed %s-dev && dnf --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/iofog-agent\\(.*\\).noarch/\\1/'", packageName, packageName)
-	stdout, _, err := utils.ExecuteCommand(cmd)
-	if err != nil || stdout == "" {
+	stdout, _, _ := utils.ExecuteCommand(cmd)
+	if stdout == "" {
 		return "", nil
 	}
 
@@ -318,8 +318,8 @@ func (y *YumPackageManager) GetScript(command VersionCommand) string {
 
 func (y *YumPackageManager) getDevVersion() (string, error) {
 	cmd := fmt.Sprintf("(yum --showduplicates list installed %s-dev && yum --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/iofog-agent\\(.*\\).noarch/\\1/'", packageName, packageName)
-	stdout, _, err := utils.ExecuteCommand(cmd)
-	if err != nil || stdout == "" {
+	stdout, _, _ := utils.ExecuteCommand(cmd)
+	if stdout == "" {
 		return "", nil
 	}
 
@@ -355,7 +355,7 @@ func (c *ContainerPackageManager) UpdateRepository() (bool, error) {
 	return true, nil
 }
 
-func (c *ContainerPackageManager) GetScript(command VersionCommand) string {
+func (c *ContainerPackageManager) GetScript(_ VersionCommand) string {
 	// Container doesn't support version changes via script
 	return ""
 }
@@ -375,7 +375,7 @@ func (w *WindowsPackageManager) UpdateRepository() (bool, error) {
 	return false, fmt.Errorf("Windows version management not implemented")
 }
 
-func (w *WindowsPackageManager) GetScript(command VersionCommand) string {
+func (w *WindowsPackageManager) GetScript(_ VersionCommand) string {
 	return ""
 }
 
@@ -394,7 +394,7 @@ func (u *UnsupportedPackageManager) UpdateRepository() (bool, error) {
 	return false, fmt.Errorf("unsupported platform")
 }
 
-func (u *UnsupportedPackageManager) GetScript(command VersionCommand) string {
+func (u *UnsupportedPackageManager) GetScript(_ VersionCommand) string {
 	return ""
 }
 
@@ -411,10 +411,9 @@ func (h *Handler) detectPackageManager() PackageManager {
 	} else if strings.Contains(distName, "centos") ||
 		strings.Contains(distName, "amazon") {
 		return &YumPackageManager{}
-	} else {
-		logging.LogWarn(moduleName, "it looks like your distribution is not supported")
-		return &UnsupportedPackageManager{}
 	}
+	logging.LogWarn(moduleName, "it looks like your distribution is not supported")
+	return &UnsupportedPackageManager{}
 }
 
 // ChangeVersion performs version change operation
@@ -465,7 +464,7 @@ func (h *Handler) executeChangeVersionScript(command VersionCommand, provisionKe
 	// Execute version controller jar
 	// Note: In Go, we might need to implement this differently
 	// For now, we'll use the same approach as Java
-	cmd := exec.Command("java", "-jar", "/usr/bin/iofog-agentvc.jar", script, provisionKey, maxRestartingTimeout)
+	cmd := exec.Command("java", "-jar", "/usr/bin/iofog-agentvc.jar", script, provisionKey, maxRestartingTimeout) // #nosec G204 -- binary is hardcoded constant; args are from internal package manager
 
 	if err := cmd.Start(); err != nil {
 		logging.LogError(moduleName, "Error executing sh script to change version", err)

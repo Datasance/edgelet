@@ -2,9 +2,10 @@ package docker
 
 import (
 	"context"
+	"errors"
 
 	"github.com/docker/docker/api/types"
-	"github.com/eclipse-iofog/agent-go/internal/models"
+	"github.com/eclipse-iofog/agent/internal/models"
 )
 
 // addDockerEventHandler starts the Docker events handler
@@ -38,7 +39,7 @@ func (c *Client) addDockerEventHandler() {
 				if err != nil {
 					c.logger.Errorf("Docker events error: %v", err)
 					// Try to reconnect
-					if err == context.Canceled {
+					if errors.Is(err, context.Canceled) {
 						return
 					}
 					// Reinitialize client on error

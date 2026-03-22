@@ -4,7 +4,7 @@ package models
 type VolumeMappingType string
 
 const (
-	VolumeMappingTypeVolume     VolumeMappingType = "VOLUME"
-	VolumeMappingTypeBind       VolumeMappingType = "BIND"
+	VolumeMappingTypeVolume      VolumeMappingType = "VOLUME"
+	VolumeMappingTypeBind        VolumeMappingType = "BIND"
 	VolumeMappingTypeVolumeMount VolumeMappingType = "VOLUME_MOUNT"
 )

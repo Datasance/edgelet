@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -66,9 +66,7 @@ func (c *Config) SetConfig(configMap map[string]interface{}) map[string]string {
 		valueStr := fmt.Sprintf("%v", value)
 
 		// Remove leading "+" if present
-		if strings.HasPrefix(valueStr, "+") {
-			valueStr = valueStr[1:]
-		}
+		valueStr = strings.TrimPrefix(valueStr, "+")
 
 		// Validate
 		if strings.TrimSpace(valueStr) == "" && option != "ac" {
@@ -99,9 +97,9 @@ func (c *Config) SetConfig(configMap map[string]interface{}) map[string]string {
 	// We rely on the file watcher to detect the config file change and trigger reload via SIGHUP
 	// This prevents double reloads (one explicit, one from watcher)
 	/*
-	if len(errorMap) == 0 {
-		go c.notifyModulesOfConfigChangeAsync()
-	}
+		if len(errorMap) == 0 {
+			go c.notifyModulesOfConfigChangeAsync()
+		}
 	*/
 
 	return errorMap
@@ -116,7 +114,7 @@ func (c *Config) NotifyModulesOfConfigChange() error {
 }
 
 // setConfigField sets a specific config field value
-func (c *Config) setConfigField(fieldName, value, option string) error {
+func (c *Config) setConfigField(fieldName, value, _ string) error {
 	switch fieldName {
 	case "diskLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -124,11 +122,15 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid disk limit: %w", err)
 		}
 		c.DiskLimit = val
-		c.setYamlProperty("diskLimit", value)
+		if err := c.setYamlProperty("diskLimit", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "diskDirectory":
 		c.DiskDirectory = value
-		c.setYamlProperty("diskDirectory", value)
+		if err := c.setYamlProperty("diskDirectory", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "memoryLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -136,7 +138,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid memory limit: %w", err)
 		}
 		c.MemoryLimit = val
-		c.setYamlProperty("memoryLimit", value)
+		if err := c.setYamlProperty("memoryLimit", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "cpuLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -144,23 +148,33 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid CPU limit: %w", err)
 		}
 		c.CPULimit = val
-		c.setYamlProperty("cpuLimit", value)
+		if err := c.setYamlProperty("cpuLimit", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "controllerURL":
 		c.ControllerURL = value
-		c.setYamlProperty("controllerUrl", value)
+		if err := c.setYamlProperty("controllerUrl", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "controllerCert":
 		c.ControllerCert = value
-		c.setYamlProperty("controllerCert", value)
+		if err := c.setYamlProperty("controllerCert", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "dockerURL":
 		c.DockerURL = value
-		c.setYamlProperty("dockerUrl", value)
+		if err := c.setYamlProperty("dockerUrl", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "networkInterface":
 		c.NetworkInterface = value
-		c.setYamlProperty("networkInterface", value)
+		if err := c.setYamlProperty("networkInterface", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "logDiskLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -168,11 +182,15 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid log disk limit: %w", err)
 		}
 		c.LogDiskLimit = val
-		c.setYamlProperty("logDiskLimit", value)
+		if err := c.setYamlProperty("logDiskLimit", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "logDiskDirectory":
 		c.LogDiskDirectory = value
-		c.setYamlProperty("logDiskDirectory", value)
+		if err := c.setYamlProperty("logDiskDirectory", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "logFileCount":
 		val, err := strconv.Atoi(value)
@@ -180,11 +198,15 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid log file count: %w", err)
 		}
 		c.LogFileCount = val
-		c.setYamlProperty("logFileCount", value)
+		if err := c.setYamlProperty("logFileCount", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "logLevel":
 		c.LogLevel = value
-		c.setYamlProperty("logLevel", value)
+		if err := c.setYamlProperty("logLevel", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "statusFrequency":
 		val, err := strconv.Atoi(value)
@@ -192,7 +214,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid status frequency: %w", err)
 		}
 		c.StatusFrequency = val
-		c.setYamlProperty("statusFrequency", value)
+		if err := c.setYamlProperty("statusFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "changeFrequency":
 		val, err := strconv.Atoi(value)
@@ -200,7 +224,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid change frequency: %w", err)
 		}
 		c.ChangeFrequency = val
-		c.setYamlProperty("changeFrequency", value)
+		if err := c.setYamlProperty("changeFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "postDiagnosticsFreq":
 		val, err := strconv.Atoi(value)
@@ -208,7 +234,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid post diagnostics frequency: %w", err)
 		}
 		c.PostDiagnosticsFreq = val
-		c.setYamlProperty("postDiagnosticsFreq", value)
+		if err := c.setYamlProperty("postDiagnosticsFreq", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "deviceScanFrequency":
 		val, err := strconv.Atoi(value)
@@ -216,11 +244,15 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid device scan frequency: %w", err)
 		}
 		c.DeviceScanFrequency = val
-		c.setYamlProperty("deviceScanFrequency", value)
+		if err := c.setYamlProperty("deviceScanFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "watchdogEnabled":
 		c.WatchdogEnabled = strings.ToLower(value) != "off"
-		c.setYamlProperty("watchdogEnabled", value)
+		if err := c.setYamlProperty("watchdogEnabled", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "edgeGuardFrequency":
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -228,15 +260,21 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid edge guard frequency: %w", err)
 		}
 		c.EdgeGuardFrequency = val
-		c.setYamlProperty("edgeGuardFrequency", value)
+		if err := c.setYamlProperty("edgeGuardFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "gpsMode":
 		c.GPSMode = value
-		c.setYamlProperty("gpsMode", value)
+		if err := c.setYamlProperty("gpsMode", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "gpsDevice":
 		c.GPSDevice = value
-		c.setYamlProperty("gpsDevice", value)
+		if err := c.setYamlProperty("gpsDevice", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "gpsScanFrequency":
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -244,15 +282,21 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid GPS scan frequency: %w", err)
 		}
 		c.GPSScanFrequency = val
-		c.setYamlProperty("gpsScanFrequency", value)
+		if err := c.setYamlProperty("gpsScanFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "arch":
 		c.Arch = value
-		c.setYamlProperty("arch", value)
+		if err := c.setYamlProperty("arch", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "secureMode":
 		c.SecureMode = strings.ToLower(value) != "off"
-		c.setYamlProperty("secureMode", value)
+		if err := c.setYamlProperty("secureMode", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "dockerPruningFrequency":
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -260,7 +304,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid docker pruning frequency: %w", err)
 		}
 		c.DockerPruningFrequency = val
-		c.setYamlProperty("dockerPruningFrequency", value)
+		if err := c.setYamlProperty("dockerPruningFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "availableDiskThreshold":
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -268,7 +314,9 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid available disk threshold: %w", err)
 		}
 		c.AvailableDiskThreshold = val
-		c.setYamlProperty("availableDiskThreshold", value)
+		if err := c.setYamlProperty("availableDiskThreshold", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "readyToUpgradeScanFrequency":
 		val, err := strconv.Atoi(value)
@@ -276,15 +324,21 @@ func (c *Config) setConfigField(fieldName, value, option string) error {
 			return fmt.Errorf("invalid ready to upgrade scan frequency: %w", err)
 		}
 		c.ReadyToUpgradeScanFrequency = val
-		c.setYamlProperty("readyToUpgradeScanFrequency", value)
+		if err := c.setYamlProperty("readyToUpgradeScanFrequency", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "devMode":
 		c.DevMode = strings.ToLower(value) != "off"
-		c.setYamlProperty("devMode", value)
+		if err := c.setYamlProperty("devMode", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	case "timeZone":
 		c.TimeZone = value
-		c.setYamlProperty("timeZone", value)
+		if err := c.setYamlProperty("timeZone", value); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
 
 	default:
 		return fmt.Errorf("unknown config field: %s", fieldName)
@@ -309,16 +363,6 @@ func (c *Config) setYamlProperty(key, value string) error {
 }
 
 // saveConfigUpdates saves configuration updates to disk
-// Must be called while holding the config lock
-func (c *Config) saveConfigUpdates() error {
-	c.mu.RLock()
-	configPath := c.configPath
-	yamlConfig := c.yamlConfig
-	c.mu.RUnlock()
-
-	return c.saveConfigUpdatesWithValues(configPath, yamlConfig)
-}
-
 // saveConfigUpdatesLocked saves configuration updates to disk
 // Must be called while holding the config lock (doesn't acquire lock)
 func (c *Config) saveConfigUpdatesLocked() error {
@@ -414,18 +458,4 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	yamlConfig.Profiles[currentProfile.FullValue()] = defaultProfile
 
 	return yamlConfig
-}
-
-// notifyModulesOfConfigChangeAsync notifies modules asynchronously when configuration changes
-// DEPRECATED: We now rely on file watcher to trigger reload via SIGHUP
-func (c *Config) notifyModulesOfConfigChangeAsync() {
-	// Trigger the reload via SIGHUP
-	// logging.LogDebug(setConfigModuleName, "Sending SIGHUP to self to trigger config reload")
-	// if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
-	// 	logging.LogError(setConfigModuleName, "Failed to send SIGHUP to self", err)
-	// 	// Fallback to direct callback if signal fails (e.g. Windows)
-	// 	if err := c.TriggerReloadCallback(); err != nil {
-	// 		logging.LogError(setConfigModuleName, "Failed to trigger reload callback", err)
-	// 	}
-	// }
 }

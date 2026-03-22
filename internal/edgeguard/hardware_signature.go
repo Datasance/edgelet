@@ -1,7 +1,7 @@
 package edgeguard
 
 import (
-	"github.com/eclipse-iofog/agent-go/internal/hardware"
+	"github.com/eclipse-iofog/agent/internal/hardware"
 )
 
 // DeleteHardwareSignature deletes the hardware signature file (exported for backward compatibility)

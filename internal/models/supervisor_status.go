@@ -14,10 +14,10 @@ const (
 // SupervisorStatus represents the Supervisor status
 type SupervisorStatus struct {
 	DaemonStatus      ModuleStatus   `json:"daemonStatus" yaml:"daemonStatus"`           // Daemon status
-	ModulesStatus     []ModuleStatus `json:"modulesStatus" yaml:"modulesStatus"`       // Status of each module
-	DaemonLastStart   int64          `json:"daemonLastStart" yaml:"daemonLastStart"`   // Timestamp of last start
+	ModulesStatus     []ModuleStatus `json:"modulesStatus" yaml:"modulesStatus"`         // Status of each module
+	DaemonLastStart   int64          `json:"daemonLastStart" yaml:"daemonLastStart"`     // Timestamp of last start
 	OperationDuration int64          `json:"operationDuration" yaml:"operationDuration"` // Operating duration in milliseconds
-	WarningMessage    string         `json:"warningMessage" yaml:"warningMessage"`      // Warning message
+	WarningMessage    string         `json:"warningMessage" yaml:"warningMessage"`       // Warning message
 }
 
 // NewSupervisorStatus creates a new SupervisorStatus with default values

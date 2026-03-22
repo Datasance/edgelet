@@ -9,14 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/auth"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -49,30 +48,13 @@ func NewAPIClient() (*APIClient, error) {
 		}
 	}
 
-	// #region agent log
-	logEntry := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run3",
-		"hypothesisId": "G",
-		"location":     "api_client.go:38",
-		"message":      "NewAPIClient: checking config",
-		"data":         map[string]interface{}{"controllerURL": cfg.ControllerURL, "controllerURL_empty": cfg.ControllerURL == ""},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
 	// Create HTTP client with timeout
 	httpClient := &http.Client{
 		Timeout: requestTimeout,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: !cfg.SecureMode,
+				MinVersion:         tls.VersionTLS12,
+				InsecureSkipVerify: !cfg.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
 			},
 		},
 	}
@@ -113,7 +95,8 @@ func NewAPIClient() (*APIClient, error) {
 			certPool.AddCert(cert)
 			httpClient.Transport = &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs: certPool,
+					MinVersion: tls.VersionTLS12,
+					RootCAs:    certPool,
 				},
 			}
 		}
@@ -121,24 +104,6 @@ func NewAPIClient() (*APIClient, error) {
 
 	// Normalize baseURL - remove trailing slash if present to avoid double slashes
 	baseURL := strings.TrimSuffix(cfg.ControllerURL, "/")
-
-	// #region agent log
-	logEntry2 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run3",
-		"hypothesisId": "G",
-		"location":     "api_client.go:94",
-		"message":      "NewAPIClient: baseURL after trim",
-		"data":         map[string]interface{}{"baseURL": baseURL, "baseURL_empty": baseURL == ""},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry2); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	return &APIClient{
 		baseURL:        baseURL,
@@ -225,65 +190,25 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 		req.URL.RawQuery = q.Encode()
 	}
 
-	// Generate request ID for logging (matching Java: UUID requestId = UUID.randomUUID())
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
-	
-	// Log request (matching Java: logDebug("Orchestrator", String.format("(%s) %s %s", requestId, requestType.name(), uri.toString())))
-	logging.LogDebug("Orchestrator", fmt.Sprintf("(%s) %s %s", requestId, string(requestType), req.URL.String()))
+	// Generate request ID for logging (matching Java: UUID requestID = UUID.randomUUID())
+	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// Log request (matching Java: logDebug("Orchestrator", String.format("(%s) %s %s", requestID, requestType.name(), uri.toString())))
+	logging.LogDebug("Orchestrator", fmt.Sprintf("(%s) %s %s", requestID, string(requestType), req.URL.String()))
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	
-	// Add Request-Id header (matching Java: req.addHeader("Request-Id", requestId.toString()))
-	req.Header.Set("Request-Id", requestId)
+
+	// Add Request-Id header (matching Java: req.addHeader("Request-Id", requestID.toString()))
+	req.Header.Set("Request-Id", requestID)
 
 	// Add JWT token only for non-provisioning requests
 	// Provisioning doesn't require JWT since agent doesn't have private key yet
 	if command != "provision" {
 		cfg := config.GetInstance()
-		// #region agent log
-		logEntry := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run7",
-			"hypothesisId": "L",
-			"location":     "api_client.go:233",
-			"message":      "doRequest: before GenerateJWT",
-			"data": map[string]interface{}{
-				"command":        command,
-				"has_uuid":       cfg.IOFogUUID != "",
-				"has_privateKey": cfg.PrivateKey != "",
-				"uuid":           cfg.IOFogUUID,
-				"privateKey_len": len(cfg.PrivateKey),
-			},
-			"timestamp": time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 
 		token, err := c.jwtManager.GenerateJWT()
 		if err != nil {
-			// #region agent log
-			logEntry2 := map[string]interface{}{
-				"sessionId":    "debug-session",
-				"runId":        "run7",
-				"hypothesisId": "L",
-				"location":     "api_client.go:252",
-				"message":      "doRequest: JWT generation failed",
-				"data":         map[string]interface{}{"error": err.Error(), "command": command},
-				"timestamp":    time.Now().UnixMilli(),
-			}
-			if logBytes, err := json.Marshal(logEntry2); err == nil {
-				if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-					f.WriteString(string(logBytes) + "\n")
-					f.Close()
-				}
-			}
-			// #endregion
 
 			// If JWT generation fails and we're not provisioned, that's expected
 			// Only fail if we should have a private key (i.e., we're provisioned)
@@ -293,23 +218,6 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 			// Otherwise, continue without JWT (for unprovisioned agents)
 			logging.LogDebug("Field Agent", "Skipping JWT for unprovisioned agent")
 		} else {
-			// #region agent log
-			logEntry3 := map[string]interface{}{
-				"sessionId":    "debug-session",
-				"runId":        "run7",
-				"hypothesisId": "L",
-				"location":     "api_client.go:270",
-				"message":      "doRequest: JWT generated successfully",
-				"data":         map[string]interface{}{"token_length": len(token), "command": command},
-				"timestamp":    time.Now().UnixMilli(),
-			}
-			if logBytes, err := json.Marshal(logEntry3); err == nil {
-				if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-					f.WriteString(string(logBytes) + "\n")
-					f.Close()
-				}
-			}
-			// #endregion
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
@@ -381,15 +289,15 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 	// Ping uses a special endpoint: /api/v3/status (not /api/v3/agent/status)
 	// This matches Java: getJSON(controllerUrl + "status")
 	url := c.baseURL + "/status"
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create ping request: %w", err)
 	}
-	
+
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Add JWT token for ping
 	cfg := config.GetInstance()
 	if cfg.IOFogUUID != "" && cfg.PrivateKey != "" {
@@ -401,14 +309,14 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 			req.Header.Set("Authorization", "Bearer "+jwt)
 		}
 	}
-	
+
 	// Execute request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("ping request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Check status code
 	if resp.StatusCode == http.StatusNotFound {
 		return false, fmt.Errorf("not found: controller endpoint not found")
@@ -416,13 +324,13 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("ping failed with status %d", resp.StatusCode)
 	}
-	
+
 	// Parse response
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return false, fmt.Errorf("failed to decode ping response: %w", err)
 	}
-	
+
 	_, exists := result["status"]
 	return exists, nil
 }

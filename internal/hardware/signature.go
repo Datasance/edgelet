@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -42,7 +42,7 @@ func ReadHardwareSignature() (string, error) {
 		return "", nil
 	}
 
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path constructed from known config directory constant
 	if err != nil {
 		return "", fmt.Errorf("failed to read hardware signature file: %w", err)
 	}
@@ -61,23 +61,23 @@ func WriteHardwareSignature(signature string) error {
 	}
 
 	configDir := filepath.Dir(filePath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0700); err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Failed to create config directory: %s", configDir), err)
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	err = os.WriteFile(filePath, []byte(signature), 0640)
+	err = os.WriteFile(filePath, []byte(signature), 0600)
 	if err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Failed to write hardware signature file: %s", filePath), err)
 		return fmt.Errorf("failed to write hardware signature file: %w", err)
 	}
 
-	if fileInfo, err := os.Stat(filePath); err != nil {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Hardware signature file was written but cannot be verified: %s", filePath), err)
 		return fmt.Errorf("failed to verify hardware signature file creation: %w", err)
-	} else {
-		logging.LogInfo(moduleName, fmt.Sprintf("Successfully created hardware signature file: %s (size: %d bytes)", filePath, fileInfo.Size()))
 	}
+	logging.LogInfo(moduleName, fmt.Sprintf("Successfully created hardware signature file: %s (size: %d bytes)", filePath, fileInfo.Size()))
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Wrote hardware signature to file: %s (length: %d)", filePath, len(signature)))
 	return nil

@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -73,14 +73,6 @@ func (l *LocalAPI) Update() {
 	// This will be implemented to trigger control signals
 	// For now, just log
 	logging.LogDebug(localAPIModuleName, "Finish the real-time control signal when the configuration updated")
-}
-
-// UpdateEdgeResource is called when edge resources are updated
-func (l *LocalAPI) UpdateEdgeResource() {
-	logging.LogDebug(localAPIModuleName, "Start the real-time control signal when the edge resources are updated")
-	// This will be implemented to trigger resource signals
-	// For now, just log
-	logging.LogDebug(localAPIModuleName, "Finished the real-time control signal when the edge resources are updated")
 }
 
 // GetName returns the module name

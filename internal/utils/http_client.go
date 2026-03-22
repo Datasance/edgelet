@@ -20,10 +20,9 @@ const (
 
 // HTTPClient is a wrapper around http.Client with retry logic and JWT support
 type HTTPClient struct {
-	client      *http.Client
-	baseURL     string
-	jwtToken    string
-	controllerCert *x509.Certificate
+	client   *http.Client
+	baseURL  string
+	jwtToken string
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -54,7 +53,8 @@ func (c *HTTPClient) SetControllerCert(cert *x509.Certificate) error {
 
 	// Create TLS config
 	tlsConfig := &tls.Config{
-		RootCAs: certPool,
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    certPool,
 	}
 
 	// Create transport with TLS config

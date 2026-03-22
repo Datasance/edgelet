@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"context"
 	"sync"
 )
 
@@ -17,26 +18,31 @@ func NewTaskQueue(bufferSize int) *TaskQueue {
 	}
 }
 
-// Add adds a task to the queue
+// Add adds a task to the queue. Silently drops the task if the queue is full
+// (capacity = 100); this should never happen under normal operating conditions.
 func (q *TaskQueue) Add(task *ContainerTask) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	
+
 	select {
 	case q.tasks <- task:
-		// Task added successfully
 	default:
-		// Queue is full - this shouldn't happen in normal operation
-		// In production, we might want to log this or handle it differently
+		// Queue full — drop task rather than block.
 	}
 }
 
-// Get retrieves a task from the queue (blocks until available)
-func (q *TaskQueue) Get() *ContainerTask {
-	return <-q.tasks
+// Get blocks until a task is available or the context is canceled.
+// Returns (task, true) on success and (nil, false) when the context is done.
+func (q *TaskQueue) Get(ctx context.Context) (*ContainerTask, bool) {
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case task := <-q.tasks:
+		return task, true
+	}
 }
 
-// TryGet attempts to retrieve a task from the queue without blocking
+// TryGet attempts to retrieve a task from the queue without blocking.
 func (q *TaskQueue) TryGet() (*ContainerTask, bool) {
 	select {
 	case task := <-q.tasks:
@@ -46,14 +52,14 @@ func (q *TaskQueue) TryGet() (*ContainerTask, bool) {
 	}
 }
 
-// Size returns the current number of tasks in the queue
+// Size returns the current number of tasks in the queue.
 func (q *TaskQueue) Size() int {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return len(q.tasks)
 }
 
-// Close closes the task queue
+// Close closes the task queue channel.
 func (q *TaskQueue) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()

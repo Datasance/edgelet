@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -45,7 +45,7 @@ func GetStraceInstance() *StraceDiagnosticManager {
 func (sdm *StraceDiagnosticManager) GetMonitoringMicroservices() []*MicroserviceStraceData {
 	sdm.mu.RLock()
 	defer sdm.mu.RUnlock()
-	
+
 	result := make([]*MicroserviceStraceData, len(sdm.monitoringMicroservices))
 	copy(result, sdm.monitoringMicroservices)
 	return result
@@ -93,23 +93,12 @@ func (sdm *StraceDiagnosticManager) UpdateMonitoringMicroservices(diagnosticData
 // manageMicroservice enables or disables strace for a microservice
 func (sdm *StraceDiagnosticManager) manageMicroservice(microserviceUUID string, strace bool) {
 	if strace {
-		sdm.EnableMicroserviceStraceDiagnostics(microserviceUUID)
+		if err := sdm.EnableMicroserviceStraceDiagnostics(microserviceUUID); err != nil {
+			logging.LogWarn(straceModuleName, fmt.Sprintf("Failed to enable strace for microservice %s: %v", microserviceUUID, err))
+		}
 	} else {
 		sdm.DisableMicroserviceStraceDiagnostics(microserviceUUID)
 	}
-}
-
-// getStraceDataByMicroserviceUuid finds strace data for a microservice
-func (sdm *StraceDiagnosticManager) getStraceDataByMicroserviceUuid(microserviceUUID string) *MicroserviceStraceData {
-	sdm.mu.RLock()
-	defer sdm.mu.RUnlock()
-
-	for _, data := range sdm.monitoringMicroservices {
-		if data.GetMicroserviceUUID() == microserviceUUID {
-			return data
-		}
-	}
-	return nil
 }
 
 // EnableMicroserviceStraceDiagnostics enables strace diagnostics for a microservice
@@ -207,7 +196,7 @@ func (sdm *StraceDiagnosticManager) runStrace(microserviceStraceData *Microservi
 	straceCommand := fmt.Sprintf("strace -p %d", pid)
 
 	// Create command
-	cmd := exec.Command("/bin/sh", "-c", straceCommand)
+	cmd := exec.Command("/bin/sh", "-c", straceCommand) // #nosec G204 -- binary is /bin/sh constant; command string is constructed from internal PID only
 
 	// Get stdout pipe
 	stdout, err := cmd.StdoutPipe()
@@ -227,7 +216,7 @@ func (sdm *StraceDiagnosticManager) runStrace(microserviceStraceData *Microservi
 		defer stdout.Close()
 		buf := make([]byte, 4096)
 		line := ""
-		
+
 		for microserviceStraceData.GetStraceRun() {
 			n, err := stdout.Read(buf)
 			if err != nil {
@@ -250,7 +239,9 @@ func (sdm *StraceDiagnosticManager) runStrace(microserviceStraceData *Microservi
 
 		// Kill strace process when done
 		if cmd.Process != nil {
-			cmd.Process.Kill()
+			if kerr := cmd.Process.Kill(); kerr != nil {
+				logging.LogWarn(straceModuleName, fmt.Sprintf("Failed to kill strace process: %v", kerr))
+			}
 		}
 	}()
 

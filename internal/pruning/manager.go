@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/processmanager"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/processmanager"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -57,6 +58,12 @@ func (m *Manager) SetProcessManager(pm *processmanager.ProcessManager) {
 // Start starts the Docker Pruning Manager
 func (m *Manager) Start() error {
 	logging.LogInfo(moduleName, "Starting Docker Pruning Manager")
+
+	// Reset context on each start to support supervisor restart cycles
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.ctx, m.cancel = context.WithCancel(context.Background())
 
 	// Start threshold-based pruning (check every 30 minutes)
 	m.thresholdTicker = time.NewTicker(30 * time.Minute)
@@ -124,10 +131,29 @@ func (m *Manager) triggerPruneOnThresholdBreach() {
 	}
 	m.mu.Unlock()
 
-	// TODO: Get available disk from ResourceConsumptionManager
-	// For now, we'll skip threshold-based pruning until ResourceConsumptionManager is available
-	// This is a placeholder implementation
-	logging.LogDebug(moduleName, "Threshold-based pruning check (requires ResourceConsumptionManager)")
+	rcmStatus := statusreporter.GetInstance().GetResourceConsumptionManagerStatus()
+	if rcmStatus == nil {
+		return
+	}
+
+	// AvailableDiskThreshold is in MB; AvailableDisk is in bytes
+	thresholdBytes := m.config.AvailableDiskThreshold * 1024 * 1024
+	if rcmStatus.AvailableDisk < thresholdBytes {
+		m.mu.Lock()
+		m.isPruning = true
+		m.mu.Unlock()
+		defer func() {
+			m.mu.Lock()
+			m.isPruning = false
+			m.mu.Unlock()
+		}()
+
+		logging.LogInfo(moduleName, "Disk threshold breached, pruning Docker images")
+		unwantedImages := m.getUnwantedImagesList()
+		if len(unwantedImages) > 0 {
+			m.removeImagesByID(unwantedImages)
+		}
+	}
 }
 
 // triggerPruneOnFrequency triggers prune on frequency interval
@@ -152,7 +178,7 @@ func (m *Manager) triggerPruneOnFrequency() {
 	// This requires ProcessManager integration
 	unwantedImages := m.getUnwantedImagesList()
 	if len(unwantedImages) > 0 {
-		m.removeImagesById(unwantedImages)
+		m.removeImagesByID(unwantedImages)
 	}
 
 	logging.LogInfo(moduleName, "Pruning of unwanted images as frequency interval finished")
@@ -186,7 +212,7 @@ func (m *Manager) getUnwantedImagesList() []string {
 		// Check if container is managed by ioFog (has ioFog label)
 		isIoFog := false
 		for key := range cont.Labels {
-			if key == "iofog.uuid" || key == "iofog.microservice" {
+			if key == "iofog-uuid" || key == "iofog.uuid" {
 				isIoFog = true
 				break
 			}
@@ -256,8 +282,8 @@ func (m *Manager) getUnwantedImagesList() []string {
 	return imageIDsToBePruned
 }
 
-// removeImagesById removes images by their IDs
-func (m *Manager) removeImagesById(imageIDs []string) {
+// removeImagesByID removes images by their IDs
+func (m *Manager) removeImagesByID(imageIDs []string) {
 	logging.LogInfo(moduleName, fmt.Sprintf("Start removing images by ID, size: %d", len(imageIDs)))
 	for _, id := range imageIDs {
 		logging.LogInfo(moduleName, fmt.Sprintf("Removing unwanted image id: %s", id))
@@ -275,7 +301,7 @@ func (m *Manager) PruneAgent() string {
 	// Get unwanted images and remove them
 	unwantedImages := m.getUnwantedImagesList()
 	if len(unwantedImages) > 0 {
-		m.removeImagesById(unwantedImages)
+		m.removeImagesByID(unwantedImages)
 		logging.LogInfo(moduleName, fmt.Sprintf("Pruned %d dangling docker images", len(unwantedImages)))
 		return fmt.Sprintf("\nSuccess - pruned %d dangling docker images", len(unwantedImages))
 	}

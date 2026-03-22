@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent-go/internal/fieldagent"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -46,7 +47,9 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 		jsonData, _ := json.Marshal(response)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		if _, werr := w.Write(jsonData); werr != nil {
+			logging.LogWarn(deprovisionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+		}
 		return
 	}
 
@@ -61,7 +64,9 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 		jsonData, _ := json.Marshal(response)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		if _, werr := w.Write(jsonData); werr != nil {
+			logging.LogWarn(deprovisionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+		}
 		return
 	}
 
@@ -79,6 +84,8 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(deprovisionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(deprovisionHandlerModuleName, "Finished processing deprovision request")
 }

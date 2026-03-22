@@ -14,41 +14,42 @@ type Microservice struct {
 	ImageName        string `json:"imageName" yaml:"imageName"`
 
 	// Optional fields
-	PortMappings      []*PortMapping  `json:"portMappings,omitempty" yaml:"portMappings,omitempty"`
-	Config            *string          `json:"config,omitempty" yaml:"config,omitempty"`
-	RunAsUser         *string          `json:"runAsUser,omitempty" yaml:"runAsUser,omitempty"`
-	Platform          *string          `json:"platform,omitempty" yaml:"platform,omitempty"`
-	Runtime           *string          `json:"runtime,omitempty" yaml:"runtime,omitempty"`
-	Routes            []string         `json:"routes,omitempty" yaml:"routes,omitempty"`
-	ContainerID       string           `json:"containerId" yaml:"containerId"`
-	RegistryID        int              `json:"registryId" yaml:"registryId"`
+	PortMappings       []*PortMapping   `json:"portMappings,omitempty" yaml:"portMappings,omitempty"`
+	Config             *string          `json:"config,omitempty" yaml:"config,omitempty"`
+	RunAsUser          *string          `json:"runAsUser,omitempty" yaml:"runAsUser,omitempty"`
+	Platform           *string          `json:"platform,omitempty" yaml:"platform,omitempty"`
+	Runtime            *string          `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	ContainerID        string           `json:"containerId" yaml:"containerId"`
+	RegistryID         int              `json:"registryId" yaml:"registryId"`
 	ContainerIPAddress *string          `json:"containerIpAddress,omitempty" yaml:"containerIpAddress,omitempty"`
-	Rebuild           bool             `json:"rebuild" yaml:"rebuild"`
-	HostNetworkMode   bool             `json:"hostNetworkMode" yaml:"hostNetworkMode"`
-	IsPrivileged      bool             `json:"isPrivileged" yaml:"isPrivileged"`
-	LogSize           int64            `json:"logSize" yaml:"logSize"`
-	VolumeMappings    []*VolumeMapping `json:"volumeMappings,omitempty" yaml:"volumeMappings,omitempty"`
-	IsUpdating        bool             `json:"isUpdating" yaml:"isUpdating"`
-	EnvVars           []*EnvVar        `json:"envVars,omitempty" yaml:"envVars,omitempty"`
-	Args              []string         `json:"args,omitempty" yaml:"args,omitempty"`
-	CdiDevs           []string         `json:"cdiDevs,omitempty" yaml:"cdiDevs,omitempty"`
-	Annotations       *string          `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	CapAdd            []string         `json:"capAdd,omitempty" yaml:"capAdd,omitempty"`
-	CapDrop           []string         `json:"capDrop,omitempty" yaml:"capDrop,omitempty"`
-	ExtraHosts        []string         `json:"extraHosts,omitempty" yaml:"extraHosts,omitempty"`
-	IsConsumer        bool             `json:"isConsumer" yaml:"isConsumer"`
-	IsRouter          bool             `json:"isRouter" yaml:"isRouter"`
-	PidMode           *string          `json:"pidMode,omitempty" yaml:"pidMode,omitempty"`
-	IpcMode           *string          `json:"ipcMode,omitempty" yaml:"ipcMode,omitempty"`
-	ExecEnabled       bool             `json:"execEnabled" yaml:"execEnabled"`
-	Schedule          int              `json:"schedule" yaml:"schedule"`
-	CpuSetCpus        *string          `json:"cpuSetCpus,omitempty" yaml:"cpuSetCpus,omitempty"`
-	MemoryLimit       *int64           `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"` // in bytes
+	Rebuild            bool             `json:"rebuild" yaml:"rebuild"`
+	HostNetworkMode    bool             `json:"hostNetworkMode" yaml:"hostNetworkMode"`
+	IsPrivileged       bool             `json:"isPrivileged" yaml:"isPrivileged"`
+	LogSize            int64            `json:"logSize" yaml:"logSize"`
+	VolumeMappings     []*VolumeMapping `json:"volumeMappings,omitempty" yaml:"volumeMappings,omitempty"`
+	IsUpdating         bool             `json:"isUpdating" yaml:"isUpdating"`
+	EnvVars            []*EnvVar        `json:"envVars,omitempty" yaml:"envVars,omitempty"`
+	Args               []string         `json:"args,omitempty" yaml:"args,omitempty"`
+	CdiDevs            []string         `json:"cdiDevs,omitempty" yaml:"cdiDevs,omitempty"`
+	Annotations        *string          `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	CapAdd             []string         `json:"capAdd,omitempty" yaml:"capAdd,omitempty"`
+	CapDrop            []string         `json:"capDrop,omitempty" yaml:"capDrop,omitempty"`
+	ExtraHosts         []string         `json:"extraHosts,omitempty" yaml:"extraHosts,omitempty"`
+	IsRouter           bool             `json:"isRouter" yaml:"isRouter"`
+	PidMode            *string          `json:"pidMode,omitempty" yaml:"pidMode,omitempty"`
+	IpcMode            *string          `json:"ipcMode,omitempty" yaml:"ipcMode,omitempty"`
+	ExecEnabled        bool             `json:"execEnabled" yaml:"execEnabled"`
+	MicroserviceName   string           `json:"name" yaml:"name"`
+	ApplicationName    string           `json:"application" yaml:"application"`
+	IsNats             bool             `json:"isNats" yaml:"isNats"`
+	Schedule           int              `json:"schedule" yaml:"schedule"`
+	CPUSetCpus         *string          `json:"cpuSetCpus,omitempty" yaml:"cpuSetCpus,omitempty"`
+	MemoryLimit        *int64           `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"` // in bytes
 
 	// Internal state fields
-	Delete            bool       `json:"delete" yaml:"delete"`
-	DeleteWithCleanup bool       `json:"deleteWithCleanup" yaml:"deleteWithCleanup"`
-	IsStuckInRestart  bool       `json:"isStuckInRestart" yaml:"isStuckInRestart"`
+	Delete            bool         `json:"delete" yaml:"delete"`
+	DeleteWithCleanup bool         `json:"deleteWithCleanup" yaml:"deleteWithCleanup"`
+	IsStuckInRestart  bool         `json:"isStuckInRestart" yaml:"isStuckInRestart"`
 	Healthcheck       *Healthcheck `json:"healthcheck,omitempty" yaml:"healthcheck,omitempty"`
 
 	// Mutex for thread-safe access to IsUpdating
@@ -61,15 +62,14 @@ func NewMicroservice(microserviceUUID, imageName string) *Microservice {
 		MicroserviceUUID: microserviceUUID,
 		ImageName:        imageName,
 		ContainerID:      "",
-		PortMappings:      make([]*PortMapping, 0),
-		Routes:            make([]string, 0),
-		VolumeMappings:    make([]*VolumeMapping, 0),
-		EnvVars:           make([]*EnvVar, 0),
-		Args:              make([]string, 0),
-		CdiDevs:           make([]string, 0),
-		CapAdd:            make([]string, 0),
-		CapDrop:           make([]string, 0),
-		ExtraHosts:        make([]string, 0),
+		PortMappings:     make([]*PortMapping, 0),
+		VolumeMappings:   make([]*VolumeMapping, 0),
+		EnvVars:          make([]*EnvVar, 0),
+		Args:             make([]string, 0),
+		CdiDevs:          make([]string, 0),
+		CapAdd:           make([]string, 0),
+		CapDrop:          make([]string, 0),
+		ExtraHosts:       make([]string, 0),
 	}
 }
 

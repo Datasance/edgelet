@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/gps"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/gps"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -22,7 +22,7 @@ func NewGPSHandler() *GPSHandler {
 }
 
 // HandleGetGPS handles GET /v2/gps
-func (h *GPSHandler) HandleGetGPS(w http.ResponseWriter, r *http.Request) {
+func (h *GPSHandler) HandleGetGPS(w http.ResponseWriter, _ *http.Request) {
 	logging.LogDebug(gpsHandlerModuleName, "Handling GET /v2/gps")
 
 	gpsManager := gps.GetInstance()

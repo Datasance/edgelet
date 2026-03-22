@@ -2,7 +2,7 @@ package models
 
 // ResourceManagerStatus represents the Resource Manager status
 type ResourceManagerStatus struct {
-	HWInfo            string `json:"hwInfo" yaml:"hwInfo"`                       // Hardware information from HAL
+	HWInfo             string `json:"hwInfo" yaml:"hwInfo"`                         // Hardware information from HAL
 	USBConnectionsInfo string `json:"usbConnectionsInfo" yaml:"usbConnectionsInfo"` // USB connections information from HAL
 }
 

@@ -7,68 +7,61 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/eclipse-iofog/agent-go/internal/config"
+	"github.com/docker/docker/client"
 )
 
-// ensureNamespaceNetworkExists ensures the namespace network exists
-func (c *Client) ensureNamespaceNetworkExists() error {
-	// Get client without lock (we're already in locked context from Init)
+const (
+	iofogNetworkName = "iofog"
+)
+
+// ensureIoFogNetworkExists ensures the fixed "iofog" bridge network exists.
+// Must NOT be called while c.mu is held — use ensureNetworkLockFree instead.
+func (c *Client) ensureIoFogNetworkExists() error {
 	c.mu.RLock()
 	cli := c.client
+	baseCtx := c.ctx
 	c.mu.RUnlock()
 
+	return c.ensureNetworkLockFree(cli, baseCtx)
+}
+
+// ensureNetworkLockFree is the mutex-free implementation; used when the caller
+// already holds c.mu (e.g. inside initDockerClient).
+func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Context) error {
 	if cli == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	cfg := config.GetInstance()
-	namespace := cfg.Namespace
-	if namespace == "" {
-		namespace = "iofog"
-	}
-
-	networkName := fmt.Sprintf("iofog_%s", namespace)
-
-	// Get context without lock (we're already in locked context from Init)
-	c.mu.RLock()
-	baseCtx := c.ctx
-	c.mu.RUnlock()
-
-	// Create timeout context for network operations (5 second timeout)
 	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
 	defer cancel()
 
-	// Check if network exists
 	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", networkName)),
+		Filters: filters.NewArgs(filters.Arg("name", iofogNetworkName)),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
-	// Network exists
 	if len(networks) > 0 {
-		c.logger.Debugf("Namespace network \"%s\" already exists", networkName)
+		c.logger.Debugf("IoFog network \"%s\" already exists", iofogNetworkName)
 		return nil
 	}
 
-	// Create network (use same timeout context)
-	c.logger.Infof("Creating namespace network \"%s\"", networkName)
-	_, err = cli.NetworkCreate(ctx, networkName, types.NetworkCreate{
+	c.logger.Infof("Creating IoFog network \"%s\"", iofogNetworkName)
+	_, err = cli.NetworkCreate(ctx, iofogNetworkName, types.NetworkCreate{
 		Driver: "bridge",
 		Labels: map[string]string{
-			"iofog.namespace": namespace,
+			"iofog": "true",
 		},
 	})
 	if err != nil {
-		// Check if it's a timeout error
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("timeout creating network (exceeded 5s): %w", err)
 		}
 		return fmt.Errorf("failed to create network: %w", err)
 	}
 
-	c.logger.Infof("Successfully created namespace network \"%s\"", networkName)
+	c.logger.Infof("Successfully created IoFog network \"%s\"", iofogNetworkName)
 	return nil
 }
 

@@ -29,21 +29,3 @@ func snakeToCamel(s string) string {
 
 	return result.String()
 }
-
-// camelToSnake converts camelCase to snake_case
-// Example: "diskConsumptionLimit" -> "disk_consumption_limit"
-func camelToSnake(s string) string {
-	if s == "" {
-		return s
-	}
-
-	var result strings.Builder
-	for i, r := range s {
-		if unicode.IsUpper(r) && i > 0 {
-			result.WriteRune('_')
-		}
-		result.WriteRune(unicode.ToLower(r))
-	}
-
-	return result.String()
-}

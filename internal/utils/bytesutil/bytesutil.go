@@ -16,7 +16,7 @@ func CopyOfRange(src []byte, from, to int) []byte {
 // LongToBytes converts a long (int64) to a byte array (big-endian)
 func LongToBytes(x int64) []byte {
 	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(x))
+	binary.BigEndian.PutUint64(b, uint64(x)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 	return b
 }
 
@@ -28,13 +28,13 @@ func BytesToLong(bytes []byte) int64 {
 		copy(padded[8-len(bytes):], bytes)
 		bytes = padded
 	}
-	return int64(binary.BigEndian.Uint64(bytes))
+	return int64(binary.BigEndian.Uint64(bytes)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 }
 
 // IntegerToBytes converts an integer (int32) to a byte array (big-endian)
 func IntegerToBytes(x int) []byte {
 	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, uint32(x))
+	binary.BigEndian.PutUint32(b, uint32(x)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 	return b
 }
 
@@ -46,13 +46,13 @@ func BytesToInteger(bytes []byte) int {
 		copy(padded[4-len(bytes):], bytes)
 		bytes = padded
 	}
-	return int(binary.BigEndian.Uint32(bytes))
+	return int(binary.BigEndian.Uint32(bytes)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 }
 
 // ShortToBytes converts a short (int16) to a byte array (big-endian)
 func ShortToBytes(x int16) []byte {
 	b := make([]byte, 2)
-	binary.BigEndian.PutUint16(b, uint16(x))
+	binary.BigEndian.PutUint16(b, uint16(x)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 	return b
 }
 
@@ -64,7 +64,7 @@ func BytesToShort(bytes []byte) int16 {
 		copy(padded[2-len(bytes):], bytes)
 		bytes = padded
 	}
-	return int16(binary.BigEndian.Uint16(bytes))
+	return int16(binary.BigEndian.Uint16(bytes)) // #nosec G115 -- wire-format conversion; value range is controlled by caller
 }
 
 // StringToBytes converts a string to a byte array (UTF-8)
@@ -94,7 +94,7 @@ func ByteArrayToString(bytes []byte) string {
 	if len(bytes) == 0 {
 		return "[]"
 	}
-	
+
 	result := "["
 	for i, b := range bytes {
 		if i > 0 {
@@ -104,10 +104,10 @@ func ByteArrayToString(bytes []byte) string {
 		if b < 10 {
 			result += string(rune('0' + b))
 		} else if b < 100 {
-			result += string(rune('0' + (b / 10))) + string(rune('0' + (b % 10)))
+			result += string(rune('0'+(b/10))) + string(rune('0'+(b%10)))
 		} else {
 			// For bytes > 99, use three digits
-			result += string(rune('0' + (b / 100))) + string(rune('0' + ((b / 10) % 10))) + string(rune('0' + (b % 10)))
+			result += string(rune('0'+(b/100))) + string(rune('0'+((b/10)%10))) + string(rune('0'+(b%10)))
 		}
 	}
 	result += "]"

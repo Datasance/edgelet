@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/auth"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -51,22 +51,6 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logging.LogDebug(middlewareModuleName, r.Method+" "+r.URL.Path)
-		next(w, r)
-	}
-}
-
-// corsMiddleware adds CORS headers (if needed)
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		
 		next(w, r)
 	}
 }

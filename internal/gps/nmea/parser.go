@@ -67,7 +67,9 @@ func parseGGA(fields []string) (*GGAMessage, error) {
 
 	// Parse fix quality
 	if fields[6] != "" {
-		fmt.Sscanf(fields[6], "%d", &msg.fixQuality)
+		if _, err := fmt.Sscanf(fields[6], "%d", &msg.fixQuality); err != nil {
+			msg.fixQuality = 0
+		}
 	}
 
 	msg.valid = msg.latitude != 0 && msg.longitude != 0 && msg.fixQuality > 0

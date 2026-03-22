@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/diagnostics"
-	"github.com/eclipse-iofog/agent-go/internal/proxy"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/version"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/diagnostics"
+	"github.com/eclipse-iofog/agent/internal/proxy"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/version"
 )
 
 // processChanges processes changes from the controller
@@ -99,12 +99,11 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 		// Process microservice-related changes
 		microserviceConfig, _ := changes["microserviceConfig"].(bool)
 		microserviceList, _ := changes["microserviceList"].(bool)
-		routing, _ := changes["routing"].(bool)
 		execSessions, _ := changes["execSessions"].(bool)
 
-		if microserviceConfig || microserviceList || routing || execSessions || initialization {
-			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v, routing: %v, execSessions: %v",
-				microserviceConfig, microserviceList, routing, execSessions))
+		if microserviceConfig || microserviceList || execSessions || initialization {
+			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v, execSessions: %v",
+				microserviceConfig, microserviceList, execSessions))
 
 			// Load microservices
 			microservices, err := fa.loadMicroservices(false)
@@ -120,21 +119,6 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 					if err := fa.processMicroserviceConfig(microservices); err != nil {
 						logging.LogError(moduleName, "Unable to update microservices config", err)
 						resetChanges = false
-					}
-				}
-
-				// Process routing changes
-				if routing {
-					logging.LogDebug(moduleName, "Processing routing changes")
-					if err := fa.processRoutes(microservices); err != nil {
-						logging.LogError(moduleName, "Unable to update microservices routes", err)
-						resetChanges = false
-					}
-
-					routerChanged, _ := changes["routerChanged"].(bool)
-					if !routerChanged || initialization {
-						// MessageBus update would be called here
-						logging.LogDebug(moduleName, "MessageBus update requested")
 					}
 				}
 
@@ -160,22 +144,6 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 			logging.LogDebug(moduleName, "Processing diagnostics change")
 			if err := fa.updateDiagnostics(); err != nil {
 				logging.LogError(moduleName, "Unable to update diagnostics", err)
-				resetChanges = false
-			}
-		}
-
-		// Process routerChanged change
-		if routerChanged, ok := changes["routerChanged"].(bool); ok && routerChanged && !initialization {
-			logging.LogDebug(moduleName, "Processing routerChanged change")
-			// MessageBus update would be called here
-			logging.LogDebug(moduleName, "Router info update requested")
-		}
-
-		// Process linkedEdgeResources change
-		if linkedEdgeResources, ok := changes["linkedEdgeResources"].(bool); ok && linkedEdgeResources && !initialization {
-			logging.LogDebug(moduleName, "Processing linkedEdgeResources change")
-			if err := fa.loadEdgeResources(false); err != nil {
-				logging.LogError(moduleName, "Unable to update linked edge resources", err)
 				resetChanges = false
 			}
 		}
@@ -215,7 +183,9 @@ func (fa *FieldAgent) deleteNode() error {
 		logging.LogError(moduleName, "Can't send delete node command", err)
 	}
 
-	fa.Deprovision(true)
+	if depErr := fa.Deprovision(true); depErr != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Deprovision after node deletion failed: %v", depErr))
+	}
 	logging.LogDebug(moduleName, "Finish deleting current fog node from controller and make it deprovision")
 	return err
 }
@@ -302,7 +272,7 @@ func (fa *FieldAgent) changeVersion() error {
 	} else {
 		logging.LogDebug(moduleName, fmt.Sprintf("Version change result: %+v", result))
 	}
-	
+
 	logging.LogInfo(moduleName, "Finished change version operation, received from ioFog controller")
 	return nil
 }
@@ -310,24 +280,24 @@ func (fa *FieldAgent) changeVersion() error {
 // updateTunnel updates SSH tunnel configuration
 func (fa *FieldAgent) updateTunnel() error {
 	logging.LogDebug(moduleName, "Updating SSH tunnel configuration")
-	
+
 	// Get proxy config from controller
 	proxyConfig, err := fa.getProxyConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get proxy config: %w", err)
 	}
-	
+
 	if proxyConfig == nil {
 		logging.LogDebug(moduleName, "No proxy config received, skipping tunnel update")
 		return nil
 	}
-	
+
 	// Update SSH proxy manager
 	proxyManager := proxy.GetInstance()
 	if err := proxyManager.Update(proxyConfig); err != nil {
 		return fmt.Errorf("failed to update SSH proxy: %w", err)
 	}
-	
+
 	logging.LogDebug(moduleName, "SSH tunnel configuration updated successfully")
 	return nil
 }
@@ -337,21 +307,21 @@ func (fa *FieldAgent) getProxyConfig() (map[string]interface{}, error) {
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		return nil, nil
 	}
-	
+
 	// Request tunnel config from controller
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
-	
+
 	response, err := fa.apiClient.Request(ctx, "tunnel", GET, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tunnel config: %w", err)
 	}
-	
+
 	// Extract tunnel config from response
 	if tunnelObj, ok := response["tunnel"].(map[string]interface{}); ok {
 		return tunnelObj, nil
 	}
-	
+
 	return nil, nil
 }
 
@@ -413,37 +383,37 @@ func (fa *FieldAgent) getFogConfig() error {
 
 	// Map controller config keys to agent config keys (short codes)
 	configMap := make(map[string]interface{})
-	
+
 	// Mapping from controller JSON keys to internal short codes
 	keyMapping := map[string]string{
-		"diskConsumptionLimit":      "d",
-		"diskDirectory":             "dl",
-		"memoryConsumptionLimit":    "m",
-		"processorConsumptionLimit": "p",
-		"controllerUrl":             "a",
-		"controllerCert":            "ac",
-		"dockerUrl":                 "c",
-		"networkInterface":          "n",
-		"logDiskConsumptionLimit":   "l",
-		"logDiskDirectory":          "ld",
-		"logFileCount":              "lc",
-		"logLevel":                  "ll",
-		"statusFrequency":           "sf",
-		"changeFrequency":           "cf",
-		"postDiagnosticsFreq":       "df",
-		"deviceScanFrequency":       "sd",
-		"watchdogEnabled":           "idc",
-		"edgeGuardFrequency":        "egf",
-		"gpsMode":                   "gps",
-		"gpsDevice":                 "gpsd",
-		"gpsScanFrequency":          "gpsf",
-		"arch":                      "ft",
-		"secureMode":                "sec",
-		"dockerPruningFrequency":    "pf",
-		"availableDiskThreshold":    "dt",
+		"diskConsumptionLimit":        "d",
+		"diskDirectory":               "dl",
+		"memoryConsumptionLimit":      "m",
+		"processorConsumptionLimit":   "p",
+		"controllerUrl":               "a",
+		"controllerCert":              "ac",
+		"dockerUrl":                   "c",
+		"networkInterface":            "n",
+		"logDiskConsumptionLimit":     "l",
+		"logDiskDirectory":            "ld",
+		"logFileCount":                "lc",
+		"logLevel":                    "ll",
+		"statusFrequency":             "sf",
+		"changeFrequency":             "cf",
+		"postDiagnosticsFreq":         "df",
+		"deviceScanFrequency":         "sd",
+		"watchdogEnabled":             "idc",
+		"edgeGuardFrequency":          "egf",
+		"gpsMode":                     "gps",
+		"gpsDevice":                   "gpsd",
+		"gpsScanFrequency":            "gpsf",
+		"arch":                        "ft",
+		"secureMode":                  "sec",
+		"dockerPruningFrequency":      "pf",
+		"availableDiskThreshold":      "dt",
 		"readyToUpgradeScanFrequency": "uf",
-		"devMode":                   "dev",
-		"timeZone":                  "tz",
+		"devMode":                     "dev",
+		"timeZone":                    "tz",
 	}
 
 	for k, v := range configs {
@@ -457,7 +427,7 @@ func (fa *FieldAgent) getFogConfig() error {
 		logging.LogDebug(moduleName, fmt.Sprintf("Applying config changes: %+v", configMap))
 		cfg := config.GetInstance()
 		errorMap := cfg.SetConfig(configMap)
-		
+
 		if len(errorMap) > 0 {
 			logging.LogError(moduleName, fmt.Sprintf("Errors applying config: %+v", errorMap), nil)
 		} else {
@@ -476,7 +446,7 @@ func (fa *FieldAgent) getFogConfig() error {
 // Matching Java: postFogConfig() method
 func (fa *FieldAgent) postFogConfig() error {
 	logging.LogDebug(moduleName, "Post ioFog config")
-	
+
 	// Check if provisioned and connected (matching Java: notProvisioned() || !isControllerConnected(false))
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		logging.LogDebug(moduleName, "Skipping postFogConfig: not provisioned or not connected")
@@ -484,7 +454,7 @@ func (fa *FieldAgent) postFogConfig() error {
 	}
 
 	cfg := config.GetInstance()
-	
+
 	// Parse GPS coordinates (matching Java logic)
 	latitude := 0.0
 	longitude := 0.0
@@ -508,29 +478,29 @@ func (fa *FieldAgent) postFogConfig() error {
 
 	// Build config data matching Java JsonObject structure
 	configData := map[string]interface{}{
-		"networkInterface":              networkInterfaceName,
-		"dockerUrl":                     cfg.DockerURL,
-		"diskConsumptionLimit":           cfg.DiskLimit,
-		"diskDirectory":                 cfg.DiskDirectory,
-		"memoryConsumptionLimit":         cfg.MemoryLimit,
-		"processorConsumptionLimit":     cfg.CPULimit,
-		"logDiskConsumptionLimit":       cfg.LogDiskLimit,
-		"logDiskDirectory":              cfg.LogDiskDirectory,
-		"logFileCount":                  cfg.LogFileCount,
-		"statusFrequency":               cfg.StatusFrequency,
-		"changeFrequency":                cfg.ChangeFrequency,
-		"deviceScanFrequency":            cfg.DeviceScanFrequency,
-		"watchdogEnabled":                cfg.WatchdogEnabled,
-		"edgeGuardFrequency":            cfg.EdgeGuardFrequency,
-		"gpsDevice":                     cfg.GPSDevice,
-		"gpsScanFrequency":              cfg.GPSScanFrequency,
-		"gpsMode":                       strings.ToLower(cfg.GPSMode),
-		"latitude":                      latitude,
-		"longitude":                     longitude,
-		"logLevel":                      strings.ToUpper(cfg.LogLevel),
-		"availableDiskThreshold":        cfg.AvailableDiskThreshold,
-		"dockerPruningFrequency":        cfg.DockerPruningFrequency,
-		"readyToUpgradeScanFrequency":  cfg.ReadyToUpgradeScanFrequency,
+		"networkInterface":            networkInterfaceName,
+		"dockerUrl":                   cfg.DockerURL,
+		"diskConsumptionLimit":        cfg.DiskLimit,
+		"diskDirectory":               cfg.DiskDirectory,
+		"memoryConsumptionLimit":      cfg.MemoryLimit,
+		"processorConsumptionLimit":   cfg.CPULimit,
+		"logDiskConsumptionLimit":     cfg.LogDiskLimit,
+		"logDiskDirectory":            cfg.LogDiskDirectory,
+		"logFileCount":                cfg.LogFileCount,
+		"statusFrequency":             cfg.StatusFrequency,
+		"changeFrequency":             cfg.ChangeFrequency,
+		"deviceScanFrequency":         cfg.DeviceScanFrequency,
+		"watchdogEnabled":             cfg.WatchdogEnabled,
+		"edgeGuardFrequency":          cfg.EdgeGuardFrequency,
+		"gpsDevice":                   cfg.GPSDevice,
+		"gpsScanFrequency":            cfg.GPSScanFrequency,
+		"gpsMode":                     strings.ToLower(cfg.GPSMode),
+		"latitude":                    latitude,
+		"longitude":                   longitude,
+		"logLevel":                    strings.ToUpper(cfg.LogLevel),
+		"availableDiskThreshold":      cfg.AvailableDiskThreshold,
+		"dockerPruningFrequency":      cfg.DockerPruningFrequency,
+		"readyToUpgradeScanFrequency": cfg.ReadyToUpgradeScanFrequency,
 	}
 
 	// Use context from FieldAgent (daemon mode) or create new one (CLI mode)

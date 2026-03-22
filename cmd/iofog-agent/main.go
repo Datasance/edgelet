@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eclipse-iofog/agent-go/internal/cli"
+	"github.com/eclipse-iofog/agent/internal/cli"
 )
 
 var (
@@ -23,10 +23,10 @@ func main() {
 	// Handle all other commands
 	args := os.Args[1:]
 	result := cli.HandleCommand(args)
-	
+
 	// Print result
 	fmt.Print(result)
-	
+
 	// Exit with appropriate code
 	if result != "" && len(args) > 0 {
 		// Check if result indicates an error
@@ -37,10 +37,10 @@ func main() {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && (s[:len(substr)] == substr || 
-		s[len(s)-len(substr):] == substr || 
-		indexOf(s, substr) >= 0)))
+	return len(s) >= len(substr) && (s == substr ||
+		(len(s) > len(substr) && (s[:len(substr)] == substr ||
+			s[len(s)-len(substr):] == substr ||
+			indexOf(s, substr) >= 0)))
 }
 
 func indexOf(s, substr string) int {

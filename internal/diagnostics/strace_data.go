@@ -19,7 +19,7 @@ type MicroserviceStraceData struct {
 func NewMicroserviceStraceData(microserviceUUID string, pid int, straceRun bool) *MicroserviceStraceData {
 	data := &MicroserviceStraceData{
 		microserviceUUID: microserviceUUID,
-		pid:              int32(pid),
+		pid:              int32(pid), // #nosec G115 -- PID fits in int32 on all supported platforms
 		resultBuffer:     make([]string, 0),
 	}
 	data.straceRun.Store(straceRun)
@@ -38,7 +38,7 @@ func (m *MicroserviceStraceData) GetPid() int {
 
 // SetPid sets the process ID
 func (m *MicroserviceStraceData) SetPid(pid int) {
-	atomic.StoreInt32(&m.pid, int32(pid))
+	atomic.StoreInt32(&m.pid, int32(pid)) // #nosec G115 -- PID fits in int32 on all supported platforms
 }
 
 // GetStraceRun returns whether strace is running
@@ -55,7 +55,7 @@ func (m *MicroserviceStraceData) SetStraceRun(run bool) {
 func (m *MicroserviceStraceData) GetResultBuffer() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	result := make([]string, len(m.resultBuffer))
 	copy(result, m.resultBuffer)
 	return result
@@ -79,6 +79,6 @@ func (m *MicroserviceStraceData) ClearResultBuffer() {
 func (m *MicroserviceStraceData) GetResultBufferAsString() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return strings.Join(m.resultBuffer, "\n")
 }

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 // Config represents the runtime configuration
@@ -46,8 +46,6 @@ type Config struct {
 	Arch                        string
 	SecureMode                  bool
 	IPAddressExternal           string
-	RouterHost                  string
-	RouterPort                  int
 	RouterUUID                  string
 	IsRouterInterior            bool
 	DockerPruningFrequency      int64
@@ -56,9 +54,6 @@ type Config struct {
 	DevMode                     bool
 	TimeZone                    string
 	Namespace                   string
-	CACert                      string
-	TLSCert                     string
-	TLSKey                      string
 	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 

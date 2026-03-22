@@ -2,16 +2,16 @@ package models
 
 // ResourceConsumptionManagerStatus represents the Resource Consumption Manager status
 type ResourceConsumptionManagerStatus struct {
-	MemoryUsage      float64 `json:"memoryUsage" yaml:"memoryUsage"`           // Memory usage in MiB
-	DiskUsage        float64 `json:"diskUsage" yaml:"diskUsage"`                // Disk usage in GiB
-	CPUUsage         float64 `json:"cpuUsage" yaml:"cpuUsage"`                  // CPU usage percentage (0-100)
-	MemoryViolation  bool    `json:"memoryViolation" yaml:"memoryViolation"`    // Whether memory limit is violated
-	DiskViolation     bool    `json:"diskViolation" yaml:"diskViolation"`       // Whether disk limit is violated
-	CPUViolation      bool    `json:"cpuViolation" yaml:"cpuViolation"`          // Whether CPU limit is violated
-	AvailableMemory   int64   `json:"availableMemory" yaml:"availableMemory"`    // System available memory in bytes
-	TotalCPU          float64 `json:"totalCpu" yaml:"totalCpu"`                 // Total system CPU usage percentage
-	AvailableDisk     int64   `json:"availableDisk" yaml:"availableDisk"`       // System available disk space in bytes
-	TotalDiskSpace    int64   `json:"totalDiskSpace" yaml:"totalDiskSpace"`     // Total system disk space in bytes
+	MemoryUsage     float64 `json:"memoryUsage" yaml:"memoryUsage"`         // Memory usage in MiB
+	DiskUsage       float64 `json:"diskUsage" yaml:"diskUsage"`             // Disk usage in GiB
+	CPUUsage        float64 `json:"cpuUsage" yaml:"cpuUsage"`               // CPU usage percentage (0-100)
+	MemoryViolation bool    `json:"memoryViolation" yaml:"memoryViolation"` // Whether memory limit is violated
+	DiskViolation   bool    `json:"diskViolation" yaml:"diskViolation"`     // Whether disk limit is violated
+	CPUViolation    bool    `json:"cpuViolation" yaml:"cpuViolation"`       // Whether CPU limit is violated
+	AvailableMemory int64   `json:"availableMemory" yaml:"availableMemory"` // System available memory in bytes
+	TotalCPU        float64 `json:"totalCpu" yaml:"totalCpu"`               // Total system CPU usage percentage
+	AvailableDisk   int64   `json:"availableDisk" yaml:"availableDisk"`     // System available disk space in bytes
+	TotalDiskSpace  int64   `json:"totalDiskSpace" yaml:"totalDiskSpace"`   // Total system disk space in bytes
 }
 
 // NewResourceConsumptionManagerStatus creates a new ResourceConsumptionManagerStatus

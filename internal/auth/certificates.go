@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -19,9 +19,9 @@ const (
 
 // TrustStore manages certificate trust stores
 type TrustStore struct {
-	mu           sync.RWMutex
-	systemCerts  *x509.CertPool
-	customCerts  []*x509.Certificate
+	mu          sync.RWMutex
+	systemCerts *x509.CertPool
+	customCerts []*x509.Certificate
 }
 
 var (
@@ -85,7 +85,7 @@ func LoadCertificateFromBase64(base64Data string) (*x509.Certificate, error) {
 
 // LoadCertificatesFromFile loads certificates from a file
 func LoadCertificatesFromFile(filePath string) ([]*x509.Certificate, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read certificate file: %w", err)
 	}
@@ -172,13 +172,13 @@ type CombinedTrustManager struct {
 }
 
 // VerifyPeerCertificate validates a certificate chain
-func (ctm *CombinedTrustManager) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+func (ctm *CombinedTrustManager) VerifyPeerCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	if len(rawCerts) == 0 {
 		return errors.New("no certificates provided")
 	}
 
 	// Parse the certificate chain
-	var certs []*x509.Certificate
+	certs := make([]*x509.Certificate, 0, len(rawCerts))
 	for _, rawCert := range rawCerts {
 		cert, err := x509.ParseCertificate(rawCert)
 		if err != nil {

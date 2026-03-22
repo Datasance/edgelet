@@ -1,7 +1,7 @@
 package fieldagent
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 // CacheFile represents a cached file with checksum and timestamp
@@ -20,10 +20,10 @@ type CacheFile struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-// checksum computes SHA1 checksum of data
+// checksum computes SHA256 checksum of data
 func checksum(data string) string {
 	base64Data := base64.StdEncoding.EncodeToString([]byte(data))
-	hash := sha1.Sum([]byte(base64Data))
+	hash := sha256.Sum256([]byte(base64Data))
 	return fmt.Sprintf("%x", hash)
 }
 
@@ -61,13 +61,13 @@ func SaveFile(data interface{}, filename string) error {
 
 	// Ensure directory exists
 	cachePath := getCachePath()
-	if err := os.MkdirAll(cachePath, 0755); err != nil {
+	if err := os.MkdirAll(cachePath, 0700); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	// Write file
 	filePath := filepath.Join(cachePath, filename)
-	if err := os.WriteFile(filePath, cacheData, 0644); err != nil {
+	if err := os.WriteFile(filePath, cacheData, 0600); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 
@@ -87,7 +87,7 @@ func ReadFile(filename string) (json.RawMessage, int64, error) {
 	}
 
 	// Read file
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path is filepath.Join(known dir, internal filename)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read cache file: %w", err)
 	}

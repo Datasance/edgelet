@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -26,7 +28,6 @@ type ProcessManager struct {
 	microserviceManager MicroserviceManagerInterface
 	containerManager    *ContainerManager
 	taskQueue           *TaskQueue
-	monitorLock         sync.Mutex
 	updateChan          chan struct{}
 	ctx                 context.Context
 	cancel              context.CancelFunc
@@ -97,44 +98,48 @@ func (pm *ProcessManager) Stop() error {
 	return nil
 }
 
-// StopRunningMicroservices stops all running microservices matching the iofogUuid
-// (matching Java: stopRunningMicroservices(boolean withCleanUp, String iofogUuid))
-// When withCleanUp=false (as in deprovision), it only stops containers, doesn't remove them
-func (pm *ProcessManager) StopRunningMicroservices(iofogUuid string) error {
+// StopRunningMicroservices stops all running microservices matching the iofogUuid.
+// When withCleanup=true (deprovision flow), containers are also removed along with their volumes.
+func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup bool) error {
 	pm.logger.Info("Stop running Microservices")
-	
-	// Get all running containers
-	runningContainers, err := pm.docker.GetRunningContainers()
+
+	// Get all containers regardless of state for complete cleanup
+	allContainers, err := pm.docker.GetAllContainers()
 	if err != nil {
-		pm.logger.Errorf("Error getting running containers: %v", err)
+		pm.logger.Errorf("Error getting all containers: %v", err)
 		return err
 	}
-	
+
 	cfg := config.GetInstance()
 	runningMicroserviceUuids := make([]string, 0)
-	
+
 	// Filter containers by iofog-uuid label
-	for _, container := range runningContainers {
+	for _, container := range allContainers {
 		msUUID := pm.docker.GetContainerMicroserviceUUID(container)
 		if msUUID == "" {
 			continue
 		}
-		
+
 		// Check if container matches iofogUuid or watchdog is enabled
 		containerIOFogUUID := container.Labels["iofog-uuid"]
-		if (containerIOFogUUID != "" && containerIOFogUUID == iofogUuid) || cfg.WatchdogEnabled {
+		if (containerIOFogUUID != "" && containerIOFogUUID == iofogUUID) || cfg.WatchdogEnabled {
 			runningMicroserviceUuids = append(runningMicroserviceUuids, msUUID)
 		}
 	}
-	
-	// Stop each matching container
+
+	// Stop (and optionally remove) each matching container
 	for _, msUUID := range runningMicroserviceUuids {
-		if err := pm.containerManager.StopContainerByMicroserviceUuid(msUUID); err != nil {
-			pm.logger.Warnf("Error stopping microservice %s: %v", msUUID, err)
-			// Continue with other containers even if one fails
+		if withCleanup {
+			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(msUUID, true); err != nil {
+				pm.logger.Warnf("Error removing microservice %s: %v", msUUID, err)
+			}
+		} else {
+			if err := pm.containerManager.StopContainerByMicroserviceUUID(msUUID); err != nil {
+				pm.logger.Warnf("Error stopping microservice %s: %v", msUUID, err)
+			}
 		}
 	}
-	
+
 	pm.logger.Info("Stopped running Microservices")
 	return nil
 }
@@ -161,7 +166,7 @@ func (pm *ProcessManager) GetLatestMicroservices() []*models.Microservice {
 // Matches Java: ProcessManager.update() - updates registries and notifies monitor thread
 func (pm *ProcessManager) Update() {
 	pm.logger.Debug("updates registries list according to the last changes")
-	
+
 	// Update registries status (matching Java: updateRegistriesStatus())
 	// Remove registries that no longer exist
 	if pm.microserviceManager != nil {
@@ -172,7 +177,7 @@ func (pm *ProcessManager) Update() {
 			pm.logger.Debug("Updated registries status")
 		}
 	}
-	
+
 	// Notify the monitor thread to restart immediately instead of waiting
 	pm.notifyMonitorThread()
 }
@@ -216,24 +221,27 @@ func (pm *ProcessManager) containersMonitor() {
 	}
 }
 
-// checkTasks processes tasks from the queue
+// checkTasks is a long-running goroutine that drains the task queue.
+// It blocks on each Get() call and exits cleanly when the context is canceled.
 func (pm *ProcessManager) checkTasks() {
 	for {
-		select {
-		case <-pm.ctx.Done():
+		task, ok := pm.taskQueue.Get(pm.ctx)
+		if !ok {
+			// Context canceled — stop processing.
 			return
-		default:
-			task := pm.taskQueue.Get()
-			if task != nil {
-				if err := pm.executeTask(task); err != nil {
-					pm.logger.Errorf("Error executing task %s for microservice %s: %v", task.Action, task.MicroserviceUUID, err)
-					// Retry logic
-					if task.Retries < 5 {
-						task.IncrementRetries()
-						pm.taskQueue.Add(task)
-					} else {
-						pm.logger.Errorf("Task %s for microservice %s failed after %d retries", task.Action, task.MicroserviceUUID, task.Retries)
-					}
+		}
+
+		if err := pm.executeTask(task); err != nil {
+			pm.logger.Errorf("Error executing task %s for microservice %s: %v", task.Action, task.MicroserviceUUID, err)
+			if task.Retries < 5 {
+				task.IncrementRetries()
+				pm.taskQueue.Add(task)
+			} else {
+				pm.logger.Errorf("Task %s for microservice %s failed after %d retries, giving up", task.Action, task.MicroserviceUUID, task.Retries)
+				// Release the in-flight lock so the reconciliation loop can retry
+				// on the next monitoring cycle.
+				if ms := pm.microserviceManager.FindLatestMicroserviceByUUID(task.MicroserviceUUID); ms != nil {
+					ms.SetIsUpdating(false)
 				}
 			}
 		}
@@ -244,7 +252,7 @@ func (pm *ProcessManager) checkTasks() {
 func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 	pm.logger.Debugf("Executing task %s for microservice %s", task.Action, task.MicroserviceUUID)
 
-	ms := pm.microserviceManager.FindLatestMicroserviceByUuid(task.MicroserviceUUID)
+	ms := pm.microserviceManager.FindLatestMicroserviceByUUID(task.MicroserviceUUID)
 
 	switch task.Action {
 	case TaskActionAdd:
@@ -256,11 +264,11 @@ func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 			return pm.containerManager.UpdateContainer(ms, false)
 		}
 	case TaskActionRemove:
-		return pm.containerManager.RemoveContainerByMicroserviceUuid(task.MicroserviceUUID, false)
+		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, false)
 	case TaskActionRemoveWithCleanup:
-		return pm.containerManager.RemoveContainerByMicroserviceUuid(task.MicroserviceUUID, true)
+		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, true)
 	case TaskActionStop:
-		return pm.containerManager.StopContainerByMicroserviceUuid(task.MicroserviceUUID)
+		return pm.containerManager.StopContainerByMicroserviceUUID(task.MicroserviceUUID)
 	case TaskActionCreateExec:
 		if ms != nil {
 			// Exec session creation would create an interactive exec session
@@ -280,19 +288,33 @@ func (pm *ProcessManager) addTask(task *ContainerTask) {
 	pm.taskQueue.Add(task)
 }
 
-// handleLatestMicroservices handles the latest microservices from the manager
+// handleLatestMicroservices is the core reconciliation loop.
+//
+// It compares desired state (latestMicroservices from controller) against actual
+// Docker state and converges them:
+//   - container missing, should exist  → schedule ADD
+//   - container exists, marked delete  → schedule REMOVE
+//   - container exists, should exist   → schedule UPDATE if configuration drifted
+//
+// An ADD or UPDATE task sets ms.IsUpdating = true; the loop skips any microservice
+// that already has an in-flight task, providing exactly-once per-cycle semantics and
+// preventing task-queue flooding.
 func (pm *ProcessManager) handleLatestMicroservices() {
 	pm.logger.Debug("Start handle latest microservices")
 
 	latestMicroservices := pm.microserviceManager.GetLatestMicroservices()
+	// Sort by schedule ascending — matches Java: Comparator.comparingInt(Microservice::getSchedule)
+	sort.Slice(latestMicroservices, func(i, j int) bool {
+		return latestMicroservices[i].Schedule < latestMicroservices[j].Schedule
+	})
+
 	for _, ms := range latestMicroservices {
-		// Skip if updating or stuck in restart
-		if ms.GetIsUpdating() || ms.IsStuckInRestart {
+		// Skip microservices that already have an in-flight ADD or UPDATE task.
+		// IsUpdating is set before enqueueing and cleared when the task finishes,
+		// ensuring we never flood the queue with duplicate tasks.
+		if ms.GetIsUpdating() {
 			continue
 		}
-
-		// Sort by schedule (simplified - in production, sort before iterating)
-		// For now, we'll process in order
 
 		container, err := pm.docker.GetContainer(ms.MicroserviceUUID)
 		if err != nil {
@@ -300,59 +322,72 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			continue
 		}
 
-		if container == nil && !ms.Delete {
-			// Container doesn't exist and microservice is not marked for deletion
-			// Force recreation even if cached status is Running (handles manual deletion)
-			// Set status to UNKNOWN to ensure proper state transition
-			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-				status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUnknown)
+		if ms.Delete {
+			// Desired state: deleted.
+			if container != nil {
+				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+					s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateMarkedForDeletion)
+				})
+				pm.deleteMicroservice(ms)
+			}
+			// If container is already gone, nothing to do.
+			continue
+		}
+
+		// Desired state: running.
+		if container == nil {
+			// Container is missing — covers both first-time creation and manual deletion.
+			// Always schedule a re-create; clear any stuck flag so it doesn't block recovery.
+			pm.logger.Infof("Container missing for microservice %s (%s), scheduling creation", ms.MicroserviceUUID, ms.ImageName)
+			ms.IsStuckInRestart = false
+			statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+				s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUnknown)
 			})
 			pm.addMicroservice(ms)
-		} else if container != nil && ms.Delete {
-			// Container exists but microservice is marked for deletion
-			// Set status to MARKED_FOR_DELETION
-			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-				status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateMarkedForDeletion)
-			})
-			pm.deleteMicroservice(ms)
-		} else if container != nil && !ms.Delete {
-			// Container exists and microservice is not marked for deletion
-			// Update status and check if container needs updating
-			status, err := pm.docker.GetMicroserviceStatus(container.ID, ms.MicroserviceUUID)
-			if err != nil {
-				pm.logger.Warnf("Error getting microservice status: %v", err)
-				continue
-			}
-
-			// Check if microservice is stuck in exit or creation using RestartStuckChecker
-			// This matches Java logic: isMicroserviceStuckInExitOrCreation()
-			checker := GetRestartStuckChecker()
-			if status.Status == models.MicroserviceStateExiting {
-				if checker.IsStuck(ms.MicroserviceUUID) {
-					status.Status = models.MicroserviceStateStuckInRestart
-					ms.IsStuckInRestart = true
-				}
-			} else if status.Status == models.MicroserviceStateCreated {
-				if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
-					status.Status = models.MicroserviceStateStuckInRestart
-					ms.IsStuckInRestart = true
-				}
-			}
-
-			// Update status reporter
-			statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
-				pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
-			})
-			pm.updateMicroservice(container, ms)
+			continue
 		}
+
+		// Container exists and should keep running.
+		// Skip containers stuck in restart loop (unless a rebuild was explicitly requested).
+		if ms.IsStuckInRestart && !ms.Rebuild {
+			continue
+		}
+
+		status, err := pm.docker.GetMicroserviceStatus(container.ID, ms.MicroserviceUUID)
+		if err != nil {
+			pm.logger.Warnf("Error getting microservice status for %s: %v", ms.MicroserviceUUID, err)
+			continue
+		}
+
+		// Detect containers stuck in exit/creation loops and mark them accordingly.
+		checker := GetRestartStuckChecker()
+		if status.Status == models.MicroserviceStateExiting {
+			if checker.IsStuck(ms.MicroserviceUUID) {
+				status.Status = models.MicroserviceStateStuckInRestart
+				ms.IsStuckInRestart = true
+			}
+		} else if status.Status == models.MicroserviceStateCreated {
+			if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
+				status.Status = models.MicroserviceStateStuckInRestart
+				ms.IsStuckInRestart = true
+			}
+		}
+
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
+			pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
+		})
+
+		pm.updateMicroservice(container, ms)
 	}
 
 	pm.logger.Debug("Finished handle latest microservices")
 }
 
-// addMicroservice queues a microservice for creation
+// addMicroservice queues a microservice for creation.
+// It marks the microservice as "in-flight" (IsUpdating=true) before enqueuing so that
+// subsequent reconciliation cycles skip it until the ADD task finishes.
 func (pm *ProcessManager) addMicroservice(ms *models.Microservice) {
-	// Set status to QUEUED via status reporter
+	ms.SetIsUpdating(true)
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateQueued)
 	})
@@ -395,6 +430,10 @@ func (pm *ProcessManager) updateMicroservice(container *docker.Container, ms *mo
 
 	shouldUpdate := pm.shouldContainerBeUpdated(ms, container, status)
 	if shouldUpdate {
+		// Reset stuck flag on update
+		if ms.IsStuckInRestart {
+			ms.IsStuckInRestart = false
+		}
 		// Set status to UPDATING
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
@@ -405,18 +444,39 @@ func (pm *ProcessManager) updateMicroservice(container *docker.Container, ms *mo
 	pm.logger.Debug("Finished update microservice")
 }
 
-// shouldContainerBeUpdated determines if a container should be updated
+// shouldContainerBeUpdated determines if a running container needs to be rebuilt.
+//
+// A container should NOT be updated when it is in a transitional state managed by
+// another goroutine (QUEUED, UPDATING) — interfering would cause duplicate operations.
+// Containers stuck in EXITING/CREATED loops are handled upstream (stuck-in-restart logic)
+// and should not be triggered here either.
 func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, container *docker.Container, status *models.MicroserviceStatus) bool {
 	pm.logger.Debug("Start should Container Be Updated")
+
+	// Never trigger an update if there is already an in-flight ADD or UPDATE task.
+	if ms.GetIsUpdating() {
+		pm.logger.Debugf("Skipping update check for %s — task already in flight", ms.MicroserviceUUID)
+		return false
+	}
+
+	// Ignore transitional states that will resolve on their own.
+	switch status.Status {
+	case models.MicroserviceStateQueued,
+		models.MicroserviceStateUpdating,
+		models.MicroserviceStateStuckInRestart:
+		return false
+	default:
+		// All other states may require an update; continue below.
+	}
 
 	isNotRunning := status.Status != models.MicroserviceStateRunning
 	areNotEqual := !pm.docker.AreMicroserviceAndContainerEqual(container.ID, ms)
 	isRebuild := ms.Rebuild
 
-	isUpdated := isNotRunning || areNotEqual || isRebuild
-
-	pm.logger.Debugf("Finished should Container Be Updated: %v", isUpdated)
-	return isUpdated
+	result := isNotRunning || areNotEqual || isRebuild
+	pm.logger.Debugf("Finished should Container Be Updated: notRunning=%v configDrifted=%v rebuild=%v → %v",
+		isNotRunning, areNotEqual, isRebuild, result)
+	return result
 }
 
 // deleteRemainingMicroservices deletes containers that are no longer in the latest microservices list
@@ -437,10 +497,10 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		currentUUIDs[ms.MicroserviceUUID] = true
 	}
 
-	// Get running containers
-	runningContainers, err := pm.docker.GetRunningContainers()
+	// Get all containers regardless of state (exited, paused, created, running)
+	allContainers, err := pm.docker.GetAllContainers()
 	if err != nil {
-		pm.logger.Errorf("Error getting running containers: %v", err)
+		pm.logger.Errorf("Error getting all containers: %v", err)
 		return
 	}
 
@@ -450,8 +510,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 
 	cfg := config.GetInstance()
 
-	for _, container := range runningContainers {
-		// Get microservice UUID from container
+	for _, container := range allContainers {
 		msUUID := pm.docker.GetContainerMicroserviceUUID(container)
 		if msUUID == "" {
 			continue
@@ -460,22 +519,16 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		isCurrent := currentUUIDs[msUUID]
 		isLatest := latestUUIDs[msUUID]
 
-		// Check if it's a system container (agent or controller)
-		// System containers are identified by environment variables or specific labels
-		isSystem := false
-		// Check labels for system container indicators
-		if container.Labels["iofog-system"] == "true" {
-			isSystem = true
-		}
+		isSystem := container.Labels["iofog-system"] == "true"
 
-		// Old agent microservice: in current but not in latest
+		// Old agent microservice: in current but not in latest → always remove
 		if isCurrent && !isLatest && !isSystem {
 			oldAgentUUIDs = append(oldAgentUUIDs, msUUID)
 		}
 
-		// Unknown microservice: not in current or latest, but has iofog label
+		// Unknown: not in current or latest → only remove if watchdog enabled
 		if !isCurrent && !isLatest && !isSystem {
-			if container.Labels["iofog-uuid"] != "" || cfg.WatchdogEnabled {
+			if cfg.WatchdogEnabled {
 				unknownUUIDs = append(unknownUUIDs, msUUID)
 			}
 		}
@@ -484,7 +537,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	// Delete old agent containers
 	for _, uuid := range oldAgentUUIDs {
 		pm.logger.Infof("Deleting old agent microservice: %s", uuid)
-		if err := pm.containerManager.RemoveContainerByMicroserviceUuid(uuid, false); err != nil {
+		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false); err != nil {
 			pm.logger.Errorf("Error deleting old agent microservice %s: %v", uuid, err)
 		}
 	}
@@ -492,7 +545,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	// Delete unknown containers
 	for _, uuid := range unknownUUIDs {
 		pm.logger.Infof("Deleting unknown microservice: %s", uuid)
-		if err := pm.containerManager.RemoveContainerByMicroserviceUuid(uuid, false); err != nil {
+		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false); err != nil {
 			pm.logger.Errorf("Error deleting unknown microservice %s: %v", uuid, err)
 		}
 	}
@@ -500,32 +553,25 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	pm.logger.Debug("Finished delete Remaining Microservices")
 }
 
-// updateRunningMicroservicesCount updates the count of running microservices
+// updateRunningMicroservicesCount updates the count of running microservices.
+// Matches Java: getRunningIofogContainers() — filters by iofog_ name prefix only.
 func (pm *ProcessManager) updateRunningMicroservicesCount() {
 	pm.logger.Debug("Update running microservice count")
 
-	// Get running containers
-	runningContainers, err := pm.docker.GetRunningContainers()
+	containers, err := pm.docker.GetRunningContainers()
 	if err != nil {
 		pm.logger.Errorf("Error getting running containers: %v", err)
 		return
 	}
 
-	// Count running microservices (exclude system containers)
 	count := 0
-	for _, container := range runningContainers {
-		// Skip system containers (identified by label)
-		if container.Labels["iofog-system"] == "true" {
-			continue
-		}
-		// Count containers with microservice UUID
-		msUUID := pm.docker.GetContainerMicroserviceUUID(container)
-		if msUUID != "" {
+	for _, c := range containers {
+		name := pm.docker.GetContainerName(c)
+		if strings.HasPrefix(name, utils.IOFogDockerContainerNamePrefix) {
 			count++
 		}
 	}
 
-	// Update status reporter
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetRunningMicroservicesCount(count)
 	})

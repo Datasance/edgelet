@@ -41,7 +41,7 @@ func SetupMicroserviceLogger(microserviceUUID string, logDir string, maxFileSize
 	ml.logDir = logDir
 
 	// Create log directory if it doesn't exist
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0750); err != nil {
 		return err
 	}
 
@@ -66,7 +66,7 @@ func SetupMicroserviceLogger(microserviceUUID string, logDir string, maxFileSize
 
 	// Close existing writer if any
 	if oldWriter, exists := ml.logWriters[microserviceUUID]; exists {
-		oldWriter.Close()
+		_ = oldWriter.Close() // cannot use logger here (circular); best-effort close
 	}
 
 	ml.loggers[microserviceUUID] = logger

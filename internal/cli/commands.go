@@ -85,7 +85,7 @@ func handleStart() string {
 	return "Starting ioFog Agent daemon...\nUse 'iofog-agentd start' to run the daemon directly."
 }
 
-func handleStop(client *Client, args []string) string {
+func handleStop(client *Client, _ []string) string {
 	// Send to daemon via Local API
 	result, err := client.SendCommand("stop")
 	if err != nil {

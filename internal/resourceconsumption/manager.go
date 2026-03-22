@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -92,7 +92,7 @@ func (rcm *Manager) collectUsageData() {
 	logging.LogDebug(moduleName, "Get usage data")
 
 	memoryUsage := rcm.getMemoryUsage()
-	cpuUsage := rcm.getCpuUsage()
+	cpuUsage := rcm.getCPUUsage()
 
 	// Calculate disk usage (directories may not exist yet, which is OK)
 	archivePath := filepath.Join(rcm.config.DiskDirectory, "messages", "archive")
@@ -105,12 +105,12 @@ func (rcm *Manager) collectUsageData() {
 		archiveDiskUsage, volumesDiskUsage, diskUsage))
 
 	availableMemory := rcm.getSystemAvailableMemory()
-	totalCpu := rcm.getTotalCpu()
+	totalCPU := rcm.getTotalCPU()
 	availableDisk := rcm.getAvailableDisk()
 	totalDiskSpace := rcm.getTotalDiskSpace()
 
 	logging.LogDebug(moduleName, fmt.Sprintf("System resources: availableMemory=%d bytes, availableDisk=%d bytes, totalDiskSpace=%d bytes, totalCpu=%.2f%%",
-		availableMemory, availableDisk, totalDiskSpace, totalCpu))
+		availableMemory, availableDisk, totalDiskSpace, totalCPU))
 
 	// Update status atomically (fixes race condition)
 	rcm.statusReporter.UpdateResourceConsumptionManagerStatus(func(status *models.ResourceConsumptionManagerStatus) {
@@ -123,7 +123,7 @@ func (rcm *Manager) collectUsageData() {
 		status.AvailableMemory = availableMemory
 		status.AvailableDisk = availableDisk
 		status.TotalDiskSpace = totalDiskSpace
-		status.TotalCPU = totalCpu
+		status.TotalCPU = totalCPU
 	})
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Updated status: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB",
@@ -209,19 +209,19 @@ func (rcm *Manager) getMemoryUsage() int64 {
 	// Actually, Java's totalMemory is the heap size, and freeMemory is free heap
 	// So used = totalMemory - freeMemory = heap used
 	// In Go, Alloc is the heap used, which matches
-	memoryUsage := int64(m.Alloc) // Allocated heap memory (matches Java's used memory)
+	memoryUsage := int64(m.Alloc) // #nosec G115 -- Alloc is heap bytes; practical values fit in int64
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished get memory usage: %d bytes (Alloc=%d, Sys=%d, HeapSys=%d, HeapIdle=%d)",
 		memoryUsage, m.Alloc, m.Sys, m.HeapSys, m.HeapIdle))
 	return memoryUsage
 }
 
-// getCpuUsage gets the CPU usage percentage of the ioFog process
-func (rcm *Manager) getCpuUsage() float64 {
+// getCPUUsage gets the CPU usage percentage of the ioFog process
+func (rcm *Manager) getCPUUsage() float64 {
 	logging.LogDebug(moduleName, "Start get cpu usage")
 
 	// Get current process
-	proc, err := process.NewProcess(int32(os.Getpid()))
+	proc, err := process.NewProcess(int32(os.Getpid())) // #nosec G115 -- PID fits in int32 on all supported platforms
 	if err != nil {
 		logging.LogError(moduleName, "Error getting current process", err)
 		return 0.0
@@ -248,15 +248,15 @@ func (rcm *Manager) getSystemAvailableMemory() int64 {
 		return 0
 	}
 
-	availableMemory := int64(vmStat.Available)
+	availableMemory := int64(vmStat.Available) // #nosec G115 -- system available memory is below int64 max in practice
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished get system available memory: %d", availableMemory))
 	return availableMemory
 }
 
-// getTotalCpu gets the total system CPU usage percentage
+// getTotalCPU gets the total system CPU usage percentage
 // Uses gopsutil cpu.Percent() for cross-platform support (Linux, Windows, macOS, etc.)
 // This is the recommended method that works on all platforms
-func (rcm *Manager) getTotalCpu() float64 {
+func (rcm *Manager) getTotalCPU() float64 {
 	logging.LogDebug(moduleName, "Start get total cpu")
 
 	// Use gopsutil cpu.Percent() - the recommended cross-platform method
@@ -268,7 +268,7 @@ func (rcm *Manager) getTotalCpu() float64 {
 		// Fallback to Linux-specific method if on Linux
 		if runtime.GOOS == "linux" {
 			logging.LogDebug(moduleName, "Falling back to Linux /proc/stat method")
-			return rcm.getTotalCpuLinux()
+			return rcm.getTotalCPULinux()
 		}
 		return 0.0
 	}
@@ -277,18 +277,18 @@ func (rcm *Manager) getTotalCpu() float64 {
 		logging.LogWarn(moduleName, "No CPU percentage returned from gopsutil")
 		// Fallback to Linux-specific method if on Linux
 		if runtime.GOOS == "linux" {
-			return rcm.getTotalCpuLinux()
+			return rcm.getTotalCPULinux()
 		}
 		return 0.0
 	}
 
-	totalCpu := percentages[0]
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get total cpu: %.2f%%", totalCpu))
-	return totalCpu
+	totalCPU := percentages[0]
+	logging.LogDebug(moduleName, fmt.Sprintf("Finished get total cpu: %.2f%%", totalCPU))
+	return totalCPU
 }
 
-// getTotalCpuLinux reads /proc/stat to calculate total CPU usage (matching Java)
-func (rcm *Manager) getTotalCpuLinux() float64 {
+// getTotalCPULinux reads /proc/stat to calculate total CPU usage (matching Java)
+func (rcm *Manager) getTotalCPULinux() float64 {
 	// Read /proc/stat
 	statFile := "/proc/stat"
 	data, err := os.ReadFile(statFile)
@@ -338,7 +338,6 @@ func (rcm *Manager) getTotalCpuLinux() float64 {
 	return 0.0
 }
 
-
 // getAvailableDisk gets the available disk space in bytes
 func (rcm *Manager) getAvailableDisk() int64 {
 	logging.LogDebug(moduleName, "Start get available disk")
@@ -350,7 +349,7 @@ func (rcm *Manager) getAvailableDisk() int64 {
 		return 0
 	}
 
-	availableDisk := int64(usage.Free)
+	availableDisk := int64(usage.Free) // #nosec G115 -- disk size is below int64 max in practice
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished get available disk: %d", availableDisk))
 	return availableDisk
 }
@@ -366,7 +365,7 @@ func (rcm *Manager) getTotalDiskSpace() int64 {
 		return 0
 	}
 
-	totalDiskSpace := int64(usage.Total)
+	totalDiskSpace := int64(usage.Total) // #nosec G115 -- disk size is below int64 max in practice
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished get total disk space: %d", totalDiskSpace))
 	return totalDiskSpace
 }

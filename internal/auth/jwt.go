@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 )
 

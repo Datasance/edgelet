@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/version"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/version"
 )
 
 const (
@@ -41,6 +42,8 @@ func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(versionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(versionHandlerModuleName, "Finished processing version request")
 }

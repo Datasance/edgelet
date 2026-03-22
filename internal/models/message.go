@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/bytesutil"
+	"github.com/eclipse-iofog/agent/internal/utils/bytesutil"
 )
 
 const (
@@ -175,12 +175,10 @@ func (m *Message) ToJSON() (map[string]interface{}, error) {
 func (m *Message) GetBytes() ([]byte, error) {
 	header := make([]byte, 33)
 	data := make([]byte, 0)
-	pos := 0
 
 	// Version (bytes 0-1)
 	versionBytes := bytesutil.ShortToBytes(MessageVersion)
-	copy(header[pos:], versionBytes)
-	pos += 2
+	copy(header[0:], versionBytes)
 
 	// ID (byte 2: length, then data)
 	idLen := 0
@@ -197,19 +195,19 @@ func (m *Message) GetBytes() ([]byte, error) {
 	if m.Tag != nil {
 		tagLen = len(*m.Tag)
 	}
-	tagLenBytes := bytesutil.ShortToBytes(int16(tagLen))
+	tagLenBytes := bytesutil.ShortToBytes(int16(tagLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
 	copy(header[3:], tagLenBytes)
 	if tagLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.Tag)...)
 	}
 
 	// MessageGroupID (byte 5: length, then data)
-	groupIdLen := 0
+	groupIDLen := 0
 	if m.MessageGroupID != nil {
-		groupIdLen = len(*m.MessageGroupID)
+		groupIDLen = len(*m.MessageGroupID)
 	}
-	header[5] = byte(groupIdLen)
-	if groupIdLen > 0 {
+	header[5] = byte(groupIDLen)
+	if groupIDLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.MessageGroupID)...)
 	}
 
@@ -256,13 +254,13 @@ func (m *Message) GetBytes() ([]byte, error) {
 	}
 
 	// AuthIdentifier (bytes 11-12: length as short, then data)
-	authIdLen := 0
+	authIDLen := 0
 	if m.AuthIdentifier != nil {
-		authIdLen = len(*m.AuthIdentifier)
+		authIDLen = len(*m.AuthIdentifier)
 	}
-	authIdLenBytes := bytesutil.ShortToBytes(int16(authIdLen))
-	copy(header[11:], authIdLenBytes)
-	if authIdLen > 0 {
+	authIDLenBytes := bytesutil.ShortToBytes(int16(authIDLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
+	copy(header[11:], authIDLenBytes)
+	if authIDLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.AuthIdentifier)...)
 	}
 
@@ -271,7 +269,7 @@ func (m *Message) GetBytes() ([]byte, error) {
 	if m.AuthGroup != nil {
 		authGroupLen = len(*m.AuthGroup)
 	}
-	authGroupLenBytes := bytesutil.ShortToBytes(int16(authGroupLen))
+	authGroupLenBytes := bytesutil.ShortToBytes(int16(authGroupLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
 	copy(header[13:], authGroupLenBytes)
 	if authGroupLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.AuthGroup)...)
@@ -290,7 +288,7 @@ func (m *Message) GetBytes() ([]byte, error) {
 	if m.Hash != nil {
 		hashLen = len(*m.Hash)
 	}
-	hashLenBytes := bytesutil.ShortToBytes(int16(hashLen))
+	hashLenBytes := bytesutil.ShortToBytes(int16(hashLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
 	copy(header[16:], hashLenBytes)
 	if hashLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.Hash)...)
@@ -301,7 +299,7 @@ func (m *Message) GetBytes() ([]byte, error) {
 	if m.PreviousHash != nil {
 		prevHashLen = len(*m.PreviousHash)
 	}
-	prevHashLenBytes := bytesutil.ShortToBytes(int16(prevHashLen))
+	prevHashLenBytes := bytesutil.ShortToBytes(int16(prevHashLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
 	copy(header[18:], prevHashLenBytes)
 	if prevHashLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.PreviousHash)...)
@@ -312,7 +310,7 @@ func (m *Message) GetBytes() ([]byte, error) {
 	if m.Nonce != nil {
 		nonceLen = len(*m.Nonce)
 	}
-	nonceLenBytes := bytesutil.ShortToBytes(int16(nonceLen))
+	nonceLenBytes := bytesutil.ShortToBytes(int16(nonceLen)) // #nosec G115 -- wire-format: field length fits in int16 by protocol spec
 	copy(header[20:], nonceLenBytes)
 	if nonceLen > 0 {
 		data = append(data, bytesutil.StringToBytes(*m.Nonce)...)
@@ -414,8 +412,8 @@ func NewMessageFromBytes(rawBytes []byte) (*Message, error) {
 		if pos+size > len(rawBytes) {
 			return nil, errors.New("message too short for MessageGroupID field")
 		}
-		groupIdStr := bytesutil.BytesToString(bytesutil.CopyOfRange(rawBytes, pos, pos+size))
-		msg.MessageGroupID = &groupIdStr
+		groupIDStr := bytesutil.BytesToString(bytesutil.CopyOfRange(rawBytes, pos, pos+size))
+		msg.MessageGroupID = &groupIDStr
 		pos += size
 	}
 
@@ -476,8 +474,8 @@ func NewMessageFromBytes(rawBytes []byte) (*Message, error) {
 		if pos+size > len(rawBytes) {
 			return nil, errors.New("message too short for AuthIdentifier field")
 		}
-		authIdStr := bytesutil.BytesToString(bytesutil.CopyOfRange(rawBytes, pos, pos+size))
-		msg.AuthIdentifier = &authIdStr
+		authIDStr := bytesutil.BytesToString(bytesutil.CopyOfRange(rawBytes, pos, pos+size))
+		msg.AuthIdentifier = &authIDStr
 		pos += size
 	}
 

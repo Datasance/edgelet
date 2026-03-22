@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/volumemount"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/volumemount"
 )
 
-// loadMicroservices loads microservices from controller or cache
+// loadMicroservices loads microservices from SQLite store or from the controller.
 func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, error) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Start Loading microservices... (fromFile=%v)", fromFile))
 
@@ -21,22 +20,17 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 		return microserviceList, nil
 	}
 
-	filename := utils.MicroserviceFile
-	var microservicesData []map[string]interface{}
-	var timestamp int64
-
 	if fromFile {
-		// Load from cache
-		logging.LogDebug(moduleName, fmt.Sprintf("Loading microservices from cache: %s", filename))
-		data, ts, err := ReadFileAsArray(filename)
-		if err != nil || data == nil {
-			// If cache read fails, try loading from controller
-			logging.LogDebug(moduleName, "Cache read failed, loading from controller")
+		// Load from SQLite store
+		logging.LogDebug(moduleName, "Loading microservices from SQLite store")
+		stored, err := loadMicroservicesFromStore()
+		if err != nil || len(stored) == 0 {
+			// Fall back to controller on store miss or error
+			logging.LogDebug(moduleName, "Store read returned empty/error, falling back to controller")
 			return fa.loadMicroservices(false)
 		}
-		microservicesData = data
-		timestamp = ts
-		logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d microservices from cache", len(microservicesData)))
+		logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d microservices from store", len(stored)))
+		microserviceList = stored
 	} else {
 		// Load from controller
 		logging.LogDebug(moduleName, "Loading microservices from controller")
@@ -53,55 +47,32 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 			return nil, fmt.Errorf("unable to get microservices: %w", err)
 		}
 
-		// Extract microservices array
+		// Parse the controller response
 		if msArray, ok := result["microservices"].([]interface{}); ok {
-			microservicesData = make([]map[string]interface{}, len(msArray))
+			logging.LogDebug(moduleName, fmt.Sprintf("Received %d microservices from controller", len(msArray)))
 			for i, ms := range msArray {
-				if msMap, ok := ms.(map[string]interface{}); ok {
-					microservicesData[i] = msMap
+				msMap, ok := ms.(map[string]interface{})
+				if !ok {
+					continue
 				}
+				microservice, err := parseMicroservice(msMap)
+				if err != nil {
+					logging.LogError(moduleName, fmt.Sprintf("Unable to parse microservice at index %d: %v", i, err), err)
+					if uuid, ok := msMap["uuid"].(string); ok {
+						logging.LogDebug(moduleName, fmt.Sprintf("Failed microservice UUID: %s", uuid))
+					}
+					continue
+				}
+				microserviceList = append(microserviceList, microservice)
 			}
-			logging.LogDebug(moduleName, fmt.Sprintf("Received %d microservices from controller", len(microservicesData)))
+			logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed %d out of %d microservices", len(microserviceList), len(msArray)))
 
-			// Save to cache
-			if err := SaveFile(microservicesData, filename); err != nil {
-				logging.LogError(moduleName, "Failed to save microservices to cache", err)
+			// Persist to SQLite store
+			if err := saveMicroservicesToStore(microserviceList); err != nil {
+				logging.LogError(moduleName, "Failed to save microservices to store", err)
 			}
 		} else {
 			return nil, fmt.Errorf("error loading microservices from IOFog controller: invalid response format")
-		}
-	}
-
-	// Parse microservices (matching Java: containerJsonObjectToMicroserviceFunction())
-	if microservicesData != nil {
-		logging.LogDebug(moduleName, fmt.Sprintf("Parsing %d microservices", len(microservicesData)))
-		for i, msData := range microservicesData {
-			microservice, err := parseMicroservice(msData)
-			if err != nil {
-				logging.LogError(moduleName, fmt.Sprintf("Unable to parse microservice at index %d: %v", i, err), err)
-				// Log the data for debugging
-				if uuid, ok := msData["uuid"].(string); ok {
-					logging.LogDebug(moduleName, fmt.Sprintf("Failed microservice UUID: %s", uuid))
-				}
-				if imageId, ok := msData["imageId"].(string); ok {
-					logging.LogDebug(moduleName, fmt.Sprintf("Failed microservice imageId: %s", imageId))
-				} else {
-					logging.LogDebug(moduleName, "Failed microservice: imageId field missing or not a string")
-				}
-				continue
-			}
-			microserviceList = append(microserviceList, microservice)
-		}
-		logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed %d out of %d microservices", len(microserviceList), len(microservicesData)))
-	}
-
-	// Update timestamp if from file
-	if fromFile && timestamp > 0 {
-		currentTimestamp := fa.state.GetLastGetChangesList()
-		if currentTimestamp == 0 {
-			fa.state.SetLastGetChangesList(timestamp)
-		} else if timestamp < currentTimestamp {
-			fa.state.SetLastGetChangesList(timestamp)
 		}
 	}
 
@@ -125,20 +96,20 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 func parseMicroservice(data map[string]interface{}) (*models.Microservice, error) {
 	uuid, _ := data["uuid"].(string)
 	// Java uses "imageId" from JSON (not "imageName")
-	imageId, _ := data["imageId"].(string)
-	
+	imageID, _ := data["imageId"].(string)
+
 	// Fallback to imageName for backward compatibility
-	if imageId == "" {
-		imageId, _ = data["imageName"].(string)
+	if imageID == "" {
+		imageID, _ = data["imageName"].(string)
 	}
 
-	if uuid == "" || imageId == "" {
+	if uuid == "" || imageID == "" {
 		return nil, fmt.Errorf("missing required fields: uuid or imageId")
 	}
 
 	// Java: new Microservice(jsonObj.getString("uuid"), jsonObj.getString("imageId"))
-	// The imageId from JSON is stored as imageName in the Microservice object
-	microservice := models.NewMicroservice(uuid, imageId)
+	// The imageID from JSON is stored as imageName in the Microservice object
+	microservice := models.NewMicroservice(uuid, imageID)
 
 	// Parse optional fields
 	if config, ok := data["config"].(string); ok {
@@ -162,8 +133,8 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	if isPrivileged, ok := data["isPrivileged"].(bool); ok {
 		microservice.IsPrivileged = isPrivileged
 	}
-	if registryId, ok := data["registryId"].(float64); ok {
-		microservice.RegistryID = int(registryId)
+	if registryID, ok := data["registryId"].(float64); ok {
+		microservice.RegistryID = int(registryID)
 	}
 	if schedule, ok := data["schedule"].(float64); ok {
 		microservice.Schedule = int(schedule)
@@ -177,24 +148,20 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	if deleteWithCleanup, ok := data["deleteWithCleanup"].(bool); ok {
 		microservice.DeleteWithCleanup = deleteWithCleanup
 	}
-	if isConsumer, ok := data["isConsumer"].(bool); ok {
-		microservice.IsConsumer = isConsumer
-	}
 	if isRouter, ok := data["isRouter"].(bool); ok {
 		microservice.IsRouter = isRouter
 	}
 	if execEnabled, ok := data["execEnabled"].(bool); ok {
 		microservice.ExecEnabled = execEnabled
 	}
-
-	// Parse routes
-	if routes, ok := data["routes"].([]interface{}); ok {
-		microservice.Routes = make([]string, 0, len(routes))
-		for _, route := range routes {
-			if routeStr, ok := route.(string); ok {
-				microservice.Routes = append(microservice.Routes, routeStr)
-			}
-		}
+	if name, ok := data["name"].(string); ok {
+		microservice.MicroserviceName = name
+	}
+	if application, ok := data["application"].(string); ok {
+		microservice.ApplicationName = application
+	}
+	if isNats, ok := data["isNats"].(bool); ok {
+		microservice.IsNats = isNats
 	}
 
 	// Parse port mappings
@@ -210,8 +177,8 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 				if portInternal, ok := pmMap["portInternal"].(float64); ok {
 					inside = int(portInternal)
 				}
-				if isUdp, ok := pmMap["isUdp"].(bool); ok {
-					udp = isUdp
+				if isUDP, ok := pmMap["isUdp"].(bool); ok {
+					udp = isUDP
 				}
 				portMapping := models.NewPortMapping(outside, inside, udp)
 				microservice.PortMappings = append(microservice.PortMappings, portMapping)
@@ -342,13 +309,13 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 
 	// Parse cpuSetCpus (matching Java: jsonObj.getString("cpuSetCpus"))
 	if cpuSetCpus, ok := data["cpuSetCpus"].(string); ok && cpuSetCpus != "" {
-		microservice.CpuSetCpus = &cpuSetCpus
+		microservice.CPUSetCpus = &cpuSetCpus
 	}
 
 	// Parse healthCheck (matching Java: healthcheckValue.getJsonObject("healthCheck"))
 	if healthCheck, ok := data["healthCheck"].(map[string]interface{}); ok {
 		healthcheck := &models.Healthcheck{}
-		
+
 		// Parse test (array of strings)
 		if test, ok := healthCheck["test"].([]interface{}); ok {
 			healthcheck.Test = make([]string, 0, len(test))
@@ -358,7 +325,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 				}
 			}
 		}
-		
+
 		// Parse numeric fields (can be null in Java)
 		if interval, ok := healthCheck["interval"].(float64); ok {
 			intervalVal := int64(interval)
@@ -380,7 +347,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 			retriesVal := int(retries)
 			healthcheck.Retries = &retriesVal
 		}
-		
+
 		microservice.Healthcheck = healthcheck
 	}
 
@@ -391,11 +358,11 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		logging.LogDebug(moduleName, fmt.Sprintf("ServiceAccount found for microservice %s (not fully parsed)", uuid))
 	}
 
-	logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed microservice: uuid=%s, imageId=%s", uuid, imageId))
+	logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed microservice: uuid=%s, imageId=%s", uuid, imageID))
 	return microservice, nil
 }
 
-// loadRegistries loads registries from controller or cache
+// loadRegistries loads registries from SQLite store or from the controller.
 func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 	logging.LogDebug(moduleName, "get registries")
 
@@ -403,17 +370,17 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 		return nil
 	}
 
-	filename := "registries.json"
-	var registriesData []map[string]interface{}
+	var registries []*models.Registry
 
 	if fromFile {
-		// Load from cache
-		data, _, err := ReadFileAsArray(filename)
-		if err != nil || data == nil {
-			// If cache read fails, try loading from controller
+		// Load from SQLite store
+		stored, err := loadRegistriesFromStore()
+		if err != nil || len(stored) == 0 {
+			// Fall back to controller on store miss or error
 			return fa.loadRegistries(false)
 		}
-		registriesData = data
+		registries = stored
+		logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d registries from store", len(registries)))
 	} else {
 		// Load from controller
 		ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
@@ -428,32 +395,24 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 			return fmt.Errorf("unable to get registries: %w", err)
 		}
 
-		// Extract registries array
+		registries = make([]*models.Registry, 0)
 		if regArray, ok := result["registries"].([]interface{}); ok {
-			registriesData = make([]map[string]interface{}, len(regArray))
-			for i, reg := range regArray {
+			for _, reg := range regArray {
 				if regMap, ok := reg.(map[string]interface{}); ok {
-					registriesData[i] = regMap
+					registries = append(registries, parseRegistry(regMap))
 				}
-			}
-
-			// Save to cache
-			if err := SaveFile(registriesData, filename); err != nil {
-				logging.LogError(moduleName, "Failed to save registries to cache", err)
 			}
 		} else {
 			return fmt.Errorf("error loading registries from IOFog controller: invalid response format")
 		}
+
+		// Persist to SQLite store
+		if err := saveRegistriesToStore(registries); err != nil {
+			logging.LogError(moduleName, "Failed to save registries to store", err)
+		}
 	}
 
-	// Parse registries
-	registries := make([]*models.Registry, 0)
-	if registriesData != nil && len(registriesData) > 0 {
-		for _, regData := range registriesData {
-			registry := parseRegistry(regData)
-			registries = append(registries, registry)
-		}
-	} else {
+	if len(registries) == 0 {
 		logging.LogInfo(moduleName, "Registries list is empty")
 	}
 
@@ -532,30 +491,6 @@ func (fa *FieldAgent) processMicroserviceConfig(microservices []*models.Microser
 	return nil
 }
 
-// processRoutes processes microservice routes
-func (fa *FieldAgent) processRoutes(microservices []*models.Microservice) error {
-	logging.LogDebug(moduleName, "Start process routes")
-
-	routes := make(map[string]*models.Route)
-	for _, microservice := range microservices {
-		if len(microservice.Routes) > 0 {
-			route := models.NewRoute()
-			route.SetReceivers(microservice.Routes)
-			routes[microservice.MicroserviceUUID] = route
-		}
-	}
-
-	// Notify callback if set
-	if fa.onRoutesUpdate != nil {
-		if err := fa.onRoutesUpdate(routes); err != nil {
-			return fmt.Errorf("failed to update routes: %w", err)
-		}
-	}
-
-	logging.LogDebug(moduleName, "Finished process routes")
-	return nil
-}
-
 // loadVolumeMounts loads volume mounts from controller
 // Matches Java: loadVolumeMounts() - catches exceptions and continues
 func (fa *FieldAgent) loadVolumeMounts() error {
@@ -570,7 +505,7 @@ func (fa *FieldAgent) loadVolumeMounts() error {
 
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
-	
+
 	result, err := fa.apiClient.Request(ctx, "volumeMounts", GET, nil, nil)
 	if err != nil {
 		// Log error but don't fail startup (matching Java: catch Exception and log)
@@ -597,74 +532,4 @@ func (fa *FieldAgent) loadVolumeMounts() error {
 
 	logging.LogInfo(moduleName, "Finished loading volume mounts")
 	return nil
-}
-
-// loadEdgeResources loads edge resources from controller or cache
-func (fa *FieldAgent) loadEdgeResources(fromFile bool) error {
-	logging.LogDebug(moduleName, "Start Loading edge resources...")
-
-	if fa.NotProvisioned() || !fa.IsControllerConnected(fromFile) {
-		return nil
-	}
-
-	filename := utils.EdgeResourceFile
-	var edgeResourcesData []map[string]interface{}
-
-	if fromFile {
-		// Load from cache
-		data, _, err := ReadFileAsArray(filename)
-		if err != nil || data == nil {
-			// If cache read fails, try loading from controller
-			return fa.loadEdgeResources(false)
-		}
-		edgeResourcesData = data
-	} else {
-		// Load from controller
-		ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-		result, err := fa.apiClient.Request(ctx, "edgeResources", GET, nil, nil)
-		cancel()
-
-		if err != nil {
-			if isCertificateError(err) {
-				fa.verificationFailed(err)
-				return fmt.Errorf("unable to get edgeResources due to broken certificate: %w", err)
-			}
-			return fmt.Errorf("unable to get edgeResources: %w", err)
-		}
-
-		// Extract edge resources array
-		if erArray, ok := result["edgeResources"].([]interface{}); ok {
-			edgeResourcesData = make([]map[string]interface{}, len(erArray))
-			for i, er := range erArray {
-				if erMap, ok := er.(map[string]interface{}); ok {
-					edgeResourcesData[i] = erMap
-				}
-			}
-
-			// Save to cache
-			if err := SaveFile(edgeResourcesData, filename); err != nil {
-				logging.LogError(moduleName, "Failed to save edge resources to cache", err)
-			}
-		} else {
-			return fmt.Errorf("error loading edgeResources from IOFog controller: invalid response format")
-		}
-	}
-
-	// Store edge resources in FieldAgent
-	fa.edgeResourcesMu.Lock()
-	fa.edgeResources = edgeResourcesData
-	fa.edgeResourcesMu.Unlock()
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished loading edge resources... (count: %d)", len(edgeResourcesData)))
-	return nil
-}
-
-// GetEdgeResources returns the current edge resources
-func (fa *FieldAgent) GetEdgeResources() []map[string]interface{} {
-	fa.edgeResourcesMu.RLock()
-	defer fa.edgeResourcesMu.RUnlock()
-
-	result := make([]map[string]interface{}, len(fa.edgeResources))
-	copy(result, fa.edgeResources)
-	return result
 }

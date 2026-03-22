@@ -2,27 +2,25 @@ package fieldagent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/auth"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/diagnostics"
-	"github.com/eclipse-iofog/agent-go/internal/hardware"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/processmanager"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/volumemount"
+	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/diagnostics"
+	"github.com/eclipse-iofog/agent/internal/hardware"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/processmanager"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/store"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/volumemount"
 )
 
 const (
@@ -76,7 +74,6 @@ type FieldAgent struct {
 	// Callbacks for other modules (will be set by supervisor)
 	onMicroservicesUpdate func([]*models.Microservice) error
 	onRegistriesUpdate    func([]*models.Registry) error
-	onRoutesUpdate        func(map[string]*models.Route) error
 	onConfigsUpdate       func(map[string]string) error
 	processManager        *processmanager.ProcessManager
 
@@ -93,8 +90,6 @@ type FieldAgent struct {
 	microservicesMu      sync.RWMutex
 
 	// Edge resources
-	edgeResources   []map[string]interface{}
-	edgeResourcesMu sync.RWMutex
 
 	// Container config map (matching Java ConfigurationMap.containerConfigMap)
 	containerConfigMap map[string]string // microserviceUUID -> config JSON string
@@ -123,47 +118,16 @@ func GetInstance() *FieldAgent {
 			registries:           make([]*models.Registry, 0),
 			containerConfigMap:   make(map[string]string),
 		}
-		// #region agent log
-		logEntry := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run1",
-			"hypothesisId": "B",
-			"location":     "agent.go:68",
-			"message":      "GetInstance: FieldAgent created",
-			"data":         map[string]interface{}{"ctx_is_nil": instance.ctx == nil},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	})
-	// #region agent log
-	logEntry2 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": "B",
-		"location":     "agent.go:80",
-		"message":      "GetInstance: returning instance",
-		"data":         map[string]interface{}{"ctx_is_nil": instance.ctx == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry2); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 	return instance
 }
 
 // Start starts the FieldAgent and all background workers
 func (fa *FieldAgent) Start() error {
 	logging.LogDebug(moduleName, "Starting Field Agent")
+
+	// One-time migration: import legacy JSON cache files into SQLite if they exist
+	MigrateJSONToSQLite()
 
 	// Initialize API client
 	apiClient, err := NewAPIClient()
@@ -183,23 +147,6 @@ func (fa *FieldAgent) Start() error {
 
 	// Create context for cancellation
 	fa.ctx, fa.cancel = context.WithCancel(context.Background())
-	// #region agent log
-	logEntry := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": "C",
-		"location":     "agent.go:101",
-		"message":      "Start: ctx initialized",
-		"data":         map[string]interface{}{"ctx_is_nil": fa.ctx == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	// Initialize JWT Manager first if we have the private key (matching Java: lines 1960-1971)
 	cfg := config.GetInstance()
@@ -289,7 +236,9 @@ func (fa *FieldAgent) Start() error {
 					logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
 				}
 			}()
-			fa.loadVolumeMounts() // Ignore error to match Java behavior
+			if err := fa.loadVolumeMounts(); err != nil { // errors are caught by the surrounding recover
+				logging.LogWarn(moduleName, fmt.Sprintf("loadVolumeMounts returned error: %v", err))
+			}
 		}()
 		logging.LogInfo(moduleName, "Volume mounts processing completed, proceeding to load microservices")
 
@@ -309,14 +258,6 @@ func (fa *FieldAgent) Start() error {
 			}
 			logging.LogDebug(moduleName, "Finished process microservice configuration")
 
-			// Process routes
-			logging.LogDebug(moduleName, "Start processing routes")
-			if err := fa.processRoutes(microservices); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Failed to process routes on startup: %v", err))
-			} else {
-				logging.LogInfo(moduleName, "Routes processed successfully")
-			}
-			logging.LogDebug(moduleName, "Finished process routes")
 		}
 
 		// Notify ProcessManager to immediately update (matching Java: line 1990)
@@ -326,14 +267,6 @@ func (fa *FieldAgent) Start() error {
 			fa.processManager.Update()
 		} else {
 			logging.LogWarn(moduleName, "ProcessManager not set, skipping update notification")
-		}
-
-		// Load edge resources
-		logging.LogDebug(moduleName, "Loading edge resources")
-		if err := fa.loadEdgeResources(!isConnected); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to load edge resources on startup: %v", err))
-		} else {
-			logging.LogDebug(moduleName, "Edge resources loaded successfully")
 		}
 
 		logging.LogInfo(moduleName, "Initial data loading completed")
@@ -390,13 +323,6 @@ func (fa *FieldAgent) SetOnRegistriesUpdate(callback func([]*models.Registry) er
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 	fa.onRegistriesUpdate = callback
-}
-
-// SetOnRoutesUpdate sets the callback for routes updates
-func (fa *FieldAgent) SetOnRoutesUpdate(callback func(map[string]*models.Route) error) {
-	fa.mu.Lock()
-	defer fa.mu.Unlock()
-	fa.onRoutesUpdate = callback
 }
 
 // SetOnConfigsUpdate sets the callback for configs updates
@@ -554,44 +480,10 @@ func (fa *FieldAgent) ping() bool {
 	return false
 }
 
+// TODO: remmove region logs
 // Provision provisions the agent with the controller
 func (fa *FieldAgent) Provision(key string) error {
-	// #region agent log
-	logEntry := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": "A",
-		"location":     "agent.go:279",
-		"message":      "Provision entry",
-		"data":         map[string]interface{}{"keyLength": len(key), "fa_ctx_is_nil": fa.ctx == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 	logging.LogDebug(moduleName, "Start provisioning")
-
-	// #region agent log
-	logEntry2 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": "A",
-		"location":     "agent.go:282",
-		"message":      "Before context.WithTimeout",
-		"data":         map[string]interface{}{"fa_ctx_is_nil": fa.ctx == nil, "fa_ctx_type": fmt.Sprintf("%T", fa.ctx)},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry2); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	// Use fa.ctx if available (daemon mode), otherwise use context.Background() (CLI mode)
 	parentCtx := fa.ctx
@@ -601,61 +493,8 @@ func (fa *FieldAgent) Provision(key string) error {
 	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	defer cancel()
 
-	// #region agent log
-	logEntry3 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "post-fix",
-		"hypothesisId": "A",
-		"location":     "agent.go:295",
-		"message":      "After context.WithTimeout (post-fix)",
-		"data":         map[string]interface{}{"parent_ctx_was_nil": fa.ctx == nil, "using_background": fa.ctx == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry3); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
-	// #region agent log
-	logEntry4 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run2",
-		"hypothesisId": "F",
-		"location":     "agent.go:396",
-		"message":      "Before apiClient.Request",
-		"data":         map[string]interface{}{"apiClient_is_nil": fa.apiClient == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry4); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
 	// Initialize apiClient if nil (CLI mode - Start() hasn't been called)
 	if fa.apiClient == nil {
-		// #region agent log
-		logEntry5 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run2",
-			"hypothesisId": "F",
-			"location":     "agent.go:410",
-			"message":      "Initializing apiClient lazily",
-			"data":         map[string]interface{}{},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry5); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 		apiClient, err := NewAPIClient()
 		if err != nil {
 			return fmt.Errorf("failed to initialize API client: %w", err)
@@ -672,53 +511,10 @@ func (fa *FieldAgent) Provision(key string) error {
 		"type": archCode,
 	}
 
-	// #region agent log
-	logEntry6 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run4",
-		"hypothesisId": "H",
-		"location":     "agent.go:443",
-		"message":      "Provision: request body",
-		"data":         map[string]interface{}{"body": body, "arch": cfg.Arch},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry6); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
 	result, err := fa.apiClient.Request(ctx, "provision", POST, nil, body)
 	if err != nil {
 		return fmt.Errorf("provisioning failed: %w", err)
 	}
-
-	// #region agent log
-	logEntry7 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run5",
-		"hypothesisId": "I",
-		"location":     "agent.go:499",
-		"message":      "Provision: result received",
-		"data": map[string]interface{}{
-			"has_uuid":        result["uuid"] != nil,
-			"has_privateKey":  result["privateKey"] != nil,
-			"has_namespace":   result["namespace"] != nil,
-			"uuid_type":       fmt.Sprintf("%T", result["uuid"]),
-			"privateKey_type": fmt.Sprintf("%T", result["privateKey"]),
-			"namespace_type":  fmt.Sprintf("%T", result["namespace"]),
-		},
-		"timestamp": time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry7); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	// Extract UUID, private key, and namespace from result and save to config
 	// Matching Java: Configuration.setIofogUuid(), setPrivateKey(), setNamespace(), saveConfigUpdates()
@@ -730,23 +526,6 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to set iofogUuid in YAML config: %v", err))
 		}
 		updated = true
-		// #region agent log
-		logEntry8 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run5",
-			"hypothesisId": "I",
-			"location":     "agent.go:520",
-			"message":      "Provision: UUID set",
-			"data":         map[string]interface{}{"uuid": uuid},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry8); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
 	if privateKey, ok := result["privateKey"].(string); ok && privateKey != "" {
 		cfg.PrivateKey = privateKey
@@ -754,23 +533,6 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to set privateKey in YAML config: %v", err))
 		}
 		updated = true
-		// #region agent log
-		logEntry9 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run5",
-			"hypothesisId": "I",
-			"location":     "agent.go:538",
-			"message":      "Provision: privateKey set",
-			"data":         map[string]interface{}{"privateKey_length": len(privateKey)},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry9); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
 	if namespace, ok := result["namespace"].(string); ok && namespace != "" {
 		cfg.Namespace = namespace
@@ -778,23 +540,6 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to set namespace in YAML config: %v", err))
 		}
 		updated = true
-		// #region agent log
-		logEntry10 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run5",
-			"hypothesisId": "I",
-			"location":     "agent.go:556",
-			"message":      "Provision: namespace set",
-			"data":         map[string]interface{}{"namespace": namespace},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry10); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
 
 	// Save config to disk (matching Java: Configuration.saveConfigUpdates())
@@ -804,51 +549,11 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogError(moduleName, "Failed to save config updates after provisioning", err)
 			return fmt.Errorf("provisioning succeeded but failed to save config: %w", err)
 		}
-		// #region agent log
-		logEntry11 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run5",
-			"hypothesisId": "I",
-			"location":     "agent.go:575",
-			"message":      "Provision: config saved to disk",
-			"data":         map[string]interface{}{"configPath": configPath},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry11); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
 
 	// Reset JWT manager to use new credentials
 	// IMPORTANT: Reset AFTER config is saved so JWT manager can reload from updated config
 	auth.GetJWTManager().Reset()
-
-	// #region agent log
-	logEntry12a := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run6",
-		"hypothesisId": "M",
-		"location":     "agent.go:633",
-		"message":      "Provision: JWT manager reset, checking config",
-		"data": map[string]interface{}{
-			"uuid":           cfg.IOFogUUID,
-			"privateKey_len": len(cfg.PrivateKey),
-			"has_uuid":       cfg.IOFogUUID != "",
-			"has_privateKey": cfg.PrivateKey != "",
-		},
-		"timestamp": time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry12a); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	// Recreate API client with new credentials (matching Java: orchestrator.update() after provisioning)
 	// This is critical because the API client was created before provisioning (without UUID/privateKey)
@@ -867,82 +572,10 @@ func (fa *FieldAgent) Provision(key string) error {
 	}
 	fa.mu.Unlock()
 
-	// #region agent log
-	logEntry12b := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run6",
-		"hypothesisId": "M",
-		"location":     "agent.go:650",
-		"message":      "Provision: API client recreated, testing JWT generation",
-		"data":         map[string]interface{}{"apiClient_is_nil": apiClient == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry12b); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
 	// Test JWT generation to ensure it works
-	testToken, testErr := auth.GetJWTManager().GenerateJWT()
-	if testErr != nil {
-		// #region agent log
-		logEntry12c := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run6",
-			"hypothesisId": "M",
-			"location":     "agent.go:665",
-			"message":      "Provision: JWT generation test failed",
-			"data":         map[string]interface{}{"error": testErr.Error()},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry12c); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
+	if _, testErr := auth.GetJWTManager().GenerateJWT(); testErr != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("JWT generation test failed after provisioning: %v", testErr))
-	} else {
-		// #region agent log
-		logEntry12d := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run6",
-			"hypothesisId": "M",
-			"location":     "agent.go:680",
-			"message":      "Provision: JWT generation test succeeded",
-			"data":         map[string]interface{}{"token_length": len(testToken)},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry12d); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
-
-	// #region agent log
-	logEntry12 := map[string]interface{}{
-		"sessionId":    "debug-session",
-		"runId":        "run6",
-		"hypothesisId": "J",
-		"location":     "agent.go:633",
-		"message":      "Provision: API client recreated",
-		"data":         map[string]interface{}{"apiClient_is_nil": apiClient == nil},
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry12); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
 
 	// Set status to OK since provisioning succeeded (matching Java: StatusReporter.setFieldAgentStatus().setControllerStatus(OK))
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
@@ -955,24 +588,6 @@ func (fa *FieldAgent) Provision(key string) error {
 		// This is critical: the daemon's FieldAgent was created before provisioning
 		if err := fa.Update(); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to update FieldAgent after provisioning: %v", err))
-		} else {
-			// #region agent log
-			logEntry13 := map[string]interface{}{
-				"sessionId":    "debug-session",
-				"runId":        "run6",
-				"hypothesisId": "K",
-				"location":     "agent.go:675",
-				"message":      "Provision: FieldAgent updated (daemon mode)",
-				"data":         map[string]interface{}{},
-				"timestamp":    time.Now().UnixMilli(),
-			}
-			if logBytes, err := json.Marshal(logEntry13); err == nil {
-				if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-					f.WriteString(string(logBytes) + "\n")
-					f.Close()
-				}
-			}
-			// #endregion
 		}
 
 		// Post fog config to controller (matching Java: postFogConfig() after provisioning)
@@ -980,43 +595,7 @@ func (fa *FieldAgent) Provision(key string) error {
 		if err := fa.postFogConfig(); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to post fog config after provisioning (non-critical): %v", err))
 			// Don't fail provisioning for this - matching Java behavior
-		} else {
-			// #region agent log
-			logEntry14 := map[string]interface{}{
-				"sessionId":    "debug-session",
-				"runId":        "run6",
-				"hypothesisId": "K",
-				"location":     "agent.go:695",
-				"message":      "Provision: postFogConfig succeeded",
-				"data":         map[string]interface{}{},
-				"timestamp":    time.Now().UnixMilli(),
-			}
-			if logBytes, err := json.Marshal(logEntry14); err == nil {
-				if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-					f.WriteString(string(logBytes) + "\n")
-					f.Close()
-				}
-			}
-			// #endregion
 		}
-	} else {
-		// #region agent log
-		logEntry15 := map[string]interface{}{
-			"sessionId":    "debug-session",
-			"runId":        "run6",
-			"hypothesisId": "K",
-			"location":     "agent.go:712",
-			"message":      "Provision: skipping update/postFogConfig (CLI mode, ctx is nil)",
-			"data":         map[string]interface{}{},
-			"timestamp":    time.Now().UnixMilli(),
-		}
-		if logBytes, err := json.Marshal(logEntry15); err == nil {
-			if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-				f.WriteString(string(logBytes) + "\n")
-				f.Close()
-			}
-		}
-		// #endregion
 	}
 
 	logging.LogDebug(moduleName, "Finished provisioning")
@@ -1028,10 +607,10 @@ func (fa *FieldAgent) Provision(key string) error {
 func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 	// Get all microservice UUIDs from latest and current (using a set to avoid duplicates)
 	uuidSet := make(map[string]bool)
-	
+
 	latest := fa.GetLatestMicroservices()
 	current := fa.GetCurrentMicroservices()
-	
+
 	for _, ms := range latest {
 		if ms.MicroserviceUUID != "" {
 			uuidSet[ms.MicroserviceUUID] = true
@@ -1042,13 +621,13 @@ func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 			uuidSet[ms.MicroserviceUUID] = true
 		}
 	}
-	
+
 	// Convert set to array
 	uuids := make([]string, 0, len(uuidSet))
 	for uuid := range uuidSet {
 		uuids = append(uuids, uuid)
 	}
-	
+
 	return map[string]interface{}{
 		"microserviceUuids": uuids,
 	}
@@ -1063,7 +642,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 	if !fa.provisioningMu.TryLock() {
 		msg := "Provisioning in progress"
 		logging.LogInfo(moduleName, msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 	defer fa.provisioningMu.Unlock()
 
@@ -1074,7 +653,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 	}
 
 	// Store configuration values before clearing them (matching Java)
-	iofogUuid := fa.config.IOFogUUID
+	iofogUUID := fa.config.IOFogUUID
 	// Note: privateKey and namespace are stored but not used in Go (matching Java behavior)
 
 	// Delete hardware signature file (.jwt) BEFORE clearing UUID
@@ -1122,11 +701,11 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 				logging.LogError(moduleName, "Error saving config updates", fmt.Errorf("%v", r))
 			}
 		}()
-		
+
 		fa.config.IOFogUUID = ""
 		fa.config.PrivateKey = ""
 		fa.config.Namespace = "default"
-		
+
 		// Update YAML config properties before saving (matching Java: Configuration.saveConfigUpdates())
 		// The SaveConfig() function uses GetYamlConfig() which doesn't reflect in-memory struct changes
 		// We need to update the YAML config's Properties map directly
@@ -1145,7 +724,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		} else {
 			logging.LogWarn(moduleName, "YAML config not loaded, cannot update properties")
 		}
-		
+
 		// Save config updates (matching Java: Configuration.saveConfigUpdates())
 		// Use SaveConfig with the config path
 		configPath := utils.ConfigYAMLPath
@@ -1155,7 +734,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		} else {
 			logging.LogDebug(moduleName, "Configuration cleared successfully")
 		}
-		
+
 		// Reset JWT Manager (matching Java: JwtManager.reset())
 		func() {
 			defer func() {
@@ -1168,7 +747,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 			logging.LogDebug(moduleName, "JWT Manager reset completed")
 		}()
 	}()
-	
+
 	if configUpdated {
 		// Update config backup file (matching Java: Configuration.updateConfigBackUpFile())
 		// Note: This might not be implemented in Go yet, but we'll log it
@@ -1186,7 +765,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 					logging.LogError(moduleName, "Error stopping running microservices", fmt.Errorf("%v", r))
 				}
 			}()
-			if err := fa.processManager.StopRunningMicroservices(iofogUuid); err != nil {
+			if err := fa.processManager.StopRunningMicroservices(iofogUUID, true); err != nil {
 				logging.LogError(moduleName, "Error stopping running microservices", err)
 			}
 		}()
@@ -1204,22 +783,22 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		}
 	}()
 
-	// Delete JSON cache files (matching Java: deleteNode cleanup)
-	// These files are stored in config directory and should be cleaned on deprovision
+	// Clear SQLite tables for microservices and registries on deprovision
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error deleting JSON cache files: %v", r))
+				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing SQLite cache tables: %v", r))
 			}
 		}()
-		jsonFiles := []string{"microservices.json", "registries.json", "edge_resources.json"}
-		for _, filename := range jsonFiles {
-			filePath := filepath.Join(utils.ConfigDir, filename)
-			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error deleting cache file %s: %v", filename, err))
-			} else if err == nil {
-				logging.LogDebug(moduleName, fmt.Sprintf("Deleted cache file: %s", filename))
+		db := store.GetInstance()
+		if db.Conn() != nil {
+			if err := db.ClearMicroservices(); err != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
 			}
+			if err := db.ClearRegistries(); err != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
+			}
+			logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")
 		}
 	}()
 
@@ -1240,11 +819,6 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		if fa.onRegistriesUpdate != nil {
 			if err := fa.onRegistriesUpdate([]*models.Registry{}); err != nil {
 				logging.LogWarn(moduleName, fmt.Sprintf("Error notifying registries update: %v", err))
-			}
-		}
-		if fa.onRoutesUpdate != nil {
-			if err := fa.onRoutesUpdate(map[string]*models.Route{}); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error notifying routes update: %v", err))
 			}
 		}
 		if fa.onConfigsUpdate != nil {
@@ -1310,8 +884,36 @@ func (fa *FieldAgent) Update() error {
 		}
 	}()
 
+	// Restart workers so they pick up new frequency values from config
+	go fa.restartWorkers()
+
 	logging.LogDebug(moduleName, "Field Agent updated successfully")
 	return nil
+}
+
+// restartWorkers stops existing background workers and starts new ones with updated intervals
+func (fa *FieldAgent) restartWorkers() {
+	logging.LogDebug(moduleName, "Restarting workers to pick up new config frequencies")
+
+	// Cancel existing workers
+	if fa.cancel != nil {
+		fa.cancel()
+	}
+
+	// Wait for them to finish
+	fa.wg.Wait()
+
+	// New context for the restarted workers
+	fa.ctx, fa.cancel = context.WithCancel(context.Background())
+
+	// Start fresh workers — tickers will be created with current config values
+	fa.wg.Add(4)
+	go fa.pingControllerWorker()
+	go fa.getChangesWorker()
+	go fa.postStatusWorker()
+	go fa.postDiagnosticsWorker()
+
+	logging.LogDebug(moduleName, "Workers restarted with updated config frequencies")
 }
 
 // GetActiveExecSession returns the active exec session ID for a microservice
@@ -1524,7 +1126,9 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 
 			if existingExecID != "" {
 				logging.LogDebug(moduleName, fmt.Sprintf("Cleaning up exec session for microservice: %s", microserviceUUID))
-				fa.HandleExecSessionClose(microserviceUUID, existingExecID)
+				if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Failed to close exec session: %v", err))
+				}
 			}
 			continue
 		}
@@ -1541,7 +1145,9 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 				if err != nil || status == nil || !status.Running {
 					// Session is not running, clean it up and create a new one
 					logging.LogDebug(moduleName, fmt.Sprintf("Exec session %s is not running, cleaning up and creating new one", existingExecID))
-					fa.HandleExecSessionClose(microserviceUUID, existingExecID)
+					if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
+						logging.LogWarn(moduleName, fmt.Sprintf("Failed to close stale exec session: %v", err))
+					}
 					// Continue to create new session below
 				} else {
 					logging.LogDebug(moduleName, fmt.Sprintf("Exec session already exists and is running for microservice: %s, execID: %s", microserviceUUID, existingExecID))

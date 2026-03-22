@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 func TestGenerateToken(t *testing.T) {
@@ -137,7 +137,7 @@ func TestLocalTokenManager_LoadToken_FileNotExists(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when loading token from non-existent file, got nil")
 	}
-	
+
 	// Verify the error message contains expected text
 	if err != nil && err.Error() == "" {
 		t.Error("Error message is empty")

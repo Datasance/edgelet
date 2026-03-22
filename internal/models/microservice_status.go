@@ -4,16 +4,16 @@ import "time"
 
 // MicroserviceStatus represents the status of a microservice
 type MicroserviceStatus struct {
-	Status          MicroserviceState `json:"status" yaml:"status"`
-	StartTime       int64             `json:"startTime" yaml:"startTime"`
-	CpuUsage        float32           `json:"cpuUsage" yaml:"cpuUsage"`
-	MemoryUsage     int64             `json:"memoryUsage" yaml:"memoryUsage"`
-	ContainerID     string            `json:"containerId" yaml:"containerId"`
-	Percentage      float32           `json:"percentage" yaml:"percentage"`
-	ErrorMessage    *string           `json:"errorMessage,omitempty" yaml:"errorMessage,omitempty"`
-	IPAddress       *string           `json:"ipAddress,omitempty" yaml:"ipAddress,omitempty"`
-	ExecSessionIDs  []string          `json:"execSessionIds,omitempty" yaml:"execSessionIds,omitempty"`
-	HealthStatus    *string           `json:"healthStatus,omitempty" yaml:"healthStatus,omitempty"`
+	Status         MicroserviceState `json:"status" yaml:"status"`
+	StartTime      int64             `json:"startTime" yaml:"startTime"`
+	CPUUsage       float32           `json:"cpuUsage" yaml:"cpuUsage"`
+	MemoryUsage    int64             `json:"memoryUsage" yaml:"memoryUsage"`
+	ContainerID    string            `json:"containerId" yaml:"containerId"`
+	Percentage     float32           `json:"percentage" yaml:"percentage"`
+	ErrorMessage   *string           `json:"errorMessage,omitempty" yaml:"errorMessage,omitempty"`
+	IPAddress      *string           `json:"ipAddress,omitempty" yaml:"ipAddress,omitempty"`
+	ExecSessionIDs []string          `json:"execSessionIds,omitempty" yaml:"execSessionIds,omitempty"`
+	HealthStatus   *string           `json:"healthStatus,omitempty" yaml:"healthStatus,omitempty"`
 }
 
 // NewMicroserviceStatus creates a new MicroserviceStatus with UNKNOWN state

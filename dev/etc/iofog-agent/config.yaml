@@ -4,45 +4,39 @@ profiles:
         arch: auto
         availableDiskThreshold: "20"
         caCert: ""
-        changeFrequency: "10"
-        controllerCert: /Users/emirhan/Documents/GitHub/Agent/agent-go/dev/etc/iofog-agent/cert.crt
+        changeFrequency: "15"
+        controllerCert: /Users/emirhan/Documents/GitHub/Agent-Go/dev/etc/iofog-agent/cert.crt
         controllerUrl: http://localhost:51121/api/v3
         devMode: "on"
-        deviceScanFrequency: "60"
         diskConsumptionLimit: "10"
-        diskDirectory: /Users/emirhan/Documents/GitHub/Agent/agent-go/dev/var/lib/iofog-agent/
+        diskDirectory: /Users/emirhan/Documents/GitHub/Agent-Go/dev/var/lib/iofog-agent/
         dockerPruningFrequency: "0"
         dockerUrl: unix:///var/run/docker.sock
         edgeGuardFreq: "0"
-        edgeGuardFrequency: "0"
         getChangesFreq: "60"
         gps: auto
         gpsCoordinates: 0,0
-        gpsDevice: /dev/ttyUSB0
-        gpsMode: auto
+        gpsDevice: ""
         gpsScanFreq: "60"
-        gpsScanFrequency: "60"
-        iofogUuid: db36ff94-2533-4189-9c5d-eee38199d918
+        iofogUuid: 5897676a-51ec-468a-8d99-1bd5a5f53595
         isolatedDockerContainer: "off"
         logDiskConsumptionLimit: "10.0"
-        logDiskDirectory: /Users/emirhan/Documents/GitHub/Agent/agent-go/dev/var/log/iofog-agent/
+        logDiskDirectory: /Users/emirhan/Documents/GitHub/Agent-Go/dev/var/log/iofog-agent/
         logFileCount: "10"
         logLevel: DEBUG
         memoryConsumptionLimit: "4096"
         namespace: datasance
         networkInterface: dynamic
         postDiagnosticsFreq: "10"
-        privateKey: eyJjcnYiOiJFZDI1NTE5IiwiZCI6ImFpc0VTTFdVNFRwYUk1ZWxPM2c3LU1Cd2JGS3dTbnY4ZHFJckpxT214Y3ciLCJ4IjoiVkQyNENoQzROaXprb19jRk83U2JBdXFGZVBoc1FhemlmRVdUbkVqUlJFQSIsImt0eSI6Ik9LUCJ9
+        privateKey: eyJjcnYiOiJFZDI1NTE5IiwiZCI6IkNGV290WU9sSnB2SC1ra0xIeWdxMHJTUXRON3U5TWZhX21GUmhzWkEzYTQiLCJ4IjoiUUVmNGREZUMzeGo5M2tkR0o4RVp5UDNRM1JIZ0lvd2EtUGlfQUdBQ2pTUSIsImt0eSI6Ik9LUCJ9
         processorConsumptionLimit: "80.0"
         routerHost: ""
         routerPort: ""
         routerUuid: ""
         scanDevicesFreq: "60"
         secureMode: "off"
-        statusFrequency: "10"
         statusUpdateFreq: "30"
-        timeZone: Etc/UTC
+        timeZone: ""
         tlsCert: ""
         tlsKey: ""
         upgradeScanFrequency: "24"
-        watchdogEnabled: "true"

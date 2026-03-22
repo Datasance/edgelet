@@ -2,13 +2,14 @@ package fieldagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -31,13 +32,13 @@ type ExecSessionCallback struct {
 	stderrWriter io.WriteCloser // For ProcessManager to write to
 
 	// State management
-	isRunning      atomic.Bool
-	stdoutClosed   atomic.Bool
-	stderrClosed   atomic.Bool
-	mu             sync.RWMutex
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
+	isRunning    atomic.Bool
+	stdoutClosed atomic.Bool
+	stderrClosed atomic.Bool
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 
 	// Handlers
 	onInputHandler  func([]byte)
@@ -55,10 +56,10 @@ func NewExecSessionCallback(microserviceUUID, execID string) *ExecSessionCallbac
 
 	callback := &ExecSessionCallback{
 		microserviceUUID: microserviceUUID,
-		execID:            execID,
-		webSocketHandler:  GetExecSessionWebSocketHandler(microserviceUUID),
-		ctx:               ctx,
-		cancel:            cancel,
+		execID:           execID,
+		webSocketHandler: GetExecSessionWebSocketHandler(microserviceUUID),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	callback.isRunning.Store(true)
@@ -162,7 +163,7 @@ func (c *ExecSessionCallback) readStdout() {
 				c.forwardToWebSocket(ExecTypeStdout, data)
 			}
 			if err != nil {
-				if err != io.EOF && err != io.ErrClosedPipe && err.Error() != "io: read/write on closed pipe" {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) && err.Error() != "io: read/write on closed pipe" {
 					logging.LogError(execCallbackModuleName, "Error reading from stdout", err)
 				}
 				return
@@ -193,7 +194,7 @@ func (c *ExecSessionCallback) readStderr() {
 				c.forwardToWebSocket(ExecTypeStderr, data)
 			}
 			if err != nil {
-				if err != io.EOF && err != io.ErrClosedPipe && err.Error() != "io: read/write on closed pipe" {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) && err.Error() != "io: read/write on closed pipe" {
 					logging.LogError(execCallbackModuleName, "Error reading from stderr", err)
 				}
 				return
@@ -292,22 +293,34 @@ func (c *ExecSessionCallback) Close() {
 	// Close streams
 	c.mu.Lock()
 	if c.stdin != nil {
-		c.stdin.Close()
+		if err := c.stdin.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdin: %v", err))
+		}
 	}
 	if c.stdout != nil {
-		c.stdout.Close()
+		if err := c.stdout.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdout: %v", err))
+		}
 	}
 	if c.stderr != nil {
-		c.stderr.Close()
+		if err := c.stderr.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stderr: %v", err))
+		}
 	}
 	if c.stdinReader != nil {
-		c.stdinReader.Close()
+		if err := c.stdinReader.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdinReader: %v", err))
+		}
 	}
 	if c.stdoutWriter != nil {
-		c.stdoutWriter.Close()
+		if err := c.stdoutWriter.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdoutWriter: %v", err))
+		}
 	}
 	if c.stderrWriter != nil {
-		c.stderrWriter.Close()
+		if err := c.stderrWriter.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stderrWriter: %v", err))
+		}
 	}
 	c.mu.Unlock()
 

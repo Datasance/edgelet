@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -27,15 +27,15 @@ const (
 
 // Manager manages GPS functionality
 type Manager struct {
-	status          *Status
-	deviceHandler   *DeviceHandler
-	webHandler      *WebHandler
-	isRunning       bool
-	mu              sync.RWMutex
-	config          *config.Config
-	ctx             context.Context
-	cancel          context.CancelFunc
-	updateTicker    *time.Ticker
+	status        *Status
+	deviceHandler *DeviceHandler
+	webHandler    *WebHandler
+	isRunning     bool
+	mu            sync.RWMutex
+	config        *config.Config
+	ctx           context.Context
+	cancel        context.CancelFunc
+	updateTicker  *time.Ticker
 }
 
 var (
@@ -64,6 +64,12 @@ func (m *Manager) Start() error {
 		return nil
 	}
 
+	// Reset context on each start to support supervisor restart cycles
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+
 	logging.LogInfo(moduleName, "Starting GPS Manager")
 
 	// Start coordinate update scheduler
@@ -78,7 +84,9 @@ func (m *Manager) Start() error {
 			if r := recover(); r != nil {
 				logging.LogError(moduleName, "Panic in GPS initialization", fmt.Errorf("%v", r))
 				m.status.SetHealthStatus(HealthStatusIPError)
-				m.startOffMode()
+				if err := m.startOffMode(); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Failed to start off mode: %v", err))
+				}
 			}
 		}()
 
@@ -86,7 +94,9 @@ func (m *Manager) Start() error {
 		if err := m.initializeGps(); err != nil {
 			logging.LogError(moduleName, "Error initializing GPS in background", err)
 			m.status.SetHealthStatus(HealthStatusIPError)
-			m.startOffMode()
+			if offErr := m.startOffMode(); offErr != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("Failed to start off mode: %v", offErr))
+			}
 		}
 		logging.LogDebug(moduleName, "GPS coordinates initialization completed")
 	}()
@@ -113,13 +123,17 @@ func (m *Manager) Stop() error {
 
 	// Stop device handler if running
 	if m.deviceHandler != nil {
-		m.deviceHandler.Stop()
+		if err := m.deviceHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("device handler stop error: %v", err))
+		}
 		m.deviceHandler = nil
 	}
 
 	// Stop web handler if running
 	if m.webHandler != nil {
-		m.webHandler.Stop()
+		if err := m.webHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("web handler stop error: %v", err))
+		}
 		m.webHandler = nil
 	}
 
@@ -210,7 +224,9 @@ func (m *Manager) initializeAutoMode() error {
 func (m *Manager) startAutoMode() error {
 	logging.LogDebug(moduleName, "Starting AUTO mode")
 	if m.deviceHandler != nil {
-		m.deviceHandler.Stop()
+		if err := m.deviceHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("device handler stop error: %v", err))
+		}
 		m.deviceHandler = nil
 	}
 	return m.initializeAutoMode()
@@ -220,7 +236,9 @@ func (m *Manager) startAutoMode() error {
 func (m *Manager) startDynamicMode() error {
 	logging.LogDebug(moduleName, "Starting DYNAMIC mode")
 	if m.webHandler != nil {
-		m.webHandler.Stop()
+		if err := m.webHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("web handler stop error: %v", err))
+		}
 		m.webHandler = nil
 	}
 
@@ -240,11 +258,15 @@ func (m *Manager) startDynamicMode() error {
 func (m *Manager) startManualMode() error {
 	logging.LogDebug(moduleName, "Starting MANUAL mode")
 	if m.deviceHandler != nil {
-		m.deviceHandler.Stop()
+		if err := m.deviceHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("device handler stop error: %v", err))
+		}
 		m.deviceHandler = nil
 	}
 	if m.webHandler != nil {
-		m.webHandler.Stop()
+		if err := m.webHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("web handler stop error: %v", err))
+		}
 		m.webHandler = nil
 	}
 
@@ -267,11 +289,15 @@ func (m *Manager) GetModuleIndex() int {
 func (m *Manager) startOffMode() error {
 	logging.LogDebug(moduleName, "Starting OFF mode")
 	if m.deviceHandler != nil {
-		m.deviceHandler.Stop()
+		if err := m.deviceHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("device handler stop error: %v", err))
+		}
 		m.deviceHandler = nil
 	}
 	if m.webHandler != nil {
-		m.webHandler.Stop()
+		if err := m.webHandler.Stop(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("web handler stop error: %v", err))
+		}
 		m.webHandler = nil
 	}
 
@@ -329,6 +355,22 @@ func (m *Manager) GetStatus() *Status {
 
 // InstanceConfigUpdated handles configuration updates
 func (m *Manager) InstanceConfigUpdated() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	logging.LogDebug(moduleName, "Handling GPS configuration update")
-	m.initializeGps()
+
+	// Stop old ticker so the scheduler goroutine exits
+	if m.updateTicker != nil {
+		m.updateTicker.Stop()
+		m.updateTicker = nil
+	}
+
+	// Re-initialize GPS mode with new settings
+	if err := m.initializeGps(); err != nil {
+		logging.LogError(moduleName, "Error re-initializing GPS on config update", err)
+	}
+
+	// Restart coordinate update scheduler with (potentially new) frequency
+	m.startCoordinateUpdateScheduler()
 }

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -20,7 +20,7 @@ func NewBluetoothHandler() *BluetoothHandler {
 }
 
 // HandleGetBluetooth handles GET /v2/bluetooth
-func (h *BluetoothHandler) HandleGetBluetooth(w http.ResponseWriter, r *http.Request) {
+func (h *BluetoothHandler) HandleGetBluetooth(w http.ResponseWriter, _ *http.Request) {
 	logging.LogDebug(bluetoothHandlerModuleName, "Handling GET /v2/bluetooth")
 
 	// Bluetooth functionality is not fully implemented in the Java codebase

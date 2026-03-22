@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/auth"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/gorilla/websocket"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -171,7 +172,8 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: logHandshakeTimeout,
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !h.config.SecureMode,
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
 		},
 	}
 
@@ -181,8 +183,9 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 		certPool := x509.NewCertPool()
 		certPool.AddCert(h.controllerCert)
 		dialer.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
 			RootCAs:            certPool,
-			InsecureSkipVerify: !h.config.SecureMode,
+			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
 		}
 	}
 
@@ -195,12 +198,16 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	if err != nil {
 		h.transitionState(LogStateConnecting, LogStateDisconnected)
 		if resp != nil {
-			resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+			}
 		}
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	if resp != nil {
-		resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+		}
 	}
 
 	h.conn = conn
@@ -446,7 +453,9 @@ func (h *LogSessionWebSocketHandler) readWorker() {
 			}
 
 			// Set read deadline
-			conn.SetReadDeadline(time.Now().Add(logPingInterval * 2))
+			if err := conn.SetReadDeadline(time.Now().Add(logPingInterval * 2)); err != nil {
+				logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
+			}
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
@@ -585,7 +594,7 @@ func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID strin
 func (h *LogSessionWebSocketHandler) handleLogError(data []byte) {
 	if data != nil {
 		errorMsg := string(data)
-		logging.LogError(logWebSocketModuleName, fmt.Sprintf("Received LOG_ERROR: %s", errorMsg), fmt.Errorf(errorMsg))
+		logging.LogError(logWebSocketModuleName, fmt.Sprintf("Received LOG_ERROR: %s", errorMsg), errors.New(errorMsg))
 	}
 }
 
@@ -617,7 +626,9 @@ func (h *LogSessionWebSocketHandler) flushBuffer() {
 func (h *LogSessionWebSocketHandler) handleConnectionFailure() {
 	h.connMu.Lock()
 	if h.conn != nil {
-		h.conn.Close()
+		if err := h.conn.Close(); err != nil {
+			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close connection: %v", err))
+		}
 		h.conn = nil
 	}
 	h.connMu.Unlock()
@@ -631,7 +642,7 @@ func (h *LogSessionWebSocketHandler) handleConnectionFailure() {
 		logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Reconnecting in %v (attempt %d/%d)", backoff, h.reconnectAttempts, logMaxReconnectAttempts))
 
 		time.Sleep(backoff)
-		go h.Connect()
+		go h.Connect() //nolint:errcheck
 	} else {
 		logging.LogError(logWebSocketModuleName, "Max reconnection attempts reached", fmt.Errorf("reconnection failed"))
 	}
@@ -643,7 +654,9 @@ func (h *LogSessionWebSocketHandler) Disconnect() {
 
 	h.connMu.Lock()
 	if h.conn != nil {
-		h.conn.Close()
+		if err := h.conn.Close(); err != nil {
+			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close connection on disconnect: %v", err))
+		}
 		h.conn = nil
 	}
 	h.connMu.Unlock()

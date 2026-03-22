@@ -6,10 +6,10 @@ import "sync"
 type HealthStatus string
 
 const (
-	HealthStatusHealthy    HealthStatus = "HEALTHY"
+	HealthStatusHealthy     HealthStatus = "HEALTHY"
 	HealthStatusDeviceError HealthStatus = "DEVICE_ERROR"
 	HealthStatusIPError     HealthStatus = "IP_ERROR"
-	HealthStatusOff        HealthStatus = "OFF"
+	HealthStatusOff         HealthStatus = "OFF"
 )
 
 // Status represents the GPS status

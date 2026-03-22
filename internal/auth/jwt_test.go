@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
+	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 )
 

@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/supervisor"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/supervisor"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 var (
@@ -68,7 +68,6 @@ func main() {
 		})
 	}
 
-
 	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
@@ -107,9 +106,10 @@ func main() {
 }
 
 func setupEnvironment() {
-	// Create var/run directory
-	if err := os.MkdirAll(utils.VarRun, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", err)
+	// 0755 is intentional: /var/run must be world-traversable for PID file access
+	mkErr := os.MkdirAll(utils.VarRun, 0755) // #nosec G301
+	if mkErr != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
 		os.Exit(1)
 	}
 }
@@ -125,7 +125,7 @@ func startLoggingService() {
 		"                    __/ |         __/ |               \n" +
 		"                   |___/         |___/                \n" +
 		"                                                                                \n" +
-		"  Datasance PoT ioFog Agent v" + version + "\n" +
+		"  Datasance PoT ioFog Agent v" + version + " (build: " + buildTime + ", commit: " + gitCommit + ")\n" +
 		"  Logging Service Started\n"
 
 	cfg := config.GetInstance()
@@ -148,25 +148,25 @@ func startLoggingService() {
 // reloadAgentConfig handles the complete agent configuration reload process
 func reloadAgentConfig(sup *supervisor.Supervisor) {
 	logging.LogInfo("Daemon", "Reloading configuration...")
-	
+
 	// Reload configuration from file
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		logging.LogError("Daemon", "Failed to reload configuration", err)
 		return
 	}
-	
+
 	cfg := config.GetInstance()
-	
+
 	// Update logger
 	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
 	if err := logging.InstanceConfigUpdated(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
 		logging.LogError("Daemon", "Failed to update logger configuration", err)
 	}
-	
+
 	// Notify supervisor to update all modules
 	if err := sup.ReloadConfig(); err != nil {
 		logging.LogError("Daemon", "Failed to notify modules of config reload", err)
 	}
-	
+
 	logging.LogInfo("Daemon", "Configuration reloaded successfully")
 }

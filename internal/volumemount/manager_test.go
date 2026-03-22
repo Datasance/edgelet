@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
+	"github.com/eclipse-iofog/agent/internal/config"
 )
 
 func TestVolumeMountManager_GetInstance(t *testing.T) {
@@ -19,7 +19,7 @@ func TestVolumeMountManager_GetInstance(t *testing.T) {
 
 	vmm1 := GetInstance()
 	vmm2 := GetInstance()
-	
+
 	if vmm1 != vmm2 {
 		t.Error("GetInstance should return the same instance")
 	}
@@ -36,7 +36,7 @@ func TestVolumeMountManager_ProcessVolumeMountChanges(t *testing.T) {
 	}()
 
 	vmm := GetInstance()
-	
+
 	// Test with empty changes (simple case that shouldn't hang)
 	changes := []interface{}{}
 	// Use a channel with timeout to detect hanging
@@ -45,7 +45,7 @@ func TestVolumeMountManager_ProcessVolumeMountChanges(t *testing.T) {
 		vmm.ProcessVolumeMountChanges(changes)
 		done <- true
 	}()
-	
+
 	select {
 	case <-done:
 		// Success - didn't hang

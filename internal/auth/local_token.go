@@ -10,13 +10,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
-	localTokenModuleName = "Local API Token"
-	tokenSize            = 32 // 32 bytes = 256 bits
+	localTokenModuleName = "Local API Token" // #nosec G101 -- logging module name, not a credential
+	tokenSize            = 32                // 32 bytes = 256 bits
 )
 
 // LocalTokenManager manages local API tokens

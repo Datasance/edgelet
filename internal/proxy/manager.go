@@ -5,32 +5,32 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
-	moduleName         = "SSH Proxy Manager"
-	defaultLocalPort   = 22
-	defaultRemotePort  = 9999
+	moduleName        = "SSH Proxy Manager"
+	defaultLocalPort  = 22
+	defaultRemotePort = 9999
 )
 
-// SshConnectionStatus represents SSH connection status
-type SshConnectionStatus string
+// SSHConnectionStatus represents SSH connection status
+type SSHConnectionStatus string
 
 const (
-	SshConnectionStatusOpen   SshConnectionStatus = "OPEN"
-	SshConnectionStatusClosed SshConnectionStatus = "CLOSED"
-	SshConnectionStatusFailed SshConnectionStatus = "FAILED"
+	SSHConnectionStatusOpen   SSHConnectionStatus = "OPEN"
+	SSHConnectionStatusClosed SSHConnectionStatus = "CLOSED"
+	SSHConnectionStatusFailed SSHConnectionStatus = "FAILED"
 )
 
 // Manager manages SSH proxy connections
 type Manager struct {
-	connection *SshConnection
-	mu         sync.Mutex
-	monitoring bool
+	connection  *SSHConnection
+	mu          sync.Mutex
+	monitoring  bool
 	stopMonitor chan struct{}
 	logger      *logging.ModuleLogger
 }
@@ -44,7 +44,7 @@ var (
 func GetInstance() *Manager {
 	once.Do(func() {
 		instance = &Manager{
-			connection:  NewSshConnection(),
+			connection:  NewSSHConnection(),
 			stopMonitor: make(chan struct{}),
 			logger:      logging.NewModuleLogger(moduleName),
 		}
@@ -57,12 +57,12 @@ func (m *Manager) Update(config map[string]interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if config == nil || len(config) == 0 {
-		m.handleUnexpectedTunnelState("Received invalid proxy config", SshConnectionStatusFailed)
+	if len(config) == 0 {
+		m.handleUnexpectedTunnelState("Received invalid proxy config", SSHConnectionStatusFailed)
 		return fmt.Errorf("invalid proxy config")
 	}
 
-	m.setSshConnection(config)
+	m.setSSHConnection(config)
 	return m.processValidConfig()
 }
 
@@ -72,13 +72,13 @@ func (m *Manager) processValidConfig() error {
 		if m.connection.IsCloseFlag() {
 			m.close()
 		} else {
-			m.handleUnexpectedTunnelState("The tunnel is already opened. Please close it first.", SshConnectionStatusOpen)
+			m.handleUnexpectedTunnelState("The tunnel is already opened. Please close it first.", SSHConnectionStatusOpen)
 		}
 		return nil
 	}
 
 	if m.connection.IsCloseFlag() {
-		m.handleUnexpectedTunnelState("The tunnel is already closed", SshConnectionStatusClosed)
+		m.handleUnexpectedTunnelState("The tunnel is already closed", SSHConnectionStatusClosed)
 		return nil
 	}
 
@@ -90,13 +90,13 @@ func (m *Manager) open() error {
 	// Set known host
 	if err := m.connection.SetKnownHost(); err != nil {
 		errMsg := fmt.Sprintf("There was an issue with server RSA key setup: %v", err)
-		m.logger.Errorf(errMsg)
+		m.logger.Errorf("%s", errMsg)
 		// Continue anyway
 	}
 
 	// Open SSH tunnel asynchronously
 	go func() {
-		if err := m.connection.OpenSshTunnel(); err != nil {
+		if err := m.connection.OpenSSHTunnel(); err != nil {
 			m.onError(err)
 		} else {
 			m.onSuccess()
@@ -108,9 +108,9 @@ func (m *Manager) open() error {
 
 // onSuccess handles successful tunnel opening
 func (m *Manager) onSuccess() {
-	m.setSshProxyManagerStatus(SshConnectionStatusOpen, "")
+	m.setSSHProxyManagerStatus(SSHConnectionStatusOpen, "")
 	m.logger.Info("opened ssh tunnel")
-	
+
 	// Start monitoring
 	m.startMonitoring()
 }
@@ -118,8 +118,8 @@ func (m *Manager) onSuccess() {
 // onError handles tunnel opening errors
 func (m *Manager) onError(err error) {
 	errMsg := fmt.Sprintf("Unable to connect to the server: %v", err)
-	m.logger.Errorf(errMsg)
-	m.setSshProxyManagerStatus(SshConnectionStatusFailed, errMsg)
+	m.logger.Errorf("%s", errMsg)
+	m.setSSHProxyManagerStatus(SSHConnectionStatusFailed, errMsg)
 }
 
 // close closes SSH tunnel
@@ -128,15 +128,15 @@ func (m *Manager) close() {
 		m.logger.Warnf("Error closing SSH connection: %v", err)
 	}
 	m.stopMonitoring()
-	m.setSshProxyManagerStatus(SshConnectionStatusClosed, "")
+	m.setSSHProxyManagerStatus(SSHConnectionStatusClosed, "")
 	m.logger.Info("closed ssh tunnel")
 }
 
 // handleUnexpectedTunnelState handles unexpected tunnel states
-func (m *Manager) handleUnexpectedTunnelState(errMsg string, status SshConnectionStatus) {
+func (m *Manager) handleUnexpectedTunnelState(errMsg string, status SSHConnectionStatus) {
 	m.logger.Warn(errMsg)
 	if m.connection != nil && m.connection.GetUsername() != "" {
-		m.setSshProxyManagerStatus(status, errMsg)
+		m.setSSHProxyManagerStatus(status, errMsg)
 	}
 }
 
@@ -162,7 +162,7 @@ func (m *Manager) startMonitoring() {
 					m.logger.Info("ssh tunnel heartbeat message")
 				} else {
 					if !m.connection.IsCloseFlag() {
-						m.setSshProxyManagerStatus(SshConnectionStatusClosed, "")
+						m.setSSHProxyManagerStatus(SSHConnectionStatusClosed, "")
 					}
 					m.mu.Lock()
 					m.monitoring = false
@@ -187,10 +187,10 @@ func (m *Manager) stopMonitoring() {
 	}
 }
 
-// setSshProxyManagerStatus sets the SSH proxy manager status
-func (m *Manager) setSshProxyManagerStatus(status SshConnectionStatus, errMsg string) {
+// setSSHProxyManagerStatus sets the SSH proxy manager status
+func (m *Manager) setSSHProxyManagerStatus(status SSHConnectionStatus, errMsg string) {
 	statusReporter := statusreporter.GetInstance()
-	statusReporter.UpdateSshProxyManagerStatus(func(s *models.SshProxyManagerStatus) {
+	statusReporter.UpdateSSHProxyManagerStatus(func(s *models.SSHProxyManagerStatus) {
 		s.SetProxyConfig(
 			m.connection.GetUsername(),
 			m.connection.GetHost(),
@@ -202,23 +202,23 @@ func (m *Manager) setSshProxyManagerStatus(status SshConnectionStatus, errMsg st
 	})
 }
 
-// setSshConnection sets proxy connection info from config
-func (m *Manager) setSshConnection(config map[string]interface{}) {
+// setSSHConnection sets proxy connection info from config
+func (m *Manager) setSSHConnection(config map[string]interface{}) {
 	username, _ := config["username"].(string)
 	password, _ := config["password"].(string)
 	host, _ := config["host"].(string)
 	rsaKey, _ := config["rsakey"].(string)
-	
+
 	rport := defaultRemotePort
 	if rportVal, ok := config["rport"].(float64); ok {
 		rport = int(rportVal)
 	}
-	
+
 	lport := defaultLocalPort
 	if lportVal, ok := config["lport"].(float64); ok {
 		lport = int(lportVal)
 	}
-	
+
 	closeFlag := false
 	if closeFlagVal, ok := config["closed"].(bool); ok {
 		closeFlag = closeFlagVal

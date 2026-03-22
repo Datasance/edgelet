@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -56,7 +56,7 @@ func (m *Manager) CreateImageSnapshot(ctx context.Context, imageName string) (st
 
 	// Create temporary directory
 	tmpDir := filepath.Join(os.TempDir(), "iofog-image-snapshots")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
@@ -65,30 +65,38 @@ func (m *Manager) CreateImageSnapshot(ctx context.Context, imageName string) (st
 	snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%s-%s.tar", sanitizeImageName(imageName), timestamp))
 
 	// Run docker save
-	cmd := exec.CommandContext(ctx, "docker", "save", "-o", snapshotFile, imageName)
+	cmd := exec.CommandContext(ctx, "docker", "save", "-o", snapshotFile, imageName) // #nosec G204 -- binary is docker constant; args are internal snapshot path and image name
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to save image: %w", err)
 	}
 
 	// Compress with gzip
 	compressedFile := snapshotFile + ".gz"
-	cmd = exec.CommandContext(ctx, "gzip", "-c", snapshotFile)
-	output, err := os.Create(compressedFile)
+	cmd = exec.CommandContext(ctx, "gzip", "-c", snapshotFile) // #nosec G204 -- binary is gzip constant; arg is an internal temp file path
+	output, err := os.Create(filepath.Clean(compressedFile))
 	if err != nil {
-		os.Remove(snapshotFile)
+		if rerr := os.Remove(snapshotFile); rerr != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to remove snapshot file: %v", rerr))
+		}
 		return "", fmt.Errorf("failed to create compressed file: %w", err)
 	}
 	defer output.Close()
 
 	cmd.Stdout = output
 	if err := cmd.Run(); err != nil {
-		os.Remove(snapshotFile)
-		os.Remove(compressedFile)
+		if rerr := os.Remove(snapshotFile); rerr != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to remove snapshot file: %v", rerr))
+		}
+		if rerr := os.Remove(compressedFile); rerr != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to remove compressed file: %v", rerr))
+		}
 		return "", fmt.Errorf("failed to compress image: %w", err)
 	}
 
 	// Remove uncompressed file
-	os.Remove(snapshotFile)
+	if rerr := os.Remove(snapshotFile); rerr != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Failed to remove snapshot file: %v", rerr))
+	}
 
 	logging.LogInfo(moduleName, fmt.Sprintf("Image snapshot created: %s", compressedFile))
 	return compressedFile, nil
@@ -143,7 +151,9 @@ func (m *Manager) CreateImageSnapshotForMicroservice(ctx context.Context, micros
 	// Upload snapshot
 	if err := m.UploadImageSnapshot(ctx, snapshotPath); err != nil {
 		// Cleanup on error
-		m.CleanupSnapshot(snapshotPath)
+		if cerr := m.CleanupSnapshot(snapshotPath); cerr != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to cleanup snapshot: %v", cerr))
+		}
 		return err
 	}
 
@@ -168,8 +178,8 @@ func sanitizeImageName(imageName string) string {
 	// Replace invalid characters with underscores
 	result := ""
 	for _, char := range imageName {
-		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || 
-		   (char >= '0' && char <= '9') || char == '-' || char == '_' {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' {
 			result += string(char)
 		} else {
 			result += "_"

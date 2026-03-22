@@ -2,26 +2,26 @@ package models
 
 import "encoding/json"
 
-// SshProxyManagerStatus represents the SSH Proxy Manager status
-type SshProxyManagerStatus struct {
+// SSHProxyManagerStatus represents the SSH Proxy Manager status
+type SSHProxyManagerStatus struct {
 	ProxyStatus map[string]interface{} `json:"proxyStatus" yaml:"proxyStatus"` // Proxy status information
 }
 
-// NewSshProxyManagerStatus creates a new SshProxyManagerStatus
-func NewSshProxyManagerStatus() *SshProxyManagerStatus {
-	return &SshProxyManagerStatus{
+// NewSSHProxyManagerStatus creates a new SSHProxyManagerStatus
+func NewSSHProxyManagerStatus() *SSHProxyManagerStatus {
+	return &SSHProxyManagerStatus{
 		ProxyStatus: make(map[string]interface{}),
 	}
 }
 
 // SetProxyStatus sets the proxy status and returns the status for chaining
-func (s *SshProxyManagerStatus) SetProxyStatus(status map[string]interface{}) *SshProxyManagerStatus {
+func (s *SSHProxyManagerStatus) SetProxyStatus(status map[string]interface{}) *SSHProxyManagerStatus {
 	s.ProxyStatus = status
 	return s
 }
 
 // GetJSONProxyStatus returns the proxy status as a JSON string
-func (s *SshProxyManagerStatus) GetJSONProxyStatus() string {
+func (s *SSHProxyManagerStatus) GetJSONProxyStatus() string {
 	jsonData, err := json.Marshal(s.ProxyStatus)
 	if err != nil {
 		return "{}"
@@ -30,7 +30,7 @@ func (s *SshProxyManagerStatus) GetJSONProxyStatus() string {
 }
 
 // SetProxyConfig sets the proxy configuration
-func (s *SshProxyManagerStatus) SetProxyConfig(username, host string, remotePort, localPort int) *SshProxyManagerStatus {
+func (s *SSHProxyManagerStatus) SetProxyConfig(username, host string, remotePort, localPort int) *SSHProxyManagerStatus {
 	if s.ProxyStatus == nil {
 		s.ProxyStatus = make(map[string]interface{})
 	}
@@ -42,7 +42,7 @@ func (s *SshProxyManagerStatus) SetProxyConfig(username, host string, remotePort
 }
 
 // SetConnectionStatus sets the connection status
-func (s *SshProxyManagerStatus) SetConnectionStatus(status string) *SshProxyManagerStatus {
+func (s *SSHProxyManagerStatus) SetConnectionStatus(status string) *SSHProxyManagerStatus {
 	if s.ProxyStatus == nil {
 		s.ProxyStatus = make(map[string]interface{})
 	}
@@ -51,7 +51,7 @@ func (s *SshProxyManagerStatus) SetConnectionStatus(status string) *SshProxyMana
 }
 
 // SetErrorMessage sets the error message
-func (s *SshProxyManagerStatus) SetErrorMessage(errMsg string) *SshProxyManagerStatus {
+func (s *SSHProxyManagerStatus) SetErrorMessage(errMsg string) *SSHProxyManagerStatus {
 	if s.ProxyStatus == nil {
 		s.ProxyStatus = make(map[string]interface{})
 	}

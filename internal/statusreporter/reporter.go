@@ -6,16 +6,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
 	moduleName = "Status Reporter"
 	// Number of modules (from Java Constants.NUMBER_OF_MODULES)
-	numberOfModules = 9
+	numberOfModules = 8
 )
 
 // StatusReporter aggregates and reports status from all modules
@@ -24,16 +24,15 @@ type StatusReporter struct {
 	mu     sync.RWMutex
 
 	// Status objects for each module
-	supervisorStatus                *models.SupervisorStatus
+	supervisorStatus                 *models.SupervisorStatus
 	resourceConsumptionManagerStatus *models.ResourceConsumptionManagerStatus
-	resourceManagerStatus           *models.ResourceManagerStatus
-	fieldAgentStatus                *models.FieldAgentStatus
-	statusReporterStatus            *models.StatusReporterStatus
-	processManagerStatus            *models.ProcessManagerStatus
-	localApiStatus                  *models.LocalApiStatus
-	messageBusStatus                *models.MessageBusStatus
-	sshProxyManagerStatus           *models.SshProxyManagerStatus
-	volumeMountManagerStatus        *models.VolumeMountManagerStatus
+	resourceManagerStatus            *models.ResourceManagerStatus
+	fieldAgentStatus                 *models.FieldAgentStatus
+	statusReporterStatus             *models.StatusReporterStatus
+	processManagerStatus             *models.ProcessManagerStatus
+	localAPIStatus                   *models.LocalAPIStatus
+	sshProxyManagerStatus            *models.SSHProxyManagerStatus
+	volumeMountManagerStatus         *models.VolumeMountManagerStatus
 
 	// Context for background workers
 	ctx    context.Context
@@ -50,17 +49,16 @@ var (
 func GetInstance() *StatusReporter {
 	once.Do(func() {
 		instance = &StatusReporter{
-			config:                         config.GetInstance(),
-			supervisorStatus:                models.NewSupervisorStatus(numberOfModules),
+			config:                           config.GetInstance(),
+			supervisorStatus:                 models.NewSupervisorStatus(numberOfModules),
 			resourceConsumptionManagerStatus: models.NewResourceConsumptionManagerStatus(),
-			resourceManagerStatus:          models.NewResourceManagerStatus(),
-			fieldAgentStatus:                models.NewFieldAgentStatus(),
-			statusReporterStatus:            models.NewStatusReporterStatus(),
-			processManagerStatus:            models.NewProcessManagerStatus(),
-			localApiStatus:                  models.NewLocalApiStatus(),
-			messageBusStatus:                models.NewMessageBusStatus(),
-			sshProxyManagerStatus:           models.NewSshProxyManagerStatus(),
-			volumeMountManagerStatus:        models.NewVolumeMountManagerStatus(),
+			resourceManagerStatus:            models.NewResourceManagerStatus(),
+			fieldAgentStatus:                 models.NewFieldAgentStatus(),
+			statusReporterStatus:             models.NewStatusReporterStatus(),
+			processManagerStatus:             models.NewProcessManagerStatus(),
+			localAPIStatus:                   models.NewLocalAPIStatus(),
+			sshProxyManagerStatus:            models.NewSSHProxyManagerStatus(),
+			volumeMountManagerStatus:         models.NewVolumeMountManagerStatus(),
 		}
 	})
 	return instance
@@ -130,20 +128,20 @@ func (sr *StatusReporter) GetStatusReport() string {
 	diskUsage := sr.resourceConsumptionManagerStatus.DiskUsage
 	availableDisk := float64(sr.resourceConsumptionManagerStatus.AvailableDisk) / 1024.0 / 1024.0
 	availableMemory := float64(sr.resourceConsumptionManagerStatus.AvailableMemory) / 1024.0 / 1024.0
-	totalCpu := sr.resourceConsumptionManagerStatus.TotalCPU
+	totalCPU := sr.resourceConsumptionManagerStatus.TotalCPU
 	memoryUsage := sr.resourceConsumptionManagerStatus.MemoryUsage
 	cpuUsage := sr.resourceConsumptionManagerStatus.CPUUsage
 
 	// Debug logging to trace status values (matching Java debug logging)
 	logging.LogDebug(moduleName, fmt.Sprintf("Status values: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB, AvailableMemory=%.2f MB, AvailableDisk=%.2f MB, TotalCPU=%.2f%%",
-		memoryUsage, cpuUsage, diskUsage, availableMemory, availableDisk, totalCpu))
+		memoryUsage, cpuUsage, diskUsage, availableMemory, availableDisk, totalCPU))
 
 	// Get connection status (matching Java: getStatusReport())
-	connectionStatus := "not connected"
+	var connectionStatus string
 	currentStatus := sr.fieldAgentStatus.ControllerStatus
-	logging.LogDebug(moduleName, fmt.Sprintf("Current controller status from StatusReporter: %s (ControllerVerified: %v)", 
+	logging.LogDebug(moduleName, fmt.Sprintf("Current controller status from StatusReporter: %s (ControllerVerified: %v)",
 		currentStatus, sr.fieldAgentStatus.ControllerVerified))
-	
+
 	switch currentStatus {
 	case models.ControllerStatusNotProvisioned:
 		connectionStatus = "not provisioned"
@@ -158,7 +156,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 		logging.LogDebug(moduleName, fmt.Sprintf("Unknown controller status: %s, defaulting to 'not connected'", currentStatus))
 		connectionStatus = "not connected"
 	}
-	
+
 	logging.LogDebug(moduleName, fmt.Sprintf("Connection status for report: %s", connectionStatus))
 
 	// Format system time
@@ -181,7 +179,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 	result += fmt.Sprintf("CPU Usage                   : about %.2f %%\n", cpuUsage)
 	result += fmt.Sprintf("Running Microservices       : %d\n", sr.processManagerStatus.RunningMicroservicesCount)
 	result += fmt.Sprintf("Connection to Controller    : %s\n", connectionStatus)
-	result += fmt.Sprintf("Messages Processed          : about %d\n", sr.messageBusStatus.ProcessedMessages)
+	result += fmt.Sprintf("Messages Processed          : about %d\n", 0)
 	result += fmt.Sprintf("System Time                 : %s\n", dateFormat)
 
 	// Calculate total disk for percentage
@@ -193,7 +191,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 
 	result += fmt.Sprintf("System Available Disk       : %.2f MB (%.2f %%)\n", availableDisk, diskPercent)
 	result += fmt.Sprintf("System Available Memory     : %.2f MB\n", availableMemory)
-	result += fmt.Sprintf("System Total CPU            : %.2f %%\n", totalCpu)
+	result += fmt.Sprintf("System Total CPU            : %.2f %%\n", totalCPU)
 
 	logging.LogDebug(moduleName, "Finished Getting Status Report")
 	return result
@@ -243,22 +241,15 @@ func (sr *StatusReporter) GetProcessManagerStatus() *models.ProcessManagerStatus
 	return sr.processManagerStatus
 }
 
-// GetLocalApiStatus returns the local API status
-func (sr *StatusReporter) GetLocalApiStatus() *models.LocalApiStatus {
+// GetLocalAPIStatus returns the local API status
+func (sr *StatusReporter) GetLocalAPIStatus() *models.LocalAPIStatus {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
-	return sr.localApiStatus
+	return sr.localAPIStatus
 }
 
-// GetMessageBusStatus returns the message bus status
-func (sr *StatusReporter) GetMessageBusStatus() *models.MessageBusStatus {
-	sr.mu.RLock()
-	defer sr.mu.RUnlock()
-	return sr.messageBusStatus
-}
-
-// GetSshProxyManagerStatus returns the SSH proxy manager status
-func (sr *StatusReporter) GetSshProxyManagerStatus() *models.SshProxyManagerStatus {
+// GetSSHProxyManagerStatus returns the SSH proxy manager status
+func (sr *StatusReporter) GetSSHProxyManagerStatus() *models.SSHProxyManagerStatus {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	return sr.sshProxyManagerStatus
@@ -321,24 +312,16 @@ func (sr *StatusReporter) UpdateProcessManagerStatus(fn func(*models.ProcessMana
 	fn(sr.processManagerStatus)
 }
 
-// UpdateLocalApiStatus updates the local API status securely
-func (sr *StatusReporter) UpdateLocalApiStatus(fn func(*models.LocalApiStatus)) {
+// UpdateLocalAPIStatus updates the local API status securely
+func (sr *StatusReporter) UpdateLocalAPIStatus(fn func(*models.LocalAPIStatus)) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())
-	fn(sr.localApiStatus)
+	fn(sr.localAPIStatus)
 }
 
-// UpdateMessageBusStatus updates the message bus status securely
-func (sr *StatusReporter) UpdateMessageBusStatus(fn func(*models.MessageBusStatus)) {
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())
-	fn(sr.messageBusStatus)
-}
-
-// UpdateSshProxyManagerStatus updates the SSH proxy manager status securely
-func (sr *StatusReporter) UpdateSshProxyManagerStatus(fn func(*models.SshProxyManagerStatus)) {
+// UpdateSSHProxyManagerStatus updates the SSH proxy manager status securely
+func (sr *StatusReporter) UpdateSSHProxyManagerStatus(fn func(*models.SSHProxyManagerStatus)) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())

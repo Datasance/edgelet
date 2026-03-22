@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (

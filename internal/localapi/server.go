@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -23,9 +23,9 @@ type Server struct {
 // NewServer creates a new Local API server
 func NewServer(port int) *Server {
 	router := NewRouter()
-	
+
 	addr := fmt.Sprintf(":%d", port)
-	
+
 	return &Server{
 		router: router,
 		port:   port,

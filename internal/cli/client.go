@@ -2,15 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 const (
@@ -43,7 +45,7 @@ func (c *Client) SendCommand(command string) (string, error) {
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", c.endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -107,7 +109,7 @@ func (c *Client) IsDaemonRunning() bool {
 	}
 
 	// Fallback: try to connect to Local API
-	req, err := http.NewRequest("POST", c.endpoint, bytes.NewBufferString(`{"command":"status"}`))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.endpoint, bytes.NewBufferString(`{"command":"status"}`))
 	if err != nil {
 		return false
 	}
@@ -123,7 +125,9 @@ func (c *Client) IsDaemonRunning() bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		_ = err // best-effort close for health check
+	}
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -132,8 +136,8 @@ func (c *Client) IsDaemonRunning() bool {
 func readAccessToken() string {
 	// Recalculate config path in case SNAP_COMMON changed (for dev environment)
 	configDir := utils.GetConfigDir()
-	tokenPath := configDir + "local-api"
-	data, err := os.ReadFile(tokenPath)
+	tokenPath := filepath.Join(configDir, "local-api")
+	data, err := os.ReadFile(tokenPath) // #nosec G304 -- path computed from known config directory constant
 	if err != nil {
 		return ""
 	}

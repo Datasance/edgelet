@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/fieldagent"
-	"github.com/eclipse-iofog/agent-go/internal/hardware"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/hardware"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -508,7 +508,6 @@ func (m *Manager) performAttestation() {
 	m.checkHardwareSignature()
 }
 
-
 // GetName returns the module name
 func (m *Manager) GetName() string {
 	return moduleName
@@ -523,21 +522,21 @@ func (m *Manager) GetModuleIndex() int {
 // Matching Java: EdgeGuardManager.instanceConfigUpdated()
 func (m *Manager) InstanceConfigUpdated() {
 	logging.LogDebug(moduleName, "Handling Edge Guard configuration update")
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	currentFreq := m.config.EdgeGuardFrequency
 	previousFreq := m.previousFrequency
-	
+
 	// If frequency hasn't changed, no action needed
 	if currentFreq == previousFreq {
 		logging.LogDebug(moduleName, fmt.Sprintf("Edge Guard frequency unchanged: %d", currentFreq))
 		return
 	}
-	
+
 	logging.LogInfo(moduleName, fmt.Sprintf("Edge Guard frequency changed from %d to %d", previousFreq, currentFreq))
-	
+
 	// If frequency changed to 0, stop Edge Guard and delete .jwt file
 	if currentFreq <= 0 {
 		// Stop periodic attestation
@@ -545,19 +544,19 @@ func (m *Manager) InstanceConfigUpdated() {
 			m.attestationTicker.Stop()
 			m.attestationTicker = nil
 		}
-		
+
 		// Delete .jwt file
 		if err := hardware.DeleteHardwareSignature(); err != nil {
 			logging.LogDebug(moduleName, fmt.Sprintf("No hardware signature file to delete: %v", err))
 		} else {
 			logging.LogInfo(moduleName, "Edge Guard disabled - hardware signature file deleted")
 		}
-		
+
 		m.previousFrequency = currentFreq
 		logging.LogInfo(moduleName, "Edge Guard Manager disabled (frequency = 0)")
 		return
 	}
-	
+
 	// If frequency changed from 0 to > 0, delete existing .jwt and restart
 	if previousFreq <= 0 && currentFreq > 0 {
 		// Delete existing .jwt file before starting (fresh start when enabling Edge Guard)
@@ -566,18 +565,18 @@ func (m *Manager) InstanceConfigUpdated() {
 		} else {
 			logging.LogDebug(moduleName, fmt.Sprintf("No existing hardware signature file to delete: %v", err))
 		}
-		
+
 		// Check if agent is provisioned
 		if m.config.IOFogUUID == "" || m.config.PrivateKey == "" {
 			logging.LogInfo(moduleName, "Edge Guard cannot start - agent not provisioned (no private key)")
 			m.previousFrequency = currentFreq
 			return
 		}
-		
+
 		// Check hardware signature (will create new .jwt file)
 		logging.LogInfo(moduleName, "Calling checkHardwareSignature() to create initial hardware signature")
 		m.checkHardwareSignature()
-		
+
 		// Verify signature file was created
 		filePath, err := hardware.GetHardwareSignatureFilePath()
 		if err == nil {
@@ -587,7 +586,7 @@ func (m *Manager) InstanceConfigUpdated() {
 				logging.LogWarn(moduleName, fmt.Sprintf("Hardware signature file not found after checkHardwareSignature() call: %s", filePath))
 			}
 		}
-		
+
 		// Start periodic attestation
 		duration := time.Duration(currentFreq) * time.Second
 		m.attestationTicker = time.NewTicker(duration)
@@ -596,14 +595,14 @@ func (m *Manager) InstanceConfigUpdated() {
 		logging.LogInfo(moduleName, fmt.Sprintf("Edge Guard Manager enabled with attestation frequency: %d seconds", currentFreq))
 		return
 	}
-	
+
 	// If frequency changed but still > 0, restart with new frequency
 	if previousFreq > 0 && currentFreq > 0 {
 		// Stop old ticker
 		if m.attestationTicker != nil {
 			m.attestationTicker.Stop()
 		}
-		
+
 		// Start new ticker with updated frequency
 		duration := time.Duration(currentFreq) * time.Second
 		m.attestationTicker = time.NewTicker(duration)

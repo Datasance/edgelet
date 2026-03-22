@@ -44,7 +44,7 @@ func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) 
 	cpuUsage := calculateCPUUsage(&stats)
 
 	// Get memory usage
-	memoryUsage := int64(stats.MemoryStats.Usage)
+	memoryUsage := int64(stats.MemoryStats.Usage) // #nosec G115 -- container memory usage is below int64 max in practice
 
 	return &ContainerStats{
 		CPUUsage:    cpuUsage,

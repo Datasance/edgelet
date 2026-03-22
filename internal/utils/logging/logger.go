@@ -21,10 +21,10 @@ type Logger interface {
 
 // LogrusLogger wraps logrus.Logger with module support
 type LogrusLogger struct {
-	logger       *logrus.Logger
-	logWriter    io.WriteCloser
+	logger        *logrus.Logger
+	logWriter     io.WriteCloser
 	isInitialized bool
-	mu           sync.RWMutex
+	mu            sync.RWMutex
 }
 
 var (
@@ -49,7 +49,7 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 	defer logger.mu.Unlock()
 
 	// Create log directory if it doesn't exist
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0750); err != nil {
 		return err
 	}
 
@@ -80,7 +80,7 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 
 	// Close previous writer if it exists to prevent resource leaks
 	if logger.logWriter != nil {
-		logger.logWriter.Close()
+		_ = logger.logWriter.Close() // cannot use logger here (circular); best-effort close
 	}
 	logger.logWriter = logFile
 
@@ -151,7 +151,7 @@ func (l *LogrusLogger) GetLevel() logrus.Level {
 
 // UpdateLoggerConfig updates logger configuration without recreating the writer
 // This prevents log rotation on config reloads (matching Java: reuses existing FileHandler)
-func UpdateLoggerConfig(logDir string, maxFileSizeMB int, logFileCount int, logLevel string) error {
+func UpdateLoggerConfig(_ string, _ int, _ int, logLevel string) error {
 	logger := GetInstance()
 	logger.mu.Lock()
 	defer logger.mu.Unlock()

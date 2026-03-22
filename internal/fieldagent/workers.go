@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/diagnostics"
-	"github.com/eclipse-iofog/agent-go/internal/gps"
-	"github.com/eclipse-iofog/agent-go/internal/network"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/version"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/diagnostics"
+	"github.com/eclipse-iofog/agent/internal/gps"
+	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/version"
 )
 
 // pingControllerWorker periodically pings the controller
@@ -146,14 +146,13 @@ func (fa *FieldAgent) PostStatusHelper() {
 			fa.verificationFailed(err)
 			logging.LogError(moduleName, "Unable to send status due to broken certificate", err)
 		} else if isUnauthorizedError(err) {
-			fa.Deprovision(true)
+			if depErr := fa.Deprovision(true); depErr != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("Deprovision failed: %v", depErr))
+			}
 			logging.LogError(moduleName, "Unable to send status due to unauthorized access", err)
 		} else {
 			logging.LogError(moduleName, "Unable to send status", err)
 		}
-	} else {
-		// On success, notify other modules if needed
-		// This would be implemented when StatusReporter is available
 	}
 
 	logging.LogDebug(moduleName, "Finished posting ioFog status")
@@ -171,8 +170,7 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	processManagerStatus := statusReporter.GetProcessManagerStatus()
 	fieldAgentStatus := statusReporter.GetFieldAgentStatus()
 	statusReporterStatus := statusReporter.GetStatusReporterStatus()
-	messageBusStatus := statusReporter.GetMessageBusStatus()
-	sshManagerStatus := statusReporter.GetSshProxyManagerStatus()
+	sshManagerStatus := statusReporter.GetSSHProxyManagerStatus()
 	volumeMountStatus := statusReporter.GetVolumeMountManagerStatus()
 
 	// Get daemon status string
@@ -191,12 +189,6 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	repositoryStatusJSON := processManagerStatus.GetJSONRegistriesStatus()
 	if repositoryStatusJSON == "" {
 		repositoryStatusJSON = "[]"
-	}
-
-	// Get message counts JSON
-	messageCountsJSON := messageBusStatus.GetJSONPublishedMessagesPerMicroservice()
-	if messageCountsJSON == "" {
-		messageCountsJSON = "[]"
 	}
 
 	// Get tunnel status JSON
@@ -232,9 +224,9 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 		"lastStatusTime":            statusReporterStatus.LastUpdate,
 		"ipAddress":                 network.GetInstance().GetCurrentIPAddress(), // Get from NetworkInterfaceManager
 		"ipAddressExternal":         fa.config.IPAddressExternal,
-		"processedMessages":         messageBusStatus.ProcessedMessages,
-		"microserviceMessageCounts": messageCountsJSON,
-		"messageSpeed":              messageBusStatus.AverageSpeed,
+		"processedMessages":         0,
+		"microserviceMessageCounts": "[]",
+		"messageSpeed":              float32(0),
 		"lastCommandTime":           fieldAgentStatus.LastCommandTime,
 		"tunnelStatus":              tunnelStatusJSON,
 		"version":                   version.GetVersion(), // Version from build-time ldflags
@@ -284,7 +276,7 @@ func (fa *FieldAgent) postDiagnosticsHelper() {
 	for _, microservice := range monitoringMicroservices {
 		straceDataArray = append(straceDataArray, map[string]interface{}{
 			"microserviceUuid": microservice.GetMicroserviceUUID(),
-			"buffer":            microservice.GetResultBufferAsString(),
+			"buffer":           microservice.GetResultBufferAsString(),
 		})
 		// Clear buffer after reading
 		microservice.ClearResultBuffer()

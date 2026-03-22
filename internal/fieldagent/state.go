@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/models"
+	"github.com/eclipse-iofog/agent/internal/models"
 )
 
 // State represents the current state of the FieldAgent

@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/fieldagent"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -61,8 +62,8 @@ type ConfigSetRequest struct {
 
 // ConfigSetResponse represents the response for POST /v2/config
 type ConfigSetResponse struct {
-	Status      string            `json:"status"`
-	ErrorMap    map[string]string `json:"errorMap,omitempty"`
+	Status   string            `json:"status"`
+	ErrorMap map[string]string `json:"errorMap,omitempty"`
 }
 
 // HandleConfigGet handles GET /v2/config/get
@@ -102,7 +103,7 @@ func (h *ConfigHandler) HandleConfigGet(w http.ResponseWriter, r *http.Request) 
 	// Get container-specific config (matching Java GetConfigurationHandler)
 	fieldAgent := fieldagent.GetInstance()
 	containerConfig, exists := fieldAgent.GetContainerConfig(req.ID)
-	
+
 	var configStr string
 	if exists && containerConfig != "" {
 		// Return microservice-specific config as JSON string (matching Java)
@@ -126,7 +127,7 @@ func (h *ConfigHandler) HandleConfigGet(w http.ResponseWriter, r *http.Request) 
 		configMap["changes-frequency"] = cfg.ChangeFrequency
 		configMap["developer-mode"] = cfg.DevMode
 		configMap["time-zone"] = cfg.TimeZone
-		
+
 		// Marshal to JSON string (matching Java behavior)
 		configBytes, err := json.Marshal(configMap)
 		if err != nil {
@@ -151,7 +152,9 @@ func (h *ConfigHandler) HandleConfigGet(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(configHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(configHandlerModuleName, "Finished processing config get request")
 }
 
@@ -268,45 +271,45 @@ func (h *ConfigHandler) HandleConfigSet(w http.ResponseWriter, r *http.Request) 
 	// Set config values and collect errors
 	cfg := config.GetInstance()
 	errorMapResult := cfg.SetConfig(configMap)
-	
+
 	// Notify modules if config was updated successfully (async to not block HTTP response)
 	if len(errorMapResult) == 0 {
 		go notifyModulesOfConfigChange()
 	}
-	
+
 	// Convert error map keys from command line params to property names
 	errorMessages := make(map[string]string)
 	reverseMap := map[string]string{
-		"d":   "disk-limit",
-		"dl":  "disk-directory",
-		"m":   "memory-limit",
-		"p":   "cpu-limit",
-		"a":   "controller-url",
-		"ac":  "cert-directory",
-		"c":   "docker-url",
-		"n":   "network-adapter",
-		"l":   "logs-limit",
-		"ld":  "logs-directory",
-		"lc":  "logs-count",
-		"ll":  "logs-level",
-		"sf":  "status-frequency",
-		"cf":  "changes-frequency",
-		"df":  "diagnostics-frequency",
-		"sd":  "device-scan-frequency",
-		"idc": "isolated",
-		"egf": "edge-guard-frequency",
-		"gps": "gps",
+		"d":    "disk-limit",
+		"dl":   "disk-directory",
+		"m":    "memory-limit",
+		"p":    "cpu-limit",
+		"a":    "controller-url",
+		"ac":   "cert-directory",
+		"c":    "docker-url",
+		"n":    "network-adapter",
+		"l":    "logs-limit",
+		"ld":   "logs-directory",
+		"lc":   "logs-count",
+		"ll":   "logs-level",
+		"sf":   "status-frequency",
+		"cf":   "changes-frequency",
+		"df":   "diagnostics-frequency",
+		"sd":   "device-scan-frequency",
+		"idc":  "isolated",
+		"egf":  "edge-guard-frequency",
+		"gps":  "gps",
 		"gpsd": "gps-device",
 		"gpsf": "gps-scan-frequency",
-		"ft":  "fog-type",
-		"sec": "secure-mode",
-		"pf":  "docker-pruning-frequency",
-		"dt":  "available-disk-threshold",
-		"uf":  "ready-to-upgrade-scan-frequency",
-		"dev": "developer-mode",
-		"tz":  "time-zone",
+		"ft":   "fog-type",
+		"sec":  "secure-mode",
+		"pf":   "docker-pruning-frequency",
+		"dt":   "available-disk-threshold",
+		"uf":   "ready-to-upgrade-scan-frequency",
+		"dev":  "developer-mode",
+		"tz":   "time-zone",
 	}
-	
+
 	for param, errMsg := range errorMapResult {
 		if propName, exists := reverseMap[param]; exists {
 			// Clean up error message (remove command line param references)
@@ -331,7 +334,9 @@ func (h *ConfigHandler) HandleConfigSet(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(configHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(configHandlerModuleName, "Finished processing config set request")
 }
 

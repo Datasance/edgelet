@@ -1,23 +1,21 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/fieldagent"
-	"github.com/eclipse-iofog/agent-go/internal/network"
-	"github.com/eclipse-iofog/agent-go/internal/pruning"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	versionpkg "github.com/eclipse-iofog/agent-go/internal/version"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/pruning"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	versionpkg "github.com/eclipse-iofog/agent/internal/version"
 )
 
 const (
@@ -70,7 +68,7 @@ func ParseCommand(command string) (string, error) {
 	}
 }
 
-func parseStatusCommand(args []string) (string, error) {
+func parseStatusCommand(_ []string) (string, error) {
 	// Ensure config is loaded
 	ensureConfigLoaded()
 
@@ -80,13 +78,13 @@ func parseStatusCommand(args []string) (string, error) {
 	return report + "\n", nil
 }
 
-func parseInfoCommand(args []string) (string, error) {
+func parseInfoCommand(_ []string) (string, error) {
 	// Ensure config is loaded
 	ensureConfigLoaded()
 
 	// Get config report directly from Config
 	cfg := config.GetInstance()
-	
+
 	// Get IP address directly from network manager (matching Java: IOFogNetworkInterfaceManager.getInstance().getCurrentIpAddress())
 	// Java stores IP in memory only, not in config file
 	ipAddress := "unable to retrieve ip address"
@@ -116,12 +114,12 @@ func parseInfoCommand(args []string) (string, error) {
 	} else {
 		logging.LogWarn(cliParserModuleName, "Network manager instance is nil")
 	}
-	
+
 	report := cfg.GetConfigReportWithIP(ipAddress)
 	return report + "\n", nil
 }
 
-func parseVersionCommand(args []string) (string, error) {
+func parseVersionCommand(_ []string) (string, error) {
 	// Get version directly from version package
 	buildInfo := versionpkg.GetBuildInfo()
 	return fmt.Sprintf("ioFog Agent %s (built %s, commit %s)\n", buildInfo["version"], buildInfo["buildTime"], buildInfo["gitCommit"]), nil
@@ -185,9 +183,7 @@ func parseConfigCommand(args []string) (string, error) {
 		param := args[i]
 
 		// Remove leading dash if present
-		if strings.HasPrefix(param, "-") {
-			param = param[1:]
-		}
+		param = strings.TrimPrefix(param, "-")
 
 		// Special case: controllerCert can be empty
 		if param == "ac" {
@@ -231,24 +227,6 @@ func parseProvisionCommand(args []string) (string, error) {
 	provisionKey := args[0]
 	fieldAgent := fieldagent.GetInstance()
 
-	// #region agent log
-	logEntry := map[string]interface{}{
-		"sessionId":     "debug-session",
-		"runId":         "run1",
-		"hypothesisId":  "D",
-		"location":      "parser.go:189",
-		"message":       "parseProvisionCommand: before Provision call",
-		"data":          map[string]interface{}{"provisionKeyLength": len(provisionKey)},
-		"timestamp":     time.Now().UnixMilli(),
-	}
-	if logBytes, err := json.Marshal(logEntry); err == nil {
-		if f, err := os.OpenFile("/Users/emirhan/Documents/GitHub/Agent/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(string(logBytes) + "\n")
-			f.Close()
-		}
-	}
-	// #endregion
-
 	// Call FieldAgent provision
 	err := fieldAgent.Provision(provisionKey)
 	if err != nil {
@@ -280,33 +258,33 @@ func parseProvisionCommand(args []string) (string, error) {
 // This ensures the daemon's FieldAgent recreates its API client with new credentials
 func notifyDaemonConfigReload() error {
 	pidFile := filepath.Join(utils.VarRun, utils.PIDFileName)
-	
+
 	// Read PID from file
-	pidBytes, err := os.ReadFile(pidFile)
+	pidBytes, err := os.ReadFile(pidFile) // #nosec G304 -- path computed from filepath.Join(constant dir, constant filename)
 	if err != nil {
 		return fmt.Errorf("failed to read PID file: %w", err)
 	}
-	
+
 	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
 	if err != nil {
 		return fmt.Errorf("failed to parse PID: %w", err)
 	}
-	
+
 	// Send SIGHUP signal to daemon
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("failed to find daemon process: %w", err)
 	}
-	
+
 	if err := process.Signal(syscall.SIGHUP); err != nil {
 		return fmt.Errorf("failed to send SIGHUP to daemon: %w", err)
 	}
-	
+
 	logging.LogDebug(cliParserModuleName, fmt.Sprintf("Sent SIGHUP to daemon (PID: %d) to reload config", pid))
 	return nil
 }
 
-func parseDeprovisionCommand(args []string) (string, error) {
+func parseDeprovisionCommand(_ []string) (string, error) {
 	fieldAgent := fieldagent.GetInstance()
 
 	// Call FieldAgent deprovision (clearCredentials = false to keep credentials)
@@ -318,14 +296,14 @@ func parseDeprovisionCommand(args []string) (string, error) {
 	return "Deprovisioning status: Success\n", nil
 }
 
-func parseStopCommand(args []string) (string, error) {
+func parseStopCommand(_ []string) (string, error) {
 	// Stop command should be handled by supervisor
 	// For now, return a message (actual stop is handled by supervisor)
 	logging.LogInfo(cliParserModuleName, "Stop command received")
 	return "Stopping ioFog Agent...\n", nil
 }
 
-func parsePruneCommand(args []string) (string, error) {
+func parsePruneCommand(_ []string) (string, error) {
 	pruningManager := pruning.GetInstance()
 	result := pruningManager.PruneAgent()
 	return result + "\n", nil

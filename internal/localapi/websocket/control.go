@@ -1,11 +1,10 @@
 package websocket
 
 import (
-	"encoding/binary"
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/gorilla/websocket"
 )
 
@@ -79,7 +78,9 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 // handleConnection handles messages from a WebSocket connection
 func (h *ControlHandler) handleConnection(conn *Connection) {
 	defer func() {
-		conn.Conn.Close()
+		if err := conn.Conn.Close(); err != nil {
+			logging.LogWarn(controlHandlerModuleName, "Failed to close WebSocket connection: "+err.Error())
+		}
 		h.manager.RemoveConnection(ControlWebSocket, conn.ID)
 		logging.LogDebug(controlHandlerModuleName, "Control WebSocket connection closed")
 	}()
@@ -171,34 +172,4 @@ func (h *ControlHandler) SendResourceSignal() {
 			logging.LogError(controlHandlerModuleName, "Failed to send resource signal", err)
 		}
 	}
-}
-
-// Helper function to convert int to bytes (big-endian)
-func intToBytes(value int) []byte {
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, uint32(value))
-	return buf
-}
-
-// Helper function to convert bytes to int (big-endian)
-func bytesToInt(data []byte) int {
-	if len(data) < 4 {
-		return 0
-	}
-	return int(binary.BigEndian.Uint32(data))
-}
-
-// Helper function to convert long to bytes (big-endian)
-func longToBytes(value int64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(value))
-	return buf
-}
-
-// Helper function to convert bytes to long (big-endian)
-func bytesToLong(data []byte) int64 {
-	if len(data) < 8 {
-		return 0
-	}
-	return int64(binary.BigEndian.Uint64(data))
 }

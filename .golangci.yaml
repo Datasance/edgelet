@@ -1,0 +1,188 @@
+version: "2"
+
+# golangci-lint configuration for agent-go
+# Target: Go 1.24, CGO_ENABLED=0, module github.com/eclipse-iofog/agent
+
+linters:
+  # Start from the default set and selectively add / remove.
+  default: standard
+
+  enable:
+    - bodyclose        # Ensure HTTP response bodies are always closed
+    - misspell         # Fix common spelling mistakes in comments and strings
+    - noctx            # HTTP requests must carry a context
+    - prealloc         # Suggest pre-allocating slices where the capacity is known
+    - unconvert        # Remove unnecessary type conversions
+    - revive           # Drop-in replacement for golint with richer rule set
+    - exhaustive       # Ensure switch statements on enum types cover all cases
+    - nilerr           # Detect `if err == nil { return err }` anti-pattern
+    - rowserrcheck     # Ensure sql.Rows errors are checked after iteration
+    - sqlclosecheck    # Ensure sql.Rows / sql.Stmt are closed
+    - copyloopvar      # Detect loop-variable capture bugs (Go 1.22+ replacement for exportloopref)
+    - durationcheck    # Detect wrong time.Duration multiplications
+    - errorlint        # Enforce %w wrapping and errors.Is / errors.As usage
+    - gosec            # Security checks — respects //nolint and #nosec directives
+
+  disable:
+    - gochecknoglobals # Project intentionally uses package-level singletons
+    - exhaustruct      # Too strict; config / model structs have optional fields
+    - wsl              # Whitespace style too opinionated
+    - godot            # Trailing-dot requirement too strict for log messages
+    - lll              # Long log lines are intentional
+    - mnd              # Magic numbers acceptable in protocol / config constants
+    - funlen           # Some reconciliation functions are legitimately long
+    - cyclop           # Cyclomatic complexity: managers are inherently complex
+    - gocognit         # Cognitive complexity: same rationale as cyclop
+    - varnamelen       # Short names (err, ok, i, ms) are idiomatic Go
+    - ireturn          # Returning interface types is valid here
+    - wrapcheck        # Not all errors need external wrapping
+    - contextcheck     # Some legacy paths don't thread context yet
+    - depguard         # No banned imports at this time
+
+linters-settings:
+  # ── errcheck ──────────────────────────────────────────────────────────────
+  errcheck:
+    # Exclude common patterns where ignoring the error is intentional.
+    exclude-functions:
+      - (io.Closer).Close
+      - (net.Conn).Close
+      - (*os.File).Close
+      - fmt.Fprint
+      - fmt.Fprintf
+      - fmt.Fprintln
+      # Deferred tx.Rollback() — standard Go pattern: the surrounding Commit already
+      # returned an error; Rollback error would shadow the original failure.
+      - (*database/sql.Tx).Rollback
+
+  # ── govet ─────────────────────────────────────────────────────────────────
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Struct padding optimisation is not a priority here
+      - shadow         # Variable shadowing in if-err patterns is idiomatic Go
+
+  # ── staticcheck ───────────────────────────────────────────────────────────
+  staticcheck:
+    checks:
+      - "all"
+      - "-SA1019" # Allow deprecated API usage where no clean alternative exists yet
+
+  # ── revive ────────────────────────────────────────────────────────────────
+  revive:
+    rules:
+      - name: exported
+        disabled: true          # Don't require doc comments on every exported symbol
+      - name: unused-parameter
+        disabled: false
+      - name: var-naming
+        disabled: false
+      - name: error-return
+        disabled: false
+      - name: error-strings
+        disabled: false         # Error strings should not be capitalised or end with punctuation
+      - name: increment-decrement
+        disabled: false
+      - name: range
+        disabled: false
+      - name: receiver-naming
+        disabled: false
+      - name: time-naming
+        disabled: false
+      - name: indent-error-flow
+        disabled: false
+      - name: errorf
+        disabled: false
+
+  # ── misspell ──────────────────────────────────────────────────────────────
+  misspell:
+    locale: US
+
+  # ── gosec ─────────────────────────────────────────────────────────────────
+  gosec:
+    # Severity / confidence thresholds — only report medium+ to reduce noise.
+    severity: medium
+    confidence: medium
+    excludes:
+      - G304 # File path from variable — guarded with filepath.Clean() throughout
+      - G115 # Integer overflow — wire-format conversions are guarded with #nosec
+
+  # ── exhaustive ────────────────────────────────────────────────────────────
+  exhaustive:
+    # Require a default case in switches so unhandled cases are explicit.
+    default-signifies-exhaustive: true
+
+  # ── prealloc ──────────────────────────────────────────────────────────────
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+  # ── errorlint ─────────────────────────────────────────────────────────────
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+  # ── nolintlint ────────────────────────────────────────────────────────────
+  # Require specific linter names in directives (e.g. //nolint:errcheck, not //nolint).
+  # Explanation is encouraged but not enforced to keep directives readable.
+  nolintlint:
+    allow-unused: false
+    require-explanation: false
+    require-specific: true
+
+issues:
+  # Show all issues, not just the first occurrence per linter.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files: relax several linters that add noise in test code.
+    - path: "_test\\.go$"
+      linters:
+        - errcheck
+        - gosec
+        - exhaustive
+        - noctx
+        - bodyclose
+        - revive
+
+    # Generated / vendored / third-party code.
+    - path: "vendor/"
+      linters:
+        - all
+
+    # cmd/main packages: relaxed error-handling rules are acceptable.
+    - path: "cmd/"
+      linters:
+        - errcheck
+
+    # Migration SQL files embedded as strings.
+    - path: "store/migrations/"
+      linters:
+        - all
+
+    # Store scan rows: json.Unmarshal calls read data that was written by the same
+    # process; a parse failure yields an empty/zero value which is acceptable.
+    # Each call already carries a #nosec G104 comment explaining the rationale.
+    - path: "internal/store/"
+      linters:
+        - errcheck
+
+    # Intentional #nosec annotations — gosec must honour them.
+    - linters:
+        - gosec
+      text: "#nosec"
+
+  # Inherit issues from dependencies when set false (default).
+  exclude-dirs:
+    - vendor
+    - build
+    - dev
+
+run:
+  timeout: 5m
+  # Analyse all build tags.
+  build-tags: []
+  # Skip the vendor directory.
+  modules-download-mode: readonly

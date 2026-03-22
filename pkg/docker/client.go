@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/client"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -79,19 +79,19 @@ func (c *Client) initDockerClient() error {
 
 	// Close old client if exists
 	if c.client != nil {
-		c.client.Close()
+		if err := c.client.Close(); err != nil {
+			c.logger.Warnf("Failed to close old Docker client: %v", err)
+		}
 	}
 
 	c.client = cli
 
-	// Ensure namespace network exists (with timeout, don't block startup)
-	// Run in goroutine to not block initialization
-	go func() {
-		if err := c.ensureNamespaceNetworkExists(); err != nil {
-			c.logger.Warnf("Failed to ensure namespace network exists: %v", err)
-			// Don't fail initialization if network creation fails
-		}
-	}()
+	// Ensure "iofog" bridge network exists before returning — matches Java's synchronous
+	// call in initDockerClient(). Use the lock-free variant because c.mu is already
+	// held by Init() / ReInit(); calling ensureIoFogNetworkExists() here would deadlock.
+	if err := c.ensureNetworkLockFree(cli, c.ctx); err != nil {
+		c.logger.Warnf("Failed to ensure iofog network exists: %v", err)
+	}
 
 	// Start Docker events handler
 	go c.addDockerEventHandler()

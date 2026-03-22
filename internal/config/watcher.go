@@ -2,16 +2,21 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
+
+const watcherModuleName = "Config Watcher"
 
 // Watcher watches for configuration file changes
 type Watcher struct {
-	watcher *fsnotify.Watcher
-	path    string
-	mu      sync.RWMutex
+	watcher   *fsnotify.Watcher
+	path      string
+	mu        sync.RWMutex
 	callbacks []func()
 }
 
@@ -44,7 +49,9 @@ func (w *Watcher) Watch(ctx context.Context, configPath string) error {
 	}
 
 	if err := w.watcher.Add(configPath); err != nil {
-		w.watcher.Close()
+		if cerr := w.watcher.Close(); cerr != nil {
+			logging.LogWarn(watcherModuleName, fmt.Sprintf("Failed to close watcher: %v", cerr))
+		}
 		return err
 	}
 
@@ -59,7 +66,9 @@ func (w *Watcher) watchLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			w.Close()
+			if err := w.Close(); err != nil {
+				logging.LogWarn(watcherModuleName, fmt.Sprintf("Failed to close watcher on context done: %v", err))
+			}
 			return
 		case event, ok := <-w.watcher.Events:
 			if !ok {
@@ -69,7 +78,7 @@ func (w *Watcher) watchLoop(ctx context.Context) {
 				// Config file was modified, reload it
 				// Note: Some editors trigger CHMOD events on write
 				// Reload config logic moved to callback execution
-				
+
 				// Notify all callbacks
 				w.mu.RLock()
 				callbacks := make([]func(), len(w.callbacks))

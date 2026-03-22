@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon test lint clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help
+.PHONY: build build-cli build-daemon test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -6,6 +6,10 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 
 export PATH := $(GOBIN):$(PATH)
+
+# golangci-lint — pinned version; override with GOLANGCI_LINT_VERSION=vX.Y.Z
+GOLANGCI_LINT_VERSION ?= v1.64.4
+GOLANGCI_LINT         := $(GOBIN)/golangci-lint
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -69,14 +73,25 @@ profile: ## Run performance profiling (requires running agent)
 	@echo "Running performance profiling..."
 	@./scripts/profile.sh
 
-lint: ## Run linters (requires golangci-lint)
-	@echo "Running linters..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-		exit 1; \
-	fi
+# Download golangci-lint using the official install script if the binary is absent
+# or if its version does not match GOLANGCI_LINT_VERSION.
+$(GOLANGCI_LINT):
+	@echo "⬇️  Installing golangci-lint $(GOLANGCI_LINT_VERSION) → $(GOBIN)..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+		| sh -s -- -b $(GOBIN) $(GOLANGCI_LINT_VERSION)
+	@echo "✓ golangci-lint $(GOLANGCI_LINT_VERSION) installed"
+
+.PHONY: install-lint
+install-lint: $(GOLANGCI_LINT) ## Install golangci-lint (pinned to GOLANGCI_LINT_VERSION)
+	@$(GOLANGCI_LINT) version
+
+lint: $(GOLANGCI_LINT) ## Run linters (auto-installs golangci-lint if needed)
+	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION)..."
+	@$(GOLANGCI_LINT) run --config .golangci.yaml
+
+lint-fix: $(GOLANGCI_LINT) ## Run linters and auto-fix issues where possible
+	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION) with --fix..."
+	@$(GOLANGCI_LINT) run --config .golangci.yaml --fix
 
 fmt: ## Format code
 	@echo "Formatting code..."

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
 // ValidateConfig validates the configuration

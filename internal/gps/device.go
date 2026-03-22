@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/gps/nmea"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/gps/nmea"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -20,13 +21,13 @@ const (
 
 // DeviceHandler handles GPS device communication
 type DeviceHandler struct {
-	manager     *Manager
-	config      *config.Config
-	devicePath  string
-	deviceFile  *os.File
-	reader      *bufio.Reader
-	isRunning   bool
-	mu          sync.RWMutex
+	manager    *Manager
+	config     *config.Config
+	devicePath string
+	deviceFile *os.File
+	reader     *bufio.Reader
+	isRunning  bool
+	mu         sync.RWMutex
 }
 
 // NewDeviceHandler creates a new DeviceHandler
@@ -54,7 +55,7 @@ func (d *DeviceHandler) Start() error {
 	logging.LogDebug(deviceHandlerModuleName, fmt.Sprintf("Starting GPS device handler: %s", devicePath))
 
 	// Open device file
-	file, err := os.OpenFile(devicePath, os.O_RDONLY, 0)
+	file, err := os.OpenFile(filepath.Clean(devicePath), os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open GPS device: %w", err)
 	}
@@ -80,7 +81,9 @@ func (d *DeviceHandler) Stop() error {
 	logging.LogDebug(deviceHandlerModuleName, "Stopping GPS device handler")
 
 	if d.deviceFile != nil {
-		d.deviceFile.Close()
+		if err := d.deviceFile.Close(); err != nil {
+			logging.LogWarn(deviceHandlerModuleName, fmt.Sprintf("Failed to close GPS device file: %v", err))
+		}
 		d.deviceFile = nil
 	}
 	d.reader = nil

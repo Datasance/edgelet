@@ -2,14 +2,15 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -50,8 +51,10 @@ func (h *LogHandler) HandleLog(w http.ResponseWriter, r *http.Request) {
 	// Read latest log file
 	logFile := filepath.Join(logDir, "iofog-agent.0.log")
 	logs := ""
-	
-	if file, err := os.Open(logFile); err == nil {
+
+	// logFile is filepath.Join(known log dir, constant filename) — not user-controlled
+	file, openErr := os.Open(logFile) // #nosec G304
+	if openErr == nil {
 		defer file.Close()
 		if data, err := io.ReadAll(file); err == nil {
 			// Limit to last 1000 lines to avoid huge responses
@@ -81,6 +84,8 @@ func (h *LogHandler) HandleLog(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(logHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(logHandlerModuleName, "Finished processing log request")
 }

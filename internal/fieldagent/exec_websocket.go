@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/auth"
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/gorilla/websocket"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -184,7 +184,8 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 		dialer := websocket.Dialer{
 			HandshakeTimeout: handshakeTimeout,
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: !h.config.SecureMode,
+				MinVersion:         tls.VersionTLS12,
+				InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
 			},
 		}
 
@@ -194,8 +195,9 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 			certPool := x509.NewCertPool()
 			certPool.AddCert(h.controllerCert)
 			dialer.TLSClientConfig = &tls.Config{
+				MinVersion:         tls.VersionTLS12,
 				RootCAs:            certPool,
-				InsecureSkipVerify: !h.config.SecureMode,
+				InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
 			}
 		}
 
@@ -208,12 +210,16 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 		if err != nil {
 			h.transitionState(StateConnecting, StateDisconnected)
 			if resp != nil {
-				resp.Body.Close()
+				if cerr := resp.Body.Close(); cerr != nil {
+					logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+				}
 			}
 			return fmt.Errorf("failed to connect: %w", err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+			}
 		}
 
 		h.conn = conn
@@ -520,7 +526,9 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 			}
 
 			// Set read deadline
-			conn.SetReadDeadline(time.Now().Add(pingInterval * 2))
+			if err := conn.SetReadDeadline(time.Now().Add(pingInterval * 2)); err != nil {
+				logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
+			}
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
@@ -737,7 +745,9 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 func (h *ExecSessionWebSocketHandler) handleConnectionFailure() {
 	h.connMu.Lock()
 	if h.conn != nil {
-		h.conn.Close()
+		if err := h.conn.Close(); err != nil {
+			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close connection: %v", err))
+		}
 		h.conn = nil
 	}
 	h.connMu.Unlock()
@@ -751,7 +761,7 @@ func (h *ExecSessionWebSocketHandler) handleConnectionFailure() {
 		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Reconnecting in %v (attempt %d/%d)", backoff, h.reconnectAttempts, maxReconnectAttempts))
 
 		time.Sleep(backoff)
-		go h.Connect()
+		go h.Connect() //nolint:errcheck
 	} else {
 		logging.LogError(execWebSocketModuleName, "Max reconnection attempts reached", fmt.Errorf("reconnection failed"))
 	}
@@ -763,7 +773,9 @@ func (h *ExecSessionWebSocketHandler) Disconnect() {
 
 	h.connMu.Lock()
 	if h.conn != nil {
-		h.conn.Close()
+		if err := h.conn.Close(); err != nil {
+			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close connection on disconnect: %v", err))
+		}
 		h.conn = nil
 	}
 	h.connMu.Unlock()
@@ -808,7 +820,9 @@ func (h *ExecSessionWebSocketHandler) handleClose() {
 	execID := fa.GetActiveExecSession(h.microserviceUUID)
 	if execID != "" {
 		// Coordinate with FieldAgent for exec session cleanup (matching Java line 579)
-		fa.HandleExecSessionClose(h.microserviceUUID, execID)
+		if err := fa.HandleExecSessionClose(h.microserviceUUID, execID); err != nil {
+			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close exec session: %v", err))
+		}
 	}
 
 	// Check if there are other active exec sessions before cleanup (matching Java line 585-602)

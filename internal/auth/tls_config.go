@@ -18,6 +18,7 @@ func CreateControllerTLSConfig(controllerCert *x509.Certificate) (*tls.Config, e
 
 	return &tls.Config{
 		RootCAs:            trustStore.systemCerts,
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: false,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
@@ -39,6 +40,7 @@ func CreateRouterTLSConfig(routerCert *x509.Certificate) (*tls.Config, error) {
 
 	return &tls.Config{
 		RootCAs:            trustStore.systemCerts,
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: false,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
@@ -60,6 +62,7 @@ func CreateWebSocketTLSConfig(webSocketCert *x509.Certificate) (*tls.Config, err
 
 	return &tls.Config{
 		RootCAs:            trustStore.systemCerts,
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: false,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
@@ -74,7 +77,8 @@ func CreateWebSocketTLSConfig(webSocketCert *x509.Certificate) (*tls.Config, err
 // This is used when we need to make an insecure connection to get a new certificate
 func CreateInsecureTLSConfig() *tls.Config {
 	return &tls.Config{
-		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, // #nosec G402 -- intentionally insecure for bootstrapping initial certificate fetch
 	}
 }
 
@@ -97,6 +101,7 @@ func CreateTLSConfigWithClientCerts(caCert *x509.Certificate, tlsCert []byte, tl
 	return &tls.Config{
 		Certificates:       []tls.Certificate{cert},
 		RootCAs:            trustStore.systemCerts,
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: false,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {

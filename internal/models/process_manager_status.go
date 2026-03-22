@@ -18,16 +18,16 @@ func formatInt64(i int64) string {
 // ProcessManagerStatus represents the Process Manager status
 type ProcessManagerStatus struct {
 	mu                        sync.RWMutex
-	RunningMicroservicesCount int                        `json:"runningMicroservicesCount" yaml:"runningMicroservicesCount"` // Number of running microservices
-	MicroservicesStatus       map[string]*MicroserviceStatus `json:"microservicesStatus" yaml:"microservicesStatus"`         // Status of each microservice
-	RegistriesStatus         map[int]string            `json:"registriesStatus" yaml:"registriesStatus"`                   // Status of each registry (registry ID -> status)
+	RunningMicroservicesCount int                            `json:"runningMicroservicesCount" yaml:"runningMicroservicesCount"` // Number of running microservices
+	MicroservicesStatus       map[string]*MicroserviceStatus `json:"microservicesStatus" yaml:"microservicesStatus"`             // Status of each microservice
+	RegistriesStatus          map[int]string                 `json:"registriesStatus" yaml:"registriesStatus"`                   // Status of each registry (registry ID -> status)
 }
 
 // NewProcessManagerStatus creates a new ProcessManagerStatus
 func NewProcessManagerStatus() *ProcessManagerStatus {
 	return &ProcessManagerStatus{
 		MicroservicesStatus: make(map[string]*MicroserviceStatus),
-		RegistriesStatus:   make(map[int]string),
+		RegistriesStatus:    make(map[int]string),
 	}
 }
 
@@ -117,22 +117,22 @@ func (p *ProcessManagerStatus) RemoveNotRunningMicroserviceStatus() {
 func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	type MicroserviceStatusJSON struct {
-		ID              string   `json:"id"`
-		Status          string   `json:"status"`
-		Percentage      float32  `json:"percentage"`
-		ContainerID     string   `json:"containerId,omitempty"`
-		StartTime       int64    `json:"startTime,omitempty"`
-		OperatingDuration int64  `json:"operatingDuration,omitempty"`
-		CPUUsage        string   `json:"cpuUsage,omitempty"`
-		MemoryUsage     string   `json:"memoryUsage,omitempty"`
-		IPAddress       string   `json:"ipAddress,omitempty"`
-		HealthStatus    string   `json:"healthStatus,omitempty"`
-		ExecSessionIDs  []string `json:"execSessionIds,omitempty"`
-		ErrorMessage    string   `json:"errorMessage,omitempty"`
+		ID                string   `json:"id"`
+		Status            string   `json:"status"`
+		Percentage        float32  `json:"percentage"`
+		ContainerID       string   `json:"containerId,omitempty"`
+		StartTime         int64    `json:"startTime,omitempty"`
+		OperatingDuration int64    `json:"operatingDuration,omitempty"`
+		CPUUsage          string   `json:"cpuUsage,omitempty"`
+		MemoryUsage       string   `json:"memoryUsage,omitempty"`
+		IPAddress         string   `json:"ipAddress,omitempty"`
+		HealthStatus      string   `json:"healthStatus,omitempty"`
+		ExecSessionIDs    []string `json:"execSessionIds,omitempty"`
+		ErrorMessage      string   `json:"errorMessage,omitempty"`
 	}
-	
+
 	statuses := make([]MicroserviceStatusJSON, 0, len(p.MicroservicesStatus))
 	for uuid, status := range p.MicroservicesStatus {
 		msStatus := MicroserviceStatusJSON{
@@ -140,13 +140,13 @@ func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 			Status:     string(status.Status),
 			Percentage: status.Percentage,
 		}
-		
+
 		if status.ContainerID != "" {
 			msStatus.ContainerID = status.ContainerID
 			msStatus.StartTime = status.StartTime
 			msStatus.OperatingDuration = status.GetOperatingDuration()
-			if status.CpuUsage > 0 {
-				msStatus.CPUUsage = formatFloat32(status.CpuUsage)
+			if status.CPUUsage > 0 {
+				msStatus.CPUUsage = formatFloat32(status.CPUUsage)
 			}
 			if status.MemoryUsage > 0 {
 				msStatus.MemoryUsage = formatInt64(status.MemoryUsage)
@@ -159,14 +159,14 @@ func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 			}
 			msStatus.ExecSessionIDs = status.GetExecSessionIDs()
 		}
-		
+
 		if status.ErrorMessage != nil && *status.ErrorMessage != "" {
 			msStatus.ErrorMessage = *status.ErrorMessage
 		}
-		
+
 		statuses = append(statuses, msStatus)
 	}
-	
+
 	jsonData, err := json.Marshal(statuses)
 	if err != nil {
 		return "[]"
@@ -178,12 +178,12 @@ func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 func (p *ProcessManagerStatus) GetJSONRegistriesStatus() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	type RegistryStatusJSON struct {
-		ID        int    `json:"id"`
+		ID         int    `json:"id"`
 		LinkStatus string `json:"linkStatus"`
 	}
-	
+
 	statuses := make([]RegistryStatusJSON, 0, len(p.RegistriesStatus))
 	for id, status := range p.RegistriesStatus {
 		statuses = append(statuses, RegistryStatusJSON{
@@ -191,7 +191,7 @@ func (p *ProcessManagerStatus) GetJSONRegistriesStatus() string {
 			LinkStatus: status,
 		})
 	}
-	
+
 	jsonData, err := json.Marshal(statuses)
 	if err != nil {
 		return "[]"

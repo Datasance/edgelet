@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package edgeguard
@@ -7,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/yusufpapurcu/wmi"
 )
 
@@ -100,11 +101,11 @@ func collectUsbInfo(ctx context.Context) string {
 
 	// USB devices from Win32_PnPEntity filtered by USB
 	type PnPEntity struct {
-		Name           string
-		DeviceID       string
-		Manufacturer   string
-		Service        string
-		Status         string
+		Name         string
+		DeviceID     string
+		Manufacturer string
+		Service      string
+		Status       string
 	}
 	var pnpEntities []PnPEntity
 	// Query for USB devices - DeviceID contains USB
@@ -163,8 +164,8 @@ func collectPciInfo(ctx context.Context) string {
 
 	// Graphics cards from Win32_VideoController
 	type VideoController struct {
-		Name         string
-		AdapterRAM   uint64
+		Name          string
+		AdapterRAM    uint64
 		DriverVersion string
 	}
 	var videoControllers []VideoController
@@ -185,9 +186,9 @@ func collectPciInfo(ctx context.Context) string {
 
 	// Sound cards from Win32_SoundDevice
 	type SoundDevice struct {
-		Name        string
+		Name         string
 		Manufacturer string
-		ProductName string
+		ProductName  string
 	}
 	var soundDevices []SoundDevice
 	if err := wmi.Query("SELECT Name, Manufacturer, ProductName FROM Win32_SoundDevice", &soundDevices); err == nil {
@@ -215,12 +216,12 @@ func collectStorageInfo(ctx context.Context) string {
 
 	// Physical disks from Win32_DiskDrive (includes removable storage)
 	type DiskDrive struct {
-		Model            string
-		SerialNumber     string
-		Size             uint64
-		MediaType        string
-		InterfaceType    string
-		DeviceID         string
+		Model         string
+		SerialNumber  string
+		Size          uint64
+		MediaType     string
+		InterfaceType string
+		DeviceID      string
 	}
 	var drives []DiskDrive
 	if err := wmi.Query("SELECT Model, SerialNumber, Size, MediaType, InterfaceType, DeviceID FROM Win32_DiskDrive", &drives); err == nil {
@@ -329,7 +330,7 @@ func isPhysicalNetworkAdapterWindows(adapter NetworkAdapter) bool {
 	}
 	netConnectionID := strings.ToLower(adapter.NetConnectionID)
 	name := strings.ToLower(adapter.Name)
-	
+
 	for _, keyword := range virtualKeywords {
 		if strings.Contains(netConnectionID, strings.ToLower(keyword)) || strings.Contains(name, strings.ToLower(keyword)) {
 			return false

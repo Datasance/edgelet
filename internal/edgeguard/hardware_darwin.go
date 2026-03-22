@@ -1,3 +1,4 @@
+//go:build darwin
 // +build darwin
 
 package edgeguard
@@ -9,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 // collectSystemInfo collects system/motherboard/BIOS info on macOS
@@ -27,7 +28,7 @@ func collectSystemInfo(ctx context.Context) string {
 	}
 
 	lines := strings.Split(string(output), "\n")
-	
+
 	// System info
 	data.WriteString("System:\n")
 	for _, line := range lines {
@@ -90,7 +91,7 @@ func collectSystemInfo(ctx context.Context) string {
 }
 
 // collectSystemInfoFromIOReg fallback method using ioreg
-func collectSystemInfoFromIOReg(ctx context.Context) string {
+func collectSystemInfoFromIOReg(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== System Hardware ===\n")
 
@@ -101,7 +102,7 @@ func collectSystemInfoFromIOReg(ctx context.Context) string {
 	}
 
 	outputStr := string(output)
-	
+
 	data.WriteString("System:\n")
 	if serial := extractIORegValue(outputStr, "IOPlatformSerialNumber"); serial != "" {
 		data.WriteString(fmt.Sprintf("  Serial: %s\n", serial))
@@ -150,7 +151,7 @@ func collectUsbInfo(ctx context.Context) string {
 	for _, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
 		level := (len(line) - len(trimmed)) / 2
-		
+
 		if strings.HasPrefix(trimmed, "USB") || strings.HasPrefix(trimmed, "Product ID:") {
 			if inDevice && currentDevice.Len() > 0 {
 				data.WriteString(fmt.Sprintf("  USB Device:\n%s", currentDevice.String()))
@@ -160,7 +161,7 @@ func collectUsbInfo(ctx context.Context) string {
 			deviceLevel = level
 			continue
 		}
-		
+
 		if inDevice && level > deviceLevel {
 			if strings.Contains(trimmed, ":") {
 				parts := strings.SplitN(trimmed, ":", 2)
@@ -201,7 +202,7 @@ func collectUsbInfo(ctx context.Context) string {
 }
 
 // collectUsbInfoFromIOReg fallback method using ioreg
-func collectUsbInfoFromIOReg(ctx context.Context) string {
+func collectUsbInfoFromIOReg(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== USB Devices ===\n")
 
@@ -227,7 +228,7 @@ func collectUsbInfoFromIOReg(ctx context.Context) string {
 }
 
 // collectPciInfo collects PCI device information on macOS
-func collectPciInfo(ctx context.Context) string {
+func collectPciInfo(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== PCI Devices ===\n")
 
@@ -239,7 +240,7 @@ func collectPciInfo(ctx context.Context) string {
 		data.WriteString("Graphics Cards:\n")
 		inDisplay := false
 		var currentDisplay strings.Builder
-		
+
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "Display Type:") || strings.HasPrefix(line, "Chipset Model:") {
@@ -283,21 +284,20 @@ func collectPciInfo(ctx context.Context) string {
 }
 
 // collectStorageInfo collects detailed storage device info on macOS
-func collectStorageInfo(ctx context.Context) string {
+func collectStorageInfo(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== Storage Devices ===\n")
 
 	// Use diskutil list to get physical disks
 	cmd := exec.Command("diskutil", "list", "-plist")
-	output, err := cmd.Output()
-	if err != nil {
+	if _, err := cmd.Output(); err != nil {
 		logging.LogDebug(moduleName, fmt.Sprintf("Error running diskutil: %v", err))
 		return data.String()
 	}
 
 	// Parse diskutil output or use system_profiler for more details
 	cmd = exec.Command("system_profiler", "SPStorageDataType")
-	output, err = cmd.Output()
+	output, err := cmd.Output()
 	if err != nil {
 		logging.LogDebug(moduleName, fmt.Sprintf("Error running system_profiler SPStorageDataType: %v", err))
 		return data.String()
@@ -352,7 +352,7 @@ func collectStorageInfo(ctx context.Context) string {
 }
 
 // collectNetworkInfo collects detailed network interface info on macOS
-func collectNetworkInfo(ctx context.Context) string {
+func collectNetworkInfo(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== Network Interfaces ===\n")
 
@@ -365,7 +365,7 @@ func collectNetworkInfo(ctx context.Context) string {
 	}
 
 	interfaces := strings.Fields(string(output))
-	
+
 	for _, ifaceName := range interfaces {
 		// Apply hybrid filtering: whitelist + blacklist
 		if !isPhysicalNetworkInterfaceDarwin(ifaceName) {
@@ -374,7 +374,7 @@ func collectNetworkInfo(ctx context.Context) string {
 		}
 
 		// Get interface details using ifconfig
-		cmd = exec.Command("ifconfig", ifaceName)
+		cmd = exec.Command("ifconfig", ifaceName) // #nosec G204 -- binary is ifconfig constant; ifaceName is validated by isPhysicalNetworkInterfaceDarwin
 		ifconfigOutput, err := cmd.Output()
 		if err != nil {
 			continue
@@ -382,7 +382,7 @@ func collectNetworkInfo(ctx context.Context) string {
 
 		// Parse MAC address
 		macAddr := extractMACFromIfconfig(string(ifconfigOutput))
-		
+
 		// Get link state and speed
 		carrier := "unknown"
 		speed := "unknown"
@@ -393,7 +393,7 @@ func collectNetworkInfo(ctx context.Context) string {
 		}
 
 		// Try to get speed from ifconfig or networksetup
-		cmd = exec.Command("networksetup", "-getmedia", ifaceName)
+		cmd = exec.Command("networksetup", "-getmedia", ifaceName) // #nosec G204 -- binary is networksetup constant; ifaceName is validated by isPhysicalNetworkInterfaceDarwin
 		if mediaOutput, err := cmd.Output(); err == nil {
 			mediaStr := string(mediaOutput)
 			if strings.Contains(mediaStr, "1000baseT") {
@@ -409,7 +409,7 @@ func collectNetworkInfo(ctx context.Context) string {
 		wifiSSID := ""
 		if strings.HasPrefix(ifaceName, "en") && (strings.Contains(ifaceName, "0") || strings.Contains(ifaceName, "1")) {
 			// Try to get WiFi SSID using networksetup
-			cmd = exec.Command("networksetup", "-getairportnetwork", ifaceName)
+			cmd = exec.Command("networksetup", "-getairportnetwork", ifaceName) // #nosec G204 -- binary is networksetup constant; ifaceName is validated by isPhysicalNetworkInterfaceDarwin
 			if ssidOutput, err := cmd.Output(); err == nil {
 				ssidStr := strings.TrimSpace(string(ssidOutput))
 				if !strings.Contains(ssidStr, "Error") && ssidStr != "" {
@@ -486,10 +486,10 @@ func extractMACFromIfconfig(output string) string {
 }
 
 // getWiFiSSIDDarwin gets WiFi SSID using airport command
-func getWiFiSSIDDarwin(ifaceName string) string {
+func getWiFiSSIDDarwin(_ string) string {
 	// Try using airport command (requires symlink or full path)
 	airportPath := "/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport"
-	cmd := exec.Command(airportPath, "-I")
+	cmd := exec.Command(airportPath, "-I") // #nosec G204 -- airportPath is a hardcoded constant string
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -510,7 +510,7 @@ func getWiFiSSIDDarwin(ifaceName string) string {
 }
 
 // collectMemoryInfo collects physical memory module details on macOS
-func collectMemoryInfo(ctx context.Context) string {
+func collectMemoryInfo(_ context.Context) string {
 	var data strings.Builder
 	data.WriteString("\n=== Physical Memory Modules ===\n")
 

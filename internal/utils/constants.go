@@ -111,7 +111,6 @@ const (
 	OSGroup                        = "iofog-agent"
 	IOFogDockerContainerNamePrefix = "iofog_"
 	MicroserviceFile               = "microservices.json"
-	EdgeResourceFile               = "edge_resources.json"
 )
 
 // Event constants

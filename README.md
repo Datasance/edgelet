@@ -1,172 +1,192 @@
-# ioFog Agent - Go Implementation
+# ioFog Agent — Go Implementation
 
-This is the Go implementation of the ioFog Agent, migrated from Java. The agent provides edge computing capabilities for the ioFog platform.
+[![CI](https://github.com/eclipse-iofog/agent/actions/workflows/ci-go.yml/badge.svg)](https://github.com/eclipse-iofog/agent/actions/workflows/ci-go.yml)
+[![Build](https://github.com/eclipse-iofog/agent/actions/workflows/build.yml/badge.svg)](https://github.com/eclipse-iofog/agent/actions/workflows/build.yml)
+
+Go implementation of the ioFog Agent, migrated from Java. The agent provides edge-computing capabilities for the ioFog platform — managing microservice containers, communicating with the Controller, and reporting system status.
 
 ## Project Structure
 
 ```
 agent-go/
 ├── cmd/
-│   ├── iofog-agent/     # Combined CLI + daemon entry point
-│   └── iofog-agentd/    # Daemon-only entry point
-├── internal/            # Internal packages (will be populated by later agents)
-├── pkg/                 # Public packages
-├── build/               # Build artifacts
-├── scripts/             # Build scripts
-├── go.mod               # Go module definition
-├── Makefile             # Build automation
-├── Dockerfile           # Production Docker image
-└── Dockerfile.dev       # Development Docker image
+│   ├── iofog-agent/         # CLI entry point  (iofog-agent status / info / …)
+│   └── iofog-agentd/        # Daemon entry point
+├── internal/                # Internal packages
+│   ├── auth/                # TLS / JWT / certificate management
+│   ├── config/              # Configuration loading and persistence
+│   ├── fieldagent/          # Controller communication and sync
+│   ├── localapi/            # Local HTTP/WebSocket API (port 54321)
+│   ├── models/              # Shared data models
+│   ├── network/             # Network interface management
+│   ├── processmanager/      # Container lifecycle and reconciliation
+│   ├── proxy/               # SSH tunnel / proxy management
+│   ├── resourceconsumption/ # CPU / memory / disk monitoring
+│   ├── statusreporter/      # Status aggregation and reporting
+│   ├── store/               # SQLite local storage
+│   └── volumemount/         # Secret / ConfigMap volume mounts
+├── pkg/
+│   └── docker/              # Docker client wrapper
+├── build/                   # Build artifacts (git-ignored)
+├── packaging/               # DEB / RPM packaging scripts
+├── .golangci.yaml           # golangci-lint configuration
+├── go.mod                   # Go module definition
+├── Makefile                 # Build automation
+├── Dockerfile               # Production image (Alpine, CGO_ENABLED=0)
+└── Dockerfile.dev           # Development image (hot-reload)
 ```
 
 ## Prerequisites
 
-- Go 1.21 or later
-- Make
-- Docker (for building Docker images)
+| Tool        | Minimum version | Notes                            |
+|-------------|-----------------|----------------------------------|
+| Go          | **1.24**        | Specified in `go.mod`            |
+| Make        | any             | GNU Make                         |
+| Docker      | 26.10+          | Required for container management|
+| golangci-lint | v1.64.4       | Auto-installed by `make lint`    |
 
 ## Building
 
-### Build Both Binaries
-
 ```bash
-make build
-```
-
-### Build Individual Binaries
-
-```bash
-make build-cli      # Build iofog-agent
-make build-daemon   # Build iofog-agentd
+make build           # Build both binaries → build/iofog-agent, build/iofog-agentd
+make build-cli       # Build CLI binary only
+make build-daemon    # Build daemon binary only
 ```
 
 ### Cross-Compilation
 
-Build for specific architectures:
-
 ```bash
-make build-linux-amd64   # Linux AMD64
-make build-linux-arm64   # Linux ARM64
-make build-linux-armv7   # Linux ARMv7
-make build-all-archs     # All architectures
+GOOS=linux GOARCH=arm64  CGO_ENABLED=0 go build ./cmd/iofog-agent
+GOOS=linux GOARCH=arm    GOARM=7 CGO_ENABLED=0 go build ./cmd/iofog-agentd
 ```
 
 ## Testing
 
 ```bash
-make test              # Run tests
-make test-coverage     # Run tests with coverage
+make test             # Run all tests
+make test-unit        # Run unit tests only (go test -short)
+make test-coverage    # Run tests with HTML coverage report → build/coverage.html
+make benchmark        # Run benchmarks
 ```
 
 ## Code Quality
 
 ```bash
-make fmt    # Format code
-make vet    # Run go vet
-make lint   # Run linters (requires golangci-lint)
+make fmt              # Format code with gofmt
+make vet              # Run go vet
+make lint             # Run golangci-lint (auto-installs if absent)
+make lint-fix         # Run golangci-lint with --fix
+```
+
+`make lint` downloads the pinned binary (`v1.64.4`) to `$GOBIN` via the official
+install script the first time it is run — no manual installation required.
+
+To override the pinned version:
+
+```bash
+make lint GOLANGCI_LINT_VERSION=v1.64.4
+```
+
+## Local Development
+
+### Setup & Start
+
+```bash
+make build install-dev start-dev
+```
+
+This builds both binaries, installs them to `/usr/local/bin/`, creates the local
+development directory tree under `dev/`, and starts the daemon.
+
+```bash
+export SNAP_COMMON=$(pwd)/dev
+iofog-agent status
+iofog-agent info
+```
+
+### Logs
+
+```bash
+tail -f dev/var/log/iofog-agent/daemon-startup.log
+```
+
+### Stop
+
+```bash
+make stop-dev
 ```
 
 ## Docker
 
-### Production Image
-
 ```bash
-make docker-build
+make docker-build      # Build production image (iofog-agent-go:latest)
+make docker-build-dev  # Build development image (iofog-agent-go:dev)
 ```
 
-The production image is based on Alpine Linux and is optimized for minimal size (< 30MB target).
-
-### Development Image
-
-```bash
-make docker-build-dev
-```
-
-The development image includes hot reload support and debugging tools.
+The production image is based on Alpine Linux, statically linked
+(`CGO_ENABLED=0`), and targets < 30 MB.
 
 ## Installation
 
-Install binaries to system:
-
 ```bash
-make install
+make install           # sudo-copies both binaries to /usr/local/bin/
 ```
-
-This installs both binaries to `/usr/local/bin/`.
 
 ## Version Information
 
-Check version information:
-
 ```bash
-./build/iofog-agent version
-./build/iofog-agentd version
+iofog-agent version
+iofog-agentd version
 ```
 
-## Development
+## CI / CD
 
-### Setup
+| Workflow | Trigger | Jobs |
+|---|---|---|
+| **CI** (`ci-go.yml`) | push / PR → `main`, `develop` | lint → test → build → docker |
+| **Build** (`build.yml`) | push tag `v*` / manual | lint → build (multi-arch) → docker → packages |
+| **Release** (`release.yml`) | push tag `v*` | attach artifacts to GitHub Release |
 
-1. Clone the repository
-2. Navigate to `agent-go/` directory
-3. Run `go mod download` to download dependencies
-
-### Hot Reload (Development)
-
-Use the development Docker image with Air for hot reload:
-
-```bash
-docker build -f Dockerfile.dev -t iofog-agent:dev .
-docker run -v $(pwd):/app iofog-agent:dev
-```
-
-## CI/CD
-
-The project uses GitHub Actions for CI/CD. The workflow:
-
-- Runs tests on every push/PR
-- Builds binaries for multiple architectures (amd64, arm64, armv7)
-- Builds Docker images
-- Validates code formatting and linting
+Every CI run:
+1. Verifies the Go version (`go version`)
+2. Runs `golangci-lint` v1.64.4 via the official `golangci/golangci-lint-action@v3`
+3. Runs the full test suite
+4. Cross-compiles for `linux/amd64`, `linux/arm64`, `linux/arm/v7`
 
 ## Migration Status
 
-✅ **Migration Complete!** All 11 agents have successfully migrated the codebase from Java to Go.
+✅ **Migration Complete** — all functionality from the Java daemon has been ported to Go.
 
-- ✅ Repository structure created
-- ✅ Build system configured
-- ✅ Dockerfiles created
-- ✅ CI/CD pipeline configured
-- ✅ All core functionality implemented
-- ✅ Integration tests created
-- ✅ Documentation complete
-- ✅ Packaging support (DEB, RPM)
-- ✅ Security audit infrastructure
-- ✅ Performance targets met
+| Component | Status |
+|---|---|
+| Controller communication (Field Agent) | ✅ |
+| Process Manager (container reconciliation) | ✅ |
+| Local API (port 54321) | ✅ |
+| SQLite local storage | ✅ |
+| Volume mounts (Secrets / ConfigMaps) | ✅ |
+| Resource consumption monitoring | ✅ |
+| Network interface management | ✅ |
+| SSH proxy / tunnel | ✅ |
+| JWT authentication | ✅ |
+| TLS certificate management | ✅ |
+| Diagnostics & strace | ✅ |
+| Security hardening (gosec) | ✅ |
+| DEB / RPM packaging | ✅ |
 
-## Performance
+## Performance vs Java
 
-The Go implementation provides significant improvements over the Java version:
+| Metric | Go | Java |
+|---|---|---|
+| Binary size | < 50 MB | ~200 MB (+ JRE) |
+| Memory at idle | < 100 MB | ~300 MB |
+| Startup time | < 2 s | ~5 s |
+| CPU at idle | < 1 % | ~2–3 % |
 
-- **Binary size**: < 50MB (vs ~200MB with JRE)
-- **Memory usage**: < 100MB at idle (vs ~300MB Java)
-- **Startup time**: < 2 seconds (vs ~5 seconds Java)
-- **CPU overhead**: < 1% at idle
+## Security
 
-## Documentation
-
-Comprehensive documentation is available in the `docs/` directory:
-
-- [API Documentation](docs/api.md)
-- [Architecture](docs/architecture.md)
-- [Migration Guide](docs/migration.md)
-- [Deployment Guide](docs/deployment.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Feature Parity](docs/FEATURE-PARITY.md)
-
-## Migration History
-
-See `migration/00-MASTER-PLAN.md` for the complete migration plan and `AGENT-11-IMPLEMENTATION-SUMMARY.md` for the final implementation summary.
+Static analysis runs on every CI build via `gosec` (integrated into `golangci-lint`).
+All `#nosec` suppressions carry a justification comment explaining why the rule
+is intentionally bypassed.
 
 ## Contributing
 
@@ -174,4 +194,4 @@ See `CONTRIBUTING.md` for contribution guidelines.
 
 ## License
 
-See `LICENSE` file in the root of the repository.
+See `LICENSE` in the repository root.

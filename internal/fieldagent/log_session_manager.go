@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/processmanager"
-	"github.com/eclipse-iofog/agent-go/internal/utils"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/processmanager"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -243,7 +243,7 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 // StartLogStreamingOnActivation starts log streaming when WebSocket becomes active
 // This method is called from LogSessionWebSocketHandler when it receives LOG_START
 // Matching Java: startLogStreamingOnActivation()
-func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, tailConfig map[string]interface{}) {
+func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, _ map[string]interface{}) {
 	lsm.mu.Lock()
 	defer lsm.mu.Unlock()
 
@@ -350,7 +350,7 @@ type dockerLogTailHandler struct {
 	lsm              *LogSessionManager
 }
 
-func (h *dockerLogTailHandler) OnLogLine(sessionID, microserviceUUID string, lineBytes []byte, streamType docker.StreamType) {
+func (h *dockerLogTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ docker.StreamType) {
 	if h.wsHandler != nil && h.wsHandler.IsActive() {
 		// Send log line via WebSocket
 		msgType := byte(6) // LogTypeLogLine
@@ -431,7 +431,7 @@ type fogLogHandler struct {
 	lsm       *LogSessionManager
 }
 
-func (h *fogLogHandler) OnLogLine(sessionID, iofogUUID, line string) {
+func (h *fogLogHandler) OnLogLine(_, _, line string) {
 	if h.wsHandler != nil && h.wsHandler.IsActive() {
 		// Send log line via WebSocket
 		lineBytes := []byte(line)

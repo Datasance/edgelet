@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -55,7 +55,7 @@ func GetInstance() *Manager {
 // Start starts the Network Interface Manager
 func (m *Manager) Start() error {
 	logging.LogInfo(moduleName, "Start IoFog NetworkInterface")
-	
+
 	// Initial update (matching Java: try to update, restart on error)
 	if err := m.UpdateNetworkInterface(); err != nil {
 		logging.LogError(moduleName, "Error in updating IOFogNetworkInterface", err)
@@ -114,7 +114,7 @@ func (m *Manager) UpdateNetworkInterface() error {
 		// Try fallback: get any non-loopback IPv4 address
 		ipAddress, fallbackErr := m.getAnyIPv4Address()
 		if fallbackErr != nil {
-			return fmt.Errorf("unable to get network interface or fallback IP: %w (fallback: %v)", err, fallbackErr)
+			return fmt.Errorf("unable to get network interface or fallback IP: %w (fallback: %w)", err, fallbackErr)
 		}
 		m.currentIPAddress = ipAddress
 		m.networkInterface = nil // Set to nil if we couldn't find the specific interface
@@ -200,22 +200,6 @@ func (m *Manager) getAnyIPv4Address() (string, error) {
 
 	logging.LogWarn(moduleName, "No suitable IPv4 address found on any interface")
 	return "", fmt.Errorf("no suitable IPv4 address found")
-}
-
-// getCurrentIPAddress gets the current IP address (deprecated - use UpdateNetworkInterface instead)
-func (m *Manager) getCurrentIPAddress() (string, error) {
-	netInterface, err := m.getNetworkInterface()
-	if err != nil {
-		// Try fallback
-		return m.getAnyIPv4Address()
-	}
-
-	if netInterface != nil && netInterface.Address != nil {
-		return netInterface.Address.String(), nil
-	}
-
-	// Try fallback
-	return m.getAnyIPv4Address()
 }
 
 // getNetworkInterface gets the network interface based on controller URL
@@ -352,7 +336,7 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 
 // getConnectedAddress checks if a network interface can connect to the controller
 // Matches Java IOFogNetworkInterface.getConnectedAddress()
-func (m *Manager) getConnectedAddress(controllerURL *url.URL, controllerHost, controllerPort string, networkInterface *net.Interface, checkConnection bool) *NetworkInterfaceInfo {
+func (m *Manager) getConnectedAddress(_ *url.URL, controllerHost, controllerPort string, networkInterface *net.Interface, checkConnection bool) *NetworkInterfaceInfo {
 	addrs, err := networkInterface.Addrs()
 	if err != nil {
 		return nil
@@ -415,7 +399,9 @@ func (m *Manager) testConnection(localIP net.IP, controllerHost, controllerPort 
 		logging.LogWarn(moduleName, fmt.Sprintf("Unable to Get Connected Address: %v", err))
 		return false
 	}
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Failed to close test connection: %v", err))
+	}
 	return true
 }
 
@@ -424,7 +410,7 @@ func (m *Manager) testConnection(localIP net.IP, controllerHost, controllerPort 
 func (m *Manager) getDockerBridgeInterfaceName() string {
 	// Use a channel to get result with timeout
 	resultChan := make(chan string, 1)
-	
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -432,13 +418,13 @@ func (m *Manager) getDockerBridgeInterfaceName() string {
 				resultChan <- ""
 			}
 		}()
-		
+
 		dockerClient := docker.GetInstance()
 		if dockerClient == nil {
 			resultChan <- ""
 			return
 		}
-		
+
 		bridgeName, err := dockerClient.GetDockerBridgeName()
 		if err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Unable to set Docker Bridge Interface Name: %v", err))

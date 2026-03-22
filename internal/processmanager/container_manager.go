@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/network"
-	"github.com/eclipse-iofog/agent-go/internal/statusreporter"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
-	"github.com/eclipse-iofog/agent-go/internal/volumemount"
-	"github.com/eclipse-iofog/agent-go/pkg/docker"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/volumemount"
+	"github.com/eclipse-iofog/agent/pkg/docker"
 )
 
 const (
@@ -33,9 +33,14 @@ func NewContainerManager(dockerClient *docker.Client, microserviceManager Micros
 	}
 }
 
-// AddContainer adds a container for a microservice
+// AddContainer creates and starts a container for a microservice.
+// It holds IsUpdating=true for the duration so the reconciliation loop treats this
+// microservice as "in-flight" and does not enqueue a second ADD task.
 func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
 	cm.logger.Infof("Add container for microservice: %s", ms.ImageName)
+
+	ms.SetIsUpdating(true)
+	defer ms.SetIsUpdating(false)
 
 	container, err := cm.docker.GetContainer(ms.MicroserviceUUID)
 	if err != nil {
@@ -46,6 +51,7 @@ func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
 		return cm.createContainer(ms)
 	}
 
+	// Container already exists (created by a concurrent task) — nothing to do.
 	return nil
 }
 
@@ -63,7 +69,7 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
 	}
 
-	platform := "linux/amd64"
+	platform := ""
 	if ms.Platform != nil {
 		platform = *ms.Platform
 	}
@@ -71,10 +77,10 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	if registry.URL != "from_cache" {
 		// Pull image with progress callback
 		progressCallback := func(percentage float32) {
-		// Update status reporter with percentage
-		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
-		})
+			// Update status reporter with percentage
+			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
+				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
+			})
 		}
 
 		if err := cm.docker.PullImage(ms.ImageName, ms.MicroserviceUUID, platform, registry, progressCallback); err != nil {
@@ -82,10 +88,10 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 			// Continue with local cache if pull fails
 		} else {
 			cm.logger.Infof("Successfully pulled image \"%s\" while old container was running", ms.ImageName)
-		// Set percentage to 100% via status reporter
-		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
-		})
+			// Set percentage to 100% via status reporter
+			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
+				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
+			})
 		}
 	}
 
@@ -101,7 +107,7 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 
 	// Step 2: Now stop and remove old container (releases ports)
 	// Downtime starts here, but it's brief compared to pull time
-	if err := cm.RemoveContainerByMicroserviceUuid(ms.MicroserviceUUID, withCleanup); err != nil {
+	if err := cm.RemoveContainerByMicroserviceUUID(ms.MicroserviceUUID, withCleanup); err != nil {
 		cm.logger.Warnf("Error removing old container: %v", err)
 		// Continue anyway
 	}
@@ -116,9 +122,9 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	return nil
 }
 
-// RemoveContainerByMicroserviceUuid removes a container by microservice UUID
+// RemoveContainerByMicroserviceUUID removes a container by microservice UUID
 // Matching Java: ContainerManager.removeContainerByMicroserviceUuid()
-func (cm *ContainerManager) RemoveContainerByMicroserviceUuid(microserviceUUID string, withCleanup bool) error {
+func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID string, withCleanup bool) error {
 	cm.logger.Debugf("Start remove container by microserviceuuid: %s", microserviceUUID)
 
 	container, err := cm.docker.GetContainer(microserviceUUID)
@@ -146,8 +152,8 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUuid(microserviceUUID s
 	return nil
 }
 
-// StopContainerByMicroserviceUuid stops a container by microservice UUID
-func (cm *ContainerManager) StopContainerByMicroserviceUuid(microserviceUUID string) error {
+// StopContainerByMicroserviceUUID stops a container by microservice UUID
+func (cm *ContainerManager) StopContainerByMicroserviceUUID(microserviceUUID string) error {
 	cm.logger.Debugf("Stop container by microserviceuuid: %s", microserviceUUID)
 
 	container, err := cm.docker.GetContainer(microserviceUUID)
@@ -186,10 +192,10 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 
 	if registry.URL != "from_cache" && pullImage {
 		progressCallback := func(percentage float32) {
-		// Update status reporter with percentage
-		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
-		})
+			// Update status reporter with percentage
+			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
+				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
+			})
 		}
 
 		if err := cm.docker.PullImage(ms.ImageName, ms.MicroserviceUUID, platform, registry, progressCallback); err != nil {

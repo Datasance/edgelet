@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent-go/internal/cli"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/cli"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -77,7 +78,9 @@ func (h *CommandHandler) HandleCommandLine(w http.ResponseWriter, r *http.Reques
 		jsonData, _ := json.Marshal(response)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(jsonData)
+		if _, werr := w.Write(jsonData); werr != nil {
+			logging.LogWarn(commandHandlerModuleName, fmt.Sprintf("Failed to write error response: %v", werr))
+		}
 		return
 	}
 
@@ -94,6 +97,8 @@ func (h *CommandHandler) HandleCommandLine(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(commandHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(commandHandlerModuleName, "Finished processing commandline api request")
 }

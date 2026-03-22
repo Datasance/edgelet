@@ -2,12 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent-go/internal/config"
-	"github.com/eclipse-iofog/agent-go/internal/network"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -31,16 +32,16 @@ func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Get actual config from Configuration
 	cfg := config.GetInstance()
-	
+
 	// Get IP address from NetworkInterfaceManager
 	ipAddress := network.GetInstance().GetCurrentIPAddress()
 	if ipAddress == "" {
 		ipAddress = "unable to retrieve ip address"
 	}
-	
+
 	// Get config report (with IP address)
 	configReport := cfg.GetConfigReportWithIP(ipAddress)
-	
+
 	// Parse config report into map
 	infoMap := parseInfoReport(configReport)
 
@@ -54,7 +55,9 @@ func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	if _, werr := w.Write(jsonData); werr != nil {
+		logging.LogWarn(infoHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
+	}
 	logging.LogDebug(infoHandlerModuleName, "Finished processing info http request")
 }
 
@@ -62,24 +65,24 @@ func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 func parseInfoReport(infoReport string) map[string]string {
 	result := make(map[string]string)
 	lines := strings.Split(infoReport, "\n")
-	
+
 	for _, line := range lines {
 		parts := strings.SplitN(line, " : ", 2)
 		if len(parts) == 2 {
 			key := strings.ToLower(strings.TrimSpace(parts[0]))
 			key = strings.ReplaceAll(key, " ", "-")
-			
+
 			// Handle special key mappings from Java implementation
 			if key == "gps-coordinates(lat,lon)" {
 				key = "gps-coordinates"
 			} else if key == "developer's-mode" {
 				key = "developer-mode"
 			}
-			
+
 			value := strings.TrimSpace(parts[1])
 			result[key] = value
 		}
 	}
-	
+
 	return result
 }

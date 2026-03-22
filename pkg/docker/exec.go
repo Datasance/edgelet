@@ -1,11 +1,12 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/docker/docker/api/types"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -101,7 +102,7 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 
 	// Wait for completion
 	err = <-done
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		logging.LogError(execModuleName, "Error in exec session I/O", err)
 		return err
 	}

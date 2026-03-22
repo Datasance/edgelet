@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -34,27 +34,27 @@ type TailConfig struct {
 
 // LocalLogReader reads and streams agent self logs from local log files
 type LocalLogReader struct {
-	sessionID    string
-	iofogUUID    string
-	tailConfig   *TailConfig
-	handler      LocalLogHandler
-	isRunning    bool
-	mu           sync.Mutex
-	stopChan     chan struct{}
-	logDirectory string
+	sessionID      string
+	iofogUUID      string
+	tailConfig     *TailConfig
+	handler        LocalLogHandler
+	isRunning      bool
+	mu             sync.Mutex
+	stopChan       chan struct{}
+	logDirectory   string
 	currentLogFile string
 }
 
 // NewLocalLogReader creates a new LocalLogReader
 func NewLocalLogReader(sessionID, iofogUUID, logDirectory string, tailConfig *TailConfig, handler LocalLogHandler) *LocalLogReader {
 	return &LocalLogReader{
-		sessionID:     sessionID,
-		iofogUUID:     iofogUUID,
-		tailConfig:   tailConfig,
-		handler:      handler,
-		isRunning:    false,
-		stopChan:     make(chan struct{}),
-		logDirectory: logDirectory,
+		sessionID:      sessionID,
+		iofogUUID:      iofogUUID,
+		tailConfig:     tailConfig,
+		handler:        handler,
+		isRunning:      false,
+		stopChan:       make(chan struct{}),
+		logDirectory:   logDirectory,
 		currentLogFile: filepath.Join(logDirectory, latestLogFile),
 	}
 }
@@ -63,11 +63,11 @@ func NewLocalLogReader(sessionID, iofogUUID, logDirectory string, tailConfig *Ta
 func (llr *LocalLogReader) Start() {
 	llr.mu.Lock()
 	defer llr.mu.Unlock()
-	
+
 	if llr.isRunning {
 		return
 	}
-	
+
 	llr.isRunning = true
 	go llr.readLogs()
 	logging.LogInfo(localLogReaderModuleName, fmt.Sprintf("Started LocalLogReader: sessionId=%s", llr.sessionID))
@@ -77,11 +77,11 @@ func (llr *LocalLogReader) Start() {
 func (llr *LocalLogReader) Stop() {
 	llr.mu.Lock()
 	defer llr.mu.Unlock()
-	
+
 	if !llr.isRunning {
 		return
 	}
-	
+
 	llr.isRunning = false
 	close(llr.stopChan)
 	logging.LogInfo(localLogReaderModuleName, fmt.Sprintf("Stopped LocalLogReader: sessionId=%s", llr.sessionID))
@@ -101,7 +101,7 @@ func (llr *LocalLogReader) readLogs() {
 			llr.handler.OnComplete(llr.sessionID)
 		}
 	}()
-	
+
 	// Parse tail config
 	follow := true
 	lines := 100
@@ -118,9 +118,9 @@ func (llr *LocalLogReader) readLogs() {
 			lines = 10000
 		}
 	}
-	
+
 	logging.LogDebug(localLogReaderModuleName, fmt.Sprintf("Reading logs: follow=%v, lines=%d", follow, lines))
-	
+
 	// Check if log file exists
 	if _, err := os.Stat(llr.currentLogFile); os.IsNotExist(err) {
 		logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Log file does not exist: %s", llr.currentLogFile))
@@ -129,7 +129,7 @@ func (llr *LocalLogReader) readLogs() {
 		}
 		return
 	}
-	
+
 	// Read initial lines (tail)
 	initialLines, err := llr.readTailLines(llr.currentLogFile, lines)
 	if err != nil {
@@ -139,7 +139,7 @@ func (llr *LocalLogReader) readLogs() {
 		}
 		return
 	}
-	
+
 	// Send initial lines
 	for _, line := range initialLines {
 		select {
@@ -151,7 +151,7 @@ func (llr *LocalLogReader) readLogs() {
 			}
 		}
 	}
-	
+
 	// If follow is true, watch for new lines
 	if follow {
 		llr.watchForNewLines(llr.currentLogFile)
@@ -160,35 +160,35 @@ func (llr *LocalLogReader) readLogs() {
 
 // readTailLines reads the last N lines from a file
 func (llr *LocalLogReader) readTailLines(filePath string, lines int) ([]string, error) {
-	file, err := os.Open(filePath)
+	file, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	
+
 	// Read file line by line into a slice
 	var allLines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		allLines = append(allLines, scanner.Text())
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	
+
 	// Return last N lines
 	start := len(allLines) - lines
 	if start < 0 {
 		start = 0
 	}
-	
+
 	return allLines[start:], nil
 }
 
 // watchForNewLines watches for new lines in the log file
 func (llr *LocalLogReader) watchForNewLines(filePath string) {
-	file, err := os.Open(filePath)
+	file, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		logging.LogError(localLogReaderModuleName, "Error opening log file for watching", err)
 		if llr.handler != nil {
@@ -197,21 +197,21 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 		return
 	}
 	defer file.Close()
-	
+
 	// Seek to end of file
 	stat, err := file.Stat()
 	if err != nil {
 		logging.LogError(localLogReaderModuleName, "Error getting file stat", err)
 		return
 	}
-	
+
 	lastPosition := stat.Size()
 	lastInode := stat.Sys()
-	
+
 	// Watch for changes
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-llr.stopChan:
@@ -225,18 +225,22 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 				newLogFile := llr.findLatestLogFile()
 				if newLogFile != "" {
 					llr.currentLogFile = newLogFile
-					file.Close()
+					if cerr := file.Close(); cerr != nil {
+						logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Failed to close log file: %v", cerr))
+					}
 					llr.watchForNewLines(newLogFile)
 					return
 				}
 				continue
 			}
-			
+
 			currentInode := currentStat.Sys()
 			if currentInode != lastInode {
 				// File was rotated, reopen
-				file.Close()
-				file, err = os.Open(filePath)
+				if cerr := file.Close(); cerr != nil {
+					logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Failed to close rotated log file: %v", cerr))
+				}
+				file, err = os.Open(filepath.Clean(filePath))
 				if err != nil {
 					logging.LogError(localLogReaderModuleName, "Error reopening log file after rotation", err)
 					continue
@@ -244,12 +248,15 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 				lastPosition = 0
 				lastInode = currentInode
 			}
-			
+
 			// Check if file size increased
 			currentSize := currentStat.Size()
 			if currentSize > lastPosition {
 				// Read new lines
-				file.Seek(lastPosition, 0)
+				if _, serr := file.Seek(lastPosition, 0); serr != nil {
+					logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Failed to seek log file: %v", serr))
+					continue
+				}
 				scanner := bufio.NewScanner(file)
 				for scanner.Scan() {
 					line := scanner.Text()
@@ -270,7 +277,7 @@ func (llr *LocalLogReader) findLatestLogFile() string {
 	if _, err := os.Stat(latestPath); err == nil {
 		return latestPath
 	}
-	
+
 	// Try to find log files with pattern
 	for i := 0; i < 10; i++ {
 		logFile := filepath.Join(llr.logDirectory, fmt.Sprintf(logFilePattern, i))
@@ -278,6 +285,6 @@ func (llr *LocalLogReader) findLatestLogFile() string {
 			return logFile
 		}
 	}
-	
+
 	return ""
 }

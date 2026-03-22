@@ -18,11 +18,11 @@ const (
 
 // Connection represents a WebSocket connection with metadata
 type Connection struct {
-	Conn     *websocket.Conn
-	ID       string
-	Type     WebSocketType
-	mu       sync.RWMutex
-	closed   bool
+	Conn   *websocket.Conn
+	ID     string
+	Type   WebSocketType
+	mu     sync.RWMutex
+	closed bool
 }
 
 // Manager manages WebSocket connections

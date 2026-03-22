@@ -1,9 +1,9 @@
 package fieldagent
 
 import (
-	"github.com/eclipse-iofog/agent-go/internal/models"
-	"github.com/eclipse-iofog/agent-go/internal/processmanager"
-	"github.com/eclipse-iofog/agent-go/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/processmanager"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 // Ensure FieldAgent implements MicroserviceManagerInterface
@@ -13,7 +13,7 @@ var _ processmanager.MicroserviceManagerInterface = (*FieldAgent)(nil)
 func (fa *FieldAgent) GetLatestMicroservices() []*models.Microservice {
 	fa.microservicesMu.RLock()
 	defer fa.microservicesMu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	result := make([]*models.Microservice, len(fa.latestMicroservices))
 	copy(result, fa.latestMicroservices)
@@ -24,18 +24,18 @@ func (fa *FieldAgent) GetLatestMicroservices() []*models.Microservice {
 func (fa *FieldAgent) GetCurrentMicroservices() []*models.Microservice {
 	fa.microservicesMu.RLock()
 	defer fa.microservicesMu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	result := make([]*models.Microservice, len(fa.currentMicroservices))
 	copy(result, fa.currentMicroservices)
 	return result
 }
 
-// FindLatestMicroserviceByUuid finds a microservice by UUID
-func (fa *FieldAgent) FindLatestMicroserviceByUuid(uuid string) *models.Microservice {
+// FindLatestMicroserviceByUUID finds a microservice by UUID
+func (fa *FieldAgent) FindLatestMicroserviceByUUID(uuid string) *models.Microservice {
 	fa.microservicesMu.RLock()
 	defer fa.microservicesMu.RUnlock()
-	
+
 	for _, ms := range fa.latestMicroservices {
 		if ms.MicroserviceUUID == uuid {
 			return ms
@@ -48,7 +48,7 @@ func (fa *FieldAgent) FindLatestMicroserviceByUuid(uuid string) *models.Microser
 func (fa *FieldAgent) GetRegistry(id int) *models.Registry {
 	fa.microservicesMu.RLock()
 	defer fa.microservicesMu.RUnlock()
-	
+
 	for _, reg := range fa.registries {
 		if reg.ID == id {
 			return reg
@@ -61,7 +61,7 @@ func (fa *FieldAgent) GetRegistry(id int) *models.Registry {
 func (fa *FieldAgent) SetCurrentMicroservices(microservices []*models.Microservice) {
 	fa.microservicesMu.Lock()
 	defer fa.microservicesMu.Unlock()
-	
+
 	fa.currentMicroservices = make([]*models.Microservice, len(microservices))
 	copy(fa.currentMicroservices, microservices)
 }
@@ -70,7 +70,7 @@ func (fa *FieldAgent) SetCurrentMicroservices(microservices []*models.Microservi
 func (fa *FieldAgent) setLatestMicroservices(microservices []*models.Microservice) {
 	fa.microservicesMu.Lock()
 	defer fa.microservicesMu.Unlock()
-	
+
 	fa.latestMicroservices = make([]*models.Microservice, len(microservices))
 	copy(fa.latestMicroservices, microservices)
 }
@@ -79,7 +79,7 @@ func (fa *FieldAgent) setLatestMicroservices(microservices []*models.Microservic
 func (fa *FieldAgent) setRegistries(registries []*models.Registry) {
 	fa.microservicesMu.Lock()
 	defer fa.microservicesMu.Unlock()
-	
+
 	fa.registries = make([]*models.Registry, len(registries))
 	copy(fa.registries, registries)
 }
@@ -89,11 +89,11 @@ func (fa *FieldAgent) Clear() {
 	logging.LogDebug(moduleName, "Start microservice clear")
 	fa.microservicesMu.Lock()
 	defer fa.microservicesMu.Unlock()
-	
+
 	fa.latestMicroservices = make([]*models.Microservice, 0)
 	fa.currentMicroservices = make([]*models.Microservice, 0)
 	fa.registries = make([]*models.Registry, 0)
 	// Note: routes and configs are not stored in FieldAgent, they're passed to callbacks
-	
+
 	logging.LogDebug(moduleName, "Finished microservice clear")
 }
