@@ -1,0 +1,1686 @@
+//go:build linux
+
+// Package iofog implements the ContainerEngine interface using the embedded
+// containerd runtime. It communicates directly with the in-process containerd
+// via the containerd Go client (not the Docker SDK), connecting to the private
+// socket at /run/iofog-agent/containerd.sock.
+package iofog
+
+import (
+	"bufio"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	v1stats "github.com/containerd/cgroups/v3/cgroup1/stats"
+	v2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/images"
+	dockerresolver "github.com/containerd/containerd/v2/core/remotes/docker"
+	"github.com/containerd/containerd/v2/pkg/cio"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+	"github.com/containerd/containerd/v2/pkg/oci"
+	"github.com/containerd/containerd/v2/pkg/reference"
+	"github.com/containerd/errdefs"
+	tuypeurl "github.com/containerd/typeurl/v2"
+	"github.com/eclipse-iofog/agent/pkg/engine/iofog/cri"
+	"github.com/nxadm/tail"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/engine"
+)
+
+const (
+	// Full containerd runtime type identifiers — must be passed to
+	// client.WithRuntime(); short names like "runc" are invalid in v2.1+.
+	runcRuntimeType = "io.containerd.runc.v2"
+	spinRuntimeType = "io.containerd.spin.v2"
+
+	// hostsDir is the directory where per-container /etc/hosts files are written.
+	hostsDir = "/run/iofog-agent/hosts"
+)
+
+var log = logging.NewModuleLogger("IofogEngine")
+
+// pendingExec holds the information needed to start a containerd exec process.
+// It is stored between CreateExecSession (which validates the container and builds
+// the process spec) and StartExecSession (which wires I/O and starts the process).
+type pendingExec struct {
+	containerID string
+	execID      string
+	spec        *specs.Process
+}
+
+// Engine implements engine.ContainerEngine using the embedded containerd.
+type Engine struct {
+	client       *client.Client
+	criClient    *cri.Client
+	logDir       string
+	store        *stateStore
+	pendingExecs map[string]*pendingExec   // execID -> pending (supports concurrent exec sessions)
+	runningProcs map[string]client.Process // execID -> process (for status/stop)
+	execMu       sync.Mutex                // protects pendingExecs and runningProcs
+	execSessions sync.Map                  // containerID -> []string (active exec IDs)
+	execToCont   sync.Map                  // execID -> containerID (for removal on StopExecSession)
+}
+
+// New returns an uninitialised iofog engine. logDir is the directory to write
+// per-container log files to.
+func New(logDir string) *Engine {
+	if logDir == "" {
+		logDir = "/var/log/iofog-agent/containers"
+	}
+	return &Engine{
+		logDir:       logDir,
+		store:        newStateStore(),
+		pendingExecs: make(map[string]*pendingExec),
+		runningProcs: make(map[string]client.Process),
+	}
+}
+
+// Init connects to the embedded containerd socket, initialises CNI, and
+// recovers per-container state from existing container labels.
+func (e *Engine) Init(cfg engine.EngineConfig) error {
+	socketPath := cfg.SocketURL
+	if socketPath == "" {
+		socketPath = constants.IofogContainerdSocket
+	}
+	socketPath = strings.TrimPrefix(socketPath, "unix://")
+
+	c, err := client.New(socketPath, client.WithDefaultNamespace(constants.IofogContainerdNamespace))
+	if err != nil {
+		return fmt.Errorf("connect to containerd at %s: %w", socketPath, err)
+	}
+	e.client = c
+
+	// Import embedded pause (sandbox) image so CRI podsandbox can use it.
+	if err := e.importPauseImage(); err != nil {
+		log.Warnf("Pause image import failed (non-fatal): %v", err)
+	}
+
+	// CRI client for RunPodSandbox, CreateContainer, etc. CNI lifecycle is managed by containerd.
+	criClient, err := cri.NewClient(socketPath)
+	if err != nil {
+		return fmt.Errorf("create CRI client: %w", err)
+	}
+	e.criClient = criClient
+
+	// Recover per-container state from existing container labels.
+	e.recoverState()
+	return nil
+}
+
+// importPauseImage imports the embedded pause (sandbox) image into containerd's
+// content store so the CRI plugin can use it for pod sandboxes.
+func (e *Engine) importPauseImage() error {
+	pausePath := filepath.Join(constants.IofogContainerdImagesDir, "pause.tar.gz")
+	if _, err := os.Stat(pausePath); err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf("Pause image not found at %s, skipping import", pausePath)
+			return nil
+		}
+		return fmt.Errorf("stat pause image: %w", err)
+	}
+	f, err := os.Open(pausePath)
+	if err != nil {
+		return fmt.Errorf("open pause image: %w", err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+	if _, err := e.client.Import(e.ctx(), gz); err != nil {
+		return fmt.Errorf("import pause image: %w", err)
+	}
+	log.Debugf("Pause image imported from %s", pausePath)
+	return nil
+}
+
+// recoverState populates the in-memory state store from labels on all existing containers.
+func (e *Engine) recoverState() {
+	cs, err := e.client.Containers(e.ctx())
+	if err != nil {
+		log.Warnf("recoverState: failed to list containers: %v", err)
+		return
+	}
+	for _, c := range cs {
+		if isSandboxContainer(e.ctx(), c) {
+			continue
+		}
+		info, err := c.Info(e.ctx())
+		if err != nil {
+			continue
+		}
+		if info.Labels == nil {
+			continue
+		}
+		st := stateFromLabels(info.Labels)
+		if st.ip != "" || st.netnsPath != "" || st.sandboxID != "" || st.startedAt != 0 {
+			e.store.set(c.ID(), st)
+		}
+	}
+	log.Debugf("recoverState: recovered state for %d containers", len(cs))
+}
+
+// Close releases the containerd and CRI clients.
+func (e *Engine) Close() error {
+	if e.criClient != nil {
+		_ = e.criClient.Close()
+	}
+	if e.client != nil {
+		return e.client.Close()
+	}
+	return nil
+}
+
+// ctx returns a context with the iofog containerd namespace set.
+func (e *Engine) ctx() context.Context {
+	return namespaces.WithNamespace(context.Background(), constants.IofogContainerdNamespace)
+}
+
+// isSandboxContainer returns true if the container is the CRI pod sandbox (pause).
+// We must exclude sandbox containers from GetContainer/GetAllContainers so we never
+// return or operate on the pause container instead of the actual microservice.
+func isSandboxContainer(ctx context.Context, c client.Container) bool {
+	info, err := c.Info(ctx)
+	if err != nil {
+		return false
+	}
+	// Sandbox uses portainer/pause image; main containers use microservice images.
+	return info.Image != "" && (info.Image == constants.IofogSandboxImage ||
+		strings.Contains(info.Image, "portainer/pause"))
+}
+
+// --- Container lifecycle ---
+
+func (e *Engine) GetContainer(microserviceUUID string) (*engine.Container, error) {
+	ctx := e.ctx()
+	cs, err := e.client.Containers(ctx, fmt.Sprintf(`labels."iofog-ms"=="%s"`, microserviceUUID))
+	if err != nil {
+		return nil, err
+	}
+	if len(cs) == 0 {
+		return nil, nil
+	}
+	// Exclude sandbox (pause) container — return the main microservice container.
+	for _, c := range cs {
+		if isSandboxContainer(ctx, c) {
+			continue
+		}
+		return containerFromContainerd(ctx, c)
+	}
+	return nil, nil
+}
+
+func (e *Engine) GetContainerByID(containerID string) (*engine.Container, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, nil // Not found
+	}
+	if isSandboxContainer(ctx, c) {
+		return nil, nil
+	}
+	return containerFromContainerd(ctx, c)
+}
+
+func (e *Engine) GetContainerSandboxID(containerID string) (string, error) {
+	if st, ok := e.store.get(containerID); ok && st.sandboxID != "" {
+		return st.sandboxID, nil
+	}
+	return "", nil
+}
+
+func (e *Engine) GetRunningContainers() ([]engine.Container, error) {
+	ctx := e.ctx()
+	all, err := e.client.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []engine.Container
+	for _, c := range all {
+		if isSandboxContainer(ctx, c) {
+			continue
+		}
+		task, err := c.Task(ctx, nil)
+		if err != nil {
+			continue // No task → not running.
+		}
+		st, err := task.Status(ctx)
+		if err != nil || st.Status != client.Running {
+			continue
+		}
+		ec, err := containerFromContainerd(ctx, c)
+		if err != nil {
+			log.Warnf("Skipping container %s: %v", c.ID(), err)
+			continue
+		}
+		out = append(out, *ec)
+	}
+	return out, nil
+}
+
+func (e *Engine) GetAllContainers() ([]engine.Container, error) {
+	ctx := e.ctx()
+	cs, err := e.client.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]engine.Container, 0, len(cs))
+	for _, c := range cs {
+		if isSandboxContainer(ctx, c) {
+			continue
+		}
+		ec, err := containerFromContainerd(ctx, c)
+		if err != nil {
+			log.Warnf("Skipping container %s: %v", c.ID(), err)
+			continue
+		}
+		out = append(out, *ec)
+	}
+	return out, nil
+}
+
+// CreateContainer creates the container via CRI: RunPodSandbox (CNI managed by containerd)
+// then CreateContainer. It does NOT start the container — that is deferred to StartContainer.
+func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (string, error) {
+	ctx := e.ctx()
+	cfg := config.GetInstance()
+	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+
+	// Ensure image exists.
+	if _, err := e.client.GetImage(ctx, ms.ImageName); err != nil {
+		return "", fmt.Errorf("image %s not found (pull first): %w", ms.ImageName, err)
+	}
+
+	envVars := buildEnvVars(ms, cfg.TimeZone)
+
+	// Build /etc/hosts before RunPodSandbox (needed for ContainerConfig mounts).
+	hostsFilePath := ""
+	if !ms.HostNetworkMode {
+		hostsFilePath = filepath.Join(hostsDir, containerName)
+		routerIP := ""
+		if !ms.IsRouter && !cfg.IsRouterInterior {
+			routerContainerID := utils.IOFogDockerContainerNamePrefix + cfg.RouterUUID
+			if st, ok := e.store.get(routerContainerID); ok && st.ip != "" {
+				routerIP = st.ip
+			}
+		} else if cfg.IsRouterInterior && hostname != "" {
+			routerIP = hostname
+		}
+		extraHosts := buildExtraHostsWithIoFog(ms.ExtraHosts, hostname)
+		if err := buildHostsFile(hostsFilePath, extraHosts, routerIP); err != nil {
+			log.Warnf("buildHostsFile for %s: %v", containerName, err)
+			hostsFilePath = ""
+		}
+	}
+
+	logDirectory, logPath := cri.LogPathsForCRI(e.logDir, ms.MicroserviceUUID)
+	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory)
+	runtimeHandler := cri.GetRuntimeHandler(ms)
+
+	sandboxID, err := e.criClient.RunPodSandbox(ctx, podConfig, runtimeHandler)
+	if err != nil {
+		return "", fmt.Errorf("RunPodSandbox for %s: %w", containerName, err)
+	}
+
+	// Get pod IP from sandbox status (for bridge network).
+	ipAddr := ""
+	if !ms.HostNetworkMode {
+		if status, err := e.criClient.PodSandboxStatus(ctx, sandboxID); err == nil && status.Status != nil && status.Status.Network != nil {
+			ipAddr = status.Status.Network.Ip
+		}
+	}
+
+	containerConfig, err := cri.ContainerConfigFromMicroservice(ms, hostname, envVars, logPath, hostsFilePath, sandboxID)
+	if err != nil {
+		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
+		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
+		return "", fmt.Errorf("build container config for %s: %w", containerName, err)
+	}
+
+	// Add extra labels for engine/ProcessManager.
+	containerConfig.Labels[labelIOFogUUID] = cfg.IOFogUUID
+	portsJSON, _ := json.Marshal(ms.PortMappings)
+	containerConfig.Labels[labelPorts] = string(portsJSON)
+	containerConfig.Labels[labelLogSize] = labelInt64(ms.LogSize)
+	containerConfig.Labels[labelIP] = ipAddr
+	if ms.HostNetworkMode {
+		// Record host-network mode in a label so AreMicroserviceAndContainerEqual can
+		// detect it reliably. The OCI spec for a CRI container always has a non-empty
+		// network namespace path (pointing to the sandbox netns), which makes the
+		// spec-based hasHostNetNS check return false even for host-network containers.
+		containerConfig.Labels[labelHostNet] = "true"
+	}
+	if ms.IsRouter {
+		containerConfig.Labels["iofog-router"] = "true"
+	}
+	if ms.IsNats {
+		containerConfig.Labels["iofog-nats"] = "true"
+	}
+	if ms.Healthcheck != nil {
+		if hcJSON, err := json.Marshal(ms.Healthcheck); err == nil {
+			containerConfig.Labels[labelHealthcheck] = string(hcJSON)
+		}
+	}
+
+	containerID, err := e.criClient.CreateContainer(ctx, sandboxID, containerConfig, podConfig)
+	if err != nil {
+		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
+		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
+		return "", fmt.Errorf("CreateContainer for %s: %w", containerName, err)
+	}
+
+	e.store.set(containerID, &containerState{
+		sandboxID: sandboxID,
+		ip:        ipAddr,
+	})
+	log.Debugf("container %s: CRI create complete, containerID=%s sandboxID=%s IP=%s", containerName, containerID, sandboxID, ipAddr)
+	return containerID, nil
+}
+
+// StartContainer starts the container via CRI. CRI manages logs; we only record start time.
+func (e *Engine) StartContainer(containerID string) error {
+	ctx := e.ctx()
+	if err := e.criClient.StartContainer(ctx, containerID); err != nil {
+		return fmt.Errorf("StartContainer %s: %w", containerID, err)
+	}
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil // Container started; recording start time is best-effort.
+	}
+	e.recordStartTime(ctx, c, containerID)
+	return nil
+}
+
+// recordStartTime stores the current time as startedAt in the state map and container label.
+func (e *Engine) recordStartTime(ctx context.Context, c client.Container, containerID string) {
+	now := time.Now().UnixMilli()
+	if st, ok := e.store.get(containerID); ok {
+		st.startedAt = now
+	} else {
+		e.store.set(containerID, &containerState{startedAt: now})
+	}
+	_, _ = c.SetLabels(ctx, map[string]string{labelStartedAt: labelInt64(now)})
+}
+
+// StopContainer stops the container via CRI (SIGTERM, then SIGKILL after timeout).
+func (e *Engine) StopContainer(containerID string) error {
+	ctx := e.ctx()
+	if err := e.criClient.StopContainer(ctx, containerID, 10); err != nil {
+		return fmt.Errorf("StopContainer %s: %w", containerID, err)
+	}
+	return nil
+}
+
+// RemoveContainer stops and removes the container via CRI, then tears down the pod sandbox.
+// CRI handles CNI teardown in the correct order (StopPodSandbox triggers CNI DEL).
+func (e *Engine) RemoveContainer(containerID string, _ bool) error {
+	ctx := e.ctx()
+	sandboxIDStr := ""
+	msUUID := ""
+	if c, err := e.client.LoadContainer(ctx, containerID); err == nil {
+		if info, err := c.Info(ctx); err == nil && info.Labels != nil {
+			msUUID = info.Labels["iofog-ms"]
+		}
+	}
+	if st, ok := e.store.get(containerID); ok {
+		sandboxIDStr = st.sandboxID
+		if msUUID == "" {
+			msUUID = strings.TrimPrefix(containerID, utils.IOFogDockerContainerNamePrefix)
+		}
+	}
+	if msUUID == "" {
+		msUUID = strings.TrimPrefix(containerID, utils.IOFogDockerContainerNamePrefix)
+	}
+
+	// CRI teardown order: StopContainer, RemoveContainer, StopPodSandbox, RemovePodSandbox.
+	stopErr := e.criClient.StopContainer(ctx, containerID, 10)
+	removeErr := e.criClient.RemoveContainer(ctx, containerID)
+	if removeErr != nil {
+		// Fallback path for non-CRI/manual containers (e.g. created via ctr run).
+		if err := e.removeContainerNative(ctx, containerID); err != nil {
+			return fmt.Errorf("remove container %s (CRI: %v, native fallback: %w)", containerID, removeErr, err)
+		}
+	} else if stopErr != nil {
+		// Stop failures are tolerated only when removal succeeded.
+		log.Warnf("StopContainer %s returned warning before successful removal: %v", containerID, stopErr)
+	}
+
+	// Some manually created containers (ctr run) may survive CRI remove without
+	// returning an error. If the container still exists, force native removal.
+	if _, err := e.client.LoadContainer(ctx, containerID); err == nil {
+		if err := e.removeContainerNative(ctx, containerID); err != nil {
+			return fmt.Errorf("remove container %s (post-CRI native fallback: %w)", containerID, err)
+		}
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("post-CRI verification for %s: %w", containerID, err)
+	}
+
+	if sandboxIDStr != "" {
+		if err := e.criClient.StopPodSandbox(ctx, sandboxIDStr); err != nil && !errdefs.IsNotFound(err) {
+			log.Warnf("StopPodSandbox %s: %v", sandboxIDStr, err)
+		}
+		if err := e.criClient.RemovePodSandbox(ctx, sandboxIDStr); err != nil && !errdefs.IsNotFound(err) {
+			log.Warnf("RemovePodSandbox %s: %v", sandboxIDStr, err)
+		}
+	}
+
+	if _, err := e.client.LoadContainer(ctx, containerID); err == nil {
+		return fmt.Errorf("container %s still exists after removal attempt", containerID)
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("post-remove verification for %s: %w", containerID, err)
+	}
+
+	// Remove per-container hosts file (path uses container name, not CRI-generated ID).
+	hostsFile := filepath.Join(hostsDir, utils.IOFogDockerContainerNamePrefix+msUUID)
+	_ = os.Remove(hostsFile)
+
+	// Remove per-container log directory.
+	logPath := filepath.Join(e.logDir, msUUID)
+	_ = os.RemoveAll(logPath)
+
+	e.store.delete(containerID)
+	return nil
+}
+
+// removeContainerNative removes a container directly via containerd APIs.
+// This is required for workloads that are not managed through CRI metadata.
+func (e *Engine) removeContainerNative(ctx context.Context, containerID string) error {
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if task, err := c.Task(ctx, nil); err == nil {
+		if err := task.Kill(ctx, syscall.SIGKILL); err != nil && !errdefs.IsNotFound(err) {
+			log.Warnf("Native kill task %s: %v", containerID, err)
+		}
+		if _, err := task.Delete(ctx, client.WithProcessKill); err != nil && !errdefs.IsNotFound(err) {
+			log.Warnf("Native delete task %s: %v", containerID, err)
+		}
+	}
+	return c.Delete(ctx, client.WithSnapshotCleanup)
+}
+
+// --- Image management ---
+
+func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *engine.PullImageOptions) error {
+	ctx := e.ctx()
+
+	var cb func(float32)
+	if opts != nil {
+		cb = opts.ProgressCallback
+	}
+	if cb != nil {
+		cb(0)
+	}
+
+	var remoteOpts []client.RemoteOpt
+	if registry != nil && !registry.IsPublic {
+		resolver := dockerresolver.NewResolver(dockerresolver.ResolverOptions{
+			Credentials: func(host string) (string, string, error) {
+				return registry.UserName, registry.Password, nil
+			},
+		})
+		remoteOpts = append(remoteOpts, client.WithResolver(resolver))
+	}
+
+	log.Infof("Pulling image %s via embedded containerd", imageRef)
+	img, err := e.client.Pull(ctx, imageRef, append(remoteOpts, client.WithPullUnpack)...)
+	if err != nil {
+		return fmt.Errorf("pull image %s: %w", imageRef, err)
+	}
+	log.Infof("Pulled image %s (id=%s)", imageRef, img.Name())
+	if cb != nil {
+		cb(100)
+	}
+	return nil
+}
+
+func (e *Engine) FindLocalImage(imageRef string) (bool, error) {
+	imgs, err := e.client.ListImages(e.ctx())
+	if err != nil {
+		return false, err
+	}
+	for _, img := range imgs {
+		if img.Name() == imageRef || strings.HasPrefix(img.Name(), imageRef+":") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (e *Engine) RemoveImage(imageRef string) error {
+	return e.client.ImageService().Delete(e.ctx(), imageRef, images.SynchronousDelete())
+}
+
+// PruneImages deletes images that are not referenced by any existing container.
+func (e *Engine) PruneImages() error {
+	ctx := e.ctx()
+
+	// Build set of images currently referenced by containers.
+	containers, err := e.client.Containers(ctx)
+	if err != nil {
+		return err
+	}
+	inUse := make(map[string]bool, len(containers))
+	for _, c := range containers {
+		if info, err := c.Info(ctx); err == nil {
+			inUse[info.Image] = true
+		}
+	}
+
+	imgs, err := e.client.ListImages(ctx)
+	if err != nil {
+		return err
+	}
+	is := e.client.ImageService()
+	for _, img := range imgs {
+		if inUse[img.Name()] {
+			continue
+		}
+		if err := is.Delete(ctx, img.Name(), images.SynchronousDelete()); err != nil {
+			log.Warnf("Failed to prune image %s: %v", img.Name(), err)
+		}
+	}
+	return nil
+}
+
+// ListImages returns all images available in the iofog containerd namespace.
+func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
+	ctx := e.ctx()
+	imgs, err := e.client.ListImages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]engine.ImageInfo, 0, len(imgs))
+	for _, img := range imgs {
+		result = append(result, engine.ImageInfo{
+			ID:       img.Target().Digest.String(),
+			RepoTags: []string{img.Name()},
+		})
+	}
+	return result, nil
+}
+
+// DeleteImage removes an image from the iofog containerd namespace by name or digest.
+func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
+	ctx := e.ctx()
+	return e.client.ImageService().Delete(ctx, nameOrID, images.SynchronousDelete())
+}
+
+// PruneDangling removes images with no active containers referencing them and no tags,
+// matching Java's pruneAgent() / docker system prune --filter dangling=true semantics.
+func (e *Engine) PruneDangling(_ context.Context) error {
+	ctx := e.ctx()
+
+	containers, err := e.client.Containers(ctx)
+	if err != nil {
+		return err
+	}
+	inUse := make(map[string]bool, len(containers))
+	for _, c := range containers {
+		if info, err := c.Info(ctx); err == nil {
+			inUse[info.Image] = true
+		}
+	}
+
+	imgs, err := e.client.ListImages(ctx)
+	if err != nil {
+		return err
+	}
+	is := e.client.ImageService()
+	for _, img := range imgs {
+		name := img.Name()
+		// "Dangling" in containerd terms: not referenced by any container AND the name
+		// looks like a digest-only reference (no human-readable tag).
+		if inUse[name] {
+			continue
+		}
+		// Skip images that have a proper name:tag (non-dangling).
+		if !strings.HasPrefix(name, "sha256:") && strings.Contains(name, ":") {
+			continue
+		}
+		if err := is.Delete(ctx, name, images.SynchronousDelete()); err != nil {
+			log.Warnf("PruneDangling: failed to remove %s: %v", name, err)
+		}
+	}
+	return nil
+}
+
+// --- Inspection / stats ---
+
+func (e *Engine) GetContainerStatus(containerID, _ string) (*models.MicroserviceStatus, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("load container %s: %w", containerID, err)
+	}
+
+	status := models.NewMicroserviceStatus()
+	status.ContainerID = containerID
+
+	task, err := c.Task(ctx, nil)
+	if err != nil {
+		// Container created but not yet started — report Created, not Exiting
+		status.Status = models.MicroserviceStateCreated
+		return status, nil
+	}
+
+	tStatus, err := task.Status(ctx)
+	if err != nil {
+		status.Status = models.MicroserviceStateUnknown
+		return status, nil
+	}
+
+	switch tStatus.Status {
+	case client.Running:
+		status.Status = models.MicroserviceStateRunning
+	case client.Stopped:
+		status.Status = models.MicroserviceStateExiting
+	case client.Created:
+		status.Status = models.MicroserviceStateCreated
+	case client.Paused, client.Pausing:
+		status.Status = models.MicroserviceStateUnknown
+	default:
+		status.Status = models.MicroserviceStateUnknown
+	}
+
+	// Wire StartTime and IPAddress for status reporting.
+	if startTime, err := e.GetContainerStartedAt(containerID); err == nil && startTime > 0 {
+		status.StartTime = startTime
+	}
+	if ip, err := e.GetContainerIPAddress(containerID); err == nil && ip != "" {
+		status.IPAddress = &ip
+	}
+
+	if v, ok := e.execSessions.Load(containerID); ok {
+		status.ExecSessionIDs = append([]string(nil), v.([]string)...)
+	}
+
+	return status, nil
+}
+
+// GetContainerStats returns live CPU and memory usage for the container.
+// It uses a two-sample approach for CPU percentage: the first call returns 0%
+// CPU while storing the baseline; subsequent calls compute the delta.
+func (e *Engine) GetContainerStats(containerID string) (*engine.ContainerStats, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("load container %s: %w", containerID, err)
+	}
+	task, err := c.Task(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get task for %s: %w", containerID, err)
+	}
+	statsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	metric, err := task.Metrics(statsCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get metrics for %s: %w", containerID, err)
+	}
+
+	stats := &engine.ContainerStats{}
+	now := time.Now()
+
+	switch {
+	case tuypeurl.Is(metric.Data, (*v2stats.Metrics)(nil)):
+		var m v2stats.Metrics
+		if err := tuypeurl.UnmarshalTo(metric.Data, &m); err != nil {
+			return stats, nil
+		}
+		if m.Memory != nil {
+			stats.MemoryUsage = int64(m.Memory.Usage)
+		}
+		if m.CPU != nil {
+			stats.CPUUsage = e.cpuPercent(containerID, int64(m.CPU.UsageUsec), now)
+		}
+
+	case tuypeurl.Is(metric.Data, (*v1stats.Metrics)(nil)):
+		var m v1stats.Metrics
+		if err := tuypeurl.UnmarshalTo(metric.Data, &m); err != nil {
+			return stats, nil
+		}
+		if m.Memory != nil && m.Memory.Usage != nil {
+			stats.MemoryUsage = int64(m.Memory.Usage.Usage)
+		}
+		if m.CPU != nil && m.CPU.Usage != nil {
+			// v1 CPU total is in nanoseconds; convert to microseconds for a consistent unit.
+			cpuUsec := int64(m.CPU.Usage.Total) / 1000
+			stats.CPUUsage = e.cpuPercent(containerID, cpuUsec, now)
+		}
+	}
+
+	return stats, nil
+}
+
+// cpuPercent computes a CPU usage percentage using the delta between the current
+// and previous CPU time sample stored in the state map.
+func (e *Engine) cpuPercent(containerID string, usageUsec int64, now time.Time) float32 {
+	st, ok := e.store.get(containerID)
+	if !ok {
+		st = &containerState{}
+		e.store.set(containerID, st)
+	}
+
+	var pct float32
+	if !st.prevCPUSample.IsZero() {
+		elapsed := now.Sub(st.prevCPUSample).Microseconds()
+		if elapsed > 0 {
+			delta := usageUsec - st.prevCPUTime
+			if delta < 0 {
+				delta = 0
+			}
+			pct = float32(delta) / float32(elapsed) * 100
+		}
+	}
+	st.prevCPUTime = usageUsec
+	st.prevCPUSample = now
+	return pct
+}
+
+// GetContainerIPAddress returns the container's IP from the in-memory state map,
+// falling back to the persisted label for recovery after an agent restart.
+func (e *Engine) GetContainerIPAddress(containerID string) (string, error) {
+	if st, ok := e.store.get(containerID); ok && st.ip != "" {
+		return st.ip, nil
+	}
+	// Label fallback.
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return "", nil
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		return "", nil
+	}
+	if info.Labels != nil {
+		return info.Labels[labelIP], nil
+	}
+	return "", nil
+}
+
+// GetContainerStartedAt returns the Unix-millisecond timestamp when the container
+// was last started, from the in-memory state or the persisted label.
+func (e *Engine) GetContainerStartedAt(containerID string) (int64, error) {
+	if st, ok := e.store.get(containerID); ok && st.startedAt != 0 {
+		return st.startedAt, nil
+	}
+	// Label fallback.
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return time.Now().UnixMilli(), nil
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		return time.Now().UnixMilli(), nil
+	}
+	if info.Labels != nil {
+		if ts := readInt64Label(info.Labels, labelStartedAt); ts != 0 {
+			return ts, nil
+		}
+	}
+	return time.Now().UnixMilli(), nil
+}
+
+// --- Log streaming ---
+
+// parseCRITimestamp extracts the timestamp from a CRI log line "timestamp stream flag message".
+// Returns zero time and false if the line cannot be parsed.
+func parseCRITimestamp(line string) (time.Time, bool) {
+	parts := strings.SplitN(line, " ", 4)
+	if len(parts) < 2 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		// Try without nanoseconds
+		t, err = time.Parse(time.RFC3339, parts[0])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return t, true
+}
+
+// shouldIncludeCRILine returns true if the line is within the since/until range.
+func shouldIncludeCRILine(line string, since, until *time.Time) bool {
+	if since == nil && until == nil {
+		return true
+	}
+	t, ok := parseCRITimestamp(line)
+	if !ok {
+		return true // Include if we can't parse
+	}
+	if since != nil && t.Before(*since) {
+		return false
+	}
+	if until != nil && t.After(*until) {
+		return false
+	}
+	return true
+}
+
+// parseCRILogLine parses a CRI log line "timestamp stream flag message" and returns
+// (message, streamType). If the format is not recognized, returns (line, Stdout).
+func parseCRILogLine(line string) ([]byte, engine.StreamType) {
+	// CRI format: "2020-01-10T18:10:40.01576219Z stdout F actual message"
+	parts := strings.SplitN(line, " ", 4)
+	if len(parts) >= 3 {
+		stream := parts[1]
+		msg := line
+		if len(parts) == 4 {
+			msg = parts[3]
+		}
+		if stream == "stderr" {
+			return []byte(msg), engine.Stderr
+		}
+		return []byte(msg), engine.Stdout
+	}
+	return []byte(line), engine.Stdout
+}
+
+// parseISOTimestamp parses an ISO 8601 timestamp string.
+func parseISOTimestamp(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err == nil {
+		return t, nil
+	}
+	t, err = time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("invalid timestamp: %s", s)
+}
+
+// TailContainerLogs streams log lines from the CRI container log file.
+// Containerd CRI writes both stdout and stderr to a single file (0.log) with
+// CRI format: "timestamp stream flag message". We parse and dispatch by stream.
+// Falls back to stdout.log/stderr.log if 0.log is absent.
+func (e *Engine) TailContainerLogs(containerID, sessionID, microserviceUUID string, handler engine.LogTailHandler, cfg *engine.TailConfig) error {
+	logDir := filepath.Join(e.logDir, microserviceUUID)
+	criLogPath := filepath.Join(logDir, "0.log")
+
+	nLines := 100
+	if cfg != nil && cfg.Lines > 0 {
+		nLines = cfg.Lines
+	}
+	follow := cfg != nil && cfg.Follow
+
+	var since, until *time.Time
+	if cfg != nil {
+		if cfg.Since != "" {
+			if t, err := parseISOTimestamp(cfg.Since); err == nil {
+				since = &t
+			}
+		}
+		if cfg.Until != "" {
+			if t, err := parseISOTimestamp(cfg.Until); err == nil {
+				until = &t
+			}
+		}
+	}
+
+	// Try CRI single-file format first (0.log)
+	if _, err := os.Stat(criLogPath); err == nil {
+		return e.tailCRILogFile(criLogPath, sessionID, microserviceUUID, handler, nLines, follow, since, until)
+	}
+
+	// Fallback: separate stdout.log / stderr.log (no timestamp filtering for plain format)
+	return e.tailSeparateLogFiles(logDir, sessionID, microserviceUUID, handler, nLines, follow)
+}
+
+func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, since, until *time.Time) error {
+	if !follow {
+		// Historical query: read from start, return last N lines (filtered by since/until)
+		whence := 0 // io.SeekStart
+		t, err := tail.TailFile(logPath, tail.Config{
+			Follow:    false,
+			ReOpen:    false,
+			MustExist: false,
+			Location:  &tail.SeekInfo{Offset: 0, Whence: whence},
+			Logger:    tail.DiscardingLogger,
+		})
+		if err != nil {
+			handler.OnError(sessionID, fmt.Errorf("tail %s: %w", logPath, err))
+			return err
+		}
+		defer t.Cleanup()
+		var buf []struct {
+			msg    []byte
+			stream engine.StreamType
+			text   string
+		}
+		for line := range t.Lines {
+			if line.Err != nil {
+				handler.OnError(sessionID, line.Err)
+				return line.Err
+			}
+			if !shouldIncludeCRILine(line.Text, since, until) {
+				continue
+			}
+			msg, st := parseCRILogLine(line.Text)
+			buf = append(buf, struct {
+				msg    []byte
+				stream engine.StreamType
+				text   string
+			}{msg, st, line.Text})
+			if len(buf) > nLines {
+				buf = buf[len(buf)-nLines:]
+			}
+		}
+		for _, item := range buf {
+			handler.OnLogLine(sessionID, microserviceUUID, item.msg, item.stream)
+		}
+		handler.OnComplete(sessionID)
+		return nil
+	}
+
+	// Follow mode: send last N lines first (filtered), then follow from EOF
+	initialLines, err := readLastCRILines(logPath, nLines, since, until)
+	if err != nil && !os.IsNotExist(err) {
+		handler.OnError(sessionID, fmt.Errorf("read initial lines %s: %w", logPath, err))
+		return err
+	}
+	for _, item := range initialLines {
+		handler.OnLogLine(sessionID, microserviceUUID, item.msg, item.stream)
+	}
+
+	// Now follow from EOF
+	stat, err := os.Stat(logPath)
+	if err != nil {
+		handler.OnComplete(sessionID)
+		return nil
+	}
+	startOffset := stat.Size()
+
+	t, err := tail.TailFile(logPath, tail.Config{
+		Follow:    true,
+		ReOpen:    true,
+		MustExist: false,
+		Location:  &tail.SeekInfo{Offset: startOffset, Whence: 0}, // seek to EOF
+		Logger:    tail.DiscardingLogger,
+	})
+	if err != nil {
+		handler.OnError(sessionID, fmt.Errorf("tail %s: %w", logPath, err))
+		return err
+	}
+	defer t.Cleanup()
+
+	for line := range t.Lines {
+		if line.Err != nil {
+			handler.OnError(sessionID, line.Err)
+			return line.Err
+		}
+		if !shouldIncludeCRILine(line.Text, since, until) {
+			// If we've passed until, stop following
+			if until != nil {
+				if t, ok := parseCRITimestamp(line.Text); ok && t.After(*until) {
+					break
+				}
+			}
+			continue
+		}
+		msg, st := parseCRILogLine(line.Text)
+		handler.OnLogLine(sessionID, microserviceUUID, msg, st)
+	}
+	handler.OnComplete(sessionID)
+	return nil
+}
+
+type criLine struct {
+	msg    []byte
+	stream engine.StreamType
+}
+
+// readLastCRILines reads the last nLines from a CRI log file, filtered by since/until.
+func readLastCRILines(logPath string, nLines int, since, until *time.Time) ([]criLine, error) {
+	f, err := os.Open(filepath.Clean(logPath))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines []criLine
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		text := scanner.Text()
+		if !shouldIncludeCRILine(text, since, until) {
+			continue
+		}
+		msg, st := parseCRILogLine(text)
+		lines = append(lines, criLine{msg: msg, stream: st})
+		if len(lines) > nLines {
+			lines = lines[1:]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
+func (e *Engine) tailSeparateLogFiles(logDir, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool) error {
+	stdoutPath := filepath.Join(logDir, "stdout.log")
+	stderrPath := filepath.Join(logDir, "stderr.log")
+
+	readLastLines := func(path string, st engine.StreamType) {
+		lines, err := readLastPlainLines(path, nLines)
+		if err != nil && !os.IsNotExist(err) {
+			handler.OnError(sessionID, fmt.Errorf("read initial lines %s: %w", path, err))
+			return
+		}
+		for _, l := range lines {
+			handler.OnLogLine(sessionID, microserviceUUID, l, st)
+		}
+	}
+
+	tailFile := func(path string, st engine.StreamType, wg *sync.WaitGroup) {
+		if wg != nil {
+			defer wg.Done()
+		}
+		if !follow {
+			t, err := tail.TailFile(path, tail.Config{
+				Follow:    false,
+				MustExist: false,
+				Location:  &tail.SeekInfo{Offset: 0, Whence: 0},
+				Logger:    tail.DiscardingLogger,
+			})
+			if err != nil {
+				handler.OnError(sessionID, fmt.Errorf("tail %s: %w", path, err))
+				return
+			}
+			defer t.Cleanup()
+			var buf [][]byte
+			for line := range t.Lines {
+				if line.Err != nil {
+					handler.OnError(sessionID, line.Err)
+					return
+				}
+				buf = append(buf, []byte(line.Text))
+				if len(buf) > nLines {
+					buf = buf[len(buf)-nLines:]
+				}
+			}
+			for _, l := range buf {
+				handler.OnLogLine(sessionID, microserviceUUID, l, st)
+			}
+			return
+		}
+		// Follow mode: send last N lines first, then follow from EOF
+		readLastLines(path, st)
+		stat, err := os.Stat(path)
+		if err != nil {
+			return
+		}
+		t, err := tail.TailFile(path, tail.Config{
+			Follow:    true,
+			ReOpen:    true,
+			MustExist: false,
+			Location:  &tail.SeekInfo{Offset: stat.Size(), Whence: 0},
+			Logger:    tail.DiscardingLogger,
+		})
+		if err != nil {
+			handler.OnError(sessionID, fmt.Errorf("tail %s: %w", path, err))
+			return
+		}
+		defer t.Cleanup()
+		for line := range t.Lines {
+			if line.Err != nil {
+				handler.OnError(sessionID, line.Err)
+				return
+			}
+			handler.OnLogLine(sessionID, microserviceUUID, []byte(line.Text), st)
+		}
+	}
+
+	if follow {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go tailFile(stdoutPath, engine.Stdout, &wg)
+		go tailFile(stderrPath, engine.Stderr, &wg)
+		wg.Wait()
+		handler.OnComplete(sessionID)
+		return nil
+	}
+	tailFile(stdoutPath, engine.Stdout, nil)
+	tailFile(stderrPath, engine.Stderr, nil)
+	handler.OnComplete(sessionID)
+	return nil
+}
+
+// readLastPlainLines reads the last nLines from a plain text log file (no CRI format).
+func readLastPlainLines(logPath string, nLines int) ([][]byte, error) {
+	f, err := os.Open(filepath.Clean(logPath))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines [][]byte
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, []byte(scanner.Text()))
+		if len(lines) > nLines {
+			lines = lines[1:]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
+// --- Configuration drift detection ---
+
+// AreMicroserviceAndContainerEqual returns true if the running container's
+// configuration matches the desired microservice spec. It compares:
+//  1. Image name
+//  2. Environment variables (set equality)
+//  3. Port mappings (from persisted label vs desired) — skipped for host-network mode
+//  4. Network mode (host vs bridge)
+func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool {
+	ctx := e.ctx()
+	shortID := containerID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: LoadContainer error: %v", shortID, err)
+		return false
+	}
+
+	spec, err := c.Spec(ctx)
+	if err != nil {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: Spec error: %v", shortID, err)
+		return false
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: Info error: %v", shortID, err)
+		return false
+	}
+
+	// 1. Image
+	imgRef, _ := reference.Parse(ms.ImageName)
+	expectedName := imgRef.String()
+	if info.Image != expectedName && info.Image != ms.ImageName {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: image mismatch: got %q want %q/%q",
+			shortID, info.Image, expectedName, ms.ImageName)
+		return false
+	}
+
+	// 2. Environment variables (compare as sets; only desired keys are checked against actual).
+	desiredEnv := buildEnvVars(ms, config.GetInstance().TimeZone)
+	if !envSetsEqual(spec.Process.Env, desiredEnv) {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: env mismatch", shortID)
+		return false
+	}
+
+	// 3. Port mappings — skipped for host-network containers because CRI ignores port
+	// bindings when the container shares the host network namespace. Comparing stored
+	// labels against desired mappings would produce false positives on every cycle.
+	if !ms.HostNetworkMode {
+		if info.Labels != nil {
+			var storedPorts []*models.PortMapping
+			if v, ok := info.Labels[labelPorts]; ok && v != "" {
+				_ = json.Unmarshal([]byte(v), &storedPorts)
+			}
+			if !portMappingsEqual(storedPorts, ms.PortMappings) {
+				log.Debugf("AreMicroserviceAndContainerEqual %s: port mismatch stored=%v desired=%v",
+					shortID, storedPorts, ms.PortMappings)
+				return false
+			}
+		}
+	}
+
+	// 4. Network mode — read from the iofog-hostnet label written at creation time.
+	// The CRI container's OCI spec always has a non-empty network namespace path
+	// (it references the sandbox netns even for host-network pods), so hasHostNetNS(spec)
+	// is unreliable for CRI containers.
+	storedHostNet := info.Labels[labelHostNet] == "true"
+	if ms.HostNetworkMode != storedHostNet {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: network mismatch want hostNet=%v stored=%v",
+			shortID, ms.HostNetworkMode, storedHostNet)
+		return false
+	}
+
+	return true
+}
+
+// envSetsEqual returns true if actual and desired contain the same KEY=VALUE pairs.
+// System entries injected by the runtime (e.g. PATH) are ignored — we only check
+// keys that appear in either the desired or actual set.
+func envSetsEqual(actual, desired []string) bool {
+	toMap := func(envs []string) map[string]string {
+		m := make(map[string]string, len(envs))
+		for _, e := range envs {
+			idx := strings.Index(e, "=")
+			if idx < 0 {
+				m[e] = ""
+			} else {
+				m[e[:idx]] = e[idx+1:]
+			}
+		}
+		return m
+	}
+	desiredMap := toMap(desired)
+	actualMap := toMap(actual)
+	for k, v := range desiredMap {
+		if actualMap[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// portMappingsEqual returns true if both slices contain the same port mappings.
+func portMappingsEqual(a, b []*models.PortMapping) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	type key struct{ outside, inside int }
+	set := make(map[key]bool, len(a))
+	for _, p := range a {
+		set[key{p.Outside, p.Inside}] = true
+	}
+	for _, p := range b {
+		if !set[key{p.Outside, p.Inside}] {
+			return false
+		}
+	}
+	return true
+}
+
+// hasHostNetNS returns true if the OCI spec uses the host's network namespace.
+func hasHostNetNS(spec *oci.Spec) bool {
+	if spec.Linux == nil {
+		return false
+	}
+	for _, ns := range spec.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			// An empty Path means the namespace is inherited from the host.
+			return ns.Path == ""
+		}
+	}
+	// No network namespace entry → inherits host namespace.
+	return true
+}
+
+// --- Network ---
+
+func (e *Engine) EnsureNetwork(_ string) error {
+	// The iofog bridge network is created by the CNI plugin on first container attach.
+	return nil
+}
+
+// --- Exec ---
+
+func (e *Engine) addExecSession(containerID, execID string) {
+	e.execToCont.Store(execID, containerID)
+	var ids []string
+	if v, ok := e.execSessions.Load(containerID); ok {
+		ids = v.([]string)
+	}
+	ids = append(ids, execID)
+	e.execSessions.Store(containerID, ids)
+}
+
+func (e *Engine) removeExecSession(execID string) {
+	if v, ok := e.execToCont.LoadAndDelete(execID); ok {
+		containerID := v.(string)
+		if v2, ok2 := e.execSessions.Load(containerID); ok2 {
+			ids := v2.([]string)
+			newIds := make([]string, 0, len(ids)-1)
+			for _, id := range ids {
+				if id != execID {
+					newIds = append(newIds, id)
+				}
+			}
+			if len(newIds) == 0 {
+				e.execSessions.Delete(containerID)
+			} else {
+				e.execSessions.Store(containerID, newIds)
+			}
+		}
+	}
+}
+
+// CreateExecSession validates the container, builds the exec process spec, and stores
+// it as a pending exec. The exec ID (containerID+"-exec") is returned; the process is
+// NOT started yet. Call StartExecSession with the real I/O pipes to attach and launch.
+// The controller allows at most one exec session per container at a time, so we use a
+// deterministic execID without a random suffix.
+func (e *Engine) CreateExecSession(containerID string, cmd []string) (string, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return "", fmt.Errorf("load container %s: %w", containerID, err)
+	}
+
+	spec, err := c.Spec(ctx)
+	if err != nil {
+		return "", fmt.Errorf("get spec for %s: %w", containerID, err)
+	}
+
+	// Build exec process spec inheriting the container's environment and working directory.
+	// Use plain pipes; non-interactive commands work correctly.
+	execSpec := &specs.Process{
+		Args:     cmd,
+		Cwd:      "/",
+		Env:      spec.Process.Env,
+		Terminal: true,
+	}
+	if spec.Process.Cwd != "" {
+		execSpec.Cwd = spec.Process.Cwd
+	}
+
+	execID := containerID + "-exec"
+
+	e.execMu.Lock()
+	e.pendingExecs[execID] = &pendingExec{
+		containerID: containerID,
+		execID:      execID,
+		spec:        execSpec,
+	}
+	e.execMu.Unlock()
+
+	return execID, nil
+}
+
+// StartExecSession looks up the pending exec registered by CreateExecSession, wires
+// stdin/stdout/stderr pipes to the container, and starts the process. Blocks until
+// the process exits so the caller only fires OnComplete() when the shell actually ends.
+func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr io.Writer) error {
+	e.execMu.Lock()
+	pending := e.pendingExecs[execID]
+	if pending != nil {
+		delete(e.pendingExecs, execID)
+	}
+	e.execMu.Unlock()
+
+	if pending == nil {
+		return fmt.Errorf("no pending exec session with ID %s (call CreateExecSession first)", execID)
+	}
+
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, pending.containerID)
+	if err != nil {
+		return fmt.Errorf("load container %s: %w", pending.containerID, err)
+	}
+	task, err := c.Task(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("get task for %s: %w", pending.containerID, err)
+	}
+
+	fifoDir := filepath.Join(constants.IofogRunDir, "exec-fifo")
+	if err := os.MkdirAll(fifoDir, 0700); err != nil {
+		return fmt.Errorf("create exec fifo dir: %w", err)
+	}
+	// For TTY: stdout and stderr are combined
+	creator := cio.NewCreator(
+		cio.WithFIFODir(fifoDir),
+		cio.WithStreams(stdin, stdout, stdout), // stderr → stdout for TTY
+		cio.WithTerminal,
+	)
+
+	proc, err := task.Exec(ctx, execID, pending.spec, creator)
+	if err != nil {
+		return fmt.Errorf("exec in %s: %w", pending.containerID, err)
+	}
+	if err := proc.Start(ctx); err != nil {
+		return fmt.Errorf("start exec process %s: %w", execID, err)
+	}
+
+	e.addExecSession(pending.containerID, execID)
+
+	e.execMu.Lock()
+	e.runningProcs[execID] = proc
+	e.execMu.Unlock()
+
+	// Block until the exec process exits so the caller (ProcessManager goroutine)
+	// only fires OnComplete() when the shell actually ends, not immediately after Start().
+	exitCh, err := proc.Wait(ctx)
+	if err == nil {
+		<-exitCh
+	}
+
+	e.removeExecSession(execID)
+
+	// Deregister the exec from containerd so the exec ID can be reused.
+	if _, delErr := proc.Delete(ctx); delErr != nil {
+		log.Warnf("exec %s delete after exit: %v", execID, delErr)
+	}
+
+	e.execMu.Lock()
+	delete(e.runningProcs, execID)
+	e.execMu.Unlock()
+
+	return nil
+}
+
+// ExecWithExitCode runs a command in the container and returns the exit code.
+// Used for healthcheck execution. Returns (exitCode, error). On timeout, kills
+// the process and returns (-1, context.DeadlineExceeded).
+func (e *Engine) ExecWithExitCode(containerID string, cmd []string, timeout time.Duration) (int, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return -1, fmt.Errorf("load container %s: %w", containerID, err)
+	}
+
+	spec, err := c.Spec(ctx)
+	if err != nil {
+		return -1, fmt.Errorf("get spec for %s: %w", containerID, err)
+	}
+
+	execSpec := &specs.Process{
+		Args:     cmd,
+		Cwd:      "/",
+		Env:      spec.Process.Env,
+		Terminal: false,
+	}
+	if spec.Process.Cwd != "" {
+		execSpec.Cwd = spec.Process.Cwd
+	}
+
+	// Containerd enforces a 76-char max on exec IDs. The full container ID is 64 chars,
+	// so we use the first 12 chars + a base-36 nanosecond timestamp (~13 chars) = ~29 chars total.
+	execID := containerID[:12] + "-hc-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	task, err := c.Task(ctx, nil)
+	if err != nil {
+		return -1, fmt.Errorf("get task for %s: %w", containerID, err)
+	}
+
+	proc, err := task.Exec(ctx, execID, execSpec, cio.NullIO)
+	if err != nil {
+		return -1, fmt.Errorf("exec in %s: %w", containerID, err)
+	}
+	if err := proc.Start(ctx); err != nil {
+		return -1, fmt.Errorf("start exec %s: %w", execID, err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	exitCh, err := proc.Wait(waitCtx)
+	if err != nil {
+		_, _ = proc.Delete(ctx)
+		return -1, err
+	}
+
+	select {
+	case exitStatus := <-exitCh:
+		code := exitStatus.ExitCode()
+		_, _ = proc.Delete(ctx)
+		return int(code), nil
+	case <-waitCtx.Done():
+		_ = proc.Kill(ctx, syscall.SIGKILL)
+		_, _ = proc.Delete(ctx)
+		return -1, waitCtx.Err()
+	}
+}
+
+// StopExecSession kills the running exec process and deregisters it from containerd.
+// Called when the controller closes the WebSocket so the exec ID can be reused.
+func (e *Engine) StopExecSession(execID string) error {
+	e.execMu.Lock()
+	proc := e.runningProcs[execID]
+	if proc != nil {
+		delete(e.runningProcs, execID)
+	}
+	e.execMu.Unlock()
+
+	if proc == nil {
+		return nil // nothing to stop
+	}
+
+	ctx := e.ctx()
+	if err := proc.Kill(ctx, syscall.SIGTERM); err != nil {
+		log.Warnf("exec %s kill: %v", execID, err)
+	}
+	if _, err := proc.Delete(ctx); err != nil {
+		log.Warnf("exec %s delete: %v", execID, err)
+	}
+
+	return nil
+}
+
+// GetExecSessionStatus reports whether the exec process for execID is still running.
+func (e *Engine) GetExecSessionStatus(execID string) (bool, error) {
+	e.execMu.Lock()
+	proc := e.runningProcs[execID]
+	e.execMu.Unlock()
+
+	if proc == nil {
+		return false, nil
+	}
+
+	ctx := e.ctx()
+	status, err := proc.Status(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get exec status %s: %w", execID, err)
+	}
+	// containerd reports the process as running when its status is "running".
+	return status.Status == client.Running, nil
+}
+
+// --- Helpers ---
+
+func (e *Engine) GetContainerMicroserviceUUID(cont engine.Container) string {
+	if uuid, ok := cont.Labels["iofog-ms"]; ok {
+		return uuid
+	}
+	prefix := utils.IOFogDockerContainerNamePrefix
+	if strings.HasPrefix(cont.ID, prefix) {
+		return cont.ID[len(prefix):]
+	}
+	return cont.ID
+}
+
+func (e *Engine) GetContainerName(cont engine.Container) string {
+	if len(cont.Names) > 0 {
+		return cont.Names[0]
+	}
+	return cont.ID
+}
+
+// containerFromContainerd adapts a containerd Container to engine.Container,
+// querying the actual task state instead of hardcoding "running".
+func containerFromContainerd(ctx context.Context, c client.Container) (*engine.Container, error) {
+	info, err := c.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	state := "stopped"
+	status := "Exited"
+
+	task, err := c.Task(ctx, nil)
+	if err == nil {
+		ts, err := task.Status(ctx)
+		if err == nil {
+			switch ts.Status {
+			case client.Running:
+				state, status = "running", "Up"
+			case client.Created:
+				state, status = "created", "Created"
+			case client.Paused, client.Pausing:
+				state, status = "paused", "Paused"
+			default:
+				state, status = "stopped", "Exited"
+			}
+		}
+	}
+
+	// Reconstruct the iofog_<uuid> name from the label so GetContainerName returns a
+	// value with the expected prefix and updateRunningMicroservicesCount counts correctly.
+	// Pause containers are already excluded by isSandboxContainer before this is called.
+	name := c.ID()
+	if uuid, ok := info.Labels["iofog-ms"]; ok && uuid != "" {
+		name = utils.IOFogDockerContainerNamePrefix + uuid
+	}
+
+	return &engine.Container{
+		ID:     c.ID(),
+		Names:  []string{name},
+		Image:  info.Image,
+		Labels: info.Labels,
+		State:  state,
+		Status: status,
+	}, nil
+}
+
+// buildEnvVars builds the environment variable slice for a microservice,
+// injecting SELFNAME and TZ (if not already set by the user).
+func buildEnvVars(ms *models.Microservice, timeZone string) []string {
+	envVars := []string{fmt.Sprintf("SELFNAME=%s", ms.MicroserviceUUID)}
+	for _, ev := range ms.EnvVars {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", ev.Key, ev.Value))
+	}
+
+	// Inject TZ if not already set — matches Docker engine behaviour.
+	hasTZ := false
+	for _, env := range envVars {
+		if strings.HasPrefix(strings.TrimSpace(env), "TZ=") {
+			hasTZ = true
+			break
+		}
+	}
+	if !hasTZ {
+		tz := timeZone
+		if tz == "" {
+			tz = "UTC"
+		}
+		envVars = append(envVars, fmt.Sprintf("TZ=%s", tz))
+	}
+	return envVars
+}
