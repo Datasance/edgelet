@@ -3,13 +3,19 @@ package supervisor
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/edgeguard"
+	"github.com/eclipse-iofog/agent/internal/embedded"
+	"github.com/eclipse-iofog/agent/internal/engines"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
 	"github.com/eclipse-iofog/agent/internal/gps"
+	"github.com/eclipse-iofog/agent/internal/healthcheck"
 	"github.com/eclipse-iofog/agent/internal/localapi"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
@@ -21,6 +27,8 @@ import (
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	iofogcontainerd "github.com/eclipse-iofog/agent/pkg/containerd"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 )
 
 const (
@@ -34,6 +42,9 @@ type Supervisor struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
+	// Embedded containerd service (non-nil only when containerEngine=iofog)
+	containerdSvc *iofogcontainerd.Service
+
 	// Module instances
 	statusReporter             *statusreporter.StatusReporter
 	networkInterfaceManager    *network.Manager
@@ -45,6 +56,7 @@ type Supervisor struct {
 	localAPI                   *localapi.LocalAPI
 	dockerPruningManager       *pruning.Manager
 	edgeGuardManager           *edgeguard.Manager
+	healthcheckRunner          *healthcheck.Runner
 
 	// Local API monitoring
 	localAPIMonitorTicker *time.Ticker
@@ -55,6 +67,13 @@ func NewSupervisor() *Supervisor {
 	return &Supervisor{
 		config: config.GetInstance(),
 	}
+}
+
+// SetPrestartedContainerd injects an embedded containerd service already started in main
+// (full flavor + iofog engine). Supervisor will not start containerd again; it only runs
+// the watchdog and stops containerd on shutdown.
+func (s *Supervisor) SetPrestartedContainerd(svc *iofogcontainerd.Service) {
+	s.containerdSvc = svc
 }
 
 // Start starts all modules in the correct order
@@ -107,9 +126,54 @@ func (s *Supervisor) Start() error {
 
 	// Start Process Manager
 	s.processManager = processmanager.GetInstance()
-	// ProcessManager needs MicroserviceManager, which is provided by FieldAgent
-	// FieldAgent implements MicroserviceManagerInterface through its methods
-	if err := s.processManager.Start(s.fieldAgent); err != nil {
+	// Instantiate the container engine based on configuration.
+	cfg := config.GetInstance()
+
+	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
+	// It may already be started in main (SetPrestartedContainerd) for early bootstrap.
+	if cfg.ContainerEngine == constants.EngineIofog {
+		if s.containerdSvc == nil {
+			logging.LogInfo(moduleName, "Preparing embedded containerd (iofog engine)")
+			if err := embedded.EnsureEmbeddedDependencies(); err != nil {
+				return fmt.Errorf("failed to prepare embedded containerd dependencies: %w", err)
+			}
+			s.containerdSvc = iofogcontainerd.NewService()
+			if err := s.containerdSvc.Start(); err != nil {
+				return fmt.Errorf("failed to start embedded containerd: %w", err)
+			}
+			logging.LogInfo(moduleName, "Embedded containerd is ready")
+		} else {
+			logging.LogInfo(moduleName, "Using embedded containerd started before Supervisor")
+		}
+
+		// Watchdog for embedded containerd socket liveness.
+		s.wg.Add(1)
+		go s.containerdWatchdog()
+	}
+
+	engConfig := engine.EngineConfig{
+		SocketURL:  cfg.DockerURL,
+		APIVersion: cfg.DockerAPIVersion,
+		LogDir:     cfg.LogDiskDirectory + "containers",
+	}
+
+	var eng engine.ContainerEngine
+	var engErr error
+	if cfg.ContainerEngine == constants.EngineDocker || cfg.ContainerEngine == constants.EnginePodman {
+		eng, engErr = s.initExternalEngineWithRetry(cfg.ContainerEngine, engConfig)
+	} else {
+		eng, engErr = engines.NewContainerEngine(cfg.ContainerEngine, engConfig)
+		if engErr != nil {
+			return fmt.Errorf("failed to create container engine %q: %w", cfg.ContainerEngine, engErr)
+		}
+		if initErr := eng.Init(engConfig); initErr != nil {
+			return fmt.Errorf("failed to init container engine %q: %w", cfg.ContainerEngine, initErr)
+		}
+	}
+	if engErr != nil {
+		return engErr
+	}
+	if err := s.processManager.Start(eng, s.fieldAgent); err != nil {
 		return err
 	}
 	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
@@ -118,8 +182,21 @@ func (s *Supervisor) Start() error {
 
 	// Set ProcessManager reference in FieldAgent so it can notify ProcessManager during startup
 	s.fieldAgent.SetProcessManager(s.processManager)
-	// Set ProcessManager reference in LogSessionManager (matching Java: LogSessionManager needs ProcessManager for container lookups)
+	// Inject engine + ProcessManager into LogSessionManager so log streaming works for all engine types
 	fieldagent.GetLogSessionManager().SetProcessManager(s.processManager)
+	fieldagent.GetLogSessionManager().SetEngine(eng)
+
+	// Start HealthcheckRunner when using iofog engine (Docker/Podman use native healthcheck)
+	if cfg.ContainerEngine == constants.EngineIofog {
+		var hcEng healthcheck.HealthcheckEngine
+		if he, ok := eng.(healthcheck.HealthcheckEngine); ok {
+			hcEng = he
+		}
+		s.healthcheckRunner = healthcheck.NewRunner(eng, hcEng, s.fieldAgent)
+		if err := s.healthcheckRunner.Start(s.ctx); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Healthcheck runner failed to start: %v", err))
+		}
+	}
 
 	// Start Resource Manager
 	s.resourceManager = resourcemanager.GetInstance()
@@ -138,6 +215,11 @@ func (s *Supervisor) Start() error {
 	// Register Supervisor's ReloadConfig as the config reload callback
 	s.config.SetReloadCallback(s.ReloadConfig)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+			}
+		}()
 		if err := s.localAPI.Start(); err != nil {
 			logging.LogError(moduleName, "Local API server error", err)
 		}
@@ -153,10 +235,22 @@ func (s *Supervisor) Start() error {
 		status.SetDaemonStatus(models.ModuleStatusRunning)
 	})
 
-	// Start Docker Pruning Manager
+	// Start Pruning Manager — inject engine so non-Docker engines (iofog/containerd) are pruned correctly.
+	// Also wire in the microservice image callback so scheduled/threshold pruning protects
+	// ALL configured microservice images (matching Java DockerPruningManager behavior).
 	s.dockerPruningManager = pruning.GetInstance()
+	pm := s.processManager
+	s.dockerPruningManager.SetGetMicroservicesCallback(func() []string {
+		microservices := pm.GetLatestMicroservices()
+		names := make([]string, 0, len(microservices))
+		for _, ms := range microservices {
+			names = append(names, ms.ImageName)
+		}
+		return names
+	})
+	s.dockerPruningManager.SetEngine(eng)
 	if err := s.dockerPruningManager.Start(); err != nil {
-		logging.LogError(moduleName, "Failed to start Docker Pruning Manager", err)
+		logging.LogError(moduleName, "Failed to start Pruning Manager", err)
 	}
 
 	// Start Edge Guard Manager
@@ -191,6 +285,56 @@ func (s *Supervisor) startModule(module Module) error {
 	return nil
 }
 
+const (
+	engineInitMaxRetries     = 12
+	engineInitInitialBackoff = 2 * time.Second
+	engineInitMaxBackoff     = 30 * time.Second
+)
+
+// initExternalEngineWithRetry creates and initializes Docker or Podman engine with
+// exponential backoff. Used when the socket may be temporarily unavailable (e.g.
+// daemon restart). After max retries, suggests switching to containerEngine: iofog.
+func (s *Supervisor) initExternalEngineWithRetry(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
+	var lastErr error
+	backoff := engineInitInitialBackoff
+
+	for attempt := 1; attempt <= engineInitMaxRetries; attempt++ {
+		eng, createErr := engines.NewContainerEngine(engineType, cfg)
+		if createErr != nil {
+			lastErr = createErr
+			logging.LogWarn(moduleName, fmt.Sprintf("%s engine create attempt %d/%d failed: %v", engineType, attempt, engineInitMaxRetries, createErr))
+			if attempt < engineInitMaxRetries {
+				logging.LogInfo(moduleName, fmt.Sprintf("Retrying in %v...", backoff))
+				time.Sleep(backoff)
+				if backoff < engineInitMaxBackoff {
+					backoff *= 2
+				}
+			}
+			continue
+		}
+
+		if initErr := eng.Init(cfg); initErr != nil {
+			lastErr = initErr
+			logging.LogWarn(moduleName, fmt.Sprintf("%s engine init attempt %d/%d failed (socket may be unavailable): %v", engineType, attempt, engineInitMaxRetries, initErr))
+			if attempt < engineInitMaxRetries {
+				logging.LogInfo(moduleName, fmt.Sprintf("Retrying in %v...", backoff))
+				time.Sleep(backoff)
+				if backoff < engineInitMaxBackoff {
+					backoff *= 2
+				}
+			}
+			continue
+		}
+
+		logging.LogInfo(moduleName, fmt.Sprintf("%s engine initialized successfully after %d attempt(s)", engineType, attempt))
+		return eng, nil
+	}
+
+	logging.LogError(moduleName, fmt.Sprintf("%s socket still unavailable after %d attempts", engineType, engineInitMaxRetries),
+		fmt.Errorf("consider setting containerEngine: iofog to use the embedded container engine: %w", lastErr))
+	return nil, fmt.Errorf("%s engine init failed after %d retries: %w", engineType, engineInitMaxRetries, lastErr)
+}
+
 // Stop stops all modules gracefully in reverse order
 func (s *Supervisor) Stop() error {
 	logging.LogDebug(moduleName, "Stopping Supervisor")
@@ -222,6 +366,12 @@ func (s *Supervisor) Stop() error {
 	if s.dockerPruningManager != nil {
 		if err := s.dockerPruningManager.Stop(); err != nil {
 			logging.LogError(moduleName, "Error stopping Docker Pruning Manager", err)
+		}
+	}
+
+	if s.healthcheckRunner != nil {
+		if err := s.healthcheckRunner.Stop(); err != nil {
+			logging.LogError(moduleName, "Error stopping Healthcheck Runner", err)
 		}
 	}
 
@@ -259,6 +409,12 @@ func (s *Supervisor) Stop() error {
 		if err := s.networkInterfaceManager.Stop(); err != nil {
 			logging.LogError(moduleName, "Error stopping Network Interface Manager", err)
 		}
+	}
+
+	// Stop embedded containerd last (after all containers are stopped).
+	if s.containerdSvc != nil {
+		logging.LogInfo(moduleName, "Stopping embedded containerd")
+		s.containerdSvc.Stop()
 	}
 
 	if s.statusReporter != nil {
@@ -301,6 +457,11 @@ func (s *Supervisor) monitorLocalAPI() {
 // operationDurationWorker periodically updates the operation duration
 func (s *Supervisor) operationDurationWorker() {
 	defer s.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
 	logging.LogDebug(moduleName, "Start checking operation duration")
 
@@ -317,6 +478,50 @@ func (s *Supervisor) operationDurationWorker() {
 				status.SetOperationDuration(time.Now().UnixMilli())
 			})
 			logging.LogDebug(moduleName, "Finished checking operation duration")
+		}
+	}
+}
+
+// containerdWatchdog runs periodic containerd socket liveness checks when
+// containerEngine=iofog. Containerd runs in-process (same binary); if the socket
+// becomes unresponsive we cannot restart it separately — we only log and alert.
+// The supervisor/process manager will restart the whole agent if the daemon crashes.
+func (s *Supervisor) containerdWatchdog() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	consecutiveFailures := 0
+	const failureThreshold = 3
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			if s.containerdSvc == nil {
+				return
+			}
+			if !s.containerdSvc.IsHealthy() {
+				consecutiveFailures++
+				logging.LogWarn(moduleName, fmt.Sprintf(
+					"Embedded containerd socket is unresponsive (%d/%d consecutive checks)",
+					consecutiveFailures, failureThreshold,
+				))
+				if consecutiveFailures >= failureThreshold {
+					logging.LogError(
+						moduleName,
+						"Embedded containerd is persistently unhealthy; requesting daemon restart via SIGTERM",
+						fmt.Errorf("containerd watchdog reached failure threshold"),
+					)
+					if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+						logging.LogError(moduleName, "Failed to signal daemon for restart", err)
+					}
+					return
+				}
+				continue
+			}
+			consecutiveFailures = 0
 		}
 	}
 }
@@ -358,6 +563,11 @@ func (s *Supervisor) ReloadConfig() error {
 	if s.networkInterfaceManager != nil {
 		// Run network update asynchronously to avoid blocking
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+				}
+			}()
 			if err := s.networkInterfaceManager.UpdateNetworkInterface(); err != nil {
 				logging.LogError(moduleName, "Failed to update network interface", err)
 			}
