@@ -70,8 +70,14 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 		return err
 	}
 
-	// Set formatter
-	logger.logger.SetFormatter(&LogFormatter{})
+	// Set formatter: JSON by default for enterprise observability (structured, parseable)
+	logger.logger.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyMsg:  "message",
+			logrus.FieldKeyTime: "timestamp",
+		},
+	})
 
 	// Set output to both file and console
 	// Do this BEFORE closing the old writer to prevent any race conditions where logrus might try to write to a closed file

@@ -10,8 +10,65 @@ import (
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/docker"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 )
+
+// parseTailConfig extracts follow, lines, since, until from tailConfigMap (from LOG_START).
+// Returns defaults (follow=true, lines=100) when map is nil or empty.
+func parseTailConfig(tailConfigMap map[string]interface{}) *engine.TailConfig {
+	cfg := &engine.TailConfig{
+		Follow: true,
+		Lines:  100,
+	}
+	if tailConfigMap == nil {
+		return cfg
+	}
+	if v, ok := tailConfigMap["follow"]; ok {
+		if b, ok := v.(bool); ok {
+			cfg.Follow = b
+		}
+	}
+	if v, ok := tailConfigMap["lines"]; ok {
+		switch n := v.(type) {
+		case float64:
+			cfg.Lines = int(n)
+		case int:
+			cfg.Lines = n
+		case int64:
+			cfg.Lines = int(n)
+		}
+		if cfg.Lines < 1 {
+			cfg.Lines = 100
+		}
+		if cfg.Lines > 10000 {
+			cfg.Lines = 10000
+		}
+	}
+	if v, ok := tailConfigMap["since"]; ok {
+		if s, ok := v.(string); ok && s != "" {
+			cfg.Since = s
+		}
+	}
+	if v, ok := tailConfigMap["until"]; ok {
+		if s, ok := v.(string); ok && s != "" {
+			cfg.Until = s
+		}
+	}
+	return cfg
+}
+
+// engineTailConfigToUtils converts engine.TailConfig to utils.TailConfig for LocalLogReader.
+func engineTailConfigToUtils(cfg *engine.TailConfig) *utils.TailConfig {
+	if cfg == nil {
+		return &utils.TailConfig{Follow: true, Lines: 100}
+	}
+	return &utils.TailConfig{
+		Follow: cfg.Follow,
+		Lines:  cfg.Lines,
+		Since:  cfg.Since,
+		Until:  cfg.Until,
+	}
+}
 
 const (
 	logSessionManagerModuleName = "LogSessionManager"
@@ -34,14 +91,14 @@ type LogSessionInfo struct {
 
 // LogSessionManager manages active log sessions
 type LogSessionManager struct {
-	activeSessions      map[string]*LogSessionInfo
-	webSocketHandlers   map[string]*LogSessionWebSocketHandler
-	localLogReaders     map[string]*utils.LocalLogReader
-	dockerTailCallbacks map[string]*dockerLogTailHandler
-	processManager      *processmanager.ProcessManager
-	dockerClient        *docker.Client
-	mu                  sync.RWMutex
-	fieldAgent          *FieldAgent
+	activeSessions    map[string]*LogSessionInfo
+	webSocketHandlers map[string]*LogSessionWebSocketHandler
+	localLogReaders   map[string]*utils.LocalLogReader
+	tailCallbacks     map[string]*logTailHandler
+	processManager    *processmanager.ProcessManager
+	containerEngine   engine.ContainerEngine
+	mu                sync.RWMutex
+	fieldAgent        *FieldAgent
 }
 
 var (
@@ -49,26 +106,33 @@ var (
 	logSessionManagerOnce     sync.Once
 )
 
-// GetLogSessionManager returns the singleton LogSessionManager instance
+// GetLogSessionManager returns the singleton LogSessionManager instance.
 func GetLogSessionManager() *LogSessionManager {
 	logSessionManagerOnce.Do(func() {
 		logSessionManagerInstance = &LogSessionManager{
-			activeSessions:      make(map[string]*LogSessionInfo),
-			webSocketHandlers:   make(map[string]*LogSessionWebSocketHandler),
-			localLogReaders:     make(map[string]*utils.LocalLogReader),
-			dockerTailCallbacks: make(map[string]*dockerLogTailHandler),
-			dockerClient:        docker.GetInstance(),
-			fieldAgent:          GetInstance(),
+			activeSessions:    make(map[string]*LogSessionInfo),
+			webSocketHandlers: make(map[string]*LogSessionWebSocketHandler),
+			localLogReaders:   make(map[string]*utils.LocalLogReader),
+			tailCallbacks:     make(map[string]*logTailHandler),
+			fieldAgent:        GetInstance(),
 		}
 	})
 	return logSessionManagerInstance
 }
 
-// SetProcessManager sets the ProcessManager instance (called by supervisor)
+// SetProcessManager sets the ProcessManager instance (called by supervisor).
 func (lsm *LogSessionManager) SetProcessManager(pm *processmanager.ProcessManager) {
 	lsm.mu.Lock()
 	defer lsm.mu.Unlock()
 	lsm.processManager = pm
+}
+
+// SetEngine sets the ContainerEngine used to look up containers and tail their logs.
+// Must be called before log session streaming starts (from supervisor after engine init).
+func (lsm *LogSessionManager) SetEngine(e engine.ContainerEngine) {
+	lsm.mu.Lock()
+	defer lsm.mu.Unlock()
+	lsm.containerEngine = e
 }
 
 // FetchLogSessions fetches log sessions from the controller
@@ -195,6 +259,11 @@ func (lsm *LogSessionManager) startLogSessionLocked(session *LogSession) {
 
 	// Create and connect WebSocket handler
 	wsHandler := GetLogSessionWebSocketHandler(sessionID, session.MicroserviceUUID, session.IofogUUID, isMicroserviceLog)
+	if wsHandler == nil {
+		logging.LogError(logSessionManagerModuleName, "WebSocket handler not created (controller URL empty)", fmt.Errorf("sessionID: %s", sessionID))
+		lsm.stopLogSessionLocked(sessionID)
+		return
+	}
 	lsm.webSocketHandlers[sessionID] = wsHandler
 	// Set LogSessionManager reference in handler so it can start tailing when ready (matching Java line 124)
 	wsHandler.SetLogSessionManager(lsm)
@@ -231,10 +300,14 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 	session := info.Session
 	isMicroserviceLog := session.MicroserviceUUID != ""
 
+	// startLogStreamingLocked is called when session becomes ACTIVE (before LOG_START);
+	// use default tailConfig. LOG_START path uses StartLogStreamingOnActivation with parsed config.
+	defaultTailConfig := parseTailConfig(nil)
+
 	if isMicroserviceLog {
-		lsm.startMicroserviceLogStreamingLocked(sessionID, session.MicroserviceUUID)
+		lsm.startMicroserviceLogStreamingLocked(sessionID, session.MicroserviceUUID, defaultTailConfig)
 	} else {
-		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID)
+		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID, engineTailConfigToUtils(defaultTailConfig))
 	}
 
 	info.IsStreaming = true
@@ -243,7 +316,7 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 // StartLogStreamingOnActivation starts log streaming when WebSocket becomes active
 // This method is called from LogSessionWebSocketHandler when it receives LOG_START
 // Matching Java: startLogStreamingOnActivation()
-func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, _ map[string]interface{}) {
+func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, tailConfigMap map[string]interface{}) {
 	lsm.mu.Lock()
 	defer lsm.mu.Unlock()
 
@@ -261,30 +334,33 @@ func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, _ 
 	session := info.Session
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting log streaming on WebSocket activation: sessionId=%s", sessionID))
 
-	// Update session with tailConfig from LOG_START if provided (matching Java line 445-448)
-	// Note: LogSession struct doesn't have TailConfig field yet, but we can store it in session info if needed
+	tailConfig := parseTailConfig(tailConfigMap)
 
 	if session.MicroserviceUUID != "" {
-		lsm.startMicroserviceLogStreamingLocked(sessionID, session.MicroserviceUUID)
+		lsm.startMicroserviceLogStreamingLocked(sessionID, session.MicroserviceUUID, tailConfig)
 	} else if session.IofogUUID != "" {
-		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID)
+		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID, engineTailConfigToUtils(tailConfig))
 	}
 
 	info.IsStreaming = true
 }
 
 // startMicroserviceLogStreamingLocked starts streaming microservice logs (must be called with lock held)
-func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, microserviceUUID string) {
+func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, microserviceUUID string, tailConfig *engine.TailConfig) {
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting microservice log streaming: sessionId=%s, microserviceUuid=%s", sessionID, microserviceUUID))
 
-	// Get container ID from ProcessManager
 	if lsm.processManager == nil {
 		logging.LogError(logSessionManagerModuleName, "ProcessManager not set, cannot start microservice log streaming", fmt.Errorf("sessionID: %s", sessionID))
 		return
 	}
 
-	// Get container by microservice UUID
-	container, err := lsm.dockerClient.GetContainer(microserviceUUID)
+	if lsm.containerEngine == nil {
+		logging.LogError(logSessionManagerModuleName, "ContainerEngine not set, cannot start microservice log streaming", fmt.Errorf("sessionID: %s", sessionID))
+		return
+	}
+
+	// Look up container via the engine abstraction (works for Docker, iofog, and all others)
+	container, err := lsm.containerEngine.GetContainer(microserviceUUID)
 	if err != nil {
 		logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Error getting container for microservice: %s", microserviceUUID), err)
 		return
@@ -296,63 +372,69 @@ func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, mic
 	}
 
 	containerID := container.ID
-	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting Docker log tailing: sessionId=%s, containerId=%s", sessionID, containerID))
+	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting log tailing: sessionId=%s, containerId=%s", sessionID, containerID))
 
-	// Get WebSocket handler
 	wsHandler := lsm.webSocketHandlers[sessionID]
 	if wsHandler == nil {
 		logging.LogError(logSessionManagerModuleName, "WebSocket handler not found for session", fmt.Errorf("sessionID: %s", sessionID))
 		return
 	}
 
-	// Get tail config from WebSocket handler (if available)
-	tailConfig := &docker.TailConfig{
-		Follow: true,
-		Lines:  100,
+	if tailConfig == nil {
+		tailConfig = parseTailConfig(nil)
 	}
 
-	// Create log tail handler
-	handler := &dockerLogTailHandler{
+	handler := &logTailHandler{
 		sessionID:        sessionID,
 		microserviceUUID: microserviceUUID,
 		wsHandler:        wsHandler,
 		lsm:              lsm,
 	}
 
-	// Store handler
-	lsm.dockerTailCallbacks[sessionID] = handler
+	lsm.tailCallbacks[sessionID] = handler
 
-	// Start tailing
-	err = lsm.dockerClient.TailContainerLogs(containerID, sessionID, microserviceUUID, handler, tailConfig)
-	if err != nil {
-		logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Error starting Docker log tailing: sessionId=%s", sessionID), err)
-		if info, ok := lsm.activeSessions[sessionID]; ok {
-			info.IsStreaming = false
-		}
-		delete(lsm.dockerTailCallbacks, sessionID)
-		return
-	}
-
-	// Update session info
 	if info, ok := lsm.activeSessions[sessionID]; ok {
 		info.ContainerID = containerID
 		info.IsStreaming = true
 	}
 
-	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Docker log tailing started: sessionId=%s", sessionID))
+	// Run TailContainerLogs in a goroutine — it blocks in follow mode until the session ends.
+	// If called synchronously, lsm.mu would be held for the entire stream, deadlocking
+	// HandleLogSessions on the next getChangesList cycle.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(logSessionManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
+			}
+		}()
+		err := lsm.containerEngine.TailContainerLogs(containerID, sessionID, microserviceUUID, handler, tailConfig)
+		if err != nil {
+			logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Error starting log tailing: sessionId=%s", sessionID), err)
+			lsm.mu.Lock()
+			if info, ok := lsm.activeSessions[sessionID]; ok {
+				info.IsStreaming = false
+			}
+			delete(lsm.tailCallbacks, sessionID)
+			lsm.mu.Unlock()
+			return
+		}
+		// OnComplete is called by TailContainerLogs when done; handler updates state
+	}()
+
+	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Log tailing started: sessionId=%s", sessionID))
 }
 
-// dockerLogTailHandler implements docker.LogTailHandler interface
-type dockerLogTailHandler struct {
+// logTailHandler implements engine.LogTailHandler and forwards log lines to the WebSocket.
+type logTailHandler struct {
 	sessionID        string
 	microserviceUUID string
 	wsHandler        *LogSessionWebSocketHandler
 	lsm              *LogSessionManager
 }
 
-func (h *dockerLogTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ docker.StreamType) {
-	if h.wsHandler != nil && h.wsHandler.IsActive() {
-		// Send log line via WebSocket
+func (h *logTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ engine.StreamType) {
+	if h.wsHandler != nil && len(lineBytes) > 0 {
+		// Always call SendMessage — it buffers when not active and sends when active (matching Java LogSessionWebSocketHandler.sendLogLine)
 		msgType := byte(6) // LogTypeLogLine
 		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {
 			logging.LogError(logSessionManagerModuleName, "Error sending log line", err)
@@ -360,34 +442,30 @@ func (h *dockerLogTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ docker
 	}
 }
 
-func (h *dockerLogTailHandler) OnComplete(sessionID string) {
-	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Docker log tailing completed: sessionId=%s", sessionID))
+func (h *logTailHandler) OnComplete(sessionID string) {
+	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Log tailing completed: sessionId=%s", sessionID))
 	h.lsm.mu.Lock()
 	defer h.lsm.mu.Unlock()
 
 	if info, ok := h.lsm.activeSessions[sessionID]; ok {
 		info.IsStreaming = false
 	}
-
-	// Remove handler
-	delete(h.lsm.dockerTailCallbacks, sessionID)
+	delete(h.lsm.tailCallbacks, sessionID)
 }
 
-func (h *dockerLogTailHandler) OnError(sessionID string, err error) {
-	logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Docker log tailing error: sessionId=%s", sessionID), err)
+func (h *logTailHandler) OnError(sessionID string, err error) {
+	logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Log tailing error: sessionId=%s", sessionID), err)
 	h.lsm.mu.Lock()
 	defer h.lsm.mu.Unlock()
 
 	if info, ok := h.lsm.activeSessions[sessionID]; ok {
 		info.IsStreaming = false
 	}
-
-	// Remove handler
-	delete(h.lsm.dockerTailCallbacks, sessionID)
+	delete(h.lsm.tailCallbacks, sessionID)
 }
 
 // startFogLogStreamingLocked starts streaming fog logs (must be called with lock held)
-func (lsm *LogSessionManager) startFogLogStreamingLocked(sessionID, iofogUUID string) {
+func (lsm *LogSessionManager) startFogLogStreamingLocked(sessionID, iofogUUID string, tailConfig *utils.TailConfig) {
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting fog log streaming: sessionId=%s, iofogUuid=%s", sessionID, iofogUUID))
 
 	// Get WebSocket handler
@@ -405,10 +483,8 @@ func (lsm *LogSessionManager) startFogLogStreamingLocked(sessionID, iofogUUID st
 		lsm:       lsm,
 	}
 
-	// Create tail config (default: follow=true, lines=100)
-	tailConfig := &utils.TailConfig{
-		Follow: true,
-		Lines:  100,
+	if tailConfig == nil {
+		tailConfig = &utils.TailConfig{Follow: true, Lines: 100}
 	}
 
 	// Get log directory from config
@@ -432,8 +508,8 @@ type fogLogHandler struct {
 }
 
 func (h *fogLogHandler) OnLogLine(_, _, line string) {
-	if h.wsHandler != nil && h.wsHandler.IsActive() {
-		// Send log line via WebSocket
+	if h.wsHandler != nil && line != "" {
+		// Always call SendMessage — it buffers when not active and sends when active (matching Java)
 		lineBytes := []byte(line)
 		msgType := byte(6) // LogTypeLogLine
 		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {
@@ -476,8 +552,8 @@ func (lsm *LogSessionManager) stopLogSessionLocked(sessionID string) {
 		delete(lsm.localLogReaders, sessionID)
 	}
 
-	// Remove Docker tail callback if it exists
-	delete(lsm.dockerTailCallbacks, sessionID)
+	// Remove engine tail callback if it exists
+	delete(lsm.tailCallbacks, sessionID)
 
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Stopping log session: %s", sessionID))
 

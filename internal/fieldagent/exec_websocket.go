@@ -21,8 +21,6 @@ import (
 
 const (
 	execWebSocketModuleName = "Exec Session WebSocket Handler"
-	maxReconnectAttempts    = 5
-	reconnectDelay          = 5 * time.Second
 	pingInterval            = 30 * time.Second
 	handshakeTimeout        = 10 * time.Second
 	maxFrameSize            = 65536
@@ -53,25 +51,24 @@ const (
 
 // ExecSessionWebSocketHandler manages the WebSocket connection for exec sessions
 type ExecSessionWebSocketHandler struct {
-	controllerWsURL   string
-	microserviceUUID  string
-	conn              *websocket.Conn
-	connMu            sync.RWMutex
-	writeMu           sync.Mutex // Protects concurrent writes to websocket
-	isConnected       atomic.Bool
-	isActive          atomic.Bool
-	state             atomic.Value // ConnectionState
-	reconnectAttempts int
-	outputBuffer      chan []byte
-	bufferedSize      atomic.Int64
-	bufferedFrames    atomic.Int32
-	ctx               context.Context
-	cancel            context.CancelFunc
-	wg                sync.WaitGroup
-	pingTicker        *time.Ticker
-	config            *config.Config
-	jwtManager        *auth.JWTManager
-	controllerCert    *x509.Certificate
+	controllerWsURL  string
+	microserviceUUID string
+	conn             *websocket.Conn
+	connMu           sync.RWMutex
+	writeMu          sync.Mutex // Protects concurrent writes to websocket
+	isConnected      atomic.Bool
+	isActive         atomic.Bool
+	state            atomic.Value // ConnectionState
+	outputBuffer     chan []byte
+	bufferedSize     atomic.Int64
+	bufferedFrames   atomic.Int32
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	pingTicker       *time.Ticker
+	config           *config.Config
+	jwtManager       *auth.JWTManager
+	controllerCert   *x509.Certificate
 }
 
 var (
@@ -224,7 +221,6 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 
 		h.conn = conn
 		h.isConnected.Store(true)
-		h.reconnectAttempts = 0
 		return nil
 	}()
 
@@ -280,6 +276,11 @@ func (h *ExecSessionWebSocketHandler) sendInitialMessage() {
 		logging.LogError(execWebSocketModuleName, fmt.Sprintf("No execId found for microservice: %s - this may be a timing issue, will retry", h.microserviceUUID), fmt.Errorf("execId not found"))
 		// Retry after a short delay (execId might not be stored yet)
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(execWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+				}
+			}()
 			time.Sleep(500 * time.Millisecond)
 			if h.isConnected.Load() {
 				retryExecID := fa.GetActiveExecSession(h.microserviceUUID)
@@ -479,6 +480,11 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 func (h *ExecSessionWebSocketHandler) pingWorker() {
 	defer h.wg.Done()
 	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(execWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
+	defer func() {
 		if h.pingTicker != nil {
 			h.pingTicker.Stop()
 		}
@@ -500,7 +506,7 @@ func (h *ExecSessionWebSocketHandler) pingWorker() {
 					h.writeMu.Unlock()
 					if err != nil {
 						logging.LogError(execWebSocketModuleName, "Failed to send ping", err)
-						h.handleConnectionFailure()
+						go h.handleClose()
 					}
 				}
 			}
@@ -511,6 +517,11 @@ func (h *ExecSessionWebSocketHandler) pingWorker() {
 // readWorker reads messages from the WebSocket
 func (h *ExecSessionWebSocketHandler) readWorker() {
 	defer h.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(execWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
 	for {
 		select {
@@ -532,17 +543,14 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
-				// Check for normal closure or "going away" (server restart/stop)
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					logging.LogInfo(execWebSocketModuleName, "WebSocket closed normally by server")
-					h.handleClose()
-					return
-				}
-
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				// Unified error handling: any error → close session, no reconnect.
+				// Log appropriately: info for normal close (1000, 1001, 1005), error for others.
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005) {
+					logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket closed: %v", err))
+				} else {
 					logging.LogError(execWebSocketModuleName, "WebSocket read error", err)
 				}
-				h.handleConnectionFailure()
+				go h.handleClose()
 				return
 			}
 
@@ -741,32 +749,6 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 	}
 }
 
-// handleConnectionFailure handles connection failures and attempts reconnection
-func (h *ExecSessionWebSocketHandler) handleConnectionFailure() {
-	h.connMu.Lock()
-	if h.conn != nil {
-		if err := h.conn.Close(); err != nil {
-			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close connection: %v", err))
-		}
-		h.conn = nil
-	}
-	h.connMu.Unlock()
-
-	h.isConnected.Store(false)
-	h.transitionState(StateConnected, StateDisconnected)
-
-	if h.reconnectAttempts < maxReconnectAttempts {
-		h.reconnectAttempts++
-		backoff := time.Duration(h.reconnectAttempts) * reconnectDelay
-		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Reconnecting in %v (attempt %d/%d)", backoff, h.reconnectAttempts, maxReconnectAttempts))
-
-		time.Sleep(backoff)
-		go h.Connect() //nolint:errcheck
-	} else {
-		logging.LogError(execWebSocketModuleName, "Max reconnection attempts reached", fmt.Errorf("reconnection failed"))
-	}
-}
-
 // Disconnect closes the WebSocket connection
 func (h *ExecSessionWebSocketHandler) Disconnect() {
 	h.cancel()
@@ -810,10 +792,12 @@ func (h *ExecSessionWebSocketHandler) handleClose() {
 		return
 	}
 
-	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Handling close for microservice: %s, connectionState=%v, reconnectAttempts=%d",
-		h.microserviceUUID, h.state.Load(), h.reconnectAttempts))
+	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Handling close for microservice: %s, connectionState=%v",
+		h.microserviceUUID, h.state.Load()))
 
 	h.isConnected.Store(false)
+	h.isActive.Store(false)
+	h.state.Store(StateDisconnected)
 
 	// Get current exec session ID before cleanup (matching Java line 576-579)
 	fa := GetInstance()

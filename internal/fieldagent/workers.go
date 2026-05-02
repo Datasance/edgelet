@@ -15,48 +15,97 @@ import (
 	"github.com/eclipse-iofog/agent/internal/version"
 )
 
-// pingControllerWorker periodically pings the controller
+// workerFreq returns a non-zero duration, falling back to the default if the
+// configured value is zero or negative (a zero timer would fire immediately in
+// a tight loop and a zero ticker panics).
+func workerFreq(seconds int, defaultSeconds int) time.Duration {
+	if seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	return time.Duration(defaultSeconds) * time.Second
+}
+
+const (
+	pingBackoffMaxSeconds = 300 // 5 min max backoff when controller offline
+)
+
+// pingControllerWorker periodically pings the controller.
+// Uses exponential backoff when controller is unreachable (edge resilience:
+// avoid hammering controller when offline; agent continues with last config).
 func (fa *FieldAgent) pingControllerWorker() {
 	defer fa.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
 	cfg := config.GetInstance()
-	ticker := time.NewTicker(time.Duration(cfg.PingControllerFreqSeconds) * time.Second)
-	defer ticker.Stop()
+	baseInterval := workerFreq(cfg.PingControllerFreqSeconds, 30)
+	interval := baseInterval
+	consecutiveFailures := 0
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-fa.ctx.Done():
 			return
-		case <-ticker.C:
-			logging.LogDebug(moduleName, "Start Ping controller")
-			fa.ping()
-			logging.LogDebug(moduleName, "Finished Ping controller")
+		case <-timer.C:
+			if !fa.NotProvisioned() {
+				logging.LogDebug(moduleName, "Start Ping controller")
+				ok := fa.ping()
+				logging.LogDebug(moduleName, "Finished Ping controller")
+
+				if ok {
+					consecutiveFailures = 0
+					interval = baseInterval
+				} else {
+					consecutiveFailures++
+					// Exponential backoff: 30s, 60s, 120s, ... cap at 5 min
+					backoffSec := cfg.PingControllerFreqSeconds
+					if backoffSec < 30 {
+						backoffSec = 30
+					}
+					for i := 0; i < consecutiveFailures-1 && backoffSec < pingBackoffMaxSeconds; i++ {
+						backoffSec *= 2
+					}
+					if backoffSec > pingBackoffMaxSeconds {
+						backoffSec = pingBackoffMaxSeconds
+					}
+					interval = time.Duration(backoffSec) * time.Second
+					logging.LogInfo(moduleName, fmt.Sprintf("Controller unreachable, next ping in %v (backoff)", interval))
+				}
+			}
+			timer.Reset(interval)
 		}
 	}
 }
 
-// getChangesWorker periodically gets changes from the controller
+// getChangesWorker periodically gets changes from the controller.
+// Uses a self-resetting timer so the interval is re-read from config on every tick.
 func (fa *FieldAgent) getChangesWorker() {
 	defer fa.wg.Done()
 
-	cfg := config.GetInstance()
-	ticker := time.NewTicker(time.Duration(cfg.ChangeFrequency) * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(workerFreq(config.GetInstance().ChangeFrequency, 20))
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-fa.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			logging.LogDebug(moduleName, "Start get IOFog changes list from IOFog controller")
 
 			if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 				logging.LogDebug(moduleName, "Cannot get change list due to controller status not provisioned or controller not connected")
+				timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
 				continue
 			}
 
 			// Get changes from controller
-			ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			result, err := fa.apiClient.Request(ctx, "config/changes", GET, nil, nil)
 			cancel()
 
@@ -67,6 +116,7 @@ func (fa *FieldAgent) getChangesWorker() {
 				} else {
 					logging.LogError(moduleName, "Unable to get changes", err)
 				}
+				timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
 				continue
 			}
 
@@ -82,11 +132,11 @@ func (fa *FieldAgent) getChangesWorker() {
 			// Reset changes flags if processing was successful
 			if lastUpdated != "" && resetChanges {
 				logging.LogDebug(moduleName, fmt.Sprintf("Resetting config changes flags with lastUpdated: %s", lastUpdated))
-				ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-				err := fa.apiClient.PatchJSON(ctx, "config/changes", map[string]interface{}{
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
+				err := fa.apiClient.PatchJSON(ctx2, "config/changes", map[string]interface{}{
 					"lastUpdated": lastUpdated,
 				})
-				cancel()
+				cancel2()
 
 				if err != nil {
 					logging.LogError(moduleName, "Resetting config changes has failed", err)
@@ -98,24 +148,26 @@ func (fa *FieldAgent) getChangesWorker() {
 			// Update initialization flag
 			fa.state.SetInitialization(fa.state.IsInitialization() && !resetChanges)
 			logging.LogDebug(moduleName, fmt.Sprintf("Finished getChangesList cycle with initialization: %v", fa.state.IsInitialization()))
+			timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
 		}
 	}
 }
 
-// postStatusWorker periodically posts status to the controller
+// postStatusWorker periodically posts status to the controller.
+// Uses a self-resetting timer so the interval is re-read from config on every tick.
 func (fa *FieldAgent) postStatusWorker() {
 	defer fa.wg.Done()
 
-	cfg := config.GetInstance()
-	ticker := time.NewTicker(time.Duration(cfg.StatusFrequency) * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(workerFreq(config.GetInstance().StatusFrequency, 10))
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-fa.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			fa.PostStatusHelper()
+			timer.Reset(workerFreq(config.GetInstance().StatusFrequency, 10))
 		}
 	}
 }
@@ -137,7 +189,7 @@ func (fa *FieldAgent) PostStatusHelper() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	err := fa.apiClient.PutJSON(ctx, "status", status)
 	cancel()
 
@@ -146,8 +198,10 @@ func (fa *FieldAgent) PostStatusHelper() {
 			fa.verificationFailed(err)
 			logging.LogError(moduleName, "Unable to send status due to broken certificate", err)
 		} else if isUnauthorizedError(err) {
-			if depErr := fa.Deprovision(true); depErr != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Deprovision failed: %v", depErr))
+			if !fa.NotProvisioned() {
+				if depErr := fa.Deprovision(true); depErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Deprovision failed: %v", depErr))
+				}
 			}
 			logging.LogError(moduleName, "Unable to send status due to unauthorized access", err)
 		} else {
@@ -240,26 +294,35 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	return status
 }
 
-// postDiagnosticsWorker periodically posts diagnostics (strace data) to the controller
+// postDiagnosticsWorker periodically posts diagnostics (strace data) to the controller.
+// Uses a self-resetting timer so the interval is re-read from config on every tick.
 func (fa *FieldAgent) postDiagnosticsWorker() {
 	defer fa.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
-	cfg := config.GetInstance()
-	ticker := time.NewTicker(time.Duration(cfg.PostDiagnosticsFreq) * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(workerFreq(config.GetInstance().PostDiagnosticsFreq, 10))
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-fa.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			fa.postDiagnosticsHelper()
+			timer.Reset(workerFreq(config.GetInstance().PostDiagnosticsFreq, 10))
 		}
 	}
 }
 
 // postDiagnosticsHelper posts strace diagnostics to the controller
 func (fa *FieldAgent) postDiagnosticsHelper() {
+	if fa.NotProvisioned() {
+		return
+	}
 	logging.LogDebug(moduleName, "Start posting diagnostic")
 
 	// Import diagnostics package here to avoid circular dependency
@@ -288,7 +351,7 @@ func (fa *FieldAgent) postDiagnosticsHelper() {
 	}
 
 	// Post to controller
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	err := fa.apiClient.PutJSON(ctx, "strace", requestBody)
 	cancel()
 

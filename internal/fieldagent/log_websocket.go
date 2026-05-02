@@ -22,14 +22,12 @@ import (
 )
 
 const (
-	logWebSocketModuleName  = "Log Session WebSocket Handler"
-	logMaxReconnectAttempts = 5
-	logReconnectDelay       = 5 * time.Second
-	logPingInterval         = 30 * time.Second
-	logHandshakeTimeout     = 10 * time.Second
-	logMaxFrameSize         = 65536
-	logMaxBufferSize        = 1024 * 1024 // 1MB
-	logMaxBufferedFrames    = 1000
+	logWebSocketModuleName = "Log Session WebSocket Handler"
+	logPingInterval        = 30 * time.Second
+	logHandshakeTimeout    = 10 * time.Second
+	logMaxFrameSize        = 65536
+	logMaxBufferSize       = 1024 * 1024 // 1MB
+	logMaxBufferedFrames   = 1000
 )
 
 // LogMessageType constants
@@ -51,6 +49,14 @@ const (
 	LogStateActive  // Connected and streaming logs
 )
 
+// logFrame pairs a message type with its payload for type-safe buffering.
+// Storing the type alongside the data ensures flushBuffer preserves the original
+// message type (e.g. stderr vs stdout) rather than defaulting to LogTypeLogLine.
+type logFrame struct {
+	msgType byte
+	data    []byte
+}
+
 // LogSessionWebSocketHandler manages the WebSocket connection for log sessions
 type LogSessionWebSocketHandler struct {
 	controllerWsURL   string
@@ -64,8 +70,7 @@ type LogSessionWebSocketHandler struct {
 	isConnected       atomic.Bool
 	isActive          atomic.Bool
 	state             atomic.Value // LogConnectionState
-	reconnectAttempts int
-	outputBuffer      chan []byte
+	outputBuffer      chan logFrame
 	bufferedSize      atomic.Int64
 	bufferedFrames    atomic.Int32
 	ctx               context.Context
@@ -115,7 +120,7 @@ func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string
 		microserviceUUID:  microserviceUUID,
 		iofogUUID:         iofogUUID,
 		isMicroserviceLog: isMicroserviceLog,
-		outputBuffer:      make(chan []byte, logMaxBufferedFrames),
+		outputBuffer:      make(chan logFrame, logMaxBufferedFrames),
 		ctx:               ctx,
 		cancel:            cancel,
 		config:            cfg,
@@ -212,7 +217,6 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 
 	h.conn = conn
 	h.isConnected.Store(true)
-	h.reconnectAttempts = 0
 	// Transition to PENDING state after handshake (matching Java line 286: CONNECTING -> PENDING)
 	// PENDING means connected but waiting for LOG_START message
 	if h.transitionState(LogStateConnecting, LogStatePending) {
@@ -263,12 +267,12 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 			return fmt.Errorf("buffer size limit reached")
 		}
 
-		// Create a copy of data for buffering
+		// Store both the type and data so flushBuffer can preserve the original msgType.
 		bufferedData := make([]byte, len(data))
 		copy(bufferedData, data)
 
 		select {
-		case h.outputBuffer <- bufferedData:
+		case h.outputBuffer <- logFrame{msgType: msgType, data: bufferedData}:
 			h.bufferedFrames.Add(1)
 			h.bufferedSize.Add(int64(len(data)))
 		default:
@@ -406,6 +410,11 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 func (h *LogSessionWebSocketHandler) pingWorker() {
 	defer h.wg.Done()
 	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(logWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
+	defer func() {
 		if h.pingTicker != nil {
 			h.pingTicker.Stop()
 		}
@@ -427,7 +436,7 @@ func (h *LogSessionWebSocketHandler) pingWorker() {
 					h.writeMu.Unlock()
 					if err != nil {
 						logging.LogError(logWebSocketModuleName, "Failed to send ping", err)
-						h.handleConnectionFailure()
+						go h.handleClose()
 					}
 				}
 			}
@@ -438,6 +447,11 @@ func (h *LogSessionWebSocketHandler) pingWorker() {
 // readWorker reads messages from the WebSocket
 func (h *LogSessionWebSocketHandler) readWorker() {
 	defer h.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(logWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
 	for {
 		select {
@@ -459,10 +473,14 @@ func (h *LogSessionWebSocketHandler) readWorker() {
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				// Unified error handling: any error → close session, no reconnect.
+				// Log appropriately: info for normal close (1000, 1001, 1005), error for others.
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005) {
+					logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket closed: %v", err))
+				} else {
 					logging.LogError(logWebSocketModuleName, "WebSocket read error", err)
 				}
-				h.handleConnectionFailure()
+				go h.handleClose()
 				return
 			}
 
@@ -603,48 +621,25 @@ func (h *LogSessionWebSocketHandler) SetLogSessionManager(lsm *LogSessionManager
 	h.logSessionManager = lsm
 }
 
-// flushBuffer sends all buffered messages
+// flushBuffer sends all buffered messages, preserving each frame's original message type.
 func (h *LogSessionWebSocketHandler) flushBuffer() {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(logWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	for {
 		select {
-		case data := <-h.outputBuffer:
-			msgType := LogTypeLogLine // Default to log line
-			err := h.SendMessage(msgType, data)
-			if err != nil {
+		case frame := <-h.outputBuffer:
+			if err := h.SendMessage(frame.msgType, frame.data); err != nil {
 				logging.LogError(logWebSocketModuleName, "Failed to send buffered message", err)
 			} else {
 				h.bufferedFrames.Add(-1)
-				h.bufferedSize.Add(-int64(len(data)))
+				h.bufferedSize.Add(-int64(len(frame.data)))
 			}
 		default:
 			return
 		}
-	}
-}
-
-// handleConnectionFailure handles connection failures and attempts reconnection
-func (h *LogSessionWebSocketHandler) handleConnectionFailure() {
-	h.connMu.Lock()
-	if h.conn != nil {
-		if err := h.conn.Close(); err != nil {
-			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close connection: %v", err))
-		}
-		h.conn = nil
-	}
-	h.connMu.Unlock()
-
-	h.isConnected.Store(false)
-	h.transitionState(LogStateConnected, LogStateDisconnected)
-
-	if h.reconnectAttempts < logMaxReconnectAttempts {
-		h.reconnectAttempts++
-		backoff := time.Duration(h.reconnectAttempts) * logReconnectDelay
-		logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Reconnecting in %v (attempt %d/%d)", backoff, h.reconnectAttempts, logMaxReconnectAttempts))
-
-		time.Sleep(backoff)
-		go h.Connect() //nolint:errcheck
-	} else {
-		logging.LogError(logWebSocketModuleName, "Max reconnection attempts reached", fmt.Errorf("reconnection failed"))
 	}
 }
 
@@ -691,10 +686,12 @@ func (h *LogSessionWebSocketHandler) handleClose() {
 		return
 	}
 
-	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Handling close for session: %s, connectionState=%v, reconnectAttempts=%d",
-		h.sessionID, h.state.Load(), h.reconnectAttempts))
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Handling close for session: %s, connectionState=%v",
+		h.sessionID, h.state.Load()))
 
 	h.isConnected.Store(false)
+	h.isActive.Store(false)
+	h.state.Store(LogStateDisconnected)
 	// Cleanup connection
 	h.Disconnect()
 

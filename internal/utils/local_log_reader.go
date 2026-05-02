@@ -94,6 +94,86 @@ func (llr *LocalLogReader) IsRunning() bool {
 	return llr.isRunning
 }
 
+// extractTimestampFromAgentLine extracts timestamp from agent log format:
+// "2026-03-13 03:45:01.183 [debug] Module: message"
+func extractTimestampFromAgentLine(line string) (time.Time, bool) {
+	if len(line) < 23 {
+		return time.Time{}, false
+	}
+	// Try "2006-01-02 15:04:05.000" format
+	t, err := time.Parse("2006-01-02 15:04:05.000", line[:23])
+	if err == nil {
+		return t, true
+	}
+	// Try "2006-01-02 15:04:05" format
+	if len(line) >= 19 {
+		t, err = time.Parse("2006-01-02 15:04:05", line[:19])
+		if err == nil {
+			return t, true
+		}
+	}
+	// Try RFC3339 at start
+	if len(line) >= 30 {
+		t, err = time.Parse(time.RFC3339Nano, line[:30])
+		if err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// filterByTimestamp filters lines by since/until (ISO 8601 strings).
+func filterByTimestamp(lines []string, since, until string) []string {
+	if since == "" && until == "" {
+		return lines
+	}
+	var sinceT, untilT time.Time
+	hasSince := false
+	hasUntil := false
+	if since != "" {
+		if t, err := time.Parse(time.RFC3339Nano, since); err == nil {
+			sinceT = t
+			hasSince = true
+		} else if t, err := time.Parse(time.RFC3339, since); err == nil {
+			sinceT = t
+			hasSince = true
+		}
+	}
+	if until != "" {
+		if t, err := time.Parse(time.RFC3339Nano, until); err == nil {
+			untilT = t
+			hasUntil = true
+		} else if t, err := time.Parse(time.RFC3339, until); err == nil {
+			untilT = t
+			hasUntil = true
+		}
+	}
+	if !hasSince && !hasUntil {
+		return lines
+	}
+	var out []string
+	for _, line := range lines {
+		if shouldIncludeAgentLine(line, sinceT, untilT, hasSince, hasUntil) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func shouldIncludeAgentLine(line string, sinceT, untilT time.Time, hasSince, hasUntil bool) bool {
+	t, ok := extractTimestampFromAgentLine(line)
+	if !ok {
+		return true // Include if we can't parse
+	}
+	if hasSince && t.Before(sinceT) {
+		return false
+	}
+	if hasUntil && t.After(untilT) {
+		return false
+	}
+	return true
+}
+
 // readLogs reads logs based on tail configuration
 func (llr *LocalLogReader) readLogs() {
 	defer func() {
@@ -105,6 +185,8 @@ func (llr *LocalLogReader) readLogs() {
 	// Parse tail config
 	follow := true
 	lines := 100
+	since := ""
+	until := ""
 	if llr.tailConfig != nil {
 		follow = llr.tailConfig.Follow
 		if llr.tailConfig.Lines > 0 {
@@ -117,9 +199,11 @@ func (llr *LocalLogReader) readLogs() {
 		if lines > 10000 {
 			lines = 10000
 		}
+		since = llr.tailConfig.Since
+		until = llr.tailConfig.Until
 	}
 
-	logging.LogDebug(localLogReaderModuleName, fmt.Sprintf("Reading logs: follow=%v, lines=%d", follow, lines))
+	logging.LogDebug(localLogReaderModuleName, fmt.Sprintf("Reading logs: follow=%v, lines=%d, since=%s, until=%s", follow, lines, since, until))
 
 	// Check if log file exists
 	if _, err := os.Stat(llr.currentLogFile); os.IsNotExist(err) {
@@ -140,6 +224,9 @@ func (llr *LocalLogReader) readLogs() {
 		return
 	}
 
+	// Filter by since/until
+	initialLines = filterByTimestamp(initialLines, since, until)
+
 	// Send initial lines
 	for _, line := range initialLines {
 		select {
@@ -154,7 +241,7 @@ func (llr *LocalLogReader) readLogs() {
 
 	// If follow is true, watch for new lines
 	if follow {
-		llr.watchForNewLines(llr.currentLogFile)
+		llr.watchForNewLines(llr.currentLogFile, since, until)
 	}
 }
 
@@ -187,7 +274,7 @@ func (llr *LocalLogReader) readTailLines(filePath string, lines int) ([]string, 
 }
 
 // watchForNewLines watches for new lines in the log file
-func (llr *LocalLogReader) watchForNewLines(filePath string) {
+func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 	file, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		logging.LogError(localLogReaderModuleName, "Error opening log file for watching", err)
@@ -208,6 +295,30 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 	lastPosition := stat.Size()
 	lastInode := stat.Sys()
 
+	var untilT time.Time
+	hasUntil := false
+	if until != "" {
+		if t, err := time.Parse(time.RFC3339Nano, until); err == nil {
+			untilT = t
+			hasUntil = true
+		} else if t, err := time.Parse(time.RFC3339, until); err == nil {
+			untilT = t
+			hasUntil = true
+		}
+	}
+
+	var sinceT time.Time
+	hasSince := false
+	if since != "" {
+		if t, err := time.Parse(time.RFC3339Nano, since); err == nil {
+			sinceT = t
+			hasSince = true
+		} else if t, err := time.Parse(time.RFC3339, since); err == nil {
+			sinceT = t
+			hasSince = true
+		}
+	}
+
 	// Watch for changes
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -217,6 +328,10 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 		case <-llr.stopChan:
 			return
 		case <-ticker.C:
+			// Check until timestamp - stop if we've passed it
+			if hasUntil && time.Now().After(untilT) {
+				return
+			}
 			// Check if file was rotated (inode changed)
 			currentStat, err := os.Stat(filePath)
 			if err != nil {
@@ -228,7 +343,7 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 					if cerr := file.Close(); cerr != nil {
 						logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Failed to close log file: %v", cerr))
 					}
-					llr.watchForNewLines(newLogFile)
+					llr.watchForNewLines(newLogFile, since, until)
 					return
 				}
 				continue
@@ -260,7 +375,18 @@ func (llr *LocalLogReader) watchForNewLines(filePath string) {
 				scanner := bufio.NewScanner(file)
 				for scanner.Scan() {
 					line := scanner.Text()
-					if line != "" && llr.handler != nil {
+					if line == "" {
+						continue
+					}
+					if !shouldIncludeAgentLine(line, sinceT, untilT, hasSince, hasUntil) {
+						if hasUntil {
+							if t, ok := extractTimestampFromAgentLine(line); ok && t.After(untilT) {
+								return // Past until, stop
+							}
+						}
+						continue
+					}
+					if llr.handler != nil {
 						llr.handler.OnLogLine(llr.sessionID, llr.iofogUUID, line)
 					}
 				}

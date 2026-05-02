@@ -144,6 +144,11 @@ func (c *ExecSessionCallback) GetStderrWriter() io.Writer {
 // readStdout reads from stdout and forwards to WebSocket
 func (c *ExecSessionCallback) readStdout() {
 	defer c.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(execCallbackModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	defer c.stdoutClosed.Store(true)
 
 	buffer := make([]byte, 1024)
@@ -175,6 +180,11 @@ func (c *ExecSessionCallback) readStdout() {
 // readStderr reads from stderr and forwards to WebSocket
 func (c *ExecSessionCallback) readStderr() {
 	defer c.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(execCallbackModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	defer c.stderrClosed.Store(true)
 
 	buffer := make([]byte, 1024)
@@ -290,8 +300,22 @@ func (c *ExecSessionCallback) Close() {
 		c.timeoutTimer.Stop()
 	}
 
-	// Close streams
+	// Close pipe WRITERS first so readStdout/readStderr get EOF and return.
+	// When StartExecSession fails (e.g. pendingExec race), no process writes to the pipes,
+	// so readStdout blocks on Read() until the write end is closed.
 	c.mu.Lock()
+	if c.stdoutWriter != nil {
+		if err := c.stdoutWriter.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdoutWriter: %v", err))
+		}
+		c.stdoutWriter = nil
+	}
+	if c.stderrWriter != nil {
+		if err := c.stderrWriter.Close(); err != nil {
+			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stderrWriter: %v", err))
+		}
+		c.stderrWriter = nil
+	}
 	if c.stdin != nil {
 		if err := c.stdin.Close(); err != nil {
 			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdin: %v", err))
@@ -310,16 +334,6 @@ func (c *ExecSessionCallback) Close() {
 	if c.stdinReader != nil {
 		if err := c.stdinReader.Close(); err != nil {
 			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdinReader: %v", err))
-		}
-	}
-	if c.stdoutWriter != nil {
-		if err := c.stdoutWriter.Close(); err != nil {
-			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stdoutWriter: %v", err))
-		}
-	}
-	if c.stderrWriter != nil {
-		if err := c.stderrWriter.Close(); err != nil {
-			logging.LogWarn(execCallbackModuleName, fmt.Sprintf("Failed to close stderrWriter: %v", err))
 		}
 	}
 	c.mu.Unlock()
