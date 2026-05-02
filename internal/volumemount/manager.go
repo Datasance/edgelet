@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,12 @@ const (
 	microservicesDir  = "microservices"
 	maxVersionHistory = 1 // Keep only current version for simplicity
 	dataSymlink       = "..data"
+
+	// Permission modes: internal storage uses 750 (owner+group only); bind-mount
+	// targets use 755 dirs and 644 files so non-root container processes can access.
+	internalDirMode   = 0750 // #nosec G301 -- internal volume storage (secrets/configMaps)
+	bindMountDirMode  = 0755 // #nosec G301 -- bind-mount targets must be world-traversable for non-root uid
+	bindMountFileMode = 0644 // #nosec G306 -- bind-mount files readable by non-root containers
 )
 
 // VolumeMountType represents the type of volume mount
@@ -71,9 +78,8 @@ func GetInstance() *VolumeMountManager {
 func (vmm *VolumeMountManager) init() {
 	logging.LogDebug(moduleName, "Initializing volume mount manager")
 
-	// Create volumes directory; 0755 is intentional: base dir holds both secrets and configmaps;
-	// type-specific permissions are applied to each subdirectory
-	initErr := os.MkdirAll(vmm.baseDirectory, 0755) // #nosec G301
+	// Create volumes directory; 0750 restricts access to owner+group (internal storage)
+	initErr := os.MkdirAll(vmm.baseDirectory, internalDirMode)
 	if initErr != nil {
 		logging.LogError(moduleName, "Error creating volumes directory", initErr)
 		return
@@ -120,9 +126,40 @@ func (vmm *VolumeMountManager) loadIndex() {
 			"microservices": stringsToInterfaceSlice(rec.Microservices),
 		}
 		vmm.indexData[rec.UUID] = entry
+
+		// Rehydrate main directory structure from SQLite if it does not exist
+		vmm.rehydrateMainStructureFromRecord(&rec)
 	}
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d volume mounts from SQLite", len(vmm.indexData)))
+}
+
+// rehydrateMainStructureFromRecord creates the main directory structure on disk from a SQLite record
+// when it does not exist (e.g. after agent restart with controller unreachable).
+func (vmm *VolumeMountManager) rehydrateMainStructureFromRecord(rec *store.VolumeMountRecord) {
+	if len(rec.Data) == 0 {
+		return
+	}
+
+	vmType := VolumeMountTypeSecret
+	if rec.Kind == "CONFIGMAP" {
+		vmType = VolumeMountTypeConfigMap
+	}
+
+	typeDir := getTypeDirectory(vmType)
+	mountPath := filepath.Join(vmm.baseDirectory, typeDir, rec.Name)
+	sourceDataLink := filepath.Join(mountPath, dataSymlink)
+
+	if _, err := os.Lstat(sourceDataLink); err == nil {
+		// Main structure already exists
+		return
+	}
+
+	if _, err := vmm.createMainStructureFromData(mountPath, rec.Data, vmType, false); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Rehydration failed for volume mount %s: %v", rec.Name, err))
+		return
+	}
+	logging.LogDebug(moduleName, fmt.Sprintf("Rehydrated main structure for volume mount: %s", rec.Name))
 }
 
 // saveIndex persists the entire in-memory index to SQLite atomically.
@@ -393,13 +430,11 @@ func parseVolumeMountType(vmMap map[string]interface{}) VolumeMountType {
 	return VolumeMountTypeConfigMap
 }
 
-// dirMode returns the directory permission mode for the given volume mount type.
-// Secrets use 0700 (owner-only), configMaps use 0755 (world-traversable).
-func dirMode(vmType VolumeMountType) os.FileMode {
-	if vmType == VolumeMountTypeSecret {
-		return 0700
-	}
-	return 0755 // #nosec G301 -- configmap directories are intentionally world-traversable
+// dirMode returns the directory permission mode for internal volume storage.
+// Internal dirs (secrets/, configMaps/, version dirs) use 0750 (owner+group only).
+// Bind-mount targets use bindMountDirMode (0755) so non-root containers can traverse.
+func dirMode(_ VolumeMountType) os.FileMode {
+	return internalDirMode
 }
 
 // fileMode returns the file permission mode for the given volume mount type.
@@ -442,14 +477,9 @@ func buildRelativeDataTarget(keyLink string) string {
 	return prefix + dataSymlink + "/" + keyLink
 }
 
-// copyVersionedDirRecursively recursively copies all files from src to dst,
-// preserving subdirectory structure and applying fileMode to all files.
+// copyVersionedDirRecursively recursively copies from internal storage to a bind-mount target.
+// dirs: 0755 (world-traversable for non-root containers); files: 0644 (caller passes bindMountFileMode).
 func copyVersionedDirRecursively(src, dst string, fileMode os.FileMode) error {
-	// Derive directory mode from file mode: secret files (0600) → 0700 dirs, others → 0755
-	dMode := os.FileMode(0755) // #nosec G301 -- configmap dirs are intentionally world-traversable
-	if fileMode == 0600 {
-		dMode = 0700
-	}
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -463,7 +493,7 @@ func copyVersionedDirRecursively(src, dst string, fileMode os.FileMode) error {
 		targetPath := filepath.Join(dst, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(targetPath, dMode)
+			return os.MkdirAll(targetPath, bindMountDirMode)
 		}
 
 		data, err := os.ReadFile(path) // #nosec G304 -- path is from filepath.Walk over a known system directory
@@ -471,15 +501,15 @@ func copyVersionedDirRecursively(src, dst string, fileMode os.FileMode) error {
 			return err
 		}
 
-		if err := os.MkdirAll(filepath.Dir(targetPath), dMode); err != nil {
+		if err := os.MkdirAll(filepath.Dir(targetPath), bindMountDirMode); err != nil {
 			return err
 		}
 
-		if err := os.WriteFile(targetPath, data, fileMode); err != nil { // #nosec G306 -- configmap files are intentionally world-readable; secrets get 0600
+		if err := os.WriteFile(targetPath, data, fileMode); err != nil { // #nosec G306 -- bind-mount files 0644
 			return err
 		}
 
-		return os.Chmod(targetPath, fileMode) // #nosec G302 -- configmap files are intentionally world-readable; secrets get 0600
+		return os.Chmod(targetPath, fileMode) // #nosec G302 -- bind-mount files 0644
 	})
 }
 
@@ -504,8 +534,8 @@ func createKeySymlinksRecursively(mountPath, versionedDir string) error {
 		linkTarget := buildRelativeDataTarget(relPathFwd)
 
 		symlinkPath := filepath.Join(mountPath, relPath)
-		// 0755 is intentional: symlink parent dirs need world-traversal for container access
-		symlinkDirErr := os.MkdirAll(filepath.Dir(symlinkPath), 0755) // #nosec G301
+		// Bind-mount dirs need 0755 for non-root container traversal
+		symlinkDirErr := os.MkdirAll(filepath.Dir(symlinkPath), bindMountDirMode)
 		if symlinkDirErr != nil {
 			return symlinkDirErr
 		}
@@ -586,6 +616,77 @@ func removeObsoleteSymlinksRecursively(mountPath, targetVersionedDir string) err
 	return nil
 }
 
+// createMainStructureFromData creates the main directory structure (versioned dir, files, ..data symlink, key symlinks)
+// from the given data map (key->base64). Used by createVolumeMount, updateVolumeMount, and rehydration.
+// If atomicSymlink is true, creates the ..data symlink atomically (write to .tmp then rename).
+func (vmm *VolumeMountManager) createMainStructureFromData(mountPath string, dataObj map[string]interface{}, vmType VolumeMountType, atomicSymlink bool) (versionDirName string, err error) {
+	if err := os.MkdirAll(mountPath, dirMode(vmType)); err != nil {
+		return "", fmt.Errorf("create mount directory: %w", err)
+	}
+
+	versionDirName = createVersionedDirectoryName()
+	versionDir := filepath.Join(mountPath, versionDirName)
+	if err := os.MkdirAll(versionDir, dirMode(vmType)); err != nil {
+		return "", fmt.Errorf("create versioned directory: %w", err)
+	}
+
+	for key, value := range dataObj {
+		valueStr, ok := value.(string)
+		if !ok {
+			continue
+		}
+
+		decodedContent, decodeErr := decodeBase64(valueStr)
+		if decodeErr != nil {
+			logging.LogError(moduleName, fmt.Sprintf("Error decoding base64 for key: %s", key), decodeErr)
+			continue
+		}
+
+		filePath := filepath.Join(versionDir, key)
+		if err := os.MkdirAll(filepath.Dir(filePath), dirMode(vmType)); err != nil {
+			return "", fmt.Errorf("create parent for %s: %w", key, err)
+		}
+
+		if err := os.WriteFile(filePath, []byte(decodedContent), fileMode(vmType)); err != nil {
+			return "", fmt.Errorf("write file %s: %w", key, err)
+		}
+
+		if err := setFilePermissions(filePath, vmType); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error setting file permissions for: %s: %v", key, err))
+		}
+	}
+
+	dataLink := filepath.Join(mountPath, dataSymlink)
+	symlinkTarget := dataLink
+	if atomicSymlink {
+		symlinkTarget = filepath.Join(mountPath, dataSymlink+".tmp")
+		if err := os.Remove(symlinkTarget); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("remove temp data symlink: %w", err)
+		}
+	} else {
+		if err := os.Remove(dataLink); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("remove existing data symlink: %w", err)
+		}
+	}
+	if err := os.Symlink(versionDirName, symlinkTarget); err != nil {
+		return "", fmt.Errorf("create data symlink: %w", err)
+	}
+	if err := setSymlinkPermissions(symlinkTarget); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error setting data symlink permissions: %v", err))
+	}
+	if atomicSymlink {
+		if err := os.Rename(symlinkTarget, dataLink); err != nil {
+			return "", fmt.Errorf("atomic rename data symlink: %w", err)
+		}
+	}
+
+	if err := createKeySymlinksRecursively(mountPath, versionDir); err != nil {
+		return "", fmt.Errorf("create key symlinks: %w", err)
+	}
+
+	return versionDirName, nil
+}
+
 // createVolumeMount creates a new volume mount
 func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]interface{}) {
 	uuid, _ := vmMap["uuid"].(string)
@@ -597,87 +698,24 @@ func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]interface{}) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Creating volume mount - UUID: %s, Name: %s, Version: %.0f, Type: %s",
 		uuid, name, version, vmType))
 
-	// Create type-specific directory structure
 	typeDir := getTypeDirectory(vmType)
 	mountPath := filepath.Join(vmm.baseDirectory, typeDir, name)
-	if err := os.MkdirAll(mountPath, dirMode(vmType)); err != nil {
-		logging.LogError(moduleName, "Error creating mount directory", err)
+	if _, err := vmm.createMainStructureFromData(mountPath, dataObj, vmType, false); err != nil {
+		logging.LogError(moduleName, fmt.Sprintf("Error creating main structure: %v", err), err)
 		return
-	}
-
-	// Create versioned directory
-	versionDirName := createVersionedDirectoryName()
-	versionDir := filepath.Join(mountPath, versionDirName)
-	if err := os.MkdirAll(versionDir, dirMode(vmType)); err != nil {
-		logging.LogError(moduleName, "Error creating versioned directory", err)
-		return
-	}
-
-	// Create files in versioned directory
-	dataBuilder := make(map[string]interface{})
-	for key, value := range dataObj {
-		valueStr, ok := value.(string)
-		if !ok {
-			continue
-		}
-
-		decodedContent, err := decodeBase64(valueStr)
-		if err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error decoding base64 for key: %s", key), err)
-			continue
-		}
-
-		filePath := filepath.Join(versionDir, key)
-		// Create parent directories if needed
-		if err := os.MkdirAll(filepath.Dir(filePath), dirMode(vmType)); err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error creating parent directory for: %s", key), err)
-			continue
-		}
-
-		if err := os.WriteFile(filePath, []byte(decodedContent), fileMode(vmType)); err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error creating file: %s", key), err)
-			continue
-		}
-
-		// Set file permissions based on type
-		if err := setFilePermissions(filePath, vmType); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Error setting file permissions for: %s: %v", key, err))
-		}
-
-		// Store key in index
-		dataBuilder[key] = key
-	}
-
-	// Create ..data symlink pointing to versioned directory
-	dataLink := filepath.Join(mountPath, dataSymlink)
-	if err := os.Remove(dataLink); err != nil && !os.IsNotExist(err) {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error removing existing data symlink: %v", err))
-	}
-
-	if err := os.Symlink(versionDirName, dataLink); err != nil {
-		logging.LogError(moduleName, "Error creating data symlink", err)
-		return
-	}
-	if err := setSymlinkPermissions(dataLink); err != nil {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error setting symlink permissions: %v", err))
-	}
-
-	// Create per-key symlinks recursively (supports nested key paths like dir/subdir/file)
-	if err := createKeySymlinksRecursively(mountPath, versionDir); err != nil {
-		logging.LogError(moduleName, "Error creating key symlinks", err)
 	}
 
 	// Compute checksum from the raw data payload (base64 values from controller)
 	dataChecksumJSON, _ := json.Marshal(dataObj)
 	dataChecksum := vmm.checksum(string(dataChecksumJSON))
 
-	// Update index with new schema
+	// Update index with new schema; store raw content (key->base64) for rehydration
 	mountData := map[string]interface{}{
 		"name":          name,
 		"type":          map[string]string{string(VolumeMountTypeSecret): "secret", string(VolumeMountTypeConfigMap): "configMap"}[string(vmType)],
 		"version":       version,
 		"checksum":      dataChecksum,
-		"data":          dataBuilder,
+		"data":          dataObj,
 		"microservices": []interface{}{},
 	}
 
@@ -732,82 +770,14 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
 		}
 	}
 
-	// Create type-specific directory structure
 	typeDir := getTypeDirectory(vmType)
 	mountPath := filepath.Join(vmm.baseDirectory, typeDir, name)
-	if err := os.MkdirAll(mountPath, dirMode(vmType)); err != nil {
-		logging.LogError(moduleName, "Error creating mount directory", err)
+	versionDirName, err := vmm.createMainStructureFromData(mountPath, dataObj, vmType, true)
+	if err != nil {
+		logging.LogError(moduleName, fmt.Sprintf("Error creating main structure: %v", err), err)
 		return
 	}
-
-	// Create new versioned directory
-	versionDirName := createVersionedDirectoryName()
 	versionDir := filepath.Join(mountPath, versionDirName)
-	if err := os.MkdirAll(versionDir, dirMode(vmType)); err != nil {
-		logging.LogError(moduleName, "Error creating versioned directory", err)
-		return
-	}
-
-	// Create files in new versioned directory
-	dataBuilder := make(map[string]interface{})
-	for key, value := range dataObj {
-		valueStr, ok := value.(string)
-		if !ok {
-			continue
-		}
-
-		decodedContent, err := decodeBase64(valueStr)
-		if err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error decoding base64 for key: %s", key), err)
-			continue
-		}
-
-		filePath := filepath.Join(versionDir, key)
-		// Create parent directories if needed
-		if err := os.MkdirAll(filepath.Dir(filePath), dirMode(vmType)); err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error creating parent directory for: %s", key), err)
-			continue
-		}
-
-		if err := os.WriteFile(filePath, []byte(decodedContent), fileMode(vmType)); err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error updating file: %s", key), err)
-			continue
-		}
-
-		// Set file permissions based on type
-		if err := setFilePermissions(filePath, vmType); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Error setting file permissions for: %s: %v", key, err))
-		}
-
-		// Store key in index
-		dataBuilder[key] = key
-	}
-
-	// Atomically swap ..data symlink to point to new version
-	dataLink := filepath.Join(mountPath, dataSymlink)
-	newDataLink := filepath.Join(mountPath, dataSymlink+".tmp")
-	if err := os.Remove(newDataLink); err != nil && !os.IsNotExist(err) {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error removing temp data symlink: %v", err))
-	}
-
-	if err := os.Symlink(versionDirName, newDataLink); err != nil {
-		logging.LogError(moduleName, "Error creating temp data symlink", err)
-		return
-	}
-	if err := setSymlinkPermissions(newDataLink); err != nil {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error setting temp symlink permissions: %v", err))
-	}
-
-	// Atomic move
-	if err := os.Rename(newDataLink, dataLink); err != nil {
-		logging.LogError(moduleName, "Error atomically moving data symlink", err)
-		return
-	}
-
-	// Create/update per-key symlinks recursively (supports nested paths like dir/subdir/file)
-	if err := createKeySymlinksRecursively(mountPath, versionDir); err != nil {
-		logging.LogError(moduleName, "Error creating key symlinks", err)
-	}
 
 	// Remove obsolete symlinks for keys no longer present
 	if err := removeObsoleteSymlinksRecursively(mountPath, versionDir); err != nil {
@@ -829,13 +799,13 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
 	dataChecksumJSON, _ := json.Marshal(dataObj)
 	dataChecksum := vmm.checksum(string(dataChecksumJSON))
 
-	// Update index with new schema
+	// Update index with new schema; store raw content (key->base64) for rehydration
 	mountData := map[string]interface{}{
 		"name":          name,
 		"type":          map[string]string{string(VolumeMountTypeSecret): "secret", string(VolumeMountTypeConfigMap): "configMap"}[string(vmType)],
 		"version":       version,
 		"checksum":      dataChecksum,
-		"data":          dataBuilder,
+		"data":          dataObj,
 		"microservices": microservicesArray,
 	}
 
@@ -960,7 +930,8 @@ func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, 
 	}()
 
 	// Atomic directory creation (handles race conditions)
-	if err := os.MkdirAll(mountPath, dirMode(vmType)); err != nil {
+	// Bind-mount targets use 0755 so non-root container processes can traverse
+	if err := os.MkdirAll(mountPath, bindMountDirMode); err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("Error creating microservice mount directory: %v", err))
 		return mountPath // Return path anyway
 	}
@@ -983,22 +954,24 @@ func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, 
 	// Get the versioned directory name (e.g., ..2025_12_30_15_00_00.123456789)
 	versionedDirName := filepath.Base(sourceVersionedDirPath)
 
-	// Fast path: skip if ..data already points to the correct versioned dir
+	// Fast path: skip if ..data already points to the correct versioned dir.
+	// Still ensure both the mount directory and the versioned directory have 0755
+	// permissions so that existing volumes created with the old 0700 mode are
+	// migrated transparently (non-root container processes must be able to traverse).
 	dataLink := filepath.Join(mountPath, dataSymlink)
 	if currentTarget, err := os.Readlink(dataLink); err == nil {
 		if currentTarget == versionedDirName {
-			return mountPath // already up to date
+			_ = os.Chmod(mountPath, bindMountDirMode)                                  // #nosec G302 -- migrate legacy 0700 dirs
+			_ = os.Chmod(filepath.Join(mountPath, versionedDirName), bindMountDirMode) // #nosec G302 -- migrate legacy 0700 dirs
+			return mountPath                                                           // already up to date
 		}
 	}
 
 	// Copy the versioned directory to per-microservice directory (recursively)
+	// Bind-mount files use 0644 so non-root containers can read both secrets and configmaps
 	targetVersionedDir := filepath.Join(mountPath, versionedDirName)
-	fileMode := os.FileMode(0644)
-	if vmType == VolumeMountTypeSecret {
-		fileMode = 0600
-	}
 	if _, err := os.Stat(targetVersionedDir); os.IsNotExist(err) {
-		if err := copyVersionedDirRecursively(sourceVersionedDirPath, targetVersionedDir, fileMode); err != nil {
+		if err := copyVersionedDirRecursively(sourceVersionedDirPath, targetVersionedDir, bindMountFileMode); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Error copying versioned directory: %v", err))
 			return mountPath
 		}
@@ -1032,13 +1005,17 @@ func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, 
 	return mountPath
 }
 
-// trackMicroserviceUsage tracks microservice usage of volume mounts in index
+// trackMicroserviceUsage tracks microservice usage of volume mounts in index.
 // Matching Java: trackMicroserviceUsage()
 func (vmm *VolumeMountManager) trackMicroserviceUsage(volumeName, microserviceUUID string, add bool) {
 	vmm.indexLock.Lock()
 	defer vmm.indexLock.Unlock()
+	vmm.trackMicroserviceUsageUnsafe(volumeName, microserviceUUID, add)
+}
 
-	// Find volume mount by name
+// trackMicroserviceUsageUnsafe is the lock-free variant of trackMicroserviceUsage.
+// Caller must already hold indexLock (read or write).
+func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microserviceUUID string, add bool) {
 	for uuid, mountDataValue := range vmm.indexData {
 		mountData, ok := mountDataValue.(map[string]interface{})
 		if !ok {
@@ -1155,13 +1132,10 @@ func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmTyp
 		}
 
 		// Copy new versioned directory recursively if it doesn't exist
+		// Bind-mount files use 0644 so non-root containers can read both secrets and configmaps
 		targetVersionedDir := filepath.Join(mountPath, versionedDirName)
-		fileMode := os.FileMode(0644)
-		if vmType == VolumeMountTypeSecret {
-			fileMode = 0600
-		}
 		if _, err := os.Stat(targetVersionedDir); os.IsNotExist(err) {
-			if err := copyVersionedDirRecursively(sourceVersionedDirPath, targetVersionedDir, fileMode); err != nil {
+			if err := copyVersionedDirRecursively(sourceVersionedDirPath, targetVersionedDir, bindMountFileMode); err != nil {
 				logging.LogWarn(moduleName, fmt.Sprintf("Error copying versioned directory for microservice %s: %v", microserviceUUID, err))
 				continue
 			}
@@ -1213,7 +1187,9 @@ func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID strin
 		return
 	}
 
-	// Find all volume mounts used by this microservice from index
+	// Find all volume mounts used by this microservice from index and remove tracking.
+	// trackMicroserviceUsageUnsafe is used here to avoid a deadlock: this block already
+	// holds indexLock, and trackMicroserviceUsage (the locking wrapper) would deadlock.
 	vmm.indexLock.Lock()
 	for _, mountDataValue := range vmm.indexData {
 		mountData, ok := mountDataValue.(map[string]interface{})
@@ -1229,8 +1205,7 @@ func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID strin
 		for _, msValue := range microservicesArray {
 			if msStr, ok := msValue.(string); ok && msStr == microserviceUUID {
 				volumeName, _ := mountData["name"].(string)
-				// Remove from tracking
-				vmm.trackMicroserviceUsage(volumeName, microserviceUUID, false)
+				vmm.trackMicroserviceUsageUnsafe(volumeName, microserviceUUID, false)
 				break
 			}
 		}
@@ -1245,6 +1220,141 @@ func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID strin
 	logging.LogDebug(moduleName, fmt.Sprintf("Microservice volumes cleaned up: %s", microserviceUUID))
 }
 
+// parseRunAsUser parses "uid" or "uid:gid" and returns (uid, gid).
+// If gid is omitted, gid equals uid. Returns (-1, -1) on parse failure.
+func parseRunAsUser(s string) (int, int) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return -1, -1
+	}
+	parts := strings.SplitN(s, ":", 2)
+	uid, err := strconv.ParseInt(parts[0], 10, 0)
+	if err != nil || uid < 0 {
+		return -1, -1
+	}
+	gid := uid
+	if len(parts) == 2 {
+		gid, err = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 0)
+		if err != nil || gid < 0 {
+			return -1, -1
+		}
+	}
+	return int(uid), int(gid)
+}
+
+// ResolveHostPath resolves the absolute host-filesystem path that should be
+// bind-mounted into a container for the given volume mapping entry.
+//
+// For VOLUME_MOUNT type (isVolumeMount == true):
+//   - Parses hostDestination as "volumeName" or "volumeName/keyName"
+//   - Calls PrepareMicroserviceVolumeMount to create the per-microservice
+//     directory tree with versioned data and key symlinks
+//   - If a key is specified, appends it to the mount path and resolves any
+//     symlinks so that the container gets the real file path
+//
+// For legacy "$VolumeMount/<volumeName>" format:
+//   - Returns <diskDirectory>/volumes/<volumeName>
+//
+// For any non-absolute path (VOLUME named volumes, controller omitting type, etc.):
+//   - Creates a persistent data directory at <diskDirectory>/volumes/data/<uuid>/<name>
+//   - This ensures the runtime always receives a writable absolute path, matching
+//     the behavior of Docker named volumes but without Docker's volume subsystem.
+//
+// For absolute paths (BIND and explicit host paths):
+//   - Returns hostDestination unchanged.
+//
+// This is the engine-agnostic equivalent of docker.ResolveVolumeMountPath and
+// should be called by every container engine implementation before passing
+// mounts to the runtime.
+//
+// runAsUser is optional; when non-nil and non-empty, VOLUME-type dirs under
+// volumes/data/<uuid>/<name> are chown'd to uid:gid for non-root container access.
+// When runAsUser is empty, VOLUME dirs get 0777 for non-root accessibility by default.
+func (vmm *VolumeMountManager) ResolveHostPath(microserviceUUID, hostDestination string, isVolumeMount bool, runAsUser *string) (string, error) {
+	if isVolumeMount {
+		var volumeName, keyName string
+		slashIdx := strings.Index(hostDestination, "/")
+		if slashIdx > 0 {
+			volumeName = hostDestination[:slashIdx]
+			keyName = hostDestination[slashIdx+1:]
+		} else {
+			volumeName = hostDestination
+		}
+
+		vmType := vmm.GetVolumeMountType(volumeName)
+		if vmType == "" {
+			// Default to Secret (safer) when type is not in cache, matching Docker's
+			// volume.go fallback behavior. A secret with 0600 files is more restrictive
+			// than a configMap with 0644 files, avoiding accidental over-permissioning.
+			vmType = VolumeMountTypeSecret
+		}
+
+		mountPath := vmm.PrepareMicroserviceVolumeMount(microserviceUUID, volumeName, vmType)
+
+		if keyName != "" {
+			keyPath := filepath.Join(mountPath, keyName)
+			// Resolve symlink to the real versioned file so the runtime sees
+			// a concrete path rather than a dangling symlink.
+			if resolved, err := filepath.EvalSymlinks(keyPath); err == nil {
+				return resolved, nil
+			}
+			return keyPath, nil
+		}
+
+		return mountPath, nil
+	}
+
+	// Any remaining non-absolute path must be turned into an absolute host path.
+	// This covers:
+	//   - VOLUME-type named volumes (Docker manages these natively; containerd does not)
+	//   - Mappings whose "type" field was omitted by the controller (zero value "")
+	//   - Relative BIND paths (unusual, but must not reach the runtime as-is)
+	// A persistent directory is created so the container always gets a real,
+	// writable bind-mount source instead of a path relative to the runtime's
+	// internal state directory.
+	if !filepath.IsAbs(hostDestination) {
+		dir := filepath.Join(vmm.baseDirectory, "data", microserviceUUID, hostDestination)
+		mkdirErr := os.MkdirAll(dir, bindMountDirMode)
+		if mkdirErr != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("cannot create volume dir %s: %v", dir, mkdirErr))
+		}
+		// Set permissions for non-root container access (VOLUME type only).
+		if runAsUser != nil && *runAsUser != "" {
+			uid, gid := parseRunAsUser(*runAsUser)
+			if uid >= 0 {
+				if chownErr := os.Chown(dir, uid, gid); chownErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("cannot chown volume dir %s to %d:%d: %v", dir, uid, gid, chownErr))
+				}
+			}
+		} else {
+			// RunAsUser empty: make non-root accessible by default (0777).
+			// #nosec G302 -- intentional for VOLUME dirs when runAsUser unset
+			if chmodErr := os.Chmod(dir, 0777); chmodErr != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("cannot chmod volume dir %s: %v", dir, chmodErr))
+			}
+		}
+		return dir, nil
+	}
+
+	return hostDestination, nil
+}
+
+// clearWalk removes all contents under baseDir (excluding the base itself).
+func (vmm *VolumeMountManager) clearWalk(baseDir string) {
+	_ = filepath.Walk(baseDir, func(path string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // continue walking past individual entry errors
+		}
+		if path == baseDir {
+			return nil
+		}
+		if err := os.RemoveAll(path); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error deleting: %s: %v", path, err))
+		}
+		return nil
+	})
+}
+
 // Clear clears all volume mounts (matching Java: volumeMountManager.clear())
 func (vmm *VolumeMountManager) Clear() error {
 	vmm.indexLock.Lock()
@@ -1254,26 +1364,10 @@ func (vmm *VolumeMountManager) Clear() error {
 
 	// Delete all volume mount directories (secrets, configMaps, microservices)
 	if _, err := os.Stat(vmm.baseDirectory); err == nil {
-		// Walk the directory tree and delete all files/directories
-		err := filepath.Walk(vmm.baseDirectory, func(path string, _ os.FileInfo, err error) error {
-			if err != nil {
-				return nil //nolint:nilerr // continue walking past individual entry errors
-			}
-
-			// Don't delete the base directory itself
-			if path == vmm.baseDirectory {
-				return nil
-			}
-
-			// Delete the file or directory
-			if err := os.RemoveAll(path); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error deleting: %s: %v", path, err))
-			}
-			return nil
-		})
-		if err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Error walking directory: %v", err))
-		}
+		vmm.clearWalk(vmm.baseDirectory)
+		// Retry once after a short sleep to handle races with slow container unmounts
+		time.Sleep(100 * time.Millisecond)
+		vmm.clearWalk(vmm.baseDirectory)
 	}
 
 	// Clear SQLite volume mount records

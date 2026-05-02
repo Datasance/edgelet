@@ -149,14 +149,16 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-// startCoordinateUpdateScheduler starts the periodic coordinate update scheduler
+// startCoordinateUpdateScheduler starts the periodic coordinate update scheduler.
+// A GPSScanFrequency of 0 (or negative) means GPS scanning is explicitly disabled;
+// no scheduler is started and no GPS updates are performed.
 func (m *Manager) startCoordinateUpdateScheduler() {
-	// Update every 5 minutes (configurable)
-	updateInterval := 5 * time.Minute
-	if m.config.GPSScanFrequency > 0 {
-		updateInterval = time.Duration(m.config.GPSScanFrequency) * time.Second
+	if m.config.GPSScanFrequency <= 0 {
+		logging.LogInfo(moduleName, "GPS scanning disabled (GPSScanFrequency = 0)")
+		return
 	}
 
+	updateInterval := time.Duration(m.config.GPSScanFrequency) * time.Second
 	m.updateTicker = time.NewTicker(updateInterval)
 	go func() {
 		for {
