@@ -8,10 +8,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/supervisor"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	iofogcontainerd "github.com/eclipse-iofog/agent/pkg/containerd"
 )
 
 var (
@@ -21,9 +24,31 @@ var (
 )
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "iofog-agentd panic: %v\n", r)
+			os.Exit(1)
+		}
+	}()
+
+	// Version (no config required)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version", "--version", "-v":
+			printDaemonVersion()
+			os.Exit(0)
+		}
+	}
+
 	// Load configuration
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Validate configuration on startup
+	if err := config.ValidateConfig(config.GetInstance()); err != nil {
+		fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -46,8 +71,25 @@ func main() {
 	}
 	defer utils.RemovePIDFile()
 
+	cfg := config.GetInstance()
+
+	// Bootstrap embedded containerd in main before Supervisor (full build + iofog engine).
+	var prestarted *iofogcontainerd.Service
+	if buildmeta.IsFull() && cfg.ContainerEngine == constants.EngineIofog {
+		var err error
+		prestarted, err = startEmbeddedContainerdWithRetry()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
+			os.Exit(1)
+		}
+		logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor")
+	}
+
 	// Create and start supervisor
 	sup := supervisor.NewSupervisor()
+	if prestarted != nil {
+		sup.SetPrestartedContainerd(prestarted)
+	}
 	if err := sup.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
 		os.Exit(1)
@@ -59,6 +101,10 @@ func main() {
 		logging.LogError("Daemon", "Failed to start config watcher", err)
 	} else {
 		watcher.OnChange(func() {
+			if config.IsReloadSuppressedForDeprovision() {
+				logging.LogDebug("Daemon", "Skipping SIGHUP for deprovision config save")
+				return
+			}
 			logging.LogInfo("Daemon", "Configuration file changed, sending SIGHUP to trigger reload...")
 			// Send SIGHUP to self to trigger reload through the main signal handler
 			// This ensures serialization and debouncing
@@ -94,13 +140,31 @@ func main() {
 			continue
 		}
 
-		// Graceful shutdown
+		// Graceful shutdown with configurable grace period
 		logging.LogInfo("Daemon", "Shutting down...")
-		if err := sup.Stop(); err != nil {
-			logging.LogError("Daemon", "Error during shutdown", err)
-			os.Exit(1)
+		cfg := config.GetInstance()
+		gracePeriod := time.Duration(cfg.ShutdownGracePeriodSeconds) * time.Second
+		if gracePeriod < time.Second {
+			gracePeriod = 90 * time.Second
 		}
-		logging.LogInfo("Daemon", "Shutdown complete")
+
+		done := make(chan struct{})
+		var stopErr error
+		go func() {
+			defer close(done)
+			stopErr = sup.Stop()
+		}()
+
+		select {
+		case <-done:
+			if stopErr != nil {
+				logging.LogError("Daemon", "Error during shutdown", stopErr)
+				os.Exit(1)
+			}
+			logging.LogInfo("Daemon", "Shutdown complete")
+		case <-time.After(gracePeriod):
+			logging.LogWarn("Daemon", fmt.Sprintf("Shutdown grace period (%v) exceeded, exiting", gracePeriod))
+		}
 		os.Exit(0)
 	}
 }
@@ -145,17 +209,31 @@ func startLoggingService() {
 	logging.LogInfo("MAIN_DAEMON", "Configuration loaded.")
 }
 
+func printDaemonVersion() {
+	fmt.Printf("iofog-agentd %s (build: %s, commit: %s)\n", version, buildTime, gitCommit)
+	fmt.Printf("  build flavor: %s\n", buildmeta.Flavor)
+	fmt.Printf("  allowed containerEngine: %s\n", buildmeta.AllowedEnginesCSV())
+}
+
 // reloadAgentConfig handles the complete agent configuration reload process
 func reloadAgentConfig(sup *supervisor.Supervisor) {
 	logging.LogInfo("Daemon", "Reloading configuration...")
+	config.SetLastReloadSuccessful(false)
 
 	// Reload configuration from file
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		logging.LogError("Daemon", "Failed to reload configuration", err)
+		logging.LogWarn("Daemon", "Rejected configuration reload; keeping last-known-good runtime config")
 		return
 	}
 
 	cfg := config.GetInstance()
+	if err := config.ValidateConfig(cfg); err != nil {
+		logging.LogError("Daemon", "Configuration validation failed after reload", err)
+		logging.LogWarn("Daemon", "Rejected configuration reload; keeping last-known-good runtime config")
+		return
+	}
+	config.SetLastReloadSuccessful(true)
 
 	// Update logger
 	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)

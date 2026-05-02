@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/cli"
 )
 
@@ -16,7 +17,9 @@ var (
 func main() {
 	// Handle version command early
 	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("ioFog Agent %s (built %s, commit %s)\n", version, buildTime, gitCommit)
+		fmt.Printf("iofog-agent %s (built %s, commit %s)\n", version, buildTime, gitCommit)
+		fmt.Printf("  build flavor: %s\n", buildmeta.Flavor)
+		fmt.Printf("  allowed containerEngine: %s\n", buildmeta.AllowedEnginesCSV())
 		os.Exit(0)
 	}
 
