@@ -8,29 +8,50 @@ import (
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
-	"github.com/eclipse-iofog/agent/pkg/docker"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 )
 
 const (
 	ContainerManagerModuleName = "Container Manager"
 )
 
-// ContainerManager manages Docker container operations
+// ContainerManager manages container operations via a ContainerEngine.
 type ContainerManager struct {
-	docker              *docker.Client
+	engine              engine.ContainerEngine
 	microserviceManager MicroserviceManagerInterface
 	logger              *logging.ModuleLogger
 }
 
 // NewContainerManager creates a new ContainerManager
-func NewContainerManager(dockerClient *docker.Client, microserviceManager MicroserviceManagerInterface) *ContainerManager {
+func NewContainerManager(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) *ContainerManager {
 	return &ContainerManager{
-		docker:              dockerClient,
+		engine:              eng,
 		microserviceManager: microserviceManager,
 		logger:              logging.NewModuleLogger(ContainerManagerModuleName),
 	}
+}
+
+// GetContainerForMicroservice returns the container for a microservice, using DB-first
+// lookup when available (iofog engine) with label-based fallback.
+func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string) (*engine.Container, error) {
+	if cs, err := store.GetInstance().GetContainerState(microserviceUUID); err == nil && cs != nil && cs.WorkloadID != "" {
+		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
+			return c, nil
+		}
+	}
+	c, err := cm.engine.GetContainer(microserviceUUID)
+	if err != nil {
+		return nil, err
+	}
+	if c != nil {
+		if sandboxID, _ := cm.engine.GetContainerSandboxID(c.ID); sandboxID != "" {
+			_ = store.GetInstance().SaveContainerState(microserviceUUID, c.ID, sandboxID)
+		}
+	}
+	return c, nil
 }
 
 // AddContainer creates and starts a container for a microservice.
@@ -42,7 +63,7 @@ func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
 	ms.SetIsUpdating(true)
 	defer ms.SetIsUpdating(false)
 
-	container, err := cm.docker.GetContainer(ms.MicroserviceUUID)
+	container, err := cm.GetContainerForMicroservice(ms.MicroserviceUUID)
 	if err != nil {
 		return err
 	}
@@ -73,22 +94,20 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	if ms.Platform != nil {
 		platform = *ms.Platform
 	}
+	_ = platform
 
 	if registry.URL != "from_cache" {
-		// Pull image with progress callback
-		progressCallback := func(percentage float32) {
-			// Update status reporter with percentage
-			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
-			})
+		opts := &engine.PullImageOptions{
+			ProgressCallback: func(pct float32) {
+				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+					s.SetMicroservicesStatePercentage(ms.MicroserviceUUID, pct)
+				})
+			},
 		}
-
-		if err := cm.docker.PullImage(ms.ImageName, ms.MicroserviceUUID, platform, registry, progressCallback); err != nil {
+		if err := cm.engine.PullImage(ms.ImageName, registry, opts); err != nil {
 			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", ms.ImageName, err)
-			// Continue with local cache if pull fails
 		} else {
 			cm.logger.Infof("Successfully pulled image \"%s\" while old container was running", ms.ImageName)
-			// Set percentage to 100% via status reporter
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
 			})
@@ -96,7 +115,7 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	}
 
 	// Verify image exists (either pulled or in cache)
-	exists, err := cm.docker.FindLocalImage(ms.ImageName)
+	exists, err := cm.engine.FindLocalImage(ms.ImageName)
 	if err != nil {
 		return err
 	}
@@ -107,7 +126,8 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 
 	// Step 2: Now stop and remove old container (releases ports)
 	// Downtime starts here, but it's brief compared to pull time
-	if err := cm.RemoveContainerByMicroserviceUUID(ms.MicroserviceUUID, withCleanup); err != nil {
+	// removeImage=withCleanup: matches Java ContainerManager behavior (image deleted on clean update)
+	if err := cm.RemoveContainerByMicroserviceUUID(ms.MicroserviceUUID, withCleanup, withCleanup); err != nil {
 		cm.logger.Warnf("Error removing old container: %v", err)
 		// Continue anyway
 	}
@@ -122,27 +142,66 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	return nil
 }
 
-// RemoveContainerByMicroserviceUUID removes a container by microservice UUID
-// Matching Java: ContainerManager.removeContainerByMicroserviceUuid()
-func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID string, withCleanup bool) error {
+// RemoveContainerByMicroserviceUUID removes a container by microservice UUID.
+// withCleanup controls Docker named-volume removal (passed to engine.RemoveContainer).
+// removeImage controls whether the container image is also removed after container deletion —
+// set true for normal lifecycle deletions (matching Java ContainerManager behavior),
+// false for the deprovision path (matching Java ProcessManager private method behavior).
+func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID string, withCleanup bool, removeImage bool) error {
 	cm.logger.Debugf("Start remove container by microserviceuuid: %s", microserviceUUID)
 
-	container, err := cm.docker.GetContainer(microserviceUUID)
+	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
 	}
+	// Fallback for watchdog/unknown-container flows where the incoming identifier
+	// can be a concrete container ID (or other non-iofog name) that doesn't resolve
+	// through microservice UUID lookup.
+	if container == nil {
+		container, err = cm.engine.GetContainerByID(microserviceUUID)
+		if err != nil {
+			return err
+		}
+	}
 
-	if container != nil {
-		// Stop container first
-		if err := cm.docker.StopContainer(container.ID); err != nil {
+	if container == nil {
+		// Container already gone (e.g. crashed) — still report DELETED so controller receives final state
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
+		})
+		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
+	} else {
+		imageRef := container.Image
+
+		// Set DELETING status before removal (matches Java ContainerManager.setMicroserviceStatus(DELETING))
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleting)
+		})
+
+		if err := cm.engine.StopContainer(container.ID); err != nil {
 			cm.logger.Warnf("Error stopping container: %v", err)
 		}
-
-		// Remove container
-		if err := cm.docker.RemoveContainer(container.ID, withCleanup); err != nil {
+		if err := cm.engine.RemoveContainer(container.ID, withCleanup); err != nil {
 			cm.logger.Errorf("Error removing container: %v", err)
 			return err
 		}
+
+		// Set DELETED status after successful removal so controller receives final state
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
+		})
+
+		// Remove image when explicitly requested (matching Java ContainerManager.removeContainer logic).
+		// Errors are logged as warnings only — image may still be in use by another container
+		// (equivalent to Java catching ConflictException).
+		if removeImage && imageRef != "" {
+			if err := cm.engine.RemoveImage(imageRef); err != nil {
+				cm.logger.Warnf("Image %s cannot be removed (may be in use): %v", imageRef, err)
+			}
+		}
+
+		// Clear container state from DB (iofog engine uses this for lookup)
+		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
 	}
 
 	// Clean up per-microservice volume mounts (matching Java: VolumeMountManager.getInstance().cleanupMicroserviceVolumes())
@@ -152,17 +211,62 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 	return nil
 }
 
+// RemoveContainerByID removes a container by concrete engine-assigned container ID.
+// This is primarily used by watchdog unknown-container cleanup where there is no
+// guaranteed iofog microservice UUID mapping.
+func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup bool, removeImage bool) error {
+	cm.logger.Debugf("Start remove container by containerID: %s", containerID)
+
+	container, err := cm.engine.GetContainerByID(containerID)
+	if err != nil {
+		return err
+	}
+	if container == nil {
+		cm.logger.Infof("Container already removed by containerID: %s", containerID)
+		return nil
+	}
+
+	imageRef := container.Image
+	msUUID := ""
+	if container.Labels["iofog-ms"] != "" || container.Labels["iofog-uuid"] != "" || container.Labels["iofog.uuid"] != "" {
+		msUUID = cm.engine.GetContainerMicroserviceUUID(*container)
+	}
+
+	if err := cm.engine.StopContainer(container.ID); err != nil {
+		cm.logger.Warnf("Error stopping container %s: %v", container.ID, err)
+	}
+	if err := cm.engine.RemoveContainer(container.ID, withCleanup); err != nil {
+		cm.logger.Errorf("Error removing container %s: %v", container.ID, err)
+		return err
+	}
+
+	if removeImage && imageRef != "" {
+		if err := cm.engine.RemoveImage(imageRef); err != nil {
+			cm.logger.Warnf("Image %s cannot be removed (may be in use): %v", imageRef, err)
+		}
+	}
+
+	// Best-effort cleanup for iofog-managed containers.
+	if msUUID != "" {
+		_ = store.GetInstance().DeleteContainerState(msUUID)
+		volumemount.GetInstance().CleanupMicroserviceVolumes(msUUID)
+	}
+
+	cm.logger.Infof("Finished remove container by containerID: %s", containerID)
+	return nil
+}
+
 // StopContainerByMicroserviceUUID stops a container by microservice UUID
 func (cm *ContainerManager) StopContainerByMicroserviceUUID(microserviceUUID string) error {
 	cm.logger.Debugf("Stop container by microserviceuuid: %s", microserviceUUID)
 
-	container, err := cm.docker.GetContainer(microserviceUUID)
+	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
 	}
 
 	if container != nil {
-		return cm.docker.StopContainer(container.ID)
+		return cm.engine.StopContainer(container.ID)
 	}
 
 	return nil
@@ -185,32 +289,25 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
 	}
 
-	platform := "linux/amd64"
-	if ms.Platform != nil {
-		platform = *ms.Platform
-	}
-
 	if registry.URL != "from_cache" && pullImage {
-		progressCallback := func(percentage float32) {
-			// Update status reporter with percentage
-			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
-				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, percentage)
-			})
+		opts := &engine.PullImageOptions{
+			ProgressCallback: func(pct float32) {
+				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+					s.SetMicroservicesStatePercentage(ms.MicroserviceUUID, pct)
+				})
+			},
 		}
-
-		if err := cm.docker.PullImage(ms.ImageName, ms.MicroserviceUUID, platform, registry, progressCallback); err != nil {
+		if err := cm.engine.PullImage(ms.ImageName, registry, opts); err != nil {
 			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", ms.ImageName, err)
-			// Try again without pulling
 			return cm.createContainerWithPull(ms, false)
 		}
-		// Set percentage to 100% via status reporter
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
 		})
 	}
 
 	if !pullImage {
-		exists, err := cm.docker.FindLocalImage(ms.ImageName)
+		exists, err := cm.engine.FindLocalImage(ms.ImageName)
 		if err != nil {
 			return err
 		}
@@ -226,35 +323,47 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	})
 
 	cfg := config.GetInstance()
-	// Get hostname from network interface manager
+	// Get host IP from network interface manager (matches Java: getCurrentIpAddress).
+	// Used for iofog and service.local extra hosts so containers can reach the host/agent.
 	networkManager := network.GetInstance()
-	hostName := networkManager.GetHostName()
-	if hostName == "" {
-		// Fallback to localhost if hostname is not available
-		hostName = "localhost"
-		cm.logger.Infof("hostname updated to \"%s\"", hostName)
+	hostIP := networkManager.GetCurrentIPAddress()
+	if hostIP == "" {
+		// Retry like Java ContainerManager.retryHostName
+		for tries := 0; tries < 5 && hostIP == ""; tries++ {
+			time.Sleep(500 * time.Millisecond)
+			hostIP = networkManager.GetCurrentIPAddress()
+		}
+		if hostIP == "" {
+			hostIP = "127.0.0.1"
+			cm.logger.Infof("host IP unavailable, using fallback %q", hostIP)
+		}
 	}
 	_ = cfg
 
-	containerID, err := cm.docker.CreateContainer(ms, hostName)
+	containerID, err := cm.engine.CreateContainer(ms, hostIP)
 	if err != nil {
 		return err
 	}
 
 	ms.ContainerID = containerID
 
-	// Get container IP address
-	ip, err := cm.docker.GetContainerIPAddress(containerID)
+	if sandboxID, _ := cm.engine.GetContainerSandboxID(containerID); sandboxID != "" {
+		_ = store.GetInstance().SaveContainerState(ms.MicroserviceUUID, containerID, sandboxID)
+	}
+
+	ip, err := cm.engine.GetContainerIPAddress(containerID)
 	if err != nil {
 		cm.logger.Warnf("Can't get IP address for container: %v", err)
 		ip = "0.0.0.0"
 	}
 	ms.ContainerIPAddress = &ip
 
-	// Start container
-	if err := cm.docker.StartContainer(containerID); err != nil {
+	if err := cm.engine.StartContainer(containerID); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
+
+	// Clear rebuild flag after successful creation (matches Java ContainerManager.setRebuild(false))
+	ms.Rebuild = false
 
 	// Set status to RUNNING via status reporter
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {

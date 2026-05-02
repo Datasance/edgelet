@@ -50,14 +50,42 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 		return nil, nil
 	}
 
-	container := containers[0]
+	cont := containers[0]
 	return &Container{
-		ID:     container.ID,
-		Names:  container.Names,
-		Image:  container.Image,
-		Status: container.Status,
-		State:  container.State,
-		Labels: container.Labels,
+		ID:     cont.ID,
+		Names:  cont.Names,
+		Image:  cont.Image,
+		Status: cont.Status,
+		State:  cont.State,
+		Labels: cont.Labels,
+	}, nil
+}
+
+// GetContainerByID retrieves a container by its Docker-assigned ID.
+func (c *Client) GetContainerByID(containerID string) (*Container, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return nil, fmt.Errorf("Docker client not initialized")
+	}
+	ctx := c.GetContext()
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("id", containerID)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(containers) == 0 {
+		return nil, nil
+	}
+	cont := containers[0]
+	return &Container{
+		ID:     cont.ID,
+		Names:  cont.Names,
+		Image:  cont.Image,
+		Status: cont.Status,
+		State:  cont.State,
+		Labels: cont.Labels,
 	}, nil
 }
 
@@ -596,6 +624,22 @@ func portMappingsEqual(a, b *models.PortMapping) bool {
 	return a.Outside == b.Outside && a.Inside == b.Inside && a.UDP == b.UDP
 }
 
+// buildExtraHostsWithIoFog returns extraHosts with "iofog:hostIP" prepended for non-host-network
+// containers, unless the user already has an iofog entry. Matches Java DockerUtil.createContainer.
+func buildExtraHostsWithIoFog(extraHosts []string, hostIP string) []string {
+	hasIoFog := false
+	for _, h := range extraHosts {
+		if strings.Contains(strings.TrimSpace(h), "iofog") {
+			hasIoFog = true
+			break
+		}
+	}
+	if hostIP != "" && !hasIoFog {
+		return append([]string{"iofog:" + hostIP}, extraHosts...)
+	}
+	return extraHosts
+}
+
 // CreateContainer creates a container from microservice configuration
 func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (string, error) {
 	cli := c.GetClient()
@@ -648,11 +692,6 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		Image: ms.ImageName,
 		Env:   envVars,
 		Cmd:   ms.Args,
-	}
-
-	// Set hostname
-	if hostName != "" {
-		config.Hostname = hostName
 	}
 
 	// Set user
@@ -733,11 +772,9 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		hostConfig.CapDrop = ms.CapDrop
 	}
 
-	// Build extra hosts with service.local addition for non-router microservices
-	extraHosts := make([]string, 0)
-	if len(ms.ExtraHosts) > 0 {
-		extraHosts = append(extraHosts, ms.ExtraHosts...)
-	}
+	// Build extra hosts with iofog and service.local (matches Java DockerUtil.createContainer).
+	// iofog:hostIP lets non-host-network containers reach the host/agent local API.
+	extraHosts := buildExtraHostsWithIoFog(ms.ExtraHosts, hostName)
 
 	// Add service.local host for non-router microservices (matches Java logic)
 	if !ms.HostNetworkMode && !ms.IsRouter {

@@ -120,23 +120,62 @@ func (c *Client) RemoveImage(imageID string) error {
 	return err
 }
 
-// readPullProgress reads pull progress from the response stream
+// pullEvent matches Docker's ImagePull JSON stream format (one JSON object per line).
+type pullEvent struct {
+	ID             string `json:"id"`
+	Status         string `json:"status"`
+	ProgressDetail struct {
+		Current int    `json:"current"`
+		Total   int    `json:"total"`
+		Error   string `json:"error,omitempty"`
+	} `json:"progressDetail"`
+}
+
+// readPullProgress parses Docker's newline-delimited JSON pull stream and reports
+// per-layer progress. Uses the same formula as Java: sum(layer_pcts)/(count-1).
 func readPullProgress(reader io.Reader, callback func(float32)) error {
-	// This is a simplified version - in production, you'd parse the JSON stream
-	// from Docker and extract progress information
-	// For now, we'll just drain the stream
-	buf := make([]byte, 1024)
+	dec := json.NewDecoder(reader)
+	layerPct := make(map[string]int)
 	for {
-		_, err := reader.Read(buf)
-		if err == io.EOF {
-			callback(100.0)
-			break
-		}
-		if err != nil {
+		var ev pullEvent
+		if err := dec.Decode(&ev); err != nil {
+			if err == io.EOF {
+				callback(100.0)
+				break
+			}
 			return err
 		}
-		// In a real implementation, parse JSON and extract progress
-		// For now, we'll just call the callback periodically
+		if ev.ID == "" {
+			continue
+		}
+		if ev.ProgressDetail.Total > 0 {
+			pct := ev.ProgressDetail.Current * 100 / ev.ProgressDetail.Total
+			if pct > 100 {
+				pct = 100
+			}
+			if prev, ok := layerPct[ev.ID]; ok && pct < prev {
+				pct = prev
+			}
+			layerPct[ev.ID] = pct
+		} else if ev.Status == "Pull complete" || ev.Status == "Already exists" || ev.Status == "Download complete" {
+			layerPct[ev.ID] = 100
+		}
+		if len(layerPct) == 0 {
+			continue
+		}
+		sum := 0
+		for _, p := range layerPct {
+			sum += p
+		}
+		div := len(layerPct)
+		if div > 1 {
+			div--
+		}
+		avg := float32(sum) / float32(div)
+		if avg > 100 {
+			avg = 100
+		}
+		callback(avg)
 	}
 	return nil
 }

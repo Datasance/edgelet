@@ -102,6 +102,19 @@ func (p *ProcessManagerStatus) SetMicroservicesStatusErrorMessage(microserviceUU
 	return p
 }
 
+// SetMicroservicesHealthStatus sets the health status for a microservice (e.g. "healthy", "unhealthy").
+func (p *ProcessManagerStatus) SetMicroservicesHealthStatus(microserviceUUID string, healthStatus *string) *ProcessManagerStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	status := p.MicroservicesStatus[microserviceUUID]
+	if status == nil {
+		status = NewMicroserviceStatus()
+		p.MicroservicesStatus[microserviceUUID] = status
+	}
+	status.HealthStatus = healthStatus
+	return p
+}
+
 // RemoveNotRunningMicroserviceStatus removes microservices that are not running
 func (p *ProcessManagerStatus) RemoveNotRunningMicroserviceStatus() {
 	p.mu.Lock()

@@ -9,28 +9,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/docker"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 )
 
 const (
 	ProcessManagerModuleName = "Process Manager"
 )
 
-// ProcessManager manages Docker container lifecycle
+// ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
-	docker              *docker.Client
+	engine              engine.ContainerEngine
 	microserviceManager MicroserviceManagerInterface
 	containerManager    *ContainerManager
 	taskQueue           *TaskQueue
 	updateChan          chan struct{}
 	ctx                 context.Context
 	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
 	logger              *logging.ModuleLogger
 }
 
@@ -50,31 +50,18 @@ func GetInstance() *ProcessManager {
 	return instance
 }
 
-// Start starts the ProcessManager
-func (pm *ProcessManager) Start(microserviceManager MicroserviceManagerInterface) error {
+// Start starts the ProcessManager with a given container engine.
+func (pm *ProcessManager) Start(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) error {
 	pm.logger.Info("Starting Process Manager")
 
-	// Initialize Docker client
-	cfg := config.GetInstance()
-	dockerClient := docker.GetInstance()
-	if err := dockerClient.Init(cfg.DockerURL, cfg.DockerAPIVersion); err != nil {
-		return err
-	}
-	pm.docker = dockerClient
-
-	// Set microservice manager
+	pm.engine = eng
 	pm.microserviceManager = microserviceManager
+	pm.containerManager = NewContainerManager(eng, microserviceManager)
 
-	// Initialize container manager
-	pm.containerManager = NewContainerManager(pm.docker, microserviceManager)
-
-	// Create context
 	pm.ctx, pm.cancel = context.WithCancel(context.Background())
-
-	// Create task queue
 	pm.taskQueue = NewTaskQueue(100)
 
-	// Start monitoring goroutines
+	pm.wg.Add(2)
 	go pm.containersMonitor()
 	go pm.checkTasks()
 
@@ -94,6 +81,7 @@ func (pm *ProcessManager) Stop() error {
 		pm.taskQueue.Close()
 	}
 
+	pm.wg.Wait()
 	pm.logger.Info("Process Manager stopped")
 	return nil
 }
@@ -104,7 +92,7 @@ func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup
 	pm.logger.Info("Stop running Microservices")
 
 	// Get all containers regardless of state for complete cleanup
-	allContainers, err := pm.docker.GetAllContainers()
+	allContainers, err := pm.engine.GetAllContainers()
 	if err != nil {
 		pm.logger.Errorf("Error getting all containers: %v", err)
 		return err
@@ -113,24 +101,23 @@ func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup
 	cfg := config.GetInstance()
 	runningMicroserviceUuids := make([]string, 0)
 
-	// Filter containers by iofog-uuid label
 	for _, container := range allContainers {
-		msUUID := pm.docker.GetContainerMicroserviceUUID(container)
+		msUUID := pm.engine.GetContainerMicroserviceUUID(container)
 		if msUUID == "" {
 			continue
 		}
 
-		// Check if container matches iofogUuid or watchdog is enabled
 		containerIOFogUUID := container.Labels["iofog-uuid"]
 		if (containerIOFogUUID != "" && containerIOFogUUID == iofogUUID) || cfg.WatchdogEnabled {
 			runningMicroserviceUuids = append(runningMicroserviceUuids, msUUID)
 		}
 	}
 
-	// Stop (and optionally remove) each matching container
+	// Stop (and optionally remove) each matching container.
+	// removeImage=false: deprovision path matches Java ProcessManager private method (no image removal).
 	for _, msUUID := range runningMicroserviceUuids {
 		if withCleanup {
-			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(msUUID, true); err != nil {
+			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(msUUID, true, false); err != nil {
 				pm.logger.Warnf("Error removing microservice %s: %v", msUUID, err)
 			}
 		} else {
@@ -194,6 +181,12 @@ func (pm *ProcessManager) notifyMonitorThread() {
 // containersMonitor monitors containers and handles lifecycle
 // Matches Java: containersMonitor Runnable - uses wait/notify pattern
 func (pm *ProcessManager) containersMonitor() {
+	defer pm.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(ProcessManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	cfg := config.GetInstance()
 	interval := time.Duration(cfg.MonitorContainersStatusFreqSeconds) * time.Second
 	ticker := time.NewTicker(interval)
@@ -224,6 +217,12 @@ func (pm *ProcessManager) containersMonitor() {
 // checkTasks is a long-running goroutine that drains the task queue.
 // It blocks on each Get() call and exits cleanly when the context is canceled.
 func (pm *ProcessManager) checkTasks() {
+	defer pm.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(ProcessManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	for {
 		task, ok := pm.taskQueue.Get(pm.ctx)
 		if !ok {
@@ -238,8 +237,13 @@ func (pm *ProcessManager) checkTasks() {
 				pm.taskQueue.Add(task)
 			} else {
 				pm.logger.Errorf("Task %s for microservice %s failed after %d retries, giving up", task.Action, task.MicroserviceUUID, task.Retries)
-				// Release the in-flight lock so the reconciliation loop can retry
-				// on the next monitoring cycle.
+				// Set FAILED status and error message so controller receives it (matches Java ProcessManager.retryTask)
+				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+					s.SetMicroservicesState(task.MicroserviceUUID, models.MicroserviceStateFailed)
+					errMsg := fmt.Sprintf("Container %s %s operation failed after 5 attempts: %v", task.MicroserviceUUID, task.Action, err)
+					s.SetMicroservicesStatusErrorMessage(task.MicroserviceUUID, errMsg)
+				})
+				// Release the in-flight lock so the reconciliation loop can run
 				if ms := pm.microserviceManager.FindLatestMicroserviceByUUID(task.MicroserviceUUID); ms != nil {
 					ms.SetIsUpdating(false)
 				}
@@ -264,9 +268,10 @@ func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 			return pm.containerManager.UpdateContainer(ms, false)
 		}
 	case TaskActionRemove:
-		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, false)
+		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, false, false)
 	case TaskActionRemoveWithCleanup:
-		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, true)
+		// removeImage=true: matches Java ContainerManager behavior for clean removal
+		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, true, true)
 	case TaskActionStop:
 		return pm.containerManager.StopContainerByMicroserviceUUID(task.MicroserviceUUID)
 	case TaskActionCreateExec:
@@ -316,7 +321,7 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			continue
 		}
 
-		container, err := pm.docker.GetContainer(ms.MicroserviceUUID)
+		container, err := pm.containerManager.GetContainerForMicroservice(ms.MicroserviceUUID)
 		if err != nil {
 			pm.logger.Warnf("Error getting container for microservice %s: %v", ms.MicroserviceUUID, err)
 			continue
@@ -336,8 +341,19 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 
 		// Desired state: running.
 		if container == nil {
-			// Container is missing — covers both first-time creation and manual deletion.
-			// Always schedule a re-create; clear any stuck flag so it doesn't block recovery.
+			if ms.IsStuckInRestart && !ms.Rebuild {
+				pm.logger.Debugf("Skipping stuck microservice %s (rebuild not requested)", ms.MicroserviceUUID)
+				continue
+			}
+			// If status is FAILED and Rebuild not requested, skip — do not re-add (matches Java behavior)
+			if pmStatus := statusreporter.GetInstance().GetProcessManagerStatus(); pmStatus != nil {
+				if st := pmStatus.GetMicroserviceStatus(ms.MicroserviceUUID); st != nil &&
+					st.Status == models.MicroserviceStateFailed && !ms.Rebuild {
+					pm.logger.Debugf("Skipping failed microservice %s (rebuild not requested)", ms.MicroserviceUUID)
+					continue
+				}
+			}
+			// Container is missing — schedule creation. Clear stuck flag when Rebuild=true.
 			pm.logger.Infof("Container missing for microservice %s (%s), scheduling creation", ms.MicroserviceUUID, ms.ImageName)
 			ms.IsStuckInRestart = false
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
@@ -353,27 +369,44 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			continue
 		}
 
-		status, err := pm.docker.GetMicroserviceStatus(container.ID, ms.MicroserviceUUID)
+		status, err := pm.engine.GetContainerStatus(container.ID, ms.MicroserviceUUID)
 		if err != nil {
 			pm.logger.Warnf("Error getting microservice status for %s: %v", ms.MicroserviceUUID, err)
 			continue
 		}
 
 		// Detect containers stuck in exit/creation loops and mark them accordingly.
+		// Prefer existing error message from engine (e.g. Docker) when available; use static fallback otherwise (matching Java DockerUtil.getMicroserviceStatus).
 		checker := GetRestartStuckChecker()
 		if status.Status == models.MicroserviceStateExiting {
 			if checker.IsStuck(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
 				ms.IsStuckInRestart = true
+				stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, "Container repeatedly exiting")
+				status.ErrorMessage = &stuckMsg
 			}
 		} else if status.Status == models.MicroserviceStateCreated {
 			if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
 				ms.IsStuckInRestart = true
+				stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, "Container repeatedly failing to start")
+				status.ErrorMessage = &stuckMsg
+			}
+		}
+
+		// Merge per-container CPU/memory stats for running containers (best-effort).
+		if status.Status == models.MicroserviceStateRunning {
+			if stats, err := pm.engine.GetContainerStats(container.ID); err == nil {
+				status.CPUUsage = stats.CPUUsage
+				status.MemoryUsage = stats.MemoryUsage
 			}
 		}
 
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
+			existing := pmStatus.MicroservicesStatus[ms.MicroserviceUUID]
+			if existing != nil && existing.HealthStatus != nil && status.HealthStatus == nil {
+				status.HealthStatus = existing.HealthStatus
+			}
 			pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
 		})
 
@@ -408,21 +441,19 @@ func (pm *ProcessManager) deleteMicroservice(ms *models.Microservice) {
 }
 
 // updateMicroservice checks if a container needs updating
-func (pm *ProcessManager) updateMicroservice(container *docker.Container, ms *models.Microservice) {
+func (pm *ProcessManager) updateMicroservice(container *engine.Container, ms *models.Microservice) {
 	pm.logger.Debug("Start update microservice")
 
 	ms.ContainerID = container.ID
 
-	// Get container IP address
-	ip, err := pm.docker.GetContainerIPAddress(container.ID)
+	ip, err := pm.engine.GetContainerIPAddress(container.ID)
 	if err != nil {
 		pm.logger.Warnf("Can't get IP address for microservice %s: %v", ms.MicroserviceUUID, err)
 		ip = "0.0.0.0"
 	}
 	ms.ContainerIPAddress = &ip
 
-	// Check if container should be updated
-	status, err := pm.docker.GetMicroserviceStatus(container.ID, ms.MicroserviceUUID)
+	status, err := pm.engine.GetContainerStatus(container.ID, ms.MicroserviceUUID)
 	if err != nil {
 		pm.logger.Warnf("Error getting microservice status: %v", err)
 		return
@@ -430,11 +461,9 @@ func (pm *ProcessManager) updateMicroservice(container *docker.Container, ms *mo
 
 	shouldUpdate := pm.shouldContainerBeUpdated(ms, container, status)
 	if shouldUpdate {
-		// Reset stuck flag on update
 		if ms.IsStuckInRestart {
 			ms.IsStuckInRestart = false
 		}
-		// Set status to UPDATING
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
 		})
@@ -445,38 +474,46 @@ func (pm *ProcessManager) updateMicroservice(container *docker.Container, ms *mo
 }
 
 // shouldContainerBeUpdated determines if a running container needs to be rebuilt.
-//
-// A container should NOT be updated when it is in a transitional state managed by
-// another goroutine (QUEUED, UPDATING) — interfering would cause duplicate operations.
-// Containers stuck in EXITING/CREATED loops are handled upstream (stuck-in-restart logic)
-// and should not be triggered here either.
-func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, container *docker.Container, status *models.MicroserviceStatus) bool {
+func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, container *engine.Container, status *models.MicroserviceStatus) bool {
 	pm.logger.Debug("Start should Container Be Updated")
 
-	// Never trigger an update if there is already an in-flight ADD or UPDATE task.
 	if ms.GetIsUpdating() {
 		pm.logger.Debugf("Skipping update check for %s — task already in flight", ms.MicroserviceUUID)
 		return false
 	}
 
-	// Ignore transitional states that will resolve on their own.
+	if ms.Rebuild {
+		pm.logger.Debugf("Rebuild requested for %s — bypassing state checks", ms.MicroserviceUUID)
+		return true
+	}
+
 	switch status.Status {
 	case models.MicroserviceStateQueued,
 		models.MicroserviceStateUpdating,
-		models.MicroserviceStateStuckInRestart:
+		models.MicroserviceStateStuckInRestart,
+		models.MicroserviceStateCreated: // Container still starting — don't trigger update
 		return false
 	default:
-		// All other states may require an update; continue below.
 	}
 
 	isNotRunning := status.Status != models.MicroserviceStateRunning
-	areNotEqual := !pm.docker.AreMicroserviceAndContainerEqual(container.ID, ms)
+	areNotEqual := !pm.engine.AreMicroserviceAndContainerEqual(container.ID, ms)
 	isRebuild := ms.Rebuild
 
 	result := isNotRunning || areNotEqual || isRebuild
 	pm.logger.Debugf("Finished should Container Be Updated: notRunning=%v configDrifted=%v rebuild=%v → %v",
 		isNotRunning, areNotEqual, isRebuild, result)
 	return result
+}
+
+// stuckInRestartErrorMessage returns the existing error message from the status reporter
+// when available (e.g. from Docker/engine), otherwise the static fallback (matching Java DockerUtil.getMicroserviceStatus).
+func stuckInRestartErrorMessage(microserviceUUID, fallback string) string {
+	existing := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus(microserviceUUID)
+	if existing != nil && existing.ErrorMessage != nil && *existing.ErrorMessage != "" {
+		return *existing.ErrorMessage
+	}
+	return fallback
 }
 
 // deleteRemainingMicroservices deletes containers that are no longer in the latest microservices list
@@ -497,21 +534,19 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		currentUUIDs[ms.MicroserviceUUID] = true
 	}
 
-	// Get all containers regardless of state (exited, paused, created, running)
-	allContainers, err := pm.docker.GetAllContainers()
+	allContainers, err := pm.engine.GetAllContainers()
 	if err != nil {
 		pm.logger.Errorf("Error getting all containers: %v", err)
 		return
 	}
 
-	// Find containers to delete
 	oldAgentUUIDs := make([]string, 0)
-	unknownUUIDs := make([]string, 0)
+	unknownContainerIDs := make([]string, 0)
 
 	cfg := config.GetInstance()
 
 	for _, container := range allContainers {
-		msUUID := pm.docker.GetContainerMicroserviceUUID(container)
+		msUUID := pm.engine.GetContainerMicroserviceUUID(container)
 		if msUUID == "" {
 			continue
 		}
@@ -529,7 +564,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		// Unknown: not in current or latest → only remove if watchdog enabled
 		if !isCurrent && !isLatest && !isSystem {
 			if cfg.WatchdogEnabled {
-				unknownUUIDs = append(unknownUUIDs, msUUID)
+				unknownContainerIDs = append(unknownContainerIDs, container.ID)
 			}
 		}
 	}
@@ -537,16 +572,17 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	// Delete old agent containers
 	for _, uuid := range oldAgentUUIDs {
 		pm.logger.Infof("Deleting old agent microservice: %s", uuid)
-		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false); err != nil {
+		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false, false); err != nil {
 			pm.logger.Errorf("Error deleting old agent microservice %s: %v", uuid, err)
 		}
 	}
 
-	// Delete unknown containers
-	for _, uuid := range unknownUUIDs {
-		pm.logger.Infof("Deleting unknown microservice: %s", uuid)
-		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false); err != nil {
-			pm.logger.Errorf("Error deleting unknown microservice %s: %v", uuid, err)
+	// Delete unknown containers by concrete container ID so watchdog can remove
+	// non-iofog containers that don't resolve via microservice UUID lookup.
+	for _, containerID := range unknownContainerIDs {
+		pm.logger.Infof("Deleting unknown container: %s", containerID)
+		if err := pm.containerManager.RemoveContainerByID(containerID, false, false); err != nil {
+			pm.logger.Errorf("Error deleting unknown container %s: %v", containerID, err)
 		}
 	}
 
@@ -558,7 +594,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 func (pm *ProcessManager) updateRunningMicroservicesCount() {
 	pm.logger.Debug("Update running microservice count")
 
-	containers, err := pm.docker.GetRunningContainers()
+	containers, err := pm.engine.GetRunningContainers()
 	if err != nil {
 		pm.logger.Errorf("Error getting running containers: %v", err)
 		return
@@ -566,7 +602,7 @@ func (pm *ProcessManager) updateRunningMicroservicesCount() {
 
 	count := 0
 	for _, c := range containers {
-		name := pm.docker.GetContainerName(c)
+		name := pm.engine.GetContainerName(c)
 		if strings.HasPrefix(name, utils.IOFogDockerContainerNamePrefix) {
 			count++
 		}
@@ -605,12 +641,14 @@ type ExecSessionCallbackInterface interface {
 	IsRunning() bool
 }
 
-// CreateExecSession creates an exec session for a microservice
+// CreateExecSession creates and starts an exec session for a microservice.
+// It calls engine.CreateExecSession to register the exec spec, then
+// engine.StartExecSession to attach the callback's I/O pipes and launch the process.
+// This matches the Java agent's two-phase: createExecSession + startExecSession.
 func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []string, callback ExecSessionCallbackInterface) (string, error) {
 	pm.logger.Infof("Creating exec session for microservice: %s", microserviceUUID)
 
-	// Get container for microservice
-	container, err := pm.docker.GetContainer(microserviceUUID)
+	container, err := pm.containerManager.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get container: %w", err)
 	}
@@ -618,28 +656,48 @@ func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []s
 		return "", fmt.Errorf("container not found for microservice: %s", microserviceUUID)
 	}
 
-	// Create exec session
-	execID, err := pm.docker.CreateExecSession(container.ID, command)
+	execID, err := pm.engine.CreateExecSession(container.ID, command)
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec session: %w", err)
 	}
 
-	// Start exec session with callback streams
+	// Attach the callback's I/O pipes and start the exec process.
+	// StartExecSession blocks until the process exits; run it in a goroutine so the
+	// caller can proceed to connect the WebSocket while the process is running.
 	go func() {
-		err := pm.docker.StartExecSession(execID, callback.GetStdinReader(), callback.GetStdoutWriter(), callback.GetStderrWriter())
-		if err != nil {
-			pm.logger.Errorf("Error in exec session: %v", err)
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(ProcessManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
+			}
+		}()
+		if err := pm.engine.StartExecSession(
+			execID,
+			callback.GetStdinReader(),
+			callback.GetStdoutWriter(),
+			callback.GetStderrWriter(),
+		); err != nil {
+			pm.logger.Errorf("Exec session %s I/O error: %v", execID, err)
 			callback.OnError(err)
 		} else {
 			callback.OnComplete()
 		}
 	}()
 
-	pm.logger.Infof("Exec session created: %s for microservice: %s", execID, microserviceUUID)
+	pm.logger.Infof("Exec session started: %s for microservice: %s", execID, microserviceUUID)
 	return execID, nil
 }
 
-// GetExecSessionStatus gets the status of an exec session
-func (pm *ProcessManager) GetExecSessionStatus(execID string) (*types.ContainerExecInspect, error) {
-	return pm.docker.GetExecSessionStatus(execID)
+// GetExecSessionStatus reports whether the exec process identified by execID is running.
+func (pm *ProcessManager) GetExecSessionStatus(execID string) (interface{}, error) {
+	running, err := pm.engine.GetExecSessionStatus(execID)
+	if err != nil {
+		return nil, err
+	}
+	return running, nil
+}
+
+// StopExecSession kills and deregisters the exec process in the engine.
+// Called when the controller closes the WebSocket so the exec ID can be reused.
+func (pm *ProcessManager) StopExecSession(_ string, execID string) error {
+	return pm.engine.StopExecSession(execID)
 }
