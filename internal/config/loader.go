@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,26 +15,44 @@ import (
 
 const configLoaderModuleName = "Config Loader"
 
+var errYAMLParse = errors.New("yaml parse error")
+
 // LoadConfig loads configuration from YAML file
 func LoadConfig(configPath string) error {
 	cfg := GetInstance()
+	backupPath := utils.BackupConfigYAMLPath
 
-	// Try to load from primary config file
+	// Try to load from primary config file first.
 	yamlConfig, err := loadYAMLFile(configPath)
 	if err != nil {
-		// Try backup config file
-		backupPath := utils.BackupConfigYAMLPath
-		yamlConfig, err = loadYAMLFile(backupPath)
-		if err != nil {
-			// If both fail, create a default config
-			logging.LogWarn("Config Loader", "Config file not found, creating default config")
-			yamlConfig = createDefaultYamlConfigForLoader()
-			// Try to save the default config (create directory if needed)
-			if err := os.MkdirAll(utils.ConfigDir, 0700); err == nil {
-				if saveErr := SaveConfig(configPath); saveErr != nil {
-					logging.LogWarn("Config Loader", fmt.Sprintf("Failed to save default config: %v", saveErr))
+		primaryErr := err
+
+		// Missing primary config: fallback to backup, then default bootstrap only if both are missing.
+		if os.IsNotExist(primaryErr) {
+			yamlConfig, err = loadYAMLFile(backupPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					logging.LogWarn(configLoaderModuleName, "Config file not found, creating default config")
+					yamlConfig = createDefaultYamlConfigForLoader()
+					if mkErr := os.MkdirAll(utils.ConfigDir, 0700); mkErr == nil {
+						if saveErr := SaveConfigWithYaml(configPath, yamlConfig); saveErr != nil {
+							logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to save default config: %v", saveErr))
+						}
+					}
+				} else {
+					return fmt.Errorf("failed to load backup config %s after missing primary %s: %w", backupPath, configPath, err)
 				}
 			}
+		} else {
+			// Primary exists but is invalid/unreadable; try backup but never generate defaults.
+			yamlConfig, err = loadYAMLFile(backupPath)
+			if err != nil {
+				return fmt.Errorf("failed to load primary config %s (%v) and backup %s (%v)", configPath, primaryErr, backupPath, err)
+			}
+			logging.LogWarn(
+				configLoaderModuleName,
+				fmt.Sprintf("Loaded backup config from %s because primary config %s was invalid: %v", backupPath, configPath, primaryErr),
+			)
 		}
 	}
 
@@ -77,7 +96,7 @@ func loadYAMLFile(path string) (*models.YamlConfig, error) {
 
 	var yamlConfig models.YamlConfig
 	if err := yaml.Unmarshal(data, &yamlConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		return nil, fmt.Errorf("%w: %v", errYAMLParse, err)
 	}
 
 	if yamlConfig.Profiles == nil {
@@ -107,11 +126,13 @@ func loadConfigValues(cfg *Config) {
 	// Note: This is a simplified version. Full implementation would parse all values
 	// and handle type conversions properly
 	cfg.IOFogUUID = getProp("iofogUuid", "")
-	cfg.PrivateKey = getProp("privateKey", "")
-	cfg.ControllerURL = getProp("controllerUrl", "https://fogcontroller1.iofog.org:54421/api/v2/")
+	// privateKey durability moved to SQLite; keep runtime value empty until FieldAgent hydrates from DB.
+	cfg.PrivateKey = ""
+	cfg.ControllerURL = getProp("controllerUrl", "http://localhost:54421/api/v3/")
 	cfg.ControllerCert = getProp("controllerCert", "/etc/iofog-agent/cert.crt")
 	cfg.NetworkInterface = getProp("networkInterface", "dynamic")
-	cfg.DockerURL = getProp("dockerUrl", "unix:///var/run/docker.sock")
+	cfg.ContainerEngine = getProp("containerEngine", "iofog")
+	cfg.DockerURL = getProp("dockerUrl", "unix:///run/iofog-agent/containerd.sock")
 	cfg.DiskDirectory = getProp("diskDirectory", "/var/lib/iofog-agent/")
 	cfg.LogDiskDirectory = getProp("logDiskDirectory", "/var/log/iofog-agent/")
 	cfg.LogLevel = strings.ToUpper(getProp("logLevel", "INFO"))
@@ -120,7 +141,7 @@ func loadConfigValues(cfg *Config) {
 	cfg.GPSCoordinates = getProp("gpsCoordinates", "")
 	cfg.Arch = getProp("arch", "auto")
 	cfg.Namespace = getProp("namespace", "default")
-	cfg.TimeZone = getProp("timeZone", "")
+	cfg.TimeZone = getProp("timeZone", "Europe/Istanbul")
 	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 	// cfg.HWSignature = getProp("hwSignature", "")
@@ -164,12 +185,27 @@ func loadConfigValues(cfg *Config) {
 	cfg.PostDiagnosticsFreq = parseInt("postDiagnosticsFreq", "10")
 	cfg.WatchdogEnabled = getProp("watchdogEnabled", "off") != "off"
 	cfg.EdgeGuardFrequency = parseInt64("edgeGuardFrequency", "0")
+	if cfg.IOFogUUID == "" && cfg.EdgeGuardFrequency > 0 {
+		cfg.EdgeGuardFrequency = 0
+	}
 	cfg.GPSScanFrequency = parseInt64("gpsScanFrequency", "60")
 	cfg.SecureMode = getProp("secureMode", "off") != "off"
 	cfg.DockerPruningFrequency = parseInt64("dockerPruningFrequency", "0")
 	cfg.AvailableDiskThreshold = parseInt64("availableDiskThreshold", "20")
-	cfg.ReadyToUpgradeScanFrequency = parseInt("readyToUpgradeScanFrequency", "24")
+	cfg.UpgradeScanFrequency = parseInt("upgradeScanFrequency", "24")
 	cfg.DevMode = getProp("devMode", "off") != "off"
+	cfg.ShutdownGracePeriodSeconds = parseInt("shutdownGracePeriodSeconds", "90")
+	if cfg.ShutdownGracePeriodSeconds < 1 {
+		cfg.ShutdownGracePeriodSeconds = 90
+	}
+	cfg.ControllerRequestTimeoutSeconds = parseInt("controllerRequestTimeoutSeconds", "30")
+	if cfg.ControllerRequestTimeoutSeconds < 5 {
+		cfg.ControllerRequestTimeoutSeconds = 30
+	}
+	cfg.ControllerPingTimeoutSeconds = parseInt("controllerPingTimeoutSeconds", "60")
+	if cfg.ControllerPingTimeoutSeconds < 5 {
+		cfg.ControllerPingTimeoutSeconds = 60
+	}
 
 	// Update automatic config params based on architecture
 	updateAutomaticConfigParams(cfg)
@@ -185,7 +221,8 @@ func createDefaultYamlConfigForLoader() *models.YamlConfig {
 	defaultProfile.SetProperty("controllerUrl", "http://localhost:54421/api/v3/")
 	defaultProfile.SetProperty("controllerCert", "/etc/iofog-agent/cert.crt")
 	defaultProfile.SetProperty("networkInterface", "dynamic")
-	defaultProfile.SetProperty("dockerUrl", "unix:///var/run/docker.sock")
+	defaultProfile.SetProperty("containerEngine", "iofog")
+	defaultProfile.SetProperty("dockerUrl", "unix:///run/iofog-agent/containerd.sock")
 	defaultProfile.SetProperty("diskDirectory", "/var/lib/iofog-agent/")
 	defaultProfile.SetProperty("diskLimit", "10")
 	defaultProfile.SetProperty("memoryLimit", "4096")
@@ -208,7 +245,7 @@ func createDefaultYamlConfigForLoader() *models.YamlConfig {
 	defaultProfile.SetProperty("secureMode", "off")
 	defaultProfile.SetProperty("dockerPruningFrequency", "0")
 	defaultProfile.SetProperty("availableDiskThreshold", "20")
-	defaultProfile.SetProperty("readyToUpgradeScanFrequency", "24")
+	defaultProfile.SetProperty("upgradeScanFrequency", "24")
 	defaultProfile.SetProperty("devMode", "off")
 	defaultProfile.SetProperty("timeZone", "")
 	defaultProfile.SetProperty("namespace", "default")
@@ -227,6 +264,7 @@ func updateAutomaticConfigParams(cfg *Config) {
 	cfg.SpeedCalculationFreqMinutes = 1
 	cfg.MonitorContainersStatusFreqSeconds = 5
 	cfg.MonitorRegistriesStatusFreqSeconds = 60
+	cfg.HealthcheckIntervalSeconds = 30
 	cfg.GetUsageDataFreqSeconds = 5
 	cfg.DockerAPIVersion = "1.44"
 	cfg.SetSystemTimeFreqSeconds = 5
@@ -255,9 +293,50 @@ func SaveConfigWithYaml(configPath string, yamlConfig *models.YamlConfig) error 
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+	cleanPath := filepath.Clean(configPath)
+	dir := filepath.Dir(cleanPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("failed to create config directory %s: %w", dir, err)
+	}
+
+	tmpFile, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp config file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if err := tmpFile.Chmod(0600); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to set temp config file permissions: %w", err)
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write temp config file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to sync temp config file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, cleanPath); err != nil {
+		return fmt.Errorf("failed to atomically replace config file: %w", err)
+	}
+	if err := syncDirectory(dir); err != nil {
+		logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to sync config directory %s: %v", dir, err))
 	}
 
 	return nil
+}
+
+func syncDirectory(path string) error {
+	dirHandle, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dirHandle.Close()
+	return dirHandle.Sync()
 }
