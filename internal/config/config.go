@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/utils"
@@ -19,41 +20,45 @@ type Config struct {
 	configPath     string // Path to the config file
 
 	// Directly configurable params
-	IOFogUUID                   string
-	PrivateKey                  string
-	ControllerURL               string
-	ControllerCert              string
-	NetworkInterface            string
-	DockerURL                   string
-	DiskLimit                   float64
-	MemoryLimit                 float64
-	DiskDirectory               string
-	CPULimit                    float64
-	LogDiskLimit                float64
-	LogDiskDirectory            string
-	LogFileCount                int
-	LogLevel                    string
-	StatusFrequency             int
-	ChangeFrequency             int
-	DeviceScanFrequency         int
-	PostDiagnosticsFreq         int
-	WatchdogEnabled             bool
-	EdgeGuardFrequency          int64
-	GPSDevice                   string
-	GPSScanFrequency            int64
-	GPSCoordinates              string
-	GPSMode                     string
-	Arch                        string
-	SecureMode                  bool
-	IPAddressExternal           string
-	RouterUUID                  string
-	IsRouterInterior            bool
-	DockerPruningFrequency      int64
-	AvailableDiskThreshold      int64
-	ReadyToUpgradeScanFrequency int
-	DevMode                     bool
-	TimeZone                    string
-	Namespace                   string
+	IOFogUUID                       string
+	PrivateKey                      string
+	ControllerURL                   string
+	ContainerEngine                 string
+	ControllerCert                  string
+	NetworkInterface                string
+	DockerURL                       string
+	DiskLimit                       float64
+	MemoryLimit                     float64
+	DiskDirectory                   string
+	CPULimit                        float64
+	LogDiskLimit                    float64
+	LogDiskDirectory                string
+	LogFileCount                    int
+	LogLevel                        string
+	StatusFrequency                 int
+	ChangeFrequency                 int
+	DeviceScanFrequency             int
+	PostDiagnosticsFreq             int
+	WatchdogEnabled                 bool
+	EdgeGuardFrequency              int64
+	GPSDevice                       string
+	GPSScanFrequency                int64
+	GPSCoordinates                  string
+	GPSMode                         string
+	Arch                            string
+	SecureMode                      bool
+	IPAddressExternal               string
+	RouterUUID                      string
+	IsRouterInterior                bool
+	DockerPruningFrequency          int64
+	AvailableDiskThreshold          int64
+	UpgradeScanFrequency            int
+	DevMode                         bool
+	TimeZone                        string
+	Namespace                       string
+	ShutdownGracePeriodSeconds      int
+	ControllerRequestTimeoutSeconds int
+	ControllerPingTimeoutSeconds    int
 	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 
@@ -63,6 +68,7 @@ type Config struct {
 	SpeedCalculationFreqMinutes        int
 	MonitorContainersStatusFreqSeconds int
 	MonitorRegistriesStatusFreqSeconds int
+	HealthcheckIntervalSeconds         int // Interval for exec-based healthcheck (iofog engine only)
 	GetUsageDataFreqSeconds            int64
 	DockerAPIVersion                   string
 	SetSystemTimeFreqSeconds           int
@@ -76,9 +82,27 @@ type Config struct {
 }
 
 var (
-	instance *Config
-	once     sync.Once
+	instance                     *Config
+	once                         sync.Once
+	suppressReloadForDeprovision atomic.Bool
+	lastReloadSuccessful         atomic.Bool
 )
+
+// SuppressReloadForDeprovision sets a flag so the config watcher skips SIGHUP
+// when the config file is written during deprovision. Prevents CLI timeout.
+func SuppressReloadForDeprovision() { suppressReloadForDeprovision.Store(true) }
+
+// RestoreReloadAfterDeprovision clears the suppression flag.
+func RestoreReloadAfterDeprovision() { suppressReloadForDeprovision.Store(false) }
+
+// IsReloadSuppressedForDeprovision returns whether SIGHUP should be skipped.
+func IsReloadSuppressedForDeprovision() bool { return suppressReloadForDeprovision.Load() }
+
+// SetLastReloadSuccessful updates the last reload result.
+func SetLastReloadSuccessful(ok bool) { lastReloadSuccessful.Store(ok) }
+
+// IsLastReloadSuccessful indicates if the most recent config reload succeeded.
+func IsLastReloadSuccessful() bool { return lastReloadSuccessful.Load() }
 
 // GetInstance returns the singleton config instance
 func GetInstance() *Config {
@@ -86,6 +110,7 @@ func GetInstance() *Config {
 		instance = &Config{
 			Debugging: false,
 		}
+		lastReloadSuccessful.Store(true)
 	})
 	return instance
 }
@@ -246,6 +271,9 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	// Docker URL
 	buildLine("Docker URL", c.DockerURL)
 
+	// Container engine
+	buildLine("Container Engine", c.ContainerEngine)
+
 	// Disk limit
 	buildLine("Disk Usage Limit", fmt.Sprintf("%.2f GiB", c.DiskLimit))
 
@@ -314,7 +342,7 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	buildLine("Available Disk Threshold", fmt.Sprintf("%d", c.AvailableDiskThreshold))
 
 	// Ready to upgrade scan frequency
-	buildLine("Ready To Upgrade Scan Frequency", fmt.Sprintf("%d", c.ReadyToUpgradeScanFrequency))
+	buildLine("Ready To Upgrade Scan Frequency", fmt.Sprintf("%d", c.UpgradeScanFrequency))
 
 	// Dev mode
 	devModeStr := "off"

@@ -15,7 +15,6 @@ currentProfile: default  # default | development | production
 
 profiles:
   default:
-    privateKey: ""
     routerUuid: ""
     controllerUrl: "http://localhost:54421/api/v3/"
     iofogUuid: ""
@@ -24,7 +23,20 @@ profiles:
     controllerCert: "/etc/iofog-agent/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
-    dockerUrl: "unix:///var/run/docker.sock"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/iofog-agent/containerd.sock.
+    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "iofog"
+    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/iofog-agent/"
     memoryConsumptionLimit: "4096"
@@ -33,14 +45,14 @@ profiles:
     logDiskDirectory: "/var/log/iofog-agent/"
     logFileCount: "10"
     logLevel: "INFO"
-    statusUpdateFreq: "30"
+    statusFrequency: "30"
     getChangesFreq: "60"
     postDiagnosticsFreq: "10"
     scanDevicesFreq: "60"
     gps: "auto"
     gpsCoordinates: "0,0"
     gpsDevice: ""
-    gpsScanFreq: "60"
+    gpsScanFrequency: "60"
     isolatedDockerContainer: "off"
     edgeGuardFreq: "0"
     dockerPruningFrequency: "0"
@@ -50,7 +62,6 @@ profiles:
     namespace: "default"
 
   development:
-    privateKey: ""
     routerUuid: ""
     controllerUrl: "http://localhost:51121/api/v3/"
     iofogUuid: ""
@@ -59,7 +70,20 @@ profiles:
     controllerCert: "/etc/iofog-agent/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
-    dockerUrl: "unix:///var/run/docker.sock"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/iofog-agent/containerd.sock.
+    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "iofog"
+    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/iofog-agent/"
     memoryConsumptionLimit: "4096"
@@ -68,14 +92,14 @@ profiles:
     logDiskDirectory: "/var/log/iofog-agent/"
     logFileCount: "10"
     logLevel: "INFO"
-    statusUpdateFreq: "30"
+    statusFrequency: "30"
     getChangesFreq: "60"
     postDiagnosticsFreq: "10"
     scanDevicesFreq: "60"
     gps: "auto"
     gpsCoordinates: "0,0"
     gpsDevice: ""
-    gpsScanFreq: "60"
+    gpsScanFrequency: "60"
     isolatedDockerContainer: "off"
     edgeGuardFreq: "0"
     dockerPruningFrequency: "0"
@@ -85,7 +109,6 @@ profiles:
     namespace: "default"
 
   production:
-    privateKey: ""
     routerUuid: ""
     controllerUrl: "http://localhost:54421/api/v3/"
     iofogUuid: ""
@@ -94,7 +117,20 @@ profiles:
     controllerCert: "/etc/iofog-agent/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
-    dockerUrl: "unix:///var/run/docker.sock"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/iofog-agent/containerd.sock.
+    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "iofog"
+    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/iofog-agent/"
     memoryConsumptionLimit: "4096"
@@ -103,14 +139,14 @@ profiles:
     logDiskDirectory: "/var/log/iofog-agent/"
     logFileCount: "10"
     logLevel: "INFO"
-    statusUpdateFreq: "30"
+    statusFrequency: "30"
     getChangesFreq: "60"
     postDiagnosticsFreq: "10"
     scanDevicesFreq: "60"
     gps: "auto"
     gpsCoordinates: "0,0"
     gpsDevice: ""
-    gpsScanFreq: "60"
+    gpsScanFrequency: "60"
     isolatedDockerContainer: "off"
     edgeGuardFreq: "0"
     dockerPruningFrequency: "0"

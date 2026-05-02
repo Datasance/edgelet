@@ -158,7 +158,8 @@ func parseConfigCommand(args []string) (string, error) {
 			"m":  "512",
 			"p":  "80",
 			"a":  "http://localhost:54421/api/v3/",
-			"c":  "unix:///var/run/docker.sock",
+			"c":  "unix:///run/iofog-agent/containerd.sock",
+			"ce": "iofog",
 			"n":  "dynamic",
 			"l":  "10",
 			"ld": "/var/log/iofog-agent/",
@@ -211,11 +212,11 @@ func parseConfigCommand(args []string) (string, error) {
 		}
 	}
 
-	// Notify modules if config was updated successfully (async to not block)
-	if len(errors) == 0 {
-		go notifyModulesOfConfigChange()
-	}
-
+	// Config is saved to disk by SetConfig; the config file watcher in the daemon
+	// detects the change and sends SIGHUP, which triggers the single authoritative
+	// reload path (reloadAgentConfig → sup.ReloadConfig). Calling
+	// notifyModulesOfConfigChange() here would create a second concurrent reload,
+	// racing on fa.ctx / fa.wg and disrupting the Local API.
 	return result.String() + "\n", nil
 }
 
@@ -395,6 +396,7 @@ func showHelpCLI() string {
 		"                                         for secure communication\n" +
 		"config           [Parameter] [VALUE]     Change the software configuration\n" +
 		"                                         according to the options provided\n" +
+		"                 -ce <docker|podman|iofog> Set container engine\n" +
 		"                 defaults                Reset configuration to default values\n" +
 		"\n" +
 		"\n" +
@@ -444,7 +446,8 @@ Parameters:
   -p, cpuLimit           CPU consumption limit (percentage, 1-100)
   -a, controllerURL      Controller URL
   -ac, controllerCert    Controller CA certificate (base64 encoded)
-  -c, dockerURL          Docker daemon URL
+  -ce, containerEngine   Container engine: docker | podman | iofog
+  -c, dockerURL          Docker/Podman socket URL (ignored when engine=iofog)
   -n, networkInterface   Network interface name or "dynamic"
   -l, logDiskLimit       Log disk consumption limit (percentage)
   -ld, logDiskDirectory  Log disk directory path
@@ -453,10 +456,24 @@ Parameters:
   -sf, statusFrequency   Status update frequency (seconds)
   -cf, changeFrequency   Change detection frequency (seconds)
   -df, diagnosticsFreq   Diagnostics frequency (seconds)
-  -sd, deviceScanFreq     Device scan frequency (seconds)
-  defaults                Reset all configuration to default values
+  -sd, deviceScanFreq    Device scan frequency (seconds)
+  -gpdf, gpsScanFrequency GPS scan frequency (seconds)
+  -gps, gpsMode          GPS mode (auto, manual)
+  -gpsd, gpsDevice       GPS device path
+  -uf, upgradeScanFrequency Upgrade scan frequency (hours)
+  -egf, edgeGuardFrequency Edge guard frequency (seconds)
+  -idc, isolatedDockerContainer Isolated docker container (on, off)
+  -dt, availableDiskThreshold Available disk threshold (percentage)
+  -sec, secureMode       Secure mode (on, off)
+  -dev, devMode         Developer's mode (on, off)
+  -tz, timeZone         Time zone (e.g. Europe/Istanbul)
+  -pf, dockerPruningFrequency Docker pruning frequency (hours)
+  defaults               Reset all configuration to default values
 
 Examples:
+  iofog-agent config -ce iofog
+  iofog-agent config -ce docker -c unix:///var/run/docker.sock
+  iofog-agent config -ce podman
   iofog-agent config -d 50 -m 1024
   iofog-agent config -ll DEBUG
   iofog-agent config defaults
@@ -616,12 +633,4 @@ Examples:
 
 See 'iofog-agent help' for more information.
 `
-}
-
-// notifyModulesOfConfigChange notifies modules when configuration changes
-func notifyModulesOfConfigChange() {
-	// Trigger full config reload via Config callback (registered by Supervisor)
-	if err := config.GetInstance().TriggerReloadCallback(); err != nil {
-		logging.LogError(cliParserModuleName, "Failed to reload agent configuration", err)
-	}
 }

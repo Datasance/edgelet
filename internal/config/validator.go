@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
+	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
@@ -79,6 +81,46 @@ func ValidateConfig(cfg *Config) error {
 		if !strings.HasPrefix(cfg.DockerURL, "tcp://") && !strings.HasPrefix(cfg.DockerURL, "unix://") {
 			errors = append(errors, "docker URL must start with 'tcp://' or 'unix://'")
 		}
+	}
+
+	// Validate container engine (binary flavor restricts allowed engines)
+	eng := strings.ToLower(strings.TrimSpace(cfg.ContainerEngine))
+	if buildmeta.IsLite() {
+		if eng != constants.EngineDocker && eng != constants.EnginePodman {
+			errors = append(errors, fmt.Sprintf("this agent build (flavor=lite) only supports containerEngine: docker, podman (got %q)", cfg.ContainerEngine))
+		}
+	}
+	if buildmeta.IsFull() {
+		if eng != constants.EngineIofog {
+			errors = append(errors, fmt.Sprintf("this agent build (flavor=full) requires containerEngine: iofog (got %q)", cfg.ContainerEngine))
+		}
+	}
+	if eng != constants.EngineDocker && eng != constants.EnginePodman && eng != constants.EngineIofog {
+		errors = append(errors, "containerEngine must be one of: docker, podman, iofog")
+	}
+
+	// dockerUrl rules per engine
+	if eng == constants.EngineIofog {
+		want := constants.IofogEngineDockerURL()
+		if cfg.DockerURL != want {
+			errors = append(errors, fmt.Sprintf("dockerUrl for containerEngine iofog must be %q (got %q)", want, cfg.DockerURL))
+		}
+	}
+	if eng == constants.EnginePodman && strings.TrimSpace(cfg.DockerURL) == "" {
+		errors = append(errors, "dockerUrl is required when containerEngine is podman (e.g. unix:///run/podman/podman.sock)")
+	}
+
+	// Validate shutdown grace period
+	if cfg.ShutdownGracePeriodSeconds < 5 || cfg.ShutdownGracePeriodSeconds > 600 {
+		errors = append(errors, "shutdownGracePeriodSeconds must be between 5 and 600")
+	}
+
+	// Validate controller timeouts (edge-friendly)
+	if cfg.ControllerRequestTimeoutSeconds < 5 || cfg.ControllerRequestTimeoutSeconds > 300 {
+		errors = append(errors, "controllerRequestTimeoutSeconds must be between 5 and 300")
+	}
+	if cfg.ControllerPingTimeoutSeconds < 5 || cfg.ControllerPingTimeoutSeconds > 300 {
+		errors = append(errors, "controllerPingTimeoutSeconds must be between 5 and 300")
 	}
 
 	if len(errors) > 0 {

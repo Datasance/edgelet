@@ -232,6 +232,7 @@ func showHelp() string {
 		"                                         for secure communication\n" +
 		"config           [Parameter] [VALUE]     Change the software configuration\n" +
 		"                                         according to the options provided\n" +
+		"                 -ce <docker|podman|iofog> Set container engine\n" +
 		"                 defaults                Reset configuration to default values\n" +
 		"\n" +
 		"\n" +

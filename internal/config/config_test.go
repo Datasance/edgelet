@@ -61,6 +61,10 @@ func TestValidateConfig(t *testing.T) {
 	cfg.EdgeGuardFrequency = 0
 	cfg.GPSScanFrequency = 60
 	cfg.DockerURL = "unix:///var/run/docker.sock"
+	cfg.ContainerEngine = "docker"
+	cfg.ShutdownGracePeriodSeconds = 90
+	cfg.ControllerRequestTimeoutSeconds = 30
+	cfg.ControllerPingTimeoutSeconds = 60
 
 	if err := ValidateConfig(cfg); err != nil {
 		t.Errorf("Expected valid config, got error: %v", err)

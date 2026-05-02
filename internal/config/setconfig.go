@@ -23,6 +23,7 @@ var ConfigParamMap = map[string]string{
 	"a":    "controllerURL",
 	"ac":   "controllerCert",
 	"c":    "dockerURL",
+	"ce":   "containerEngine",
 	"n":    "networkInterface",
 	"l":    "logDiskLimit",
 	"ld":   "logDiskDirectory",
@@ -41,7 +42,7 @@ var ConfigParamMap = map[string]string{
 	"sec":  "secureMode",
 	"pf":   "dockerPruningFrequency",
 	"dt":   "availableDiskThreshold",
-	"uf":   "readyToUpgradeScanFrequency",
+	"uf":   "upgradeScanFrequency",
 	"dev":  "devMode",
 	"tz":   "timeZone",
 }
@@ -170,6 +171,17 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
+	case "containerEngine":
+		switch value {
+		case "docker", "podman", "iofog":
+			c.ContainerEngine = value
+			if err := c.setYamlProperty("containerEngine", value); err != nil {
+				logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+			}
+		default:
+			return fmt.Errorf("invalid container engine %q: must be one of docker, podman, iofog", value)
+		}
+
 	case "networkInterface":
 		c.NetworkInterface = value
 		if err := c.setYamlProperty("networkInterface", value); err != nil {
@@ -259,8 +271,12 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		if err != nil {
 			return fmt.Errorf("invalid edge guard frequency: %w", err)
 		}
+		if c.IOFogUUID == "" && val > 0 {
+			logging.LogWarn(setConfigModuleName, "edgeGuardFrequency cannot be enabled while agent is not provisioned; forcing value to 0")
+			val = 0
+		}
 		c.EdgeGuardFrequency = val
-		if err := c.setYamlProperty("edgeGuardFrequency", value); err != nil {
+		if err := c.setYamlProperty("edgeGuardFrequency", fmt.Sprintf("%d", val)); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -318,13 +334,13 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
-	case "readyToUpgradeScanFrequency":
+	case "upgradeScanFrequency":
 		val, err := strconv.Atoi(value)
 		if err != nil {
 			return fmt.Errorf("invalid ready to upgrade scan frequency: %w", err)
 		}
-		c.ReadyToUpgradeScanFrequency = val
-		if err := c.setYamlProperty("readyToUpgradeScanFrequency", value); err != nil {
+		c.UpgradeScanFrequency = val
+		if err := c.setYamlProperty("upgradeScanFrequency", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -450,7 +466,7 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	defaultProfile.SetProperty("secureMode", "off")
 	defaultProfile.SetProperty("dockerPruningFrequency", "1")
 	defaultProfile.SetProperty("availableDiskThreshold", "20")
-	defaultProfile.SetProperty("readyToUpgradeScanFrequency", "24")
+	defaultProfile.SetProperty("upgradeScanFrequency", "24")
 	defaultProfile.SetProperty("devMode", "off")
 	defaultProfile.SetProperty("timeZone", "")
 	defaultProfile.SetProperty("namespace", "default")

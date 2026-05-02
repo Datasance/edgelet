@@ -44,6 +44,7 @@ type ConfigSetRequest struct {
 	ControllerURL        *string `json:"controller-url,omitempty"`
 	CertDirectory        *string `json:"cert-directory,omitempty"`
 	DockerURL            *string `json:"docker-url,omitempty"`
+	ContainerEngine      *string `json:"container-engine,omitempty"`
 	NetworkAdapter       *string `json:"network-adapter,omitempty"`
 	LogsLimit            *string `json:"logs-limit,omitempty"`
 	LogsDirectory        *string `json:"logs-directory,omitempty"`
@@ -217,6 +218,9 @@ func (h *ConfigHandler) HandleConfigSet(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.DockerURL != nil {
 		configMap["c"] = *req.DockerURL
+	}
+	if req.ContainerEngine != nil {
+		configMap["ce"] = *req.ContainerEngine
 	}
 	if req.NetworkAdapter != nil {
 		configMap["n"] = *req.NetworkAdapter
