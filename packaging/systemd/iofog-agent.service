@@ -4,12 +4,14 @@ Documentation=https://github.com/eclipse-iofog/agent
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/iofog-agentd
 Restart=always
-RestartSec=5
+RestartSec=3
 User=root
 StandardOutput=journal
 StandardError=journal

@@ -1,122 +1,128 @@
-# Packaging Structure Documentation
+# Packaging Structure
 
 ## Overview
-This document describes the packaging structure for the ioFog Agent Go implementation, which matches the Java agent packaging structure.
 
-## Directory Structure
+The ioFog Agent Go implementation uses **tarball-only** distribution with two **flavors** per architecture:
 
-```
-packaging/iofog-agent/
-├── etc/
-│   ├── bash_completion.d/
-│   │   └── iofog-agent          # Bash completion script
-│   ├── iofog-agent/
-│   │   ├── config_new.yaml      # Default configuration (renamed to config.yaml on install)
-│   │   └── cert_new.crt         # Placeholder for CA certificate (renamed to cert.crt on install)
-│   └── systemd/
-│       └── system/
-│           └── iofog-agent.service  # Systemd service file
-└── usr/
-    ├── bin/
-    │   ├── iofog-agent          # CLI binary (installed here)
-    │   └── iofog-agentd         # Daemon binary (installed here)
-    └── share/
-        └── iofog-agent/
-            ├── upgrade.sh       # Upgrade script
-            └── rollback.sh      # Rollback script
-```
+| Flavor | Daemon | `containerEngine` in config | Notes |
+|--------|--------|------------------------------|--------|
+| **full** (default) | CGO=1, embedded containerd | `iofog` only | `dockerUrl` must be `unix:///run/iofog-agent/containerd.sock` |
+| **lite** | CGO=0 | `docker` or `podman` only | External socket; Podman uses `podman.socket` in systemd units |
 
-## Installation Paths
+DEB/RPM packages are not used for this product line. Installation, upgrade, and rollback are handled by **`install.sh`**; removal by **`uninstall.sh`**.
 
-### Binaries
-- `/usr/bin/iofog-agent` - CLI binary
-- `/usr/bin/iofog-agentd` - Daemon binary
-- `/usr/local/bin/iofog-agent` - Symlink to `/usr/bin/iofog-agent`
+---
 
-### Configuration
-- `/etc/iofog-agent/config.yaml` - Main configuration file (created from config_new.yaml)
-- `/etc/iofog-agent/cert.crt` - Controller CA certificate (created from cert_new.crt)
-- `/etc/iofog-agent/local-api` - Local API token (generated on install)
+## Distribution artifacts
 
-### Scripts
-- `/usr/share/iofog-agent/upgrade.sh` - Upgrade script
-- `/usr/share/iofog-agent/rollback.sh` - Rollback script
+Release tarball names:
 
-### System Files
-- `/etc/systemd/system/iofog-agent.service` - Systemd service file
-- `/etc/bash_completion.d/iofog-agent` - Bash completion
+`iofog-agent-<VERSION>-linux-<ARCH>[-musl]-<flavor>.tar.gz`
 
-### Runtime Directories
-- `/var/lib/iofog-agent/` - Data directory
-- `/var/log/iofog-agent/` - Log directory
-- `/var/run/iofog-agent/` - Runtime directory
-- `/var/backups/iofog-agent/` - Backup directory
-- `/var/log/iofog-microservices/` - Microservice logs
+Examples:
 
-## Post-Installation Process
+- `iofog-agent-v3.0.0-linux-amd64-full.tar.gz`
+- `iofog-agent-v3.0.0-linux-arm64-lite.tar.gz`
 
-### DEB Package (postinst)
-1. Create user and group `iofog-agent`
-2. Create runtime directories
-3. Rename `config_new.yaml` → `config.yaml` (if config.yaml doesn't exist)
-4. Rename `cert_new.crt` → `cert.crt` (if cert.crt doesn't exist)
-5. Generate local API token if it doesn't exist
-6. Set ownership and permissions
-7. Enable systemd service
+Each tarball contains:
 
-### RPM Package (%post)
-1. Create user and group `iofog-agent`
-2. Rename config and cert files
-3. Generate local API token
-4. Set ownership and permissions
-5. Enable systemd service
+- `iofog-agent` — CLI (build metadata includes **flavor**)
+- `iofog-agentd` — Daemon
+- Optional `config.yaml.sample` from packaging
 
-## File Permissions
+**Checksum manifests** (produced by `make release-tarballs`):
 
-- `/etc/iofog-agent/` - 774 (rwxrwxr--)
-- `/var/log/iofog-agent/` - 774
-- `/var/lib/iofog-agent/` - 774
-- `/var/run/iofog-agent/` - 774
-- `/var/backups/iofog-agent/` - 774
-- `/usr/share/iofog-agent/` - 754 (rwxr-xr--)
-- `/usr/bin/iofog-agent` - 754
-- `/usr/bin/iofog-agentd` - 754
+- `build/release/SHA256SUMS-lite`
+- `build/release/SHA256SUMS-full`
 
-All directories and files are owned by group `iofog-agent`.
+---
 
-## Docker Image Structure
+## Build
 
-The Dockerfile follows the same structure:
-- Copies binaries to `/usr/bin/`
-- Copies packaging files from `packaging/iofog-agent/`
-- Sets up directories and permissions
-- Renames config_new.yaml → config.yaml and cert_new.crt → cert.crt
-
-## Comparison with Java Agent
-
-The Go agent packaging structure matches the Java agent structure:
-- Same directory layout
-- Same file locations
-- Same post-installation process
-- Same permissions model
-- Compatible upgrade/rollback scripts
-
-## Building Packages
-
-### DEB Package
 ```bash
-cd packaging/deb
-./build.sh <version> <arch>
+# Default local build: full flavor CLI + daemon
+make build
+
+# Explicit flavors
+make build-daemon-lite
+make build-daemon-full
+
+# All Linux release arches (lite + full binaries per arch)
+make build-all-archs
+
+# Tarballs + per-flavor SHA256SUMS-* under build/release/
+make release-tarballs VERSION=v1.2.3
 ```
 
-### RPM Package
+Embedded dependency download (for full / CGO builds):
+
 ```bash
-rpmbuild -ba packaging/rpm/iofog-agent.spec
+make deps ARCH=amd64
 ```
 
-## Notes
+---
 
-- `config_new.yaml` and `cert_new.crt` are renamed during installation to preserve existing configurations
-- Local API token is generated randomly on first install
-- All scripts are executable and owned by root:iofog-agent group
-- Systemd service runs as root (required for Docker access)
+## install.sh
+
+Default: **`--flavor=full`**.
+
+| Flag | Meaning |
+|------|---------|
+| `--flavor=full\|lite` | Must match the tarball |
+| `--airgap` | Do not download; requires `--tarball-path` |
+| `--tarball-path=PATH` | Local `.tar.gz` (also accepts legacy `--bin-path`) |
+| `--expected-sha256` / `--checksum-path` | Optional verification for airgap |
+| `--upgrade` | Writes `previous-release`, installs new version |
+| `--rollback` | Restores from `previous-release` + optional local tarball |
+
+Metadata (**POSIX key=value** files, no JSON or extra interpreters):
+
+**`/var/backups/iofog-agent/install-receipt`** (written on successful install / upgrade / rollback):
+
+```text
+installed_version=v1.2.3
+flavor=full
+source_url=https://...   # or file:///absolute/path/to.tar.gz
+```
+
+**`/var/backups/iofog-agent/previous-release`** (written at start of `--upgrade`):
+
+```text
+previous_version=v1.2.2
+previous_flavor=full
+previous_download_url=https://...
+config_backup_path=/var/backups/iofog-agent/config.yaml.20250101120000
+```
+
+Each value is a single line; `=` is allowed in values (everything after the first `=` on the line).
+
+**Flavor change (lite ↔ full)** on the same host is **not** supported; uninstall and reinstall with the correct tarball.
+
+### systemd
+
+- **Docker**: `After=` / `Wants=docker.service`
+- **Podman**: `After=` / `Wants=podman.socket`
+- **full** flavor: hardened unit (`ProtectSystem=strict`, `ReadWritePaths=` including `/var/lib/iofog-agent-containerd`, `/run/iofog-agent`, etc.)
+
+Other init systems (OpenRC, SysV, s6, runit, upstart) keep the previous minimal service templates.
+
+---
+
+## Example configs
+
+| File | Use |
+|------|-----|
+| [config_lite.yaml](iofog-agent/etc/iofog-agent/config_lite.yaml) | Lite / docker or podman |
+| [config_full.yaml](iofog-agent/etc/iofog-agent/config_full.yaml) | Full / iofog |
+
+---
+
+## uninstall.sh
+
+Stops the service, removes unit files and binaries. Use `--remove-data` to drop data directories (`/var/lib/iofog-agent`, containerd store, logs, etc.). Backup metadata under `/var/backups/iofog-agent` may be removed manually if desired.
+
+---
+
+## CI
+
+GitHub Actions workflow **`.github/workflows/agent-go.yml`** builds **lite + full** for `linux/amd64`, `arm64`, `arm`, and `riscv64` and runs unit tests. All configured targets must pass for release gating.
