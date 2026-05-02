@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for ioFog Agent
+# Build script for ioFog Agent (default: full flavor, same as `make build`)
 
 set -e
 
@@ -8,8 +8,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-echo "Building ioFog Agent..."
-make build
+FLAVOR="${FLAVOR:-full}"
+echo "Building ioFog Agent (FLAVOR=${FLAVOR})..."
+make build "FLAVOR=${FLAVOR}"
 
 echo "Build complete!"
 echo "Binaries:"

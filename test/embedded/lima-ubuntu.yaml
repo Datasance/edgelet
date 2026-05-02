@@ -1,0 +1,80 @@
+# Lima VM definition for iofog embedded-containerd integration tests.
+# Ubuntu 24.04 LTS with Apple Virtualization framework (vmType: vz) —
+# no QEMU required, boots in ~5s on Apple Silicon.
+#
+# Usage (from project root):
+#   limactl start agent-go/test/embedded/lima-ubuntu.yaml --name=iofog-test
+
+vmType: vz
+os: Linux
+arch: aarch64
+
+cpus: 2
+memory: "2GiB"
+disk: "20GiB"
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+
+# Mount the home directory read-only so the VM can access build outputs.
+# Lima maps the macOS home directory at the same path inside the VM.
+mounts:
+  - location: "~"
+    writable: false
+
+rosetta:
+  enabled: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -e
+
+      # Load kernel modules needed by containerd
+      modprobe overlay      2>/dev/null || true
+      modprobe br_netfilter 2>/dev/null || true
+      modprobe ip_tables    2>/dev/null || true
+      modprobe iptable_filter 2>/dev/null || true
+      modprobe iptable_nat  2>/dev/null || true
+      modprobe nf_conntrack 2>/dev/null || true
+
+      # Enable IP forwarding
+      echo 1 > /proc/sys/net/ipv4/ip_forward
+      echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+
+      # Install runtime dependencies
+      apt-get update -qq
+      apt-get install -y --no-install-recommends \
+          curl ca-certificates iptables iproute2 jq
+
+      echo "Lima VM provisioned OK"
+
+# vzNAT: assigns a real IP reachable from the host (no socket_vmnet or sudoers).
+# Requires Lima 0.14+ and macOS 13.0+.
+networks:
+  - vzNAT: true
+
+# Prevent Lima's gvproxy from auto-forwarding guest TCP ports to macOS localhost.
+# Without this, any port bound inside the VM (e.g. NATS 4222, router 6222) is
+# automatically forwarded to the same port on the Mac, which conflicts with
+# Docker containers trying to bind those ports when both are active.
+portForwards:
+  - guestPortRange: [1, 65535]
+    ignore: true
+
+probes:
+  - script: |
+      #!/bin/bash
+      grep -q overlay /proc/filesystems || modprobe overlay 2>/dev/null
+    hint: "Waiting for overlayfs to be available..."
+
+message: |
+  ioFog test VM is ready!
+
+  Run integration tests from your Mac:
+    cd agent-go && ./test/embedded/run-all.sh --skip-setup --skip-build --skip-start
+
+  Open a shell:
+    limactl shell iofog-test
