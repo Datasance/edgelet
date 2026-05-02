@@ -27,11 +27,11 @@ type DeprovisionResponse struct {
 	Message string `json:"message,omitempty"`
 }
 
-// HandleDeprovision handles POST /v2/deprovision
+// HandleDeprovision handles DELETE /v2/deprovision (matching Java DeprovisionApiHandler)
 func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(deprovisionHandlerModuleName, "Processing deprovision request")
 
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodDelete {
 		logging.LogError(deprovisionHandlerModuleName, "Request method not allowed", nil)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -46,15 +46,14 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 		}
 		jsonData, _ := json.Marshal(response)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusInternalServerError)
 		if _, werr := w.Write(jsonData); werr != nil {
 			logging.LogWarn(deprovisionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
 		}
 		return
 	}
 
-	// Call FieldAgent.Deprovision
-	// clearCredentials = false (we want to try to notify controller)
+	// clearCredentials = false: attempt to notify controller before wiping credentials
 	if err := fa.Deprovision(false); err != nil {
 		logging.LogError(deprovisionHandlerModuleName, "Deprovisioning failed", err)
 		response := DeprovisionResponse{
@@ -63,7 +62,7 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 		}
 		jsonData, _ := json.Marshal(response)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusInternalServerError)
 		if _, werr := w.Write(jsonData); werr != nil {
 			logging.LogWarn(deprovisionHandlerModuleName, fmt.Sprintf("Failed to write response: %v", werr))
 		}
@@ -71,7 +70,7 @@ func (h *DeprovisionHandler) HandleDeprovision(w http.ResponseWriter, r *http.Re
 	}
 
 	response := DeprovisionResponse{
-		Status:  "okay",
+		Status:  "success",
 		Message: "Deprovisioned successfully",
 	}
 
