@@ -163,8 +163,12 @@ func (c *APIClient) Request(ctx context.Context, command string, requestType Req
 func (c *APIClient) doRequest(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
 	url := c.baseURL + "/agent/" + command
 
-	// Create request with timeout context
-	reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	// Use configurable timeout (edge-friendly defaults: 30s)
+	timeoutSec := config.GetInstance().ControllerRequestTimeoutSeconds
+	if timeoutSec < 5 {
+		timeoutSec = 30
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
 	var reqBody io.Reader

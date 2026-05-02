@@ -13,7 +13,6 @@ import (
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/diagnostics"
-	"github.com/eclipse-iofog/agent/internal/hardware"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
@@ -150,6 +149,20 @@ func (fa *FieldAgent) Start() error {
 
 	// Initialize JWT Manager first if we have the private key (matching Java: lines 1960-1971)
 	cfg := config.GetInstance()
+
+	// Private key durability is DB-only. Hydrate in-memory value from SQLite at startup.
+	if err := fa.hydratePrivateKeyFromDB(); err != nil {
+		logging.LogError(moduleName, "Failed to hydrate private key from SQLite; auth/provision-reconcile paths will remain blocked", err)
+		cfg.PrivateKey = ""
+		auth.GetJWTManager().Reset()
+	}
+
+	// Enforce invariant: unprovisioned agent cannot keep edge guard enabled.
+	if cfg.IOFogUUID == "" && cfg.EdgeGuardFrequency > 0 {
+		logging.LogWarn(moduleName, "Unprovisioned agent detected with edgeGuardFrequency>0; forcing edgeGuardFrequency=0")
+		cfg.EdgeGuardFrequency = 0
+	}
+
 	logging.LogDebug(moduleName, fmt.Sprintf("Checking provisioning status: UUID exists=%v, PrivateKey exists=%v",
 		cfg.IOFogUUID != "", cfg.PrivateKey != ""))
 
@@ -359,6 +372,25 @@ func (fa *FieldAgent) NotProvisioned() bool {
 	return notProvisioned
 }
 
+func (fa *FieldAgent) hydratePrivateKeyFromDB() error {
+	db := store.GetInstance()
+	if db.Conn() == nil {
+		return fmt.Errorf("sqlite not open")
+	}
+
+	privateKey, found, err := db.GetAgentPrivateKey()
+	if err != nil {
+		return err
+	}
+	if !found {
+		fa.config.PrivateKey = ""
+		return nil
+	}
+
+	fa.config.PrivateKey = privateKey
+	return nil
+}
+
 // IsControllerConnected checks if the controller is connected
 func (fa *FieldAgent) IsControllerConnected(fromFile bool) bool {
 	logging.LogDebug(moduleName, "check is Controller Connected")
@@ -442,7 +474,11 @@ func (fa *FieldAgent) ping() bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
+	timeoutSec := config.GetInstance().ControllerPingTimeoutSeconds
+	if timeoutSec < 5 {
+		timeoutSec = 60
+	}
+	ctx, cancel := context.WithTimeout(fa.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
 	logging.LogDebug(moduleName, "Calling API client ping")
@@ -528,10 +564,11 @@ func (fa *FieldAgent) Provision(key string) error {
 		updated = true
 	}
 	if privateKey, ok := result["privateKey"].(string); ok && privateKey != "" {
-		cfg.PrivateKey = privateKey
-		if err = cfg.SetProperty("privateKey", privateKey); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to set privateKey in YAML config: %v", err))
+		// DB-only private key durability: persist to SQLite first (fail-closed for auth/provision paths).
+		if err := store.GetInstance().UpsertAgentPrivateKey(privateKey); err != nil {
+			return fmt.Errorf("provisioning failed to persist private key to sqlite: %w", err)
 		}
+		cfg.PrivateKey = privateKey
 		updated = true
 	}
 	if namespace, ok := result["namespace"].(string); ok && namespace != "" {
@@ -544,11 +581,25 @@ func (fa *FieldAgent) Provision(key string) error {
 
 	// Save config to disk (matching Java: Configuration.saveConfigUpdates())
 	if updated {
+		// Ensure privateKey is not persisted in YAML (DB is the durable source).
+		yamlConfig := cfg.GetYamlConfig()
+		if yamlConfig != nil {
+			profile := yamlConfig.GetProfile(cfg.GetCurrentProfile().FullValue())
+			if profile != nil {
+				profile.SetProperty("privateKey", "")
+			}
+		}
+
 		configPath := utils.ConfigYAMLPath
 		if err := config.SaveConfig(configPath); err != nil {
 			logging.LogError(moduleName, "Failed to save config updates after provisioning", err)
 			return fmt.Errorf("provisioning succeeded but failed to save config: %w", err)
 		}
+	}
+
+	// Reprovision semantics: new private key invalidates the Edge Guard baseline signature.
+	if err := store.GetInstance().DeleteEdgeGuardSignature(); err != nil {
+		return fmt.Errorf("provisioning failed to reset edgeguard signature baseline: %w", err)
 	}
 
 	// Reset JWT manager to use new credentials
@@ -656,18 +707,19 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 	iofogUUID := fa.config.IOFogUUID
 	// Note: privateKey and namespace are stored but not used in Go (matching Java behavior)
 
-	// Delete hardware signature file (.jwt) BEFORE clearing UUID
-	// The file path is based on IOFogUUID, so we need to delete it while UUID still exists
+	// Deprovision invariant: force edge guard disabled and clear DB-backed secret state.
+	fa.config.EdgeGuardFrequency = 0
 	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error deleting hardware signature file: %v", r))
-			}
-		}()
-		if err := hardware.DeleteHardwareSignature(); err != nil {
-			logging.LogDebug(moduleName, fmt.Sprintf("Hardware signature file deletion attempted (may not exist): %v", err))
-		} else {
-			logging.LogDebug(moduleName, "Hardware signature file deleted on deprovision")
+		db := store.GetInstance()
+		if db.Conn() == nil {
+			logging.LogWarn(moduleName, "SQLite not open during deprovision; private-key dependent paths will stay blocked")
+			return
+		}
+		if err := db.DeleteEdgeGuardSignature(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to delete edgeguard signature from SQLite: %v", err))
+		}
+		if err := db.DeleteAgentPrivateKey(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to delete private key from SQLite: %v", err))
 		}
 	}()
 
@@ -705,6 +757,7 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		fa.config.IOFogUUID = ""
 		fa.config.PrivateKey = ""
 		fa.config.Namespace = "default"
+		fa.config.EdgeGuardFrequency = 0
 
 		// Update YAML config properties before saving (matching Java: Configuration.saveConfigUpdates())
 		// The SaveConfig() function uses GetYamlConfig() which doesn't reflect in-memory struct changes
@@ -717,7 +770,8 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 				profile.SetProperty("iofogUuid", "")
 				profile.SetProperty("privateKey", "")
 				profile.SetProperty("namespace", "default")
-				logging.LogDebug(moduleName, "Updated YAML config properties: iofogUuid, privateKey, namespace")
+				profile.SetProperty("edgeGuardFrequency", "0")
+				logging.LogDebug(moduleName, "Updated YAML config properties: iofogUuid, privateKey, namespace, edgeGuardFrequency")
 			} else {
 				logging.LogWarn(moduleName, "Profile not found in YAML config, cannot update properties")
 			}
@@ -726,7 +780,10 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		}
 
 		// Save config updates (matching Java: Configuration.saveConfigUpdates())
-		// Use SaveConfig with the config path
+		// Suppress SIGHUP so the watcher does not disrupt the HTTP response to the CLI.
+		config.SuppressReloadForDeprovision()
+		defer config.RestoreReloadAfterDeprovision()
+
 		configPath := utils.ConfigYAMLPath
 		if err := config.SaveConfig(configPath); err != nil {
 			logging.LogError(moduleName, "Error saving config updates", err)
@@ -754,166 +811,154 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		logging.LogDebug(moduleName, "Config backup file update requested")
 	}
 
-	// Clear microservice manager (matching Java: microserviceManager.clear())
-	fa.Clear()
-
-	// Stop running microservices (matching Java: ProcessManager.getInstance().stopRunningMicroservices(false, iofogUuid))
-	if fa.processManager != nil {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logging.LogError(moduleName, "Error stopping running microservices", fmt.Errorf("%v", r))
-				}
-			}()
-			if err := fa.processManager.StopRunningMicroservices(iofogUUID, true); err != nil {
-				logging.LogError(moduleName, "Error stopping running microservices", err)
-			}
-		}()
-	}
-
-	// Clear volume mounts (matching Java: volumeMountManager.clear())
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogError(moduleName, "Error clearing volume mounts", fmt.Errorf("%v", r))
-			}
-		}()
-		if err := volumemount.GetInstance().Clear(); err != nil {
-			logging.LogError(moduleName, "Error clearing volume mounts", err)
-		}
-	}()
-
-	// Clear SQLite tables for microservices and registries on deprovision
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing SQLite cache tables: %v", r))
-			}
-		}()
-		db := store.GetInstance()
-		if db.Conn() != nil {
-			if err := db.ClearMicroservices(); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
-			}
-			if err := db.ClearRegistries(); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
-			}
-			logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")
-		}
-	}()
-
-	// Notify modules AFTER configuration is cleared (matching Java: notifyModules())
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Some module notifications failed during deprovisioning: %v", r))
-			}
-		}()
-		logging.LogDebug(moduleName, "Notifying modules after configuration update")
-		// Call callbacks to notify modules
-		if fa.onMicroservicesUpdate != nil {
-			if err := fa.onMicroservicesUpdate([]*models.Microservice{}); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error notifying microservices update: %v", err))
-			}
-		}
-		if fa.onRegistriesUpdate != nil {
-			if err := fa.onRegistriesUpdate([]*models.Registry{}); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error notifying registries update: %v", err))
-			}
-		}
-		if fa.onConfigsUpdate != nil {
-			if err := fa.onConfigsUpdate(map[string]string{}); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error notifying configs update: %v", err))
-			}
-		}
-		logging.LogDebug(moduleName, "Module notification completed")
-	}()
-
-	// Set state (matching Java)
+	// Set state early so NotProvisioned() is true before slow cleanup — avoids 401 handler
+	// re-entering Deprovision while this call still holds the lock
 	fa.state.SetControllerStatus(models.ControllerStatusNotProvisioned)
 	fa.state.SetControllerVerified(false)
 
-	resultMessage := "Success - cleaned up locally"
-	if deprovisionRequestSuccessful {
-		resultMessage = "Success - deprovisioned from controller and cleaned up locally"
-	} else if !clearCredentials {
-		resultMessage = "Success - cleaned up locally (controller deprovision failed)"
-	}
+	// Clear microservice manager (matching Java: microserviceManager.clear())
+	fa.Clear()
 
-	logging.LogInfo(moduleName, fmt.Sprintf("Finished Deprovisioning : %s", resultMessage))
+	// Run slow cleanup in background so HTTP handler can return quickly (avoids CLI timeout)
+	go func() {
+		// Stop running microservices (matching Java: ProcessManager.getInstance().stopRunningMicroservices(false, iofogUuid))
+		if fa.processManager != nil {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logging.LogError(moduleName, "Error stopping running microservices", fmt.Errorf("%v", r))
+					}
+				}()
+				if err := fa.processManager.StopRunningMicroservices(iofogUUID, true); err != nil {
+					logging.LogError(moduleName, "Error stopping running microservices", err)
+				}
+			}()
+		}
+
+		// Clear volume mounts (matching Java: volumeMountManager.clear())
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(moduleName, "Error clearing volume mounts", fmt.Errorf("%v", r))
+				}
+			}()
+			if err := volumemount.GetInstance().Clear(); err != nil {
+				logging.LogError(moduleName, "Error clearing volume mounts", err)
+			}
+		}()
+
+		// Clear SQLite tables for microservices and registries on deprovision
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing SQLite cache tables: %v", r))
+				}
+			}()
+			db := store.GetInstance()
+			if db.Conn() != nil {
+				if err := db.ClearMicroservices(); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
+				}
+				if err := db.ClearRegistries(); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
+				}
+				logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")
+			}
+		}()
+
+		// Notify modules AFTER configuration is cleared (matching Java: notifyModules())
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Some module notifications failed during deprovisioning: %v", r))
+				}
+			}()
+			logging.LogDebug(moduleName, "Notifying modules after configuration update")
+			if fa.onMicroservicesUpdate != nil {
+				if err := fa.onMicroservicesUpdate([]*models.Microservice{}); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error notifying microservices update: %v", err))
+				}
+			}
+			if fa.onRegistriesUpdate != nil {
+				if err := fa.onRegistriesUpdate([]*models.Registry{}); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error notifying registries update: %v", err))
+				}
+			}
+			if fa.onConfigsUpdate != nil {
+				if err := fa.onConfigsUpdate(map[string]string{}); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("Error notifying configs update: %v", err))
+				}
+			}
+			logging.LogDebug(moduleName, "Module notification completed")
+		}()
+
+		resultMessage := "Success - cleaned up locally"
+		if deprovisionRequestSuccessful {
+			resultMessage = "Success - deprovisioned from controller and cleaned up locally"
+		} else if !clearCredentials {
+			resultMessage = "Success - cleaned up locally (controller deprovision failed)"
+		}
+		logging.LogInfo(moduleName, fmt.Sprintf("Finished Deprovisioning : %s", resultMessage))
+	}()
+
+	logging.LogInfo(moduleName, "Deprovision accepted — cleanup running in background")
 	return nil
 }
 
-// Update updates the FieldAgent when configuration changes
+// Update updates the FieldAgent when configuration changes.
+// Workers are NOT restarted — they use dynamic timers that re-read config on
+// every tick, so they pick up new frequencies automatically.
+// NewAPIClient() is moved into the background goroutine so the SIGHUP handler
+// goroutine is never blocked by DNS resolution for the new controller URL.
 func (fa *FieldAgent) Update() error {
 	logging.LogDebug(moduleName, "Updating Field Agent due to config change")
 
+	if err := fa.hydratePrivateKeyFromDB(); err != nil {
+		logging.LogError(moduleName, "Failed to hydrate private key from SQLite during update; blocking private-key dependent paths", err)
+		fa.config.PrivateKey = ""
+	}
+
+	// Reset JWT so it is reloaded from the updated credentials on next use.
+	// Only the Reset itself needs the lock; client creation is done async.
 	fa.mu.Lock()
-	// No defer here because we unlock explicitly before postFogConfig
-
-	// Reset JWT manager to ensure it picks up new credentials from reloaded config
-	// This is critical when config is reloaded after provisioning
 	auth.GetJWTManager().Reset()
-
-	apiClient, err := NewAPIClient()
-	if err != nil {
-		return fmt.Errorf("failed to recreate API client: %w", err)
-	}
-
-	// Replace the old API client
-	fa.apiClient = apiClient
-
-	// Update orchestrator with new API client
-	if fa.orchestrator != nil {
-		fa.orchestrator = NewOrchestrator(apiClient)
-	}
-
-	// Release lock before making network call to avoid blocking other operations (like info command)
 	fa.mu.Unlock()
 
-	// Post fog config to controller using the NEW client
-	// This ensures we connect to the correct (new) URL
-	// Asynchronously post config to controller to prevent blocking local operations
+	// Recreate the API client and post fog config asynchronously so that the
+	// SIGHUP handler goroutine returns immediately (no DNS / TLS blocking).
 	go func() {
+		logging.LogDebug(moduleName, "Recreating API client after config change")
+		apiClient, err := NewAPIClient()
+		if err != nil {
+			logging.LogError(moduleName, fmt.Sprintf("Failed to recreate API client: %v", err), err)
+			return
+		}
+		fa.mu.Lock()
+		fa.apiClient = apiClient
+		if fa.orchestrator != nil {
+			fa.orchestrator = NewOrchestrator(apiClient)
+		}
+		fa.mu.Unlock()
+
+		if !fa.shouldPostFogConfigAfterUpdate() {
+			logging.LogWarn(moduleName, "Skipping postFogConfig because last config reload was rejected")
+			return
+		}
+
 		logging.LogDebug(moduleName, "Starting asynchronous postFogConfig")
 		if err := fa.postFogConfig(); err != nil {
 			logging.LogError(moduleName, "Failed to post updated fog config", err)
-			// Don't fail the update for this, just log it
 		} else {
 			logging.LogDebug(moduleName, "Successfully posted fog config")
 		}
 	}()
 
-	// Restart workers so they pick up new frequency values from config
-	go fa.restartWorkers()
-
-	logging.LogDebug(moduleName, "Field Agent updated successfully")
+	logging.LogDebug(moduleName, "Field Agent update dispatched (workers self-update via dynamic timers)")
 	return nil
 }
 
-// restartWorkers stops existing background workers and starts new ones with updated intervals
-func (fa *FieldAgent) restartWorkers() {
-	logging.LogDebug(moduleName, "Restarting workers to pick up new config frequencies")
-
-	// Cancel existing workers
-	if fa.cancel != nil {
-		fa.cancel()
-	}
-
-	// Wait for them to finish
-	fa.wg.Wait()
-
-	// New context for the restarted workers
-	fa.ctx, fa.cancel = context.WithCancel(context.Background())
-
-	// Start fresh workers — tickers will be created with current config values
-	fa.wg.Add(4)
-	go fa.pingControllerWorker()
-	go fa.getChangesWorker()
-	go fa.postStatusWorker()
-	go fa.postDiagnosticsWorker()
-
-	logging.LogDebug(moduleName, "Workers restarted with updated config frequencies")
+func (fa *FieldAgent) shouldPostFogConfigAfterUpdate() bool {
+	return config.IsLastReloadSuccessful()
 }
 
 // GetActiveExecSession returns the active exec session ID for a microservice
@@ -942,6 +987,13 @@ func (fa *FieldAgent) RemoveActiveExecSession(microserviceUUID string) {
 // HandleExecSessionClose handles closing an exec session
 func (fa *FieldAgent) HandleExecSessionClose(microserviceUUID, execID string) error {
 	logging.LogInfo(moduleName, fmt.Sprintf("Handling exec session close: microservice=%s, execID=%s", microserviceUUID, execID))
+
+	// Kill and deregister the exec process in the engine so the exec ID can be reused.
+	if fa.processManager != nil {
+		if err := fa.processManager.StopExecSession(microserviceUUID, execID); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("StopExecSession: %v", err))
+		}
+	}
 
 	// Remove from tracking
 	fa.execSessionsMu.Lock()
@@ -1142,7 +1194,7 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 			// Check if session is still running
 			if fa.processManager != nil {
 				status, err := fa.processManager.GetExecSessionStatus(existingExecID)
-				if err != nil || status == nil || !status.Running {
+				if err != nil || status == nil {
 					// Session is not running, clean it up and create a new one
 					logging.LogDebug(moduleName, fmt.Sprintf("Exec session %s is not running, cleaning up and creating new one", existingExecID))
 					if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
@@ -1162,6 +1214,11 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 
 		// Create new exec session
 		go func(uuid string) {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+				}
+			}()
 			logging.LogDebug(moduleName, fmt.Sprintf("Creating new exec session for microservice: %s", uuid))
 
 			// Create callback
@@ -1228,7 +1285,9 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 	// Create and connect WebSocket handler (matching Java: wsHandler.connect() after exec session creation)
 	logging.LogDebug(moduleName, "Creating and connecting WebSocket handler for exec session")
 	handler := GetExecSessionWebSocketHandler(microserviceUUID)
-	if handler != nil {
+	if handler == nil {
+		logging.LogError(moduleName, "WebSocket handler not created (controller URL empty), exec session will run without WebSocket", fmt.Errorf("microserviceUUID: %s", microserviceUUID))
+	} else {
 		// Check if existing handler exists (matching Java line 2297-2302)
 		fa.execSessionsMu.Lock()
 		if existingHandler, exists := fa.activeWebSockets[microserviceUUID]; exists {

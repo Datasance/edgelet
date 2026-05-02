@@ -8,10 +8,24 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func openTestSQLite(t *testing.T) {
+	t.Helper()
+	db := store.GetInstance()
+	if err := db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open sqlite for test: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+}
+
 func TestJWTManager_GenerateJWT(t *testing.T) {
+	openTestSQLite(t)
+
 	// Setup: Create a test Ed25519 key pair
 	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -100,6 +114,8 @@ func TestJWTManager_GenerateJWT(t *testing.T) {
 }
 
 func TestJWTManager_ValidateJWT(t *testing.T) {
+	openTestSQLite(t)
+
 	// Setup: Create a test Ed25519 key pair
 	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -149,6 +165,8 @@ func TestJWTManager_ValidateJWT(t *testing.T) {
 }
 
 func TestJWTManager_Reset(t *testing.T) {
+	openTestSQLite(t)
+
 	manager := GetJWTManager()
 	manager.Reset()
 

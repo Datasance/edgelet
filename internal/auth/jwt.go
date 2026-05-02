@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -115,6 +116,11 @@ func (j *JWTManager) loadPrivateKeyFromConfig() error {
 func (j *JWTManager) GenerateJWT() (string, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+
+	// Fail-closed (scoped): auth paths depend on SQLite-backed private key durability.
+	if store.GetInstance().Conn() == nil {
+		return "", errors.New("sqlite unavailable; auth path blocked")
+	}
 
 	// Get UUID and private key from config first to check if agent is provisioned
 	cfg := config.GetInstance()
