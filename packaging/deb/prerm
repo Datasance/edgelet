@@ -1,9 +1,0 @@
-#!/bin/bash
-set -e
-
-# Stop service before removal
-if systemctl is-active --quiet iofog-agent.service; then
-    systemctl stop iofog-agent.service
-fi
-
-exit 0
