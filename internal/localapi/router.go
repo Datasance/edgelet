@@ -17,6 +17,9 @@ type Router struct {
 	mux                *http.ServeMux
 	statusHandler      *handlers.StatusHandler
 	infoHandler        *handlers.InfoHandler
+	healthLiveHandler  http.HandlerFunc
+	healthReadyHandler http.HandlerFunc
+	metricsHandler     http.HandlerFunc
 	versionHandler     *handlers.VersionHandler
 	commandHandler     *handlers.CommandHandler
 	gpsHandler         *handlers.GPSHandler
@@ -34,6 +37,9 @@ func NewRouter() *Router {
 		mux:                http.NewServeMux(),
 		statusHandler:      &handlers.StatusHandler{},
 		infoHandler:        &handlers.InfoHandler{},
+		healthLiveHandler:  handlers.HealthLiveHandler,
+		healthReadyHandler: handlers.HealthReadyHandler,
+		metricsHandler:     handlers.MetricsHandler,
 		versionHandler:     &handlers.VersionHandler{},
 		commandHandler:     &handlers.CommandHandler{},
 		gpsHandler:         handlers.NewGPSHandler(),
@@ -66,6 +72,11 @@ func withActionLogging(actionName string, handler http.HandlerFunc) http.Handler
 
 // setupRoutes registers all routes
 func (r *Router) setupRoutes() {
+	// Health and metrics (no auth — used by orchestrators and monitoring)
+	r.mux.HandleFunc("/health/live", r.healthLiveHandler)
+	r.mux.HandleFunc("/health/ready", r.healthReadyHandler)
+	r.mux.HandleFunc("/metrics", r.metricsHandler)
+
 	// REST endpoints with authentication (CLI/admin only)
 	r.mux.HandleFunc("/v2/status", chainMiddleware(authMiddleware(r.statusHandler.HandleStatus), loggingMiddleware))
 	r.mux.HandleFunc("/v2/info", chainMiddleware(authMiddleware(r.infoHandler.HandleInfo), loggingMiddleware))

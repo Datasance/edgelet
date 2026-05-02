@@ -97,6 +97,11 @@ func (sr *StatusReporter) Stop() error {
 // setSystemTimeWorker periodically updates the system time in status
 func (sr *StatusReporter) setSystemTimeWorker() {
 	defer sr.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 
 	cfg := sr.config
 	ticker := time.NewTicker(time.Duration(cfg.SetSystemTimeFreqSeconds) * time.Second)

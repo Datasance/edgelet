@@ -2,6 +2,7 @@ package localapi
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/eclipse-iofog/agent/internal/utils"
@@ -44,6 +45,11 @@ func (l *LocalAPI) Start() error {
 
 	// Start server in goroutine
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(localAPIModuleName, "Panic recovered", fmt.Errorf("%v", r))
+			}
+		}()
 		if err := l.server.Start(); err != nil {
 			logging.LogError(localAPIModuleName, "Failed to start local api server", err)
 		}

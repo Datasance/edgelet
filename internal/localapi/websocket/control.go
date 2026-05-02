@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -77,6 +78,11 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 // handleConnection handles messages from a WebSocket connection
 func (h *ControlHandler) handleConnection(conn *Connection) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(controlHandlerModuleName, "Panic recovered", fmt.Errorf("%v", r))
+		}
+	}()
 	defer func() {
 		if err := conn.Conn.Close(); err != nil {
 			logging.LogWarn(controlHandlerModuleName, "Failed to close WebSocket connection: "+err.Error())
