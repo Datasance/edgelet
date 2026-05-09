@@ -19,7 +19,10 @@ vendor/
 go.work
 
 # Build directory
-build/
+build/iofog-agent*
+build/iofog-agentd*
+internal/embedded/bin/
+
 
 # IDE files
 .vscode/
