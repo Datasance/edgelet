@@ -94,11 +94,9 @@ func (p *ProcessManagerStatus) SetMicroservicesStatusErrorMessage(microserviceUU
 		status = NewMicroserviceStatus()
 		p.MicroservicesStatus[microserviceUUID] = status
 	}
-	if message != "" {
-		status.ErrorMessage = &message
-	} else {
-		status.ErrorMessage = nil
-	}
+	// Keep tri-state semantics:
+	// nil pointer => no update/unspecified, non-nil empty string => explicit clear.
+	status.ErrorMessage = &message
 	return p
 }
 
@@ -143,7 +141,7 @@ func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 		IPAddress         string   `json:"ipAddress,omitempty"`
 		HealthStatus      string   `json:"healthStatus,omitempty"`
 		ExecSessionIDs    []string `json:"execSessionIds,omitempty"`
-		ErrorMessage      string   `json:"errorMessage,omitempty"`
+		ErrorMessage      *string  `json:"errorMessage,omitempty"`
 	}
 
 	statuses := make([]MicroserviceStatusJSON, 0, len(p.MicroservicesStatus))
@@ -173,8 +171,8 @@ func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 			msStatus.ExecSessionIDs = status.GetExecSessionIDs()
 		}
 
-		if status.ErrorMessage != nil && *status.ErrorMessage != "" {
-			msStatus.ErrorMessage = *status.ErrorMessage
+		if status.ErrorMessage != nil {
+			msStatus.ErrorMessage = status.ErrorMessage
 		}
 
 		statuses = append(statuses, msStatus)
