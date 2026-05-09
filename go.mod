@@ -5,6 +5,7 @@ go 1.24.3
 require (
 	github.com/containerd/cgroups/v3 v3.0.5
 	github.com/containerd/containerd/v2 v2.1.5
+	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/typeurl/v2 v2.2.3
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/docker/go-connections v0.6.0
@@ -38,7 +39,6 @@ require (
 	github.com/containerd/console v1.0.4 // indirect
 	github.com/containerd/containerd/api v1.9.0 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/go-cni v1.1.12 // indirect

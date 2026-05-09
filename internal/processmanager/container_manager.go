@@ -12,6 +12,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
 	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
 
 const (
@@ -89,39 +90,43 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	if registry == nil {
 		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
 	}
-
-	platform := ""
-	if ms.Platform != nil {
-		platform = *ms.Platform
-	}
-	_ = platform
+	fromCache := registry.URL == "from_cache"
+	pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	pullSucceeded := false
 
 	if registry.URL != "from_cache" {
 		opts := &engine.PullImageOptions{
+			Platform: cm.platformForPull(ms),
 			ProgressCallback: func(pct float32) {
 				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 					s.SetMicroservicesStatePercentage(ms.MicroserviceUUID, pct)
 				})
 			},
 		}
-		if err := cm.engine.PullImage(ms.ImageName, registry, opts); err != nil {
-			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", ms.ImageName, err)
+		if err := cm.engine.PullImage(pullRef, registry, opts); err != nil {
+			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", pullRef, err)
 		} else {
-			cm.logger.Infof("Successfully pulled image \"%s\" while old container was running", ms.ImageName)
+			pullSucceeded = true
+			cm.logger.Infof("Successfully pulled image \"%s\" while old container was running", pullRef)
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
 			})
 		}
 	}
 
-	// Verify image exists (either pulled or in cache)
-	exists, err := cm.engine.FindLocalImage(ms.ImageName)
+	// Verify image exists (either pulled or in cache) and pick the runtime reference
+	// that will be used for container creation.
+	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		ms.SetIsUpdating(false)
-		return fmt.Errorf("image not found: %s. Pull failed and image not in local cache", ms.ImageName)
+		return fmt.Errorf("image not found in local cache for refs: %v", lookupRefs)
+	}
+	effectiveRunRef := matchedRef
+	if pullSucceeded {
+		effectiveRunRef = pullRef
 	}
 
 	// Step 2: Now stop and remove old container (releases ports)
@@ -133,7 +138,8 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	}
 
 	// Step 3: Create and start new container (can use same ports now)
-	// Pass false to createContainer to skip pulling since we already pulled
+	// Use the resolved runtime image ref so pull/check/create use the same reference.
+	ms.ImageName = effectiveRunRef
 	if err := cm.createContainer(ms); err != nil {
 		return err
 	}
@@ -168,6 +174,7 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 		// Container already gone (e.g. crashed) — still report DELETED so controller receives final state
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
+			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
 		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
 	} else {
@@ -189,6 +196,7 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 		// Set DELETED status after successful removal so controller receives final state
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
+			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
 
 		// Remove image when explicitly requested (matching Java ContainerManager.removeContainer logic).
@@ -288,38 +296,48 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	if registry == nil {
 		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
 	}
+	fromCache := registry.URL == "from_cache"
+	pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	pullSucceeded := false
 
 	if registry.URL != "from_cache" && pullImage {
 		opts := &engine.PullImageOptions{
+			Platform: cm.platformForPull(ms),
 			ProgressCallback: func(pct float32) {
 				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 					s.SetMicroservicesStatePercentage(ms.MicroserviceUUID, pct)
 				})
 			},
 		}
-		if err := cm.engine.PullImage(ms.ImageName, registry, opts); err != nil {
-			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", ms.ImageName, err)
+		if err := cm.engine.PullImage(pullRef, registry, opts); err != nil {
+			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", pullRef, err)
 			return cm.createContainerWithPull(ms, false)
 		}
+		pullSucceeded = true
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
 		})
 	}
 
-	if !pullImage {
-		exists, err := cm.engine.FindLocalImage(ms.ImageName)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return fmt.Errorf("image not found in local cache")
-		}
+	// Verify image exists in local cache and pick the runtime image reference.
+	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs)
+	if err != nil {
+		return err
 	}
+	if !exists {
+		return fmt.Errorf("image not found in local cache for refs: %v", lookupRefs)
+	}
+	effectiveRunRef := matchedRef
+	if pullSucceeded {
+		effectiveRunRef = pullRef
+	}
+	ms.ImageName = effectiveRunRef
 
 	cm.logger.Infof("Creating container \"%s\"", ms.ImageName)
 	// Set status to STARTING via status reporter
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateStarting)
+		status.SetMicroservicesStatusErrorMessage(ms.MicroserviceUUID, "")
 	})
 
 	cfg := config.GetInstance()
@@ -368,6 +386,7 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	// Set status to RUNNING via status reporter
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateRunning)
+		status.SetMicroservicesStatusErrorMessage(ms.MicroserviceUUID, "")
 		// Set start time
 		if msStatus := status.GetMicroserviceStatus(ms.MicroserviceUUID); msStatus != nil {
 			msStatus.StartTime = time.Now().UnixMilli()
@@ -380,4 +399,24 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	_ = cfg
 
 	return nil
+}
+
+func (cm *ContainerManager) platformForPull(ms *models.Microservice) string {
+	if ms == nil || ms.Platform == nil {
+		return ""
+	}
+	return *ms.Platform
+}
+
+func (cm *ContainerManager) findFirstLocalImageRef(refs []string) (string, bool, error) {
+	for _, ref := range refs {
+		exists, err := cm.engine.FindLocalImage(ref)
+		if err != nil {
+			return "", false, err
+		}
+		if exists {
+			return ref, true, nil
+		}
+	}
+	return "", false, nil
 }

@@ -90,10 +90,12 @@ func (e *Engine) RemoveContainer(containerID string, removeVolumes bool) error {
 
 func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *engine.PullImageOptions) error {
 	var cb func(float32)
+	var platform string
 	if opts != nil {
 		cb = opts.ProgressCallback
+		platform = opts.Platform
 	}
-	return e.client.PullImage(imageRef, "", "", registry, cb)
+	return e.client.PullImage(imageRef, "", platform, registry, cb)
 }
 
 func (e *Engine) FindLocalImage(imageRef string) (bool, error) {

@@ -91,6 +91,9 @@ type ContainerEngine interface {
 type PullImageOptions struct {
 	Out              io.Writer
 	ProgressCallback func(float32)
+	// Platform is an optional OCI platform selector (e.g. linux/amd64).
+	// When set, engines should map it to their native pull option.
+	Platform string
 }
 
 // EngineConfig holds the configuration passed to ContainerEngine.Init().

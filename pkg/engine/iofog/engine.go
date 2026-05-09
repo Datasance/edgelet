@@ -24,6 +24,7 @@ import (
 	v1stats "github.com/containerd/cgroups/v3/cgroup1/stats"
 	v2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	dockerresolver "github.com/containerd/containerd/v2/core/remotes/docker"
 	"github.com/containerd/containerd/v2/pkg/cio"
@@ -42,6 +43,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
 
 const (
@@ -527,8 +529,10 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 	ctx := e.ctx()
 
 	var cb func(float32)
+	var platform string
 	if opts != nil {
 		cb = opts.ProgressCallback
+		platform = opts.Platform
 	}
 	if cb != nil {
 		cb(0)
@@ -536,12 +540,25 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 
 	var remoteOpts []client.RemoteOpt
 	if registry != nil && !registry.IsPublic {
+		expectedHost := imageref.SanitizeRegistryHost(registry.URL)
 		resolver := dockerresolver.NewResolver(dockerresolver.ResolverOptions{
 			Credentials: func(host string) (string, string, error) {
+				if expectedHost != "" && imageref.SanitizeRegistryHost(host) != expectedHost {
+					return "", "", nil
+				}
 				return registry.UserName, registry.Password, nil
 			},
 		})
 		remoteOpts = append(remoteOpts, client.WithResolver(resolver))
+	}
+	if platform != "" {
+		remoteOpts = append(remoteOpts, client.WithPlatform(platform))
+	}
+
+	stopProgress := make(chan struct{})
+	if cb != nil {
+		go e.reportPullProgress(ctx, cb, stopProgress)
+		defer close(stopProgress)
 	}
 
 	log.Infof("Pulling image %s via embedded containerd", imageRef)
@@ -557,16 +574,73 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 }
 
 func (e *Engine) FindLocalImage(imageRef string) (bool, error) {
+	_, aliases := imageref.Resolve(imageRef, "", true)
 	imgs, err := e.client.ListImages(e.ctx())
 	if err != nil {
 		return false, err
 	}
+	matches := func(imgName, query string) bool {
+		return imgName == query || strings.HasPrefix(imgName, query+":")
+	}
 	for _, img := range imgs {
-		if img.Name() == imageRef || strings.HasPrefix(img.Name(), imageRef+":") {
-			return true, nil
+		for _, q := range aliases {
+			if matches(img.Name(), q) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
+}
+
+func (e *Engine) reportPullProgress(ctx context.Context, cb func(float32), stop <-chan struct{}) {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	var last float32
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			statuses, err := e.client.ContentStore().ListStatuses(ctx)
+			if err != nil {
+				continue
+			}
+			next := computePullProgress(statuses, last)
+			if next > last {
+				last = next
+				cb(next)
+			}
+		}
+	}
+}
+
+func computePullProgress(statuses []content.Status, prev float32) float32 {
+	var sumOffset int64
+	var sumTotal int64
+	for _, s := range statuses {
+		if s.Total <= 0 {
+			continue
+		}
+		sumTotal += s.Total
+		off := s.Offset
+		if off > s.Total {
+			off = s.Total
+		}
+		sumOffset += off
+	}
+	if sumTotal <= 0 {
+		return prev
+	}
+	pct := float32(sumOffset) * 100 / float32(sumTotal)
+	if pct < prev {
+		pct = prev
+	}
+	if pct > 99 {
+		pct = 99
+	}
+	return pct
 }
 
 func (e *Engine) RemoveImage(imageRef string) error {

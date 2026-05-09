@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
 
 // PullImage pulls an image from a registry with authentication
@@ -24,13 +25,9 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 	ctx := c.GetContext()
 	c.logger.Infof("Pull image name \"%s\"", imageName)
 
-	// Parse image name and tag
-	imgRef := imageName
-	tag := "latest"
-
-	if parts := strings.Split(imageName, ":"); len(parts) > 1 {
-		imgRef = parts[0]
-		tag = parts[1]
+	pullRef := strings.TrimSpace(imageName)
+	if pullRef == "" {
+		return fmt.Errorf("image name cannot be empty")
 	}
 
 	// Build pull options
@@ -42,12 +39,16 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 	}
 
 	// Set authentication if registry is not public
-	if !registry.IsPublic && registry.URL != "from_cache" {
+	if registry != nil && !registry.IsPublic && registry.URL != "from_cache" {
+		serverAddress := imageref.SanitizeRegistryHost(registry.URL)
+		if serverAddress == "" {
+			serverAddress = registry.URL
+		}
 		// Build auth config
 		authConfig := dockerregistry.AuthConfig{
 			Username:      registry.UserName,
 			Password:      registry.Password,
-			ServerAddress: registry.URL,
+			ServerAddress: serverAddress,
 		}
 		if registry.UserEmail != "" {
 			authConfig.Email = registry.UserEmail
@@ -62,7 +63,7 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 	}
 
 	// Pull image
-	pullResp, err := cli.ImagePull(ctx, fmt.Sprintf("%s:%s", imgRef, tag), opts)
+	pullResp, err := cli.ImagePull(ctx, pullRef, opts)
 	if err != nil {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
