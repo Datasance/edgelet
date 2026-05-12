@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/cli"
 )
 
@@ -14,43 +15,54 @@ var (
 	gitCommit = "unknown"
 )
 
-func main() {
-	// Handle version command early
-	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("iofog-agent %s (built %s, commit %s)\n", version, buildTime, gitCommit)
-		fmt.Printf("  build flavor: %s\n", buildmeta.Flavor)
-		fmt.Printf("  allowed containerEngine: %s\n", buildmeta.AllowedEnginesCSV())
-		os.Exit(0)
-	}
+var errorCodePattern = regexp.MustCompile(`^Error\[([A-Z_]+)\]:`)
 
+func main() {
 	// Handle all other commands
 	args := os.Args[1:]
 	result := cli.HandleCommand(args)
+	if result != "" && !strings.HasSuffix(result, "\n") {
+		result += "\n"
+	}
 
 	// Print result
 	fmt.Print(result)
 
 	// Exit with appropriate code
-	if result != "" && len(args) > 0 {
-		// Check if result indicates an error
-		if contains(result, "Error") || contains(result, "error") {
-			os.Exit(1)
-		}
+	if len(args) == 0 {
+		return
+	}
+	if isErrorResult(result) {
+		os.Exit(mapExitCode(result))
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		(len(s) > len(substr) && (s[:len(substr)] == substr ||
-			s[len(s)-len(substr):] == substr ||
-			indexOf(s, substr) >= 0)))
+func isErrorResult(result string) bool {
+	trimmed := strings.TrimSpace(result)
+	if trimmed == "" {
+		return false
+	}
+	return strings.HasPrefix(trimmed, "Error[")
 }
 
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
+func mapExitCode(result string) int {
+	trimmed := strings.TrimSpace(result)
+	matches := errorCodePattern.FindStringSubmatch(trimmed)
+	if len(matches) < 2 {
+		return 1
 	}
-	return -1
+	switch matches[1] {
+	case "INVALID_ARGUMENT":
+		return 2
+	case "UNAUTHORIZED", "FORBIDDEN":
+		return 3
+	case "NOT_FOUND":
+		return 4
+	case "CONFLICT":
+		return 5
+	case "NOT_IMPLEMENTED":
+		return 6
+	default:
+		return 1
+	}
 }
