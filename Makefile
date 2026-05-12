@@ -19,11 +19,13 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 # Flavor: lite (CGO=0, docker|podman) or full (CGO=1, embedded containerd / iofog)
 FLAVOR ?= full
 
-# Build flags — version + git + buildmeta.Flavor (both CLI and daemon use main.version in cmd/*)
-LDFLAGS_BASE := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=$(FLAVOR)
-LDFLAGS := $(LDFLAGS_BASE) -s -w
-BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
+# Build flags
+# CLI is flavor-agnostic; daemon carries flavor metadata.
+LDFLAGS_CLI := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) -s -w
+LDFLAGS_DAEMON := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
+	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=$(FLAVOR) -s -w
+BUILD_FLAGS_CLI := -trimpath -ldflags "$(LDFLAGS_CLI)"
+BUILD_FLAGS_DAEMON := -trimpath -ldflags "$(LDFLAGS_DAEMON)"
 
 # Fixed flavor ldflags for multi-flavor release builds (do not depend on FLAVOR=)
 LDFLAGS_LITE := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
@@ -46,10 +48,10 @@ help: ## Show this help message
 
 build: build-cli build-daemon ## Build both binaries for FLAVOR (default: full)
 
-build-cli: ## Build CLI binary (honors FLAVOR=lite|full for validation metadata)
+build-cli: ## Build CLI binary (flavor-agnostic)
 	@echo "Building iofog-agent (flavor=$(FLAVOR))..."
 	@mkdir -p build
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(CLI_BINARY) ./cmd/iofog-agent
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS_CLI) -o $(CLI_BINARY) ./cmd/iofog-agent
 	@echo "Built: $(CLI_BINARY)"
 
 build-daemon: build-daemon-$(FLAVOR) ## Build daemon for current FLAVOR (default full)
@@ -66,10 +68,10 @@ build-daemon-full: ## Full daemon: CGO=1, embedded containerd (iofog engine)
 
 .PHONY: _build-daemon-cgo0 _build-daemon-cgo1
 _build-daemon-cgo0:
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(DAEMON_BINARY) ./cmd/iofog-agentd
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS_DAEMON) -o $(DAEMON_BINARY) ./cmd/iofog-agentd
 
 _build-daemon-cgo1:
-	@CGO_ENABLED=1 go build $(BUILD_FLAGS) -tags cgo -o $(DAEMON_BINARY) ./cmd/iofog-agentd
+	@CGO_ENABLED=1 go build $(BUILD_FLAGS_DAEMON) -tags cgo -o $(DAEMON_BINARY) ./cmd/iofog-agentd
 
 deps: ## Download all embedded binary dependencies (run before build-daemon-embedded)
 	@echo "Downloading embedded dependencies for ARCH=$(ARCH)..."
@@ -82,18 +84,18 @@ build-linux-amd64: ## Build lite+full for linux/amd64 (glibc)
 	@echo "Building for linux/amd64 (lite + full)..."
 	@$(MAKE) deps ARCH=amd64
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-amd64-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-amd64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-amd64-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=gcc go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-amd64-full ./cmd/iofog-agentd
 
 build-linux-amd64-musl: ## Build lite+full for linux/amd64-musl (static daemon for full)
 	@echo "Building for linux/amd64-musl (lite + full)..."
 	@$(MAKE) deps ARCH=amd64
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-amd64-musl-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-musl-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-amd64-musl-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-amd64-musl-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-musl-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=x86_64-linux-musl-gcc \
 		go build -trimpath -ldflags "$(LDFLAGS_FULL) -extldflags '-static'" -tags cgo \
 		-o build/iofog-agentd-linux-amd64-musl-full ./cmd/iofog-agentd
@@ -102,18 +104,18 @@ build-linux-arm64: ## Build lite+full for linux/arm64 (glibc)
 	@echo "Building for linux/arm64 (lite + full)..."
 	@$(MAKE) deps ARCH=arm64
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-arm64-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-arm64-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-arm64-full ./cmd/iofog-agentd
 
 build-linux-arm64-musl: ## Build lite+full for linux/arm64-musl
 	@echo "Building for linux/arm64-musl (lite + full)..."
 	@$(MAKE) deps ARCH=arm64
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-arm64-musl-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-musl-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm64-musl-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-arm64-musl-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-musl-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-musl-gcc \
 		go build -trimpath -ldflags "$(LDFLAGS_FULL) -extldflags '-static'" -tags cgo \
 		-o build/iofog-agentd-linux-arm64-musl-full ./cmd/iofog-agentd
@@ -122,9 +124,9 @@ build-linux-arm: ## Build lite+full for linux/arm (armhf)
 	@echo "Building for linux/arm (armhf) (lite + full)..."
 	@$(MAKE) deps ARCH=arm
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-arm-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-arm-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC=arm-linux-gnueabihf-gcc \
 		go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-arm-full ./cmd/iofog-agentd
 
@@ -132,9 +134,9 @@ build-linux-riscv64: ## Build lite+full for linux/riscv64
 	@echo "Building for linux/riscv64 (lite + full)..."
 	@$(MAKE) deps ARCH=riscv64
 	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agent-linux-riscv64-lite ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-riscv64-lite ./cmd/iofog-agent
 	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-riscv64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_FULL)" -o build/iofog-agent-linux-riscv64-full ./cmd/iofog-agent
+	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-riscv64-full ./cmd/iofog-agent
 	@CGO_ENABLED=1 GOOS=linux GOARCH=riscv64 CC=riscv64-linux-gnu-gcc \
 		go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-riscv64-full ./cmd/iofog-agentd
 

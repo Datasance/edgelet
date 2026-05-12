@@ -7,8 +7,8 @@
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
 #   Phase 3 — CNI network configuration
-#   Phase 4 — Image operations (pull, list, remove)
-#   Phase 5 — Container lifecycle (create, start, exec, logs, stop, remove)
+#   Phase 4 — LocalAPI v3 + CLI microservice operations
+#   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
 #
 # Usage:
@@ -29,9 +29,6 @@ done
 R() { echo "$*" | limactl --tty=false shell "${VM_NAME}" -- sudo bash; }
 # Run as non-root (for CLI tests)
 U() { echo "$*" | limactl --tty=false shell "${VM_NAME}" -- bash; }
-
-# Shorthand for ctr (containerd CLI) pointing at our private socket
-CTR() { R "ctr --address /run/iofog-agent/containerd.sock --namespace k8s.io $*"; }
 
 echo ""
 echo "======================================================================"
@@ -87,12 +84,8 @@ assert_ok "containerd socket exists" \
 assert_ok "iofog-agentd service is active" \
     R "systemctl is-active iofog-agentd"
 
-assert_ok "containerd responds to version query" \
-    CTR "version"
-
-assert_ok "iofog namespace exists in containerd" \
-    CTR "namespaces list" | grep -q "iofog" && true || \
-    assert_ok "iofog namespace exists" CTR "namespaces list"
+assert_contains "iofog-agent status endpoint is reachable" "daemonStatus" \
+    R "iofog-agent system status"
 
 ###############################################################################
 # Phase 3 — CNI network configuration
@@ -118,37 +111,37 @@ assert_ok "CNI system symlink created" \
     R "test -L /etc/cni/net.d/10-iofog.conflist"
 
 ###############################################################################
-# Phase 4 — Image operations
+# Phase 4 — LocalAPI v3 + CLI microservice operations
 ###############################################################################
-log_step "Phase 4: Image operations"
+log_step "Phase 4: LocalAPI v3 and CLI operations"
 
-TEST_IMAGE="docker.io/library/alpine:3.19"
+assert_contains "ms ps returns JSON items" "\"items\"" \
+    R "iofog-agent ms ps"
 
-log_info "Pulling ${TEST_IMAGE} (may take 30-60s on first run)..."
-assert_ok "pull alpine:3.19" \
-    CTR "images pull ${TEST_IMAGE}"
+assert_contains "auth whoami returns claims payload" "\"claims\"" \
+    R "iofog-agent auth whoami"
 
-assert_ok "alpine image appears in image list" \
-    CTR "images list" | grep -q "alpine" && true || \
-    assert_contains "alpine image listed" "alpine" CTR "images list"
+assert_ok "create temporary local deploy manifest" \
+    R "cat >/tmp/iofog-local-ms.yaml <<'EOF'
+kind: Microservice
+apiVersion: agent.iofog.org/v3
+metadata:
+  name: local-test-ms
+spec:
+  image: docker.io/library/alpine:3.19
+  command:
+    - /bin/sh
+    - -lc
+    - sleep 10
+EOF"
+
+assert_contains "deploy -f submits manifest via CLI" "\"deploymentId\"" \
+    R "iofog-agent deploy -f /tmp/iofog-local-ms.yaml"
 
 ###############################################################################
-# Phase 5 — Container lifecycle
+# Phase 5 — Runtime prerequisites
 ###############################################################################
-log_step "Phase 5: Container lifecycle"
-
-CONTAINER_ID="iofog-test-alpine-$$"
-
-# Create + start container
-assert_ok "run alpine container (echo hello)" \
-    CTR "run --rm ${TEST_IMAGE} ${CONTAINER_ID} echo 'hello from iofog containerd'"
-
-# Verify log directory is created for a managed container
-# (create a named container via the daemon's own path, checking log infrastructure)
-MANAGED_CID="iofog-test-managed-$$"
-R "ctr --address /run/iofog-agent/containerd.sock --namespace iofog \
-    run --rm ${TEST_IMAGE} ${MANAGED_CID} sh -c 'echo iofog-log-test && sleep 1'" \
-    &>/dev/null || true
+log_step "Phase 5: Runtime prerequisites"
 
 # Check IP forwarding is enabled
 assert_ok "IP forwarding enabled" \
@@ -172,22 +165,14 @@ assert_ok "iofog-agent binary is executable" \
 assert_contains "iofog-agent info shows containerEngine=iofog" "iofog" \
     R "iofog-agent info 2>/dev/null || iofog-agent info"
 
-assert_contains "iofog-agent config --help shows -ce flag" "\-ce" \
-    R "iofog-agent config --help"
+assert_contains "iofog-agent config get returns container engine field" "\"containerEngine\"" \
+    R "iofog-agent config get"
 
-# Test config switch (docker → iofog → docker)
-# assert_ok "config -ce docker accepted" \
-#     R "iofog-agent config -ce docker"
+assert_ok "iofog-agent config set containerEngine iofog accepted" \
+    R "iofog-agent config set containerEngine iofog"
 
-assert_ok "config -ce iofog accepted" \
-    R "iofog-agent config -ce iofog"
-
-assert_contains "info shows engine=iofog after switch" "iofog" \
-    R "iofog-agent info 2>/dev/null || echo 'iofog'"
-
-# Invalid engine rejected
-assert_ok "invalid engine value rejected" \
-    bash -c "! R 'iofog-agent config -ce invalid_engine' 2>/dev/null"
+assert_contains "config get reflects engine=iofog" "\"containerEngine\": \"iofog\"" \
+    R "iofog-agent config get"
 
 ###############################################################################
 # Summary

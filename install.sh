@@ -280,9 +280,9 @@ install_dirs() {
     mkdir -p /etc/iofog-agent
     chmod 750 /etc/iofog-agent
     mkdir -p /var/log/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent \
-        "$BACKUP_DIR" /var/log/iofog-microservices /var/lib/iofog-agent-containerd
+        "$BACKUP_DIR" /var/lib/iofog-agent-containerd
     chmod 750 /var/log/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent \
-        "$BACKUP_DIR" /var/log/iofog-microservices /var/lib/iofog-agent-containerd 2>/dev/null || true
+        "$BACKUP_DIR" /var/lib/iofog-agent-containerd 2>/dev/null || true
 }
 
 # ── init: stop/start helpers ──────────────────────────────────────────────────
@@ -370,7 +370,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/lib/iofog-agent-containerd /run/iofog-agent /var/log/iofog-agent /var/log/iofog-microservices /var/backups/iofog-agent
+ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/lib/iofog-agent-containerd /run/iofog-agent /var/log/iofog-agent /var/backups/iofog-agent
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_CHROOT CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_DAC_READ_SEARCH
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
@@ -401,7 +401,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent /var/log/iofog-agent /var/log/iofog-microservices /var/backups/iofog-agent
+ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent /var/log/iofog-agent /var/backups/iofog-agent
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_CHROOT CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_DAC_READ_SEARCH
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true

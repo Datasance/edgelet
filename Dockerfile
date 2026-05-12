@@ -88,7 +88,6 @@ RUN true && \
     mkdir -p /var/lib/iofog-agent && \
     mkdir -p /var/lib/iofog-agent-containerd && \
     mkdir -p /var/run/iofog-agent && \
-    mkdir -p /var/log/iofog-microservices && \
     chown -R :iofog-agent /etc/iofog-agent && \
     chown -R :iofog-agent /var/log/iofog-agent && \
     chown -R :iofog-agent /var/lib/iofog-agent && \
@@ -102,7 +101,6 @@ RUN true && \
     chmod 750 -R /var/lib/iofog-agent-containerd && \
     chmod 750 -R /var/run/iofog-agent && \
     chmod 750 -R /var/backups/iofog-agent && \
-    chmod 750 -R /var/log/iofog-microservices && \
     chmod 754 -R /usr/share/iofog-agent && \
     chmod 754 /usr/bin/iofog-agent && \
     chmod 754 /usr/bin/iofog-agentd && \

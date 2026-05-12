@@ -40,8 +40,7 @@ echo "[vm-setup] Creating directories..."
 mkdir -p /etc/iofog-agent
 mkdir -p /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-agent
 mkdir -p /var/lib/iofog-agent-containerd
-mkdir -p /var/log/iofog-microservices
-chmod 750 /etc/iofog-agent /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-agent /var/log/iofog-microservices /var/lib/iofog-agent-containerd
+chmod 750 /etc/iofog-agent /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-agent /var/lib/iofog-agent-containerd
 
 echo "[vm-setup] Writing config..."
 cp "${CONFIG_SRC}" /etc/iofog-agent/config.yaml
