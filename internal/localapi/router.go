@@ -1,7 +1,9 @@
 package localapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/eclipse-iofog/agent/internal/localapi/handlers"
 	"github.com/eclipse-iofog/agent/internal/localapi/websocket"
@@ -21,13 +23,8 @@ type Router struct {
 	healthReadyHandler http.HandlerFunc
 	metricsHandler     http.HandlerFunc
 	versionHandler     *handlers.VersionHandler
-	commandHandler     *handlers.CommandHandler
-	gpsHandler         *handlers.GPSHandler
-	bluetoothHandler   *handlers.BluetoothHandler
-	configHandler      *handlers.ConfigHandler
-	provisionHandler   *handlers.ProvisionHandler
-	deprovisionHandler *handlers.DeprovisionHandler
-	logHandler         *handlers.LogHandler
+	authHandler        *handlers.AuthHandler
+	v3Handler          *handlers.V3Handler
 	controlWSHandler   *websocket.ControlHandler
 }
 
@@ -41,13 +38,8 @@ func NewRouter() *Router {
 		healthReadyHandler: handlers.HealthReadyHandler,
 		metricsHandler:     handlers.MetricsHandler,
 		versionHandler:     &handlers.VersionHandler{},
-		commandHandler:     &handlers.CommandHandler{},
-		gpsHandler:         handlers.NewGPSHandler(),
-		bluetoothHandler:   handlers.NewBluetoothHandler(),
-		configHandler:      handlers.NewConfigHandler(),
-		provisionHandler:   handlers.NewProvisionHandler(),
-		deprovisionHandler: handlers.NewDeprovisionHandler(),
-		logHandler:         handlers.NewLogHandler(),
+		authHandler:        handlers.NewAuthHandler(),
+		v3Handler:          handlers.NewV3Handler(),
 		controlWSHandler:   websocket.NewControlHandler(),
 	}
 	r.setupRoutes()
@@ -56,7 +48,19 @@ func NewRouter() *Router {
 
 // ServeHTTP implements http.Handler
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	logging.LogDebug(routerModuleName, "Handling request: "+req.Method+" "+req.URL.Path)
+	fields := map[string]interface{}{
+		"event":     "localapi.debug",
+		"method":    req.Method,
+		"path":      req.URL.Path,
+		"requestId": strings.TrimSpace(req.Header.Get(requestIDHeader)),
+	}
+	if authHeader := strings.TrimSpace(req.Header.Get("Authorization")); strings.HasPrefix(authHeader, "Bearer ") {
+		for key, value := range safeTokenMeta(strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))) {
+			fields[key] = value
+		}
+	}
+	payload, _ := json.Marshal(fields)
+	logging.LogDebug(routerModuleName, string(payload))
 	r.mux.ServeHTTP(w, req)
 }
 
@@ -77,33 +81,31 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("/health/ready", r.healthReadyHandler)
 	r.mux.HandleFunc("/metrics", r.metricsHandler)
 
-	// REST endpoints with authentication (CLI/admin only)
-	r.mux.HandleFunc("/v2/status", chainMiddleware(authMiddleware(r.statusHandler.HandleStatus), loggingMiddleware))
-	r.mux.HandleFunc("/v2/info", chainMiddleware(authMiddleware(r.infoHandler.HandleInfo), loggingMiddleware))
-	r.mux.HandleFunc("/v2/version", chainMiddleware(authMiddleware(r.versionHandler.HandleVersion), loggingMiddleware))
+	// LocalAPI v3 baseline routes (canonical namespace: /v3)
+	r.mux.HandleFunc("/v3/system/status", chainMiddleware(withRoute("/v3/system/status", r.statusHandler.HandleStatus), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/info", chainMiddleware(withRoute("/v3/system/info", r.infoHandler.HandleInfo), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/version", chainMiddleware(withRoute("/v3/system/version", r.versionHandler.HandleVersion), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/provision", chainMiddleware(withRoute("/v3/system/provision", r.v3Handler.HandleSystemProvision), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/reload", chainMiddleware(withRoute("/v3/system/reload", r.v3Handler.HandleSystemReload), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/prune", chainMiddleware(withRoute("/v3/system/prune", r.v3Handler.HandleSystemPrune), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/gps", chainMiddleware(withRoute("/v3/system/gps", r.v3Handler.HandleSystemGPS), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/config", chainMiddleware(withRoute("/v3/system/config", r.v3Handler.HandleConfig), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/controller/cert", chainMiddleware(withRoute("/v3/system/controller/cert", r.v3Handler.HandleSystemControllerCert), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/config/switch", chainMiddleware(withRoute("/v3/system/config/switch", r.v3Handler.HandleSystemConfigSwitch), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 
-	// CommandLine endpoint needs specific logging
-	r.mux.HandleFunc("/v2/commandline", chainMiddleware(authMiddleware(withActionLogging("commandline", r.commandHandler.HandleCommandLine)), loggingMiddleware))
+	r.mux.HandleFunc("/v3/microservices/config", chainMiddleware(withRoute("/v3/microservices/config", r.v3Handler.HandleMicroserviceConfigSelf), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/microservices/control", r.controlWSHandler.Handle)
 
-	// Config endpoints
-	// /v2/config/get WITHOUT authentication
-	r.mux.HandleFunc("/v2/config/get", chainMiddleware(r.configHandler.HandleConfigGet, loggingMiddleware))
-	// /v2/config WITH authentication
-	r.mux.HandleFunc("/v2/config", chainMiddleware(authMiddleware(r.configHandler.HandleConfigSet), loggingMiddleware))
-
-	// WebSocket endpoint for control channel (no auth middleware needed, handled in handler)
-	r.mux.HandleFunc("/v2/control/socket/", r.controlWSHandler.Handle)
-
-	// Provision/Deprovision endpoints with authentication
-	r.mux.HandleFunc("/v2/provision", chainMiddleware(authMiddleware(r.provisionHandler.HandleProvision), loggingMiddleware))
-	r.mux.HandleFunc("/v2/deprovision", chainMiddleware(authMiddleware(r.deprovisionHandler.HandleDeprovision), loggingMiddleware))
-
-	// Log endpoint WITHOUT authentication (microservices access this)
-	r.mux.HandleFunc("/v2/log", chainMiddleware(withActionLogging("log", r.logHandler.HandleLog), loggingMiddleware))
-
-	// GPS endpoint
-	r.mux.HandleFunc("/v2/gps", chainMiddleware(authMiddleware(withActionLogging("gps", r.gpsHandler.HandleGetGPS)), loggingMiddleware))
-
-	// Bluetooth endpoint
-	r.mux.HandleFunc("/v2/bluetooth", chainMiddleware(authMiddleware(withActionLogging("restblue", r.bluetoothHandler.HandleGetBluetooth)), loggingMiddleware))
+	r.mux.HandleFunc("/v3/ms", chainMiddleware(withRoute("/v3/ms", r.v3Handler.HandleMicroservices), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/ms/", chainMiddleware(withRoute("/v3/ms/", r.v3Handler.HandleMicroservices), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/microservices:apply", chainMiddleware(withRoute("/v3/deploy/microservices:apply", r.v3Handler.HandleDeployMicroservicesApply), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/microservices:validate", chainMiddleware(withRoute("/v3/deploy/microservices:validate", r.v3Handler.HandleDeployMicroservicesValidate), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/microservices", chainMiddleware(withRoute("/v3/deploy/microservices", r.v3Handler.HandleDeployMicroservices), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/microservices/", chainMiddleware(withRoute("/v3/deploy/microservices/", r.v3Handler.HandleDeployMicroservices), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/registries:apply", chainMiddleware(withRoute("/v3/deploy/registries:apply", r.v3Handler.HandleDeployRegistriesApply), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/registries:validate", chainMiddleware(withRoute("/v3/deploy/registries:validate", r.v3Handler.HandleDeployRegistriesValidate), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/deploy/registries", chainMiddleware(withRoute("/v3/deploy/registries", r.v3Handler.HandleDeployRegistries), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/auth/whoami", chainMiddleware(withRoute("/v3/auth/whoami", r.authHandler.HandleWhoAmI), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/auth/tokens", chainMiddleware(withRoute("/v3/auth/tokens", r.v3Handler.HandleAuthTokens), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/auth/tokens/revoke", chainMiddleware(withRoute("/v3/auth/tokens/revoke", r.v3Handler.HandleAuthTokensRevoke), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 }

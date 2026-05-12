@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/version"
 )
@@ -18,7 +19,7 @@ type VersionHandler struct {
 	// Version will be injected when available
 }
 
-// HandleVersion handles GET /v2/version
+// HandleVersion handles GET /v3/system/version.
 func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(versionHandlerModuleName, "Processing version request")
 
@@ -28,10 +29,15 @@ func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get version from version package (build-time via ldflags)
-	versionStr := version.GetVersion()
-	versionMap := make(map[string]string)
-	versionMap["version"] = versionStr
+	buildInfo := version.GetBuildInfo()
+	versionMap := map[string]interface{}{
+		"version":                buildInfo["version"],
+		"buildTime":              buildInfo["buildTime"],
+		"gitCommit":              buildInfo["gitCommit"],
+		"flavor":                 buildmeta.Flavor,
+		"allowedContainerEngine": buildmeta.AllowedEnginesCSV(),
+		"allowedEngines":         buildmeta.AllowedEngines(),
+	}
 
 	jsonData, err := json.Marshal(versionMap)
 	if err != nil {

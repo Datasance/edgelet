@@ -20,7 +20,7 @@ type InfoHandler struct {
 	// Will be injected with Configuration when needed
 }
 
-// HandleInfo handles GET /v2/info
+// HandleInfo handles GET /v3/system/info
 func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(infoHandlerModuleName, "Processing info http request")
 
@@ -69,16 +69,10 @@ func parseInfoReport(infoReport string) map[string]string {
 	for _, line := range lines {
 		parts := strings.SplitN(line, " : ", 2)
 		if len(parts) == 2 {
-			key := strings.ToLower(strings.TrimSpace(parts[0]))
-			key = strings.ReplaceAll(key, " ", "-")
-
-			// Handle special key mappings from Java implementation
-			if key == "gps-coordinates(lat,lon)" {
-				key = "gps-coordinates"
-			} else if key == "developer's-mode" {
-				key = "developer-mode"
+			key := normalizeReportKey(parts[0])
+			if key == "" {
+				continue
 			}
-
 			value := strings.TrimSpace(parts[1])
 			result[key] = value
 		}

@@ -19,7 +19,7 @@ type StatusHandler struct {
 	// StatusReporter is accessed via singleton
 }
 
-// HandleStatus handles GET /v2/status
+// HandleStatus handles GET /v3/system/status
 func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(statusHandlerModuleName, "Handle status Api Handler call")
 
@@ -61,8 +61,10 @@ func parseStatusReport(statusReport string) map[string]string {
 	for _, line := range lines {
 		parts := strings.SplitN(line, " : ", 2)
 		if len(parts) == 2 {
-			key := strings.ToLower(strings.TrimSpace(parts[0]))
-			key = strings.ReplaceAll(key, " ", "-")
+			key := normalizeReportKey(parts[0])
+			if key == "" {
+				continue
+			}
 			value := strings.TrimSpace(parts[1])
 			result[key] = value
 		}
