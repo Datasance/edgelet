@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"regexp"
 	"testing"
 	"time"
 
@@ -96,6 +97,19 @@ func TestJWTManager_GenerateJWT(t *testing.T) {
 	if claims["iss"] != jwtIssuer {
 		t.Errorf("Expected issuer '%s', got '%v'", jwtIssuer, claims["iss"])
 	}
+	if _, exists := claims["kid"]; exists {
+		t.Fatal("kid must not be present in JWT payload claims")
+	}
+	if _, exists := parsedToken.Header["kid"]; exists {
+		t.Fatal("kid must not be present in JWT header")
+	}
+	jti, ok := claims["jti"].(string)
+	if !ok || jti == "" {
+		t.Fatalf("expected jti string claim, got %#v", claims["jti"])
+	}
+	if matched, _ := regexp.MatchString(`^[A-Z2-7]+$`, jti); !matched {
+		t.Fatalf("expected base32 hash-like jti, got %q", jti)
+	}
 
 	// Check expiration
 	exp, ok := claims["exp"].(float64)
@@ -178,5 +192,21 @@ func TestJWTManager_Reset(t *testing.T) {
 	_, err := manager.GenerateJWT()
 	if err == nil {
 		t.Error("Expected error with invalid key, got nil")
+	}
+}
+
+func TestShouldRotateByLifetime(t *testing.T) {
+	now := time.Now()
+	iat := now.Unix()
+	exp := now.Add(10 * time.Minute).Unix()
+
+	if ShouldRotateByLifetime(iat, exp, now.Add(7*time.Minute)) {
+		t.Fatal("token should not rotate yet when outside lead window")
+	}
+	if !ShouldRotateByLifetime(iat, exp, now.Add(8*time.Minute)) {
+		t.Fatal("token should rotate at <=20% remaining lifetime")
+	}
+	if !ShouldRotateByLifetime(iat, exp, now.Add(10*time.Minute+time.Second)) {
+		t.Fatal("expired token must rotate")
 	}
 }

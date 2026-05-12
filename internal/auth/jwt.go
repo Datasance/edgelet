@@ -1,11 +1,16 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,16 +21,25 @@ import (
 )
 
 const (
-	moduleName    = "JWT Manager"
-	jwtExpiration = 10 * time.Minute
-	jwtIssuer     = "iofog-agent"
+	moduleName                     = "JWT Manager"
+	jwtExpiration                  = 10 * time.Minute
+	jwtIssuer                      = "https://iofog.default.svc.bridge.local"
+	jwtAudience                    = "https://iofog.default.svc.bridge.local"
+	localAPIAudience               = "iofog-agent://localapi/v3"
+	serviceAccountAudience         = "https://iofog.default.svc.bridge.local"
+	edgeGuardAudience              = "iofog-agent://edgeguard/v1"
+	tokenUseController             = "controller"
+	tokenUseLocalAPI               = "localapi"
+	tokenUseServiceAccount         = "serviceaccount"
+	tokenUseEdgeGuard              = "edgeguard"
+	rotationLeadFractionDenominator = 5
+	maxRotationLeadWindow          = 2 * time.Minute
 )
 
 // JWTManager handles JWT token generation and validation
 type JWTManager struct {
 	mu          sync.RWMutex
 	privateKey  ed25519.PrivateKey
-	keyID       string
 	initialized bool
 }
 
@@ -49,7 +63,6 @@ func (j *JWTManager) Reset() {
 
 	logging.LogDebug(moduleName, "Resetting JWT Manager static state")
 	j.privateKey = nil
-	j.keyID = ""
 	j.initialized = false
 	logging.LogDebug(moduleName, "JWT Manager static state reset completed")
 }
@@ -94,92 +107,141 @@ func (j *JWTManager) loadPrivateKeyFromConfig() error {
 		return fmt.Errorf("invalid private key length: expected %d, got %d", ed25519.SeedSize, len(privateKeyBytes))
 	}
 
-	// Generate key ID if not provided
-	keyID := jwk.Kid
-	if keyID == "" {
-		keyID = generateKeyID()
-		logging.LogDebug(moduleName, fmt.Sprintf("Generated key ID: %s", keyID))
-	}
-
 	// Create Ed25519 private key from seed
 	privateKey := ed25519.NewKeyFromSeed(privateKeyBytes)
 
 	j.privateKey = privateKey
-	j.keyID = keyID
 	j.initialized = true
 
-	logging.LogDebug(moduleName, fmt.Sprintf("Successfully initialized Ed25519 signer with key ID: %s", keyID))
+	logging.LogDebug(moduleName, "Successfully initialized Ed25519 signer")
 	return nil
 }
 
-// GenerateJWT generates a JWT token with the configured private key
+func (j *JWTManager) ensureProvisionedSignerLocked() (*config.Config, error) {
+	// Fail-closed (scoped): auth paths depend on SQLite-backed private key durability.
+	if store.GetInstance().Conn() == nil {
+		return nil, errors.New("sqlite unavailable; auth path blocked")
+	}
+	cfg := config.GetInstance()
+	if cfg.IOFogUUID != "" && strings.TrimSpace(cfg.PrivateKey) == "" {
+		if _, err := hydrateProvisionedPrivateKeyFromDB(); err != nil {
+			return nil, fmt.Errorf("failed to hydrate private key from sqlite: %w", err)
+		}
+		cfg = config.GetInstance()
+	}
+	if cfg.IOFogUUID == "" || strings.TrimSpace(cfg.PrivateKey) == "" {
+		return nil, errors.New("agent is not provisioned")
+	}
+	if !j.initialized {
+		if err := j.loadPrivateKeyFromConfig(); err != nil {
+			if cfg.IOFogUUID != "" {
+				logging.LogError(moduleName, fmt.Sprintf("Failed to initialize signer: %v", err), err)
+			}
+			return nil, err
+		}
+	}
+	return cfg, nil
+}
+
+func (j *JWTManager) signPurposeJWTLocked(subject, audience string, ttl time.Duration, tokenUse string, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+	if strings.TrimSpace(subject) == "" {
+		return "", "", 0, 0, errors.New("subject is required")
+	}
+	if strings.TrimSpace(audience) == "" {
+		return "", "", 0, 0, errors.New("audience is required")
+	}
+	if ttl <= 0 {
+		ttl = jwtExpiration
+	}
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":      subject,
+		"iss":      jwtIssuer,
+		"aud":      []string{audience},
+		"exp":      now.Add(ttl).Unix(),
+		"iat":      now.Unix(),
+		"nbf":      now.Unix(),
+		"tokenUse": tokenUse,
+	}
+	for k, v := range extraClaims {
+		claims[k] = v
+	}
+	jti, err := generateJWTID(claims)
+	if err != nil {
+		return "", "", 0, 0, fmt.Errorf("failed to generate token jti: %w", err)
+	}
+	claims["jti"] = jti
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenString, err := token.SignedString(j.privateKey)
+	if err != nil {
+		return "", "", 0, 0, err
+	}
+	return tokenString, jti, claims["iat"].(int64), claims["exp"].(int64), nil
+}
+
+// GenerateJWT generates a controller-auth JWT token with the configured private key.
+// Kept as compatibility wrapper for existing controller paths.
 func (j *JWTManager) GenerateJWT() (string, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-
-	// Fail-closed (scoped): auth paths depend on SQLite-backed private key durability.
-	if store.GetInstance().Conn() == nil {
-		return "", errors.New("sqlite unavailable; auth path blocked")
-	}
-
-	// Get UUID and private key from config first to check if agent is provisioned
-	cfg := config.GetInstance()
-	uuid := cfg.IOFogUUID
-	privateKey := cfg.PrivateKey
-
-	// If agent is not provisioned, return error without logging (expected state)
-	if uuid == "" || privateKey == "" {
-		return "", errors.New("agent is not provisioned")
-	}
-
-	// Initialize signer if not already done
-	if !j.initialized {
-		if err := j.loadPrivateKeyFromConfig(); err != nil {
-			// Only log error if agent is provisioned (has UUID) but key loading failed
-			if uuid != "" {
-				logging.LogError(moduleName, fmt.Sprintf("Failed to initialize signer: %v", err), err)
-			}
-			return "", err
-		}
-	}
-
-	// Create JWT claims
-	now := time.Now()
-	claims := jwt.MapClaims{
-		"sub": uuid,
-		"iss": jwtIssuer,
-		"exp": now.Add(jwtExpiration).Unix(),
-		"iat": now.Unix(),
-		"jti": generateJWTID(),
-		"kid": j.keyID,
-	}
-
-	// Create token with EdDSA algorithm
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-
-	// Set key ID in header
-	token.Header["kid"] = j.keyID
-
-	// Sign token with Ed25519 private key
-	// The JWT library expects the full 64-byte Ed25519 private key
-	tokenString, err := token.SignedString(j.privateKey)
+	cfg, err := j.ensureProvisionedSignerLocked()
 	if err != nil {
-		logging.LogError(moduleName, fmt.Sprintf("Failed to generate JWT: %v", err), err)
 		return "", err
 	}
+	aud := strings.TrimSpace(cfg.ControllerURL)
+	if aud == "" {
+		aud = jwtAudience
+	}
+	token, _, _, _, err := j.signPurposeJWTLocked(cfg.IOFogUUID, aud, jwtExpiration, tokenUseController, nil)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
 
-	logging.LogDebug(moduleName, fmt.Sprintf("Generated JWT with key ID: %s", j.keyID))
-	logging.LogDebug(moduleName, fmt.Sprintf("JTI of Generated JWT: %s", token.Claims.(jwt.MapClaims)["jti"]))
-	return tokenString, nil
+// GenerateControllerJWT creates a signed JWT for controller communication.
+func (j *JWTManager) GenerateControllerJWT(controllerAudience string, ttl time.Duration) (string, string, int64, int64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	cfg, err := j.ensureProvisionedSignerLocked()
+	if err != nil {
+		return "", "", 0, 0, err
+	}
+	aud := strings.TrimSpace(controllerAudience)
+	if aud == "" {
+		aud = cfg.ControllerURL
+	}
+	if strings.TrimSpace(aud) == "" {
+		aud = jwtAudience
+	}
+	return j.signPurposeJWTLocked(cfg.IOFogUUID, aud, ttl, tokenUseController, nil)
+}
+
+// GenerateLocalAPITokenJWT creates a provisioned local admin token.
+func (j *JWTManager) GenerateLocalAPITokenJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	cfg, err := j.ensureProvisionedSignerLocked()
+	if err != nil {
+		return "", "", 0, 0, err
+	}
+	sub := strings.TrimSpace(subject)
+	if sub == "" {
+		sub = "system:localadmin:" + cfg.IOFogUUID
+	}
+	return j.signPurposeJWTLocked(sub, localAPIAudience, ttl, tokenUseLocalAPI, extraClaims)
 }
 
 // ValidateJWT validates a JWT token using the public key derived from the private key
 func (j *JWTManager) ValidateJWT(tokenString string) (*jwt.Token, error) {
-	j.mu.RLock()
-	defer j.mu.RUnlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
+	// Lazy initialize for validation paths that did not call GenerateJWT first.
 	if !j.initialized {
-		return nil, errors.New("JWT manager not initialized")
+		if err := j.loadPrivateKeyFromConfig(); err != nil {
+			return nil, fmt.Errorf("JWT manager not initialized: %w", err)
+		}
 	}
 
 	// Get public key from private key
@@ -214,14 +276,99 @@ type JWK struct {
 	X   string `json:"x"`   // Public key (base64url encoded, optional for private key)
 }
 
-// generateKeyID generates a unique key ID
-func generateKeyID() string {
-	// Simple UUID-like generation (can be improved with proper UUID library)
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+// generateJWTID returns a deterministic hash string derived from claims + nonce.
+func generateJWTID(claims jwt.MapClaims) (string, error) {
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	payload := map[string]interface{}{
+		"claims": claims,
+		"nonce":  hex.EncodeToString(nonce),
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(b)
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]), nil
 }
 
-// generateJWTID generates a unique JWT ID
-func generateJWTID() string {
-	// Simple UUID-like generation (can be improved with proper UUID library)
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+// GenerateServiceAccountJWT creates a signed JWT for a managed microservice service-account identity.
+func (j *JWTManager) GenerateServiceAccountJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if _, err := j.ensureProvisionedSignerLocked(); err != nil {
+		return "", "", 0, 0, err
+	}
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	return j.signPurposeJWTLocked(subject, serviceAccountAudience, ttl, tokenUseServiceAccount, extraClaims)
+}
+
+// GenerateEdgeGuardJWT creates a dedicated JWT for edgeguard attestation payloads.
+func (j *JWTManager) GenerateEdgeGuardJWT(hash string, ttl time.Duration) (string, string, int64, int64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	cfg, err := j.ensureProvisionedSignerLocked()
+	if err != nil {
+		return "", "", 0, 0, err
+	}
+	extra := map[string]interface{}{"hash": hash}
+	return j.signPurposeJWTLocked("system:edgeguard:"+cfg.IOFogUUID, edgeGuardAudience, ttl, tokenUseEdgeGuard, extra)
+}
+
+// TokenSHA256 computes the stable hash used for persisted token metadata.
+func TokenSHA256(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+// ShouldRotateByLifetime applies token rotation trigger policy:
+// rotate when remaining lifetime is <=20% of TTL, capped by a max lead window.
+func ShouldRotateByLifetime(iat, exp int64, now time.Time) bool {
+	if exp <= 0 {
+		return true
+	}
+	remaining := time.Unix(exp, 0).Sub(now)
+	if remaining <= 0 {
+		return true
+	}
+
+	ttlSeconds := exp - iat
+	if ttlSeconds <= 0 {
+		return remaining <= maxRotationLeadWindow
+	}
+	leadWindow := time.Duration(ttlSeconds/rotationLeadFractionDenominator) * time.Second
+	if leadWindow > maxRotationLeadWindow {
+		leadWindow = maxRotationLeadWindow
+	}
+	if leadWindow <= 0 {
+		leadWindow = time.Second
+	}
+	return remaining <= leadWindow
+}
+
+// GetProvisionedPublicKey returns the base64url public key from provisioned JWK.
+func GetProvisionedPublicKey() string {
+	cfg := config.GetInstance()
+	if strings.TrimSpace(cfg.PrivateKey) == "" {
+		if _, err := hydrateProvisionedPrivateKeyFromDB(); err != nil {
+			return ""
+		}
+		cfg = config.GetInstance()
+	}
+	if strings.TrimSpace(cfg.PrivateKey) == "" {
+		return ""
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(cfg.PrivateKey)
+	if err != nil {
+		return ""
+	}
+	var jwk JWK
+	if err := json.Unmarshal(keyBytes, &jwk); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(jwk.X)
 }
