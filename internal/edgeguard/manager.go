@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 )
 
@@ -345,31 +345,10 @@ func (m *Manager) hashData(data string) string {
 // signWithPrivateKey signs the hash with Ed25519 private key
 // This matches Java: signWithPrivateKey() method
 func (m *Manager) signWithPrivateKey(hash string) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Initialize private key if needed or if provisioned key rotated.
-	if m.privateKey == nil || m.privateKeySource != m.config.PrivateKey {
-		if err := m.initializePrivateKey(); err != nil {
-			return "", fmt.Errorf("failed to initialize private key: %w", err)
-		}
-	}
-
-	// Create JWT claims with only the hash value (matching Java implementation)
-	claims := jwt.MapClaims{
-		"hash": hash,
-	}
-
-	// Create JWT with EdDSA algorithm (Ed25519)
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-
-	// Sign token with Ed25519 private key
-	tokenString, err := token.SignedString(m.privateKey)
+	tokenString, _, _, _, err := auth.GetJWTManager().GenerateEdgeGuardJWT(hash, 10*time.Minute)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign token: %w", err)
+		return "", fmt.Errorf("failed to sign edgeguard token: %w", err)
 	}
-
-	logging.LogDebug(moduleName, "Generated JWT with hardware hash")
 	return tokenString, nil
 }
 
