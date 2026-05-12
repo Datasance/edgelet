@@ -78,3 +78,31 @@ func scanRegistry(rows *sql.Rows) (*models.Registry, error) {
 	reg.IsPublic = intToBool(isPublic)
 	return reg, nil
 }
+
+// UpsertRegistry inserts or updates one registry row.
+func (d *DB) UpsertRegistry(reg *models.Registry) error {
+	if reg == nil {
+		return fmt.Errorf("registry is nil")
+	}
+	_, err := d.Conn().Exec(
+		`INSERT OR REPLACE INTO registries (id, url, is_public, user_name, password, user_email, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		reg.ID, reg.URL, boolToInt(reg.IsPublic), reg.UserName, reg.Password, reg.UserEmail,
+		time.Now().Unix(),
+	)
+	return err
+}
+
+// EnsureDefaultRegistries ensures docker.io and from_cache defaults exist.
+func (d *DB) EnsureDefaultRegistries() error {
+	defaults := []*models.Registry{
+		models.NewRegistry(1, "docker.io", true, "", "", ""),
+		models.NewRegistry(2, "from_cache", true, "", "", ""),
+	}
+	for _, reg := range defaults {
+		if err := d.UpsertRegistry(reg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
