@@ -253,21 +253,24 @@ Exec ID is capped to 12 chars of container ID + `-hc-` + base-36 nanosecond time
 
 ### Local API (`internal/localapi`, port `:54321`)
 
-HTTP server used by the CLI (`iofog-agent` binary) and by microservices running on the same host. Authentication uses the same RS256 JWT mechanism as the controller API, except that a few endpoints (config read, log post) are intentionally unauthenticated so containers can call them without credentials.
+HTTP server used by the CLI (`iofog-agent`) and by local microservices. LocalAPI surface is v3-only.
 
 Key endpoints:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/v2/status` | ✓ | Full daemon status (used by `iofog-agent status`) |
-| GET | `/v2/info` | ✓ | Config report (network, limits) |
-| GET | `/v2/version` | ✓ | Agent version string |
-| POST | `/v2/provision` | ✓ | Provision with controller key |
-| POST | `/v2/deprovision` | ✓ | Deprovision agent |
-| GET | `/v2/config/get` | ✗ | Read current config (microservice-accessible) |
-| POST | `/v2/config` | ✓ | Update config properties |
-| POST | `/v2/log` | ✗ | Accept log lines from microservices |
-| WS | `/v2/control/socket/id/:uuid` | — | Exec/log WebSocket relay |
+| GET | `/v3/system/status` | ✓ | Full daemon status |
+| GET | `/v3/system/info` | ✓ | Config/runtime report |
+| GET | `/v3/system/version` | ✓ | Version/build/flavor metadata |
+| POST/DELETE | `/v3/system/provision` | ✓ | Provision/deprovision agent |
+| POST | `/v3/system/reload` | ✓ | Reload configuration |
+| POST | `/v3/system/prune` | ✓ | Trigger prune |
+| GET/POST | `/v3/system/gps` | ✓ | Read/update GPS state |
+| GET/PATCH | `/v3/system/config` | ✓ | Read/patch system config |
+| POST | `/v3/system/controller/cert` | ✓ | Install controller CA cert and enable secure mode |
+| POST | `/v3/system/config/switch` | ✓ | Switch active profile |
+| GET | `/v3/microservices/config` | ✓ | Microservice self config (JWT identity-derived) |
+| WS GET | `/v3/microservices/control` | ✓ | Microservice control channel (JWT identity-derived) |
 
 ---
 
