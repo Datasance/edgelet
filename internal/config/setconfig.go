@@ -36,6 +36,7 @@ var ConfigParamMap = map[string]string{
 	"idc":  "watchdogEnabled",
 	"egf":  "edgeGuardFrequency",
 	"gps":  "gpsMode",
+	"gpsc": "gpsCoordinates",
 	"gpsd": "gpsDevice",
 	"gpsf": "gpsScanFrequency",
 	"ft":   "arch",
@@ -111,6 +112,18 @@ func (c *Config) SetConfig(configMap map[string]interface{}) map[string]string {
 func (c *Config) NotifyModulesOfConfigChange() error {
 	// This will be called from supervisor or CLI to avoid import cycles
 	// The actual implementation will be in supervisor
+	return nil
+}
+
+// SwitchProfile sets active configuration profile and persists currentProfile.
+func (c *Config) SwitchProfile(profile utils.ConfigSwitcherState) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.currentProfile = profile
+	if err := c.saveConfigUpdatesLocked(); err != nil {
+		return fmt.Errorf("failed to persist switched profile: %w", err)
+	}
 	return nil
 }
 
@@ -281,8 +294,24 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 
 	case "gpsMode":
-		c.GPSMode = value
-		if err := c.setYamlProperty("gpsMode", value); err != nil {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch normalized {
+		case "auto", "dynamic", "manual", "off":
+		default:
+			return fmt.Errorf("invalid GPS mode %q: must be one of auto, dynamic, manual, off", value)
+		}
+		c.GPSMode = normalized
+		if err := c.setYamlProperty("gpsMode", normalized); err != nil {
+			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
+		}
+
+	case "gpsCoordinates":
+		normalized, err := normalizeGPSCoordinates(value)
+		if err != nil {
+			return err
+		}
+		c.GPSCoordinates = normalized
+		if err := c.setYamlProperty("gpsCoordinates", normalized); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -474,4 +503,28 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	yamlConfig.Profiles[currentProfile.FullValue()] = defaultProfile
 
 	return yamlConfig
+}
+
+func normalizeGPSCoordinates(value string) (string, error) {
+	parts := strings.Split(strings.TrimSpace(value), ",")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid GPS coordinates format: expected lat,lon")
+	}
+
+	lat, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid latitude: %w", err)
+	}
+	lon, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid longitude: %w", err)
+	}
+	if lat < -90 || lat > 90 {
+		return "", fmt.Errorf("latitude must be between -90 and 90")
+	}
+	if lon < -180 || lon > 180 {
+		return "", fmt.Errorf("longitude must be between -180 and 180")
+	}
+
+	return fmt.Sprintf("%.5f,%.5f", lat, lon), nil
 }

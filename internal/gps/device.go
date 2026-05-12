@@ -2,6 +2,7 @@ package gps
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/gps/nmea"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -108,10 +110,14 @@ func (d *DeviceHandler) ReadAndUpdateCoordinates() error {
 		return fmt.Errorf("device handler not running")
 	}
 	reader := d.reader
+	deviceFile := d.deviceFile
 	d.mu.RUnlock()
+	if deviceFile == nil {
+		return fmt.Errorf("device file is not open")
+	}
 
 	// Read line with timeout
-	line, err := d.readLineWithTimeout(reader, readTimeout)
+	line, err := d.readLineWithTimeout(deviceFile, reader, readTimeout)
 	if err != nil {
 		logging.LogWarn(deviceHandlerModuleName, fmt.Sprintf("GPS device timeout - no data received within %v", readTimeout))
 		return err
@@ -138,26 +144,37 @@ func (d *DeviceHandler) ReadAndUpdateCoordinates() error {
 }
 
 // readLineWithTimeout reads a line from reader with timeout
-func (d *DeviceHandler) readLineWithTimeout(reader *bufio.Reader, timeout time.Duration) (string, error) {
-	type result struct {
-		line string
-		err  error
+func (d *DeviceHandler) readLineWithTimeout(file *os.File, reader *bufio.Reader, timeout time.Duration) (string, error) {
+	if file == nil {
+		return "", fmt.Errorf("nil device file")
 	}
 
-	resultChan := make(chan result, 1)
+	pollFds := []unix.PollFd{{
+		Fd:     int32(file.Fd()),
+		Events: unix.POLLIN | unix.POLLPRI,
+	}}
+	pollTimeoutMs := int(timeout.Milliseconds())
+	if pollTimeoutMs < 0 {
+		pollTimeoutMs = -1
+	}
 
-	go func() {
-		line, err := reader.ReadString('\n')
-		resultChan <- result{line: line, err: err}
-	}()
-
-	select {
-	case res := <-resultChan:
-		if res.err != nil {
-			return "", res.err
-		}
-		return strings.TrimSpace(res.line), nil
-	case <-time.After(timeout):
+	n, err := unix.Poll(pollFds, pollTimeoutMs)
+	if err != nil {
+		return "", fmt.Errorf("poll failed: %w", err)
+	}
+	if n == 0 {
 		return "", fmt.Errorf("read timeout")
 	}
+	if pollFds[0].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+		return "", errors.New("device poll error")
+	}
+	if pollFds[0].Revents&(unix.POLLIN|unix.POLLPRI) == 0 {
+		return "", errors.New("device not readable")
+	}
+
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }

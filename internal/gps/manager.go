@@ -3,6 +3,7 @@ package gps
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -200,15 +201,15 @@ func (m *Manager) initializeGps() error {
 
 // getGpsMode gets the GPS mode from config
 func (m *Manager) getGpsMode() Mode {
-	modeStr := m.config.GPSMode
+	modeStr := strings.ToUpper(strings.TrimSpace(m.config.GPSMode))
 	switch modeStr {
-	case "AUTO":
+	case string(ModeAuto):
 		return ModeAuto
-	case "DYNAMIC":
+	case string(ModeDynamic):
 		return ModeDynamic
-	case "MANUAL":
+	case string(ModeManual):
 		return ModeManual
-	case "OFF":
+	case string(ModeOff):
 		return ModeOff
 	default:
 		return ModeAuto
@@ -310,44 +311,53 @@ func (m *Manager) startOffMode() error {
 // updateCoordinates updates coordinates based on current mode
 func (m *Manager) updateCoordinates() {
 	currentMode := m.getGpsMode()
+	updated := false
 
 	switch currentMode {
 	case ModeDynamic:
-		m.updateDynamicCoordinates()
+		updated = m.updateDynamicCoordinates()
 	case ModeAuto:
-		m.updateAutoCoordinates()
+		updated = m.updateAutoCoordinates()
 	case ModeManual, ModeOff:
 		// No update needed
+	}
+
+	if updated {
+		if err := m.config.TriggerGPSConfigCallback(); err != nil {
+			logging.LogError(moduleName, "Failed to trigger GPS config callback after coordinate update", err)
+		}
 	}
 }
 
 // updateDynamicCoordinates updates coordinates in DYNAMIC mode
-func (m *Manager) updateDynamicCoordinates() {
+func (m *Manager) updateDynamicCoordinates() bool {
 	if m.deviceHandler != nil && m.deviceHandler.IsRunning() {
 		if err := m.deviceHandler.ReadAndUpdateCoordinates(); err != nil {
 			logging.LogError(moduleName, "Error updating DYNAMIC coordinates", err)
 			m.status.SetHealthStatus(HealthStatusDeviceError)
-			m.updateAutoCoordinates()
-		} else {
-			m.status.SetHealthStatus(HealthStatusHealthy)
+			return m.updateAutoCoordinates()
 		}
-	} else {
-		logging.LogWarn(moduleName, "Device handler not running, falling back to AUTO mode")
-		m.status.SetHealthStatus(HealthStatusDeviceError)
-		m.updateAutoCoordinates()
+		m.status.SetHealthStatus(HealthStatusHealthy)
+		return true
 	}
+	logging.LogWarn(moduleName, "Device handler not running, falling back to AUTO mode")
+	m.status.SetHealthStatus(HealthStatusDeviceError)
+	return m.updateAutoCoordinates()
 }
 
 // updateAutoCoordinates updates coordinates in AUTO mode
-func (m *Manager) updateAutoCoordinates() {
+func (m *Manager) updateAutoCoordinates() bool {
 	if m.webHandler != nil {
 		if err := m.webHandler.UpdateCoordinates(); err != nil {
 			logging.LogError(moduleName, "Error updating AUTO coordinates", err)
 			m.status.SetHealthStatus(HealthStatusIPError)
+			return false
 		} else {
 			m.status.SetHealthStatus(HealthStatusHealthy)
+			return true
 		}
 	}
+	return false
 }
 
 // GetStatus returns the GPS status

@@ -214,6 +214,8 @@ func (s *Supervisor) Start() error {
 	s.localAPI = localapi.GetInstance()
 	// Register Supervisor's ReloadConfig as the config reload callback
 	s.config.SetReloadCallback(s.ReloadConfig)
+	// Register FieldAgent GPS callback for dedicated config/gps controller sync.
+	s.config.SetGPSConfigCallback(s.fieldAgent.InstanceGPSConfigUpdated)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

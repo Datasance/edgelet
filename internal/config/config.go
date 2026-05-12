@@ -79,6 +79,8 @@ type Config struct {
 
 	// Reload callback
 	reloadCallback func() error
+	// GPS config update callback
+	gpsConfigCallback func() error
 }
 
 var (
@@ -126,6 +128,25 @@ func (c *Config) SetReloadCallback(cb func() error) {
 func (c *Config) TriggerReloadCallback() error {
 	c.mu.RLock()
 	cb := c.reloadCallback
+	c.mu.RUnlock()
+
+	if cb != nil {
+		return cb()
+	}
+	return nil
+}
+
+// SetGPSConfigCallback sets the callback for GPS configuration updates.
+func (c *Config) SetGPSConfigCallback(cb func() error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.gpsConfigCallback = cb
+}
+
+// TriggerGPSConfigCallback triggers the GPS configuration update callback.
+func (c *Config) TriggerGPSConfigCallback() error {
+	c.mu.RLock()
+	cb := c.gpsConfigCallback
 	c.mu.RUnlock()
 
 	if cb != nil {

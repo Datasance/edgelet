@@ -523,3 +523,80 @@ func (fa *FieldAgent) postFogConfig() error {
 	logging.LogInfo(moduleName, "Fog config posted to controller successfully")
 	return nil
 }
+
+// InstanceGPSConfigUpdated sends dedicated GPS config updates to the controller.
+// Matching Java: instanceGpsConfigUpdated() method.
+func (fa *FieldAgent) InstanceGPSConfigUpdated() error {
+	logging.LogDebug(moduleName, "Start ioFog GPS configuration update")
+	if err := fa.postGPSConfig(); err != nil {
+		logging.LogError(moduleName, "Error posting updated GPS config", err)
+		return err
+	}
+	logging.LogDebug(moduleName, "Finished ioFog GPS configuration update")
+	return nil
+}
+
+// postGPSConfig posts dedicated GPS coordinates to controller.
+// Matching Java: postGpsConfig() method.
+func (fa *FieldAgent) postGPSConfig() error {
+	logging.LogDebug(moduleName, "Post ioFog GPS config")
+
+	// Check if provisioned and connected (matching Java guard)
+	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
+		logging.LogDebug(moduleName, "Skipping postGPSConfig: not provisioned or not connected")
+		return nil
+	}
+
+	latitude, longitude, ok := parseGPSCoordinates(config.GetInstance().GPSCoordinates)
+	if !ok {
+		logging.LogWarn(moduleName, "Skipping postGPSConfig due to invalid or empty gpsCoordinates")
+		return nil
+	}
+
+	body := map[string]interface{}{
+		"latitude":  latitude,
+		"longitude": longitude,
+	}
+
+	// Use context from FieldAgent (daemon mode) or create new one (CLI mode).
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if fa.ctx != nil {
+		ctx, cancel = context.WithTimeout(fa.ctx, 30*time.Second)
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	}
+	defer cancel()
+
+	_, err := fa.apiClient.Request(ctx, "config/gps", PATCH, nil, body)
+	if err != nil {
+		logging.LogError(moduleName, "Failed to post GPS config to controller", err)
+		return err
+	}
+
+	logging.LogInfo(moduleName, "GPS config posted to controller successfully")
+	return nil
+}
+
+func parseGPSCoordinates(raw string) (float64, float64, bool) {
+	coords := strings.TrimSpace(raw)
+	if coords == "" {
+		return 0, 0, false
+	}
+
+	parts := strings.Split(coords, ",")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+
+	lat, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	lon, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return 0, 0, false
+	}
+
+	return lat, lon, true
+}

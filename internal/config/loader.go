@@ -137,7 +137,7 @@ func loadConfigValues(cfg *Config) {
 	cfg.LogDiskDirectory = getProp("logDiskDirectory", "/var/log/iofog-agent/")
 	cfg.LogLevel = strings.ToUpper(getProp("logLevel", "INFO"))
 	cfg.GPSDevice = getProp("gpsDevice", "/dev/ttyUSB0")
-	cfg.GPSMode = getProp("gpsMode", "auto")
+	cfg.GPSMode = strings.ToLower(strings.TrimSpace(getProp("gpsMode", "auto")))
 	cfg.GPSCoordinates = getProp("gpsCoordinates", "")
 	cfg.Arch = getProp("arch", "auto")
 	cfg.Namespace = getProp("namespace", "default")

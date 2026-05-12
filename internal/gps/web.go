@@ -15,9 +15,11 @@ import (
 
 const (
 	webHandlerModuleName = "GPS Web Handler"
-	ipAPIURL             = "http://ip-api.com/json"
+	defaultIPAPIURL      = "http://ip-api.com/json"
 	timeout              = 10 * time.Second
 )
+
+var ipAPIURL = defaultIPAPIURL
 
 // WebHandler handles IP-based GPS location
 type WebHandler struct {
@@ -75,16 +77,24 @@ func (w *WebHandler) UpdateCoordinates() error {
 	}
 
 	var locationData struct {
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
+		Status    string   `json:"status"`
+		Message   string   `json:"message"`
+		Latitude  *float64 `json:"lat"`
+		Longitude *float64 `json:"lon"`
 	}
 
 	if err := json.Unmarshal(body, &locationData); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
+	if strings.EqualFold(strings.TrimSpace(locationData.Status), "fail") {
+		return fmt.Errorf("location provider returned failure: %s", strings.TrimSpace(locationData.Message))
+	}
+	if locationData.Latitude == nil || locationData.Longitude == nil {
+		return fmt.Errorf("location provider missing lat/lon fields")
+	}
 
 	// Format coordinates as "lat,lon"
-	coordinates := fmt.Sprintf("%.5f,%.5f", locationData.Latitude, locationData.Longitude)
+	coordinates := fmt.Sprintf("%.5f,%.5f", *locationData.Latitude, *locationData.Longitude)
 	w.config.GPSCoordinates = coordinates
 
 	logging.LogDebug(webHandlerModuleName, fmt.Sprintf("Updated GPS coordinates: %s", coordinates))

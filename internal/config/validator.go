@@ -75,6 +75,19 @@ func ValidateConfig(cfg *Config) error {
 	if cfg.GPSScanFrequency < 0 {
 		errors = append(errors, "GPS scan frequency must be positive")
 	}
+	if cfg.GPSMode != "" {
+		mode := strings.ToLower(strings.TrimSpace(cfg.GPSMode))
+		switch mode {
+		case "auto", "dynamic", "manual", "off":
+		default:
+			errors = append(errors, "GPS mode must be one of: auto, dynamic, manual, off")
+		}
+	}
+	if strings.TrimSpace(cfg.GPSCoordinates) != "" {
+		if _, err := normalizeGPSCoordinates(cfg.GPSCoordinates); err != nil {
+			errors = append(errors, fmt.Sprintf("GPS coordinates are invalid: %v", err))
+		}
+	}
 
 	// Validate docker URL
 	if cfg.DockerURL != "" {
@@ -200,6 +213,17 @@ func ValidateProperty(key, value string) error {
 		}
 		if val < 0 {
 			return fmt.Errorf("frequency must be positive")
+		}
+	case "gpsMode":
+		mode := strings.ToLower(strings.TrimSpace(value))
+		switch mode {
+		case "auto", "dynamic", "manual", "off":
+		default:
+			return fmt.Errorf("GPS mode must be one of: auto, dynamic, manual, off")
+		}
+	case "gpsCoordinates":
+		if _, err := normalizeGPSCoordinates(value); err != nil {
+			return err
 		}
 	case "dockerUrl":
 		if value != "" && !strings.HasPrefix(value, "tcp://") && !strings.HasPrefix(value, "unix://") {
