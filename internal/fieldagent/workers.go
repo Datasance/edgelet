@@ -6,10 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/diagnostics"
 	"github.com/eclipse-iofog/agent/internal/gps"
 	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/serviceaccount"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/version"
@@ -26,7 +28,9 @@ func workerFreq(seconds int, defaultSeconds int) time.Duration {
 }
 
 const (
-	pingBackoffMaxSeconds = 300 // 5 min max backoff when controller offline
+	pingBackoffMaxSeconds           = 300 // 5 min max backoff when controller offline
+	localAPITokenRotationInterval   = 30 * time.Second
+	serviceAccountRotationInterval  = 30 * time.Second
 )
 
 // pingControllerWorker periodically pings the controller.
@@ -372,4 +376,53 @@ func isUnauthorizedError(err error) bool {
 	errStr := err.Error()
 	return strings.Contains(strings.ToLower(errStr), "unauthorized") ||
 		strings.Contains(strings.ToLower(errStr), "401")
+}
+
+func (fa *FieldAgent) localAPITokenRotationWorker() {
+	defer fa.wg.Done()
+	timer := time.NewTimer(localAPITokenRotationInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-fa.ctx.Done():
+			return
+		case <-timer.C:
+			token, err := auth.GetLocalTokenManager().LoadToken()
+			if err != nil {
+				if reconcileErr := auth.EnsureLocalAPITokenForCurrentState(); reconcileErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("local-api token reconcile failed: %v", reconcileErr))
+				}
+				timer.Reset(localAPITokenRotationInterval)
+				continue
+			}
+			rotate, err := auth.ShouldRotateLocalAPIToken(token, time.Now())
+			if err != nil || rotate {
+				if reconcileErr := auth.EnsureLocalAPITokenForCurrentState(); reconcileErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("local-api token rotation failed: %v", reconcileErr))
+				}
+			}
+			timer.Reset(localAPITokenRotationInterval)
+		}
+	}
+}
+
+func (fa *FieldAgent) serviceAccountTokenRotationWorker() {
+	defer fa.wg.Done()
+	timer := time.NewTimer(serviceAccountRotationInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-fa.ctx.Done():
+			return
+		case <-timer.C:
+			if !fa.NotProvisioned() {
+				if err := serviceaccount.GetInstance().RotateExpiringManagedTokens(fa.GetLatestMicroservices(), time.Now()); err != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("service-account token rotation failed: %v", err))
+				}
+			}
+			timer.Reset(serviceAccountRotationInterval)
+		}
+	}
 }

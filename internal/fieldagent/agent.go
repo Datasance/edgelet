@@ -15,6 +15,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/diagnostics"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
+	"github.com/eclipse-iofog/agent/internal/serviceaccount"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
@@ -211,6 +212,11 @@ func (fa *FieldAgent) Start() error {
 		})
 	}
 
+	// Keep local-api token file in sync with current provisioning state.
+	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("failed to reconcile local-api JWT token: %w", err)
+	}
+
 	// Ping controller (matching Java: line 1980)
 	logging.LogDebug(moduleName, "Pinging controller to verify connectivity")
 	isConnected := fa.ping()
@@ -289,11 +295,13 @@ func (fa *FieldAgent) Start() error {
 
 	// Start background workers (matching Java: lines 1995-1998)
 	logging.LogDebug(moduleName, "Starting background workers")
-	fa.wg.Add(4)
+	fa.wg.Add(6)
 	go fa.pingControllerWorker()
 	go fa.getChangesWorker()
 	go fa.postStatusWorker()
 	go fa.postDiagnosticsWorker()
+	go fa.localAPITokenRotationWorker()
+	go fa.serviceAccountTokenRotationWorker()
 
 	logging.LogInfo(moduleName, "Field Agent started successfully")
 	return nil
@@ -605,6 +613,9 @@ func (fa *FieldAgent) Provision(key string) error {
 	// Reset JWT manager to use new credentials
 	// IMPORTANT: Reset AFTER config is saved so JWT manager can reload from updated config
 	auth.GetJWTManager().Reset()
+	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("provisioning succeeded but failed to rotate local-api JWT: %w", err)
+	}
 
 	// Recreate API client with new credentials (matching Java: orchestrator.update() after provisioning)
 	// This is critical because the API client was created before provisioning (without UUID/privateKey)
@@ -805,6 +816,10 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		}()
 	}()
 
+	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("deprovisioning succeeded but failed to rotate local-api JWT: %w", err)
+	}
+
 	if configUpdated {
 		// Update config backup file (matching Java: Configuration.updateConfigBackUpFile())
 		// Note: This might not be implemented in Go yet, but we'll log it
@@ -846,6 +861,9 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 				logging.LogError(moduleName, "Error clearing volume mounts", err)
 			}
 		}()
+
+		// Clear service-account token projections and metadata.
+		serviceaccount.GetInstance().Clear()
 
 		// Clear SQLite tables for microservices and registries on deprovision
 		func() {
@@ -923,6 +941,10 @@ func (fa *FieldAgent) Update() error {
 	fa.mu.Lock()
 	auth.GetJWTManager().Reset()
 	fa.mu.Unlock()
+	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
+		logging.LogError(moduleName, "Failed to reconcile local-api JWT token during update", err)
+		return fmt.Errorf("failed to reconcile local-api JWT token during update: %w", err)
+	}
 
 	// Recreate the API client and post fog config asynchronously so that the
 	// SIGHUP handler goroutine returns immediately (no DNS / TLS blocking).

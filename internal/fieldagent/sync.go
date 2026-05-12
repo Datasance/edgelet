@@ -3,9 +3,12 @@ package fieldagent
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/serviceaccount"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
 )
@@ -79,6 +82,11 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 	// Store microservices for MicroserviceManagerInterface
 	fa.setLatestMicroservices(microserviceList)
 	fa.SetCurrentMicroservices(microserviceList)
+
+	// Reconcile service-account token projections for controller-managed microservices.
+	if err := serviceaccount.GetInstance().ReconcileManagedMicroservices(microserviceList); err != nil {
+		logging.LogError(moduleName, "Failed to reconcile service-account token projections", err)
+	}
 
 	// Notify callback if set
 	if fa.onMicroservicesUpdate != nil {
@@ -351,15 +359,59 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		microservice.Healthcheck = healthcheck
 	}
 
-	// Parse serviceAccount (matching Java: serviceAccountValue.getJsonObject("serviceAccount"))
-	// Note: ServiceAccount parsing is complex, we'll add basic support
-	if _, ok := data["serviceAccount"].(map[string]interface{}); ok {
-		// Basic parsing - full implementation would require ServiceAccount model
-		logging.LogDebug(moduleName, fmt.Sprintf("ServiceAccount found for microservice %s (not fully parsed)", uuid))
+	// Parse serviceAccount (name/roleRef/rules) for token claim normalization.
+	if saData, ok := data["serviceAccount"].(map[string]interface{}); ok {
+		sa := &models.ServiceAccount{}
+		if name, ok := saData["name"].(string); ok {
+			sa.Name = name
+		}
+		if roleRef, ok := saData["roleRef"].(map[string]interface{}); ok {
+			if kind, ok := roleRef["kind"].(string); ok {
+				sa.RoleRef.Kind = kind
+			}
+			if roleName, ok := roleRef["name"].(string); ok {
+				sa.RoleRef.Name = roleName
+			}
+		}
+		if rules, ok := saData["rules"].([]interface{}); ok {
+			sa.Rules = make([]models.ServiceAccountRule, 0, len(rules))
+			for _, rawRule := range rules {
+				ruleMap, ok := rawRule.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				rule := models.ServiceAccountRule{
+					APIGroups:     parseStringArray(ruleMap["apiGroups"]),
+					Resources:     parseStringArray(ruleMap["resources"]),
+					Verbs:         parseStringArray(ruleMap["verbs"]),
+					ResourceNames: parseStringArray(ruleMap["resourceNames"]),
+				}
+				sort.Strings(rule.APIGroups)
+				sort.Strings(rule.Resources)
+				sort.Strings(rule.ResourceNames)
+				rule.Verbs = models.CanonicalizeVerbs(rule.Verbs)
+				sa.Rules = append(sa.Rules, rule)
+			}
+		}
+		microservice.ServiceAccount = sa
 	}
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed microservice: uuid=%s, imageId=%s", uuid, imageID))
 	return microservice, nil
+}
+
+func parseStringArray(raw interface{}) []string {
+	items, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // loadRegistries loads registries from SQLite store or from the controller.

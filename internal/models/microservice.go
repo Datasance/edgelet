@@ -45,6 +45,7 @@ type Microservice struct {
 	Schedule           int              `json:"schedule" yaml:"schedule"`
 	CPUSetCpus         *string          `json:"cpuSetCpus,omitempty" yaml:"cpuSetCpus,omitempty"`
 	MemoryLimit        *int64           `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"` // in bytes
+	ServiceAccount     *ServiceAccount  `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
 
 	// Internal state fields
 	Delete            bool         `json:"delete" yaml:"delete"`
