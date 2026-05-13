@@ -1,0 +1,8 @@
+apiVersion: datasance.com/v3
+kind: Registry
+spec:
+  url: quay.io
+  # username: john
+  # password: q1u45ic9kst563art
+  # email: user@domain.com
+  private: false

@@ -1,0 +1,37 @@
+apiVersion: datasance.com/v3
+kind: Microservice
+metadata:
+  name: nodered-test2
+spec:
+  images:
+    registry: 1
+    x86: nodered/node-red:latest
+    arm: nodered/node-red:latest
+  container:
+    annotations: {}
+    hostNetworkMode: false
+    isPrivileged: false
+    runAsUser: '0'
+    ipcMode: ''
+    pidMode: ''
+    platform: ''
+    runtime: ''
+    cdiDevices:
+      - docker.com/gpu=webgpu
+    capAdd: []
+    capDrop: []
+    volumes:
+      - hostDestination: node_red_data2
+        containerDestination: /data
+        accessMode: rw
+        type: volume
+    env: []
+    extraHosts: []
+    ports:
+      - internal: 1880
+        external: 1881
+        protocol: tcp
+    cpuSetCpus: ''
+    commands: []
+    healthCheck: {}
+  schedule: 50

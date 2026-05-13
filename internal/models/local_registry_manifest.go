@@ -9,16 +9,12 @@ import (
 type LocalRegistryManifest struct {
 	APIVersion string `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string `yaml:"kind" json:"kind"`
-	Metadata   struct {
-		Name string `yaml:"name" json:"name"`
-	} `yaml:"metadata" json:"metadata"`
 	Spec struct {
-		ID       int    `yaml:"id" json:"id"`
 		URL      string `yaml:"url" json:"url"`
-		IsPublic bool   `yaml:"isPublic" json:"isPublic"`
-		UserName string `yaml:"userName,omitempty" json:"userName,omitempty"`
+		UserName string `yaml:"username,omitempty" json:"username,omitempty"`
 		Password string `yaml:"password,omitempty" json:"password,omitempty"`
-		UserEmail string `yaml:"userEmail,omitempty" json:"userEmail,omitempty"`
+		UserEmail string `yaml:"email,omitempty" json:"email,omitempty"`
+		Private  bool   `yaml:"private" json:"private"`
 	} `yaml:"spec" json:"spec"`
 }
 
@@ -35,8 +31,10 @@ func (m *LocalRegistryManifest) Validate() error {
 	if strings.TrimSpace(m.Kind) != "Registry" {
 		return fmt.Errorf("kind must be Registry")
 	}
-	if m.Spec.ID <= 0 {
-		return fmt.Errorf("spec.id must be > 0")
+	switch strings.TrimSpace(m.APIVersion) {
+	case "datasance.com/v3", "iofog.org/v3":
+	default:
+		return fmt.Errorf("apiVersion must be datasance.com/v3 or iofog.org/v3")
 	}
 	if strings.TrimSpace(m.Spec.URL) == "" {
 		return fmt.Errorf("spec.url is required")
