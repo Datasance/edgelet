@@ -270,6 +270,51 @@ Two functions translate a `models.Microservice` into CRI API structures:
 - Namespace options: `Network = NamespaceMode_POD` (or `NODE` for host-network), `Pid`/`Ipc` as configured
 - CDI device specs, resource limits (CPU set, memory), OCI annotations
 
+### CDI Devices and Spec Directories
+
+For the embedded `iofog` engine, CDI support is enabled in generated containerd config:
+
+```toml
+[plugins."io.containerd.cri.v1.runtime"]
+  enable_cdi = true
+```
+
+At container creation time, `cdiDevices` from microservice spec are mapped directly into CRI `ContainerConfig.CDIDevices` (see `pkg/engine/iofog/cri/mapping.go`).
+
+Important behavior:
+
+- The current embedded containerd config enables CDI but does **not** explicitly set `cdi_spec_dirs`.
+- Therefore, CDI specs are resolved from containerd/CDI default host directories, typically:
+  - `/etc/cdi`
+  - `/var/run/cdi`
+- This means CDI YAMLs are expected on the host filesystem, not under `/var/lib/iofog-agent-containerd/...`, unless custom containerd drop-in config overrides are added.
+
+#### Example: Local Deploy Manifest with CDI devices
+
+```yaml
+kind: Microservice
+apiVersion: iofog.org/v3
+metadata:
+  name: gpu-worker
+spec:
+  container:
+    image: ghcr.io/example/gpu-worker:latest
+    cdiDevices:
+      - "nvidia.com/gpu=all"
+      - "vendor.example/fpga=accel0"
+```
+
+#### Example: Effective CRI mapping
+
+```go
+CDIDevices: []*runtimeapi.CDIDevice{
+    {Name: "nvidia.com/gpu=all"},
+    {Name: "vendor.example/fpga=accel0"},
+}
+```
+
+If you need non-default CDI spec locations, configure containerd via drop-in files under `/var/lib/iofog-agent-containerd/config.d/*.toml` and set `cdi_spec_dirs` explicitly.
+
 ### Sandbox Filtering
 
 CRI creates two containerd containers per microservice (pause + workload). The iofog engine must ensure that `GetContainer`, `GetRunningContainers`, `GetAllContainers`, and `recoverState` always return the **workload** container, never the pause sandbox.

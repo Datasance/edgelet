@@ -18,6 +18,7 @@ set -euo pipefail
 DAEMON_BIN="$1"
 CLI_BIN="$2"
 CONFIG_SRC="$3"
+CERT_SRC="$4"
 
 
 echo "[vm-setup] Stopping any existing iofog-agentd..."
@@ -34,7 +35,7 @@ cp "${DAEMON_BIN}" /usr/local/bin/iofog-agentd
 chmod 755 /usr/local/bin/iofog-agentd
 cp "${CLI_BIN}" /usr/local/bin/iofog-agent
 chmod 755 /usr/local/bin/iofog-agent
-file /usr/local/bin/iofog-agentd
+ls -l /usr/local/bin/iofog-agentd
 
 echo "[vm-setup] Creating directories..."
 mkdir -p /etc/iofog-agent
@@ -44,6 +45,8 @@ chmod 750 /etc/iofog-agent /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-
 
 echo "[vm-setup] Writing config..."
 cp "${CONFIG_SRC}" /etc/iofog-agent/config.yaml
+cp "${CERT_SRC}" /etc/iofog-agent/cert.crt
+chmod 640 /etc/iofog-agent/cert.crt
 sed -i 's/containerEngine: .*/containerEngine: "iofog"/' /etc/iofog-agent/config.yaml
 echo "  containerEngine = iofog set"
 

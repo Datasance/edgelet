@@ -137,32 +137,50 @@ func loadCNIPlugins() error {
 	return nil
 }
 
-// loadCNIConfig writes the iofog bridge CNI conflist and symlinks it to the
-// standard system CNI config directory so containerd's CRI plugin finds it.
+// loadCNIConfig writes managed/local CNI conflists and symlinks them into the
+// standard system CNI config directory so containerd's CRI plugin finds both.
 func loadCNIConfig() error {
-	for _, dir := range []string{constants.IofogCNIConfDir, constants.DefaultSystemCNIConfDir} {
+	for _, dir := range []string{
+		constants.IofogCNIConfDir,
+		constants.IofogManagedCNIConfDir,
+		constants.IofogLocalCNIConfDir,
+		constants.DefaultSystemCNIConfDir,
+	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create CNI conf dir %s: %w", dir, err)
 		}
 	}
 
-	cniConfig, err := json.MarshalIndent(generateCNIConfig(), "", "  ")
+	if err := writeAndSymlinkCNIConfig(
+		generateManagedCNIConfig(),
+		constants.IofogCNIConfigFile,
+		filepath.Join(constants.DefaultSystemCNIConfDir, constants.IofogManagedCNIConfigName),
+	); err != nil {
+		return err
+	}
+	if err := writeAndSymlinkCNIConfig(
+		generateLocalCNIConfig(),
+		constants.IofogLocalCNIConfigFile,
+		filepath.Join(constants.DefaultSystemCNIConfDir, constants.IofogLocalCNIConfigName),
+	); err != nil {
+		return err
+	}
+	loadLogger.Infof("Managed/local CNI bridge configs written and symlinked")
+	return nil
+}
+
+func writeAndSymlinkCNIConfig(cfg map[string]any, targetPath, systemLink string) error {
+	cniConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal CNI config: %w", err)
 	}
-
-	if err := os.WriteFile(constants.IofogCNIConfigFile, cniConfig, 0644); err != nil {
+	if err := os.WriteFile(targetPath, cniConfig, 0644); err != nil {
 		return fmt.Errorf("write CNI config file: %w", err)
 	}
-
-	// Symlink to the standard system CNI conf dir.
-	systemLink := filepath.Join(constants.DefaultSystemCNIConfDir, constants.DefaultCNIConfigName)
-	_ = os.Remove(systemLink) // Remove stale symlink if present.
-	if err := os.Symlink(constants.IofogCNIConfigFile, systemLink); err != nil && !os.IsExist(err) {
-		return fmt.Errorf("symlink CNI config: %w", err)
+	_ = os.Remove(systemLink)
+	if err := os.Symlink(targetPath, systemLink); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("symlink CNI config %s: %w", systemLink, err)
 	}
-
-	loadLogger.Infof("CNI bridge config written and symlinked to %s", systemLink)
 	return nil
 }
 

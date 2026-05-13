@@ -6,17 +6,15 @@ import (
 	"github.com/eclipse-iofog/agent/internal/constants"
 )
 
-// generateCNIConfig returns the CNI conflist for the "iofog" bridge network.
-// The bridge is named iofog0 to avoid collision with Docker's docker0 bridge.
-// CIDR 172.18.0.0/16 is chosen to avoid Docker's default 172.17.0.0/16.
-func generateCNIConfig() map[string]any {
+// generateCNIConfig builds a CNI conflist for one bridge network.
+func generateCNIConfig(networkName, bridgeName, bridgeCIDR string) map[string]any {
 	return map[string]any{
 		"cniVersion": "1.0.0",
-		"name":       constants.IofogNetworkName,
+		"name":       networkName,
 		"plugins": []map[string]any{
 			{
 				"type":        "bridge",
-				"bridge":      constants.IofogBridgeName,
+				"bridge":      bridgeName,
 				"isGateway":   true,
 				"ipMasq":      true,
 				"hairpinMode": true,
@@ -28,7 +26,7 @@ func generateCNIConfig() map[string]any {
 					"type": "host-local",
 					"ranges": [][]map[string]any{
 						{
-							{"subnet": constants.IofogBridgeCIDR},
+							{"subnet": bridgeCIDR},
 						},
 					},
 					"routes": []map[string]any{
@@ -47,4 +45,12 @@ func generateCNIConfig() map[string]any {
 			},
 		},
 	}
+}
+
+func generateManagedCNIConfig() map[string]any {
+	return generateCNIConfig(constants.IofogNetworkName, constants.IofogBridgeName, constants.IofogBridgeCIDR)
+}
+
+func generateLocalCNIConfig() map[string]any {
+	return generateCNIConfig(constants.IofogLocalNetworkName, constants.IofogLocalBridgeName, constants.IofogLocalBridgeCIDR)
 }

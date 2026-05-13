@@ -84,7 +84,7 @@ assert_ok "containerd socket exists" \
 assert_ok "iofog-agentd service is active" \
     R "systemctl is-active iofog-agentd"
 
-assert_contains "iofog-agent status endpoint is reachable" "daemonStatus" \
+assert_contains "iofog-agent status endpoint is reachable" "iofogDaemon" \
     R "iofog-agent system status"
 
 ###############################################################################
@@ -92,30 +92,42 @@ assert_contains "iofog-agent status endpoint is reachable" "daemonStatus" \
 ###############################################################################
 log_step "Phase 3: CNI network configuration"
 
-assert_ok "CNI conflist written" \
-    R "test -f /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Managed CNI conflist written" \
+    R "test -f /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
 
-assert_ok "CNI conflist has iofog network name" \
-    R "jq -e '.name == \"iofog\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Managed CNI conflist has iofog network name" \
+    R "jq -e '.name == \"iofog\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
 
-assert_ok "CNI conflist has bridge plugin" \
-    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Managed CNI conflist has bridge plugin" \
+    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
 
-assert_ok "CNI conflist has bridge name iofog0" \
-    R "jq -e '.plugins[0].bridge == \"iofog0\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Managed CNI conflist has bridge name iofog0" \
+    R "jq -e '.plugins[0].bridge == \"iofog0\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
 
-assert_ok "CNI conflist has portmap plugin" \
-    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Managed CNI conflist has portmap plugin" \
+    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
 
-assert_ok "CNI system symlink created" \
+assert_ok "Local CNI conflist written" \
+    R "test -f /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+
+assert_ok "Local CNI conflist has iofog-local network name" \
+    R "jq -e '.name == \"iofog-local\"' /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+
+assert_ok "Local CNI conflist has bridge name iofog-local0" \
+    R "jq -e '.plugins[0].bridge == \"iofog-local0\"' /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+
+assert_ok "Managed CNI system symlink created" \
     R "test -L /etc/cni/net.d/10-iofog.conflist"
+
+assert_ok "Local CNI system symlink created" \
+    R "test -L /etc/cni/net.d/11-iofog-local.conflist"
 
 ###############################################################################
 # Phase 4 — LocalAPI v3 + CLI microservice operations
 ###############################################################################
 log_step "Phase 4: LocalAPI v3 and CLI operations"
 
-assert_contains "ms ps returns JSON items" "\"items\"" \
+assert_contains "ms ps returns table headers" "APPLICATIONNAME" \
     R "iofog-agent ms ps"
 
 assert_contains "auth whoami returns claims payload" "\"claims\"" \
@@ -123,19 +135,25 @@ assert_contains "auth whoami returns claims payload" "\"claims\"" \
 
 assert_ok "create temporary local deploy manifest" \
     R "cat >/tmp/iofog-local-ms.yaml <<'EOF'
+apiVersion: iofog.org/v3
 kind: Microservice
-apiVersion: agent.iofog.org/v3
 metadata:
   name: local-test-ms
 spec:
-  image: docker.io/library/alpine:3.19
-  command:
-    - /bin/sh
-    - -lc
-    - sleep 10
+  images:
+    x86: docker.io/library/alpine:3.19
+    arm: docker.io/library/alpine:3.19
+  container:
+    hostNetworkMode: false
+    isPrivileged: false
+    commands:
+      - /bin/sh
+      - -lc
+      - sleep 10
+  schedule: 50
 EOF"
 
-assert_contains "deploy -f submits manifest via CLI" "\"deploymentId\"" \
+assert_contains "deploy -f submits manifest via CLI" "microservice manifest applied successfully" \
     R "iofog-agent deploy -f /tmp/iofog-local-ms.yaml"
 
 ###############################################################################

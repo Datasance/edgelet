@@ -14,7 +14,7 @@ memory: "2GiB"
 disk: "20GiB"
 
 images:
-  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+  - location: "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img"
     arch: aarch64
 
 # Mount the home directory read-only so the VM can access build outputs.
@@ -48,6 +48,10 @@ provision:
       apt-get update -qq
       apt-get install -y --no-install-recommends \
           curl ca-certificates iptables iproute2 jq
+
+      # Ensure host/containerd packages (if present in base image) do not
+      # interfere with embedded iofog containerd validation.
+      systemctl disable --now containerd 2>/dev/null || true
 
       echo "Lima VM provisioned OK"
 

@@ -67,9 +67,9 @@ Installed automatically by `setup.sh`:
 | Phase | What is tested |
 |---|---|
 | 1 | Extracted embedded binaries (shims, runc, CNI plugins) |
-| 2 | containerd socket, health check, `iofog` namespace |
-| 3 | CNI conflist written, bridge name, portmap, system symlink |
-| 4 | Image pull (`alpine:3.19`), image listing |
+| 2 | containerd socket, health check, `k8s.io` namespace |
+| 3 | Managed + local CNI conflists written, network names, bridge names, system symlinks |
+| 4 | LocalAPI v3 and CLI checks (`ms ps` table output, `auth whoami`, local deploy apply) |
 | 5 | Container run, IP forwarding, runc version |
 | 6 | CLI: `version`, `info` shows engine=iofog, `config -ce` switching, invalid engine rejected |
 

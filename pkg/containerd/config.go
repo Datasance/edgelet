@@ -49,13 +49,32 @@ func generateConfig() map[string]any {
 		"runc": map[string]any{
 			"runtime_type":                    "io.containerd.runc.v2",
 			"runtime_path":                    shimRuncPath,
-			"pod_annotations":                 []string{},
+			"pod_annotations":                 []string{"iofog.network"},
 			"container_annotations":           []string{},
 			"privileged_without_host_devices": false,
 			"privileged_without_host_devices_all_devices_allowed": false,
 			"base_runtime_spec": "",
-			"cni_conf_dir":      "",
-			"cni_max_conf_num":  0,
+			"cni_conf_dir":      constants.IofogManagedCNIConfDir,
+			"cni_max_conf_num":  1,
+			"snapshotter":       "",
+			"sandboxer":         "podsandbox",
+			"io_type":           "",
+			"options": map[string]any{
+				// BinaryName points at our extracted runc so containerd-shim-runc-v2
+				// uses our binary rather than any system-installed runc.
+				"BinaryName": runcPath,
+			},
+		},
+		"runc-local": map[string]any{
+			"runtime_type":                    "io.containerd.runc.v2",
+			"runtime_path":                    shimRuncPath,
+			"pod_annotations":                 []string{"iofog.network"},
+			"container_annotations":           []string{},
+			"privileged_without_host_devices": false,
+			"privileged_without_host_devices_all_devices_allowed": false,
+			"base_runtime_spec": "",
+			"cni_conf_dir":      constants.IofogLocalCNIConfDir,
+			"cni_max_conf_num":  1,
 			"snapshotter":       "",
 			"sandboxer":         "podsandbox",
 			"io_type":           "",
@@ -73,10 +92,26 @@ func generateConfig() map[string]any {
 		runtimes["spin"] = map[string]any{
 			"runtime_type":                    "io.containerd.spin.v2",
 			"runtime_path":                    shimSpinPath,
-			"pod_annotations":                 []string{},
+			"pod_annotations":                 []string{"iofog.network"},
 			"container_annotations":           []string{},
 			"privileged_without_host_devices": false,
 			"base_runtime_spec":               "",
+			"cni_conf_dir":                    constants.IofogManagedCNIConfDir,
+			"cni_max_conf_num":                1,
+			"sandboxer":                       "podsandbox",
+			"options": map[string]any{
+				"SystemdCgroup": true,
+			},
+		}
+		runtimes["spin-local"] = map[string]any{
+			"runtime_type":                    "io.containerd.spin.v2",
+			"runtime_path":                    shimSpinPath,
+			"pod_annotations":                 []string{"iofog.network"},
+			"container_annotations":           []string{},
+			"privileged_without_host_devices": false,
+			"base_runtime_spec":               "",
+			"cni_conf_dir":                    constants.IofogLocalCNIConfDir,
+			"cni_max_conf_num":                1,
 			"sandboxer":                       "podsandbox",
 			"options": map[string]any{
 				"SystemdCgroup": true,
@@ -167,7 +202,7 @@ func generateConfig() map[string]any {
 				"cni": map[string]any{
 					"bin_dirs":              []string{constants.IofogCNIPluginsDir},
 					"conf_dir":              constants.DefaultSystemCNIConfDir,
-					"max_conf_num":          1,
+					"max_conf_num":          2,
 					"setup_serially":        false,
 					"conf_template":         "",
 					"ip_pref":               "",
@@ -207,7 +242,7 @@ func generateConfig() map[string]any {
 
 			// --- Runtime task plugin — declare supported platforms ---
 			"io.containerd.runtime.v2.task": map[string]any{
-				"platforms": []string{"linux/amd64", "linux/arm64", "linux/arm"},
+				"platforms": []string{"linux/amd64", "linux/arm64", "linux/arm", "linux/riscv64"},
 			},
 		},
 	}
