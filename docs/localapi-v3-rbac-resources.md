@@ -48,6 +48,31 @@ Evaluator alias policy is canonical + alias tolerant:
 - Endpoint: `POST /v3/system/prune`
   - Resource: `system/prune`
   - Verb: `create`
+  - Compatibility note: `iofog-agent prune` aliases `POST /v3/images:prune`; this route remains supported.
+
+- Endpoint: `GET /v3/images`
+  - Resource: `images`
+  - Verb: `get`
+
+- Endpoint: `POST /v3/images:pull`
+  - Resource: `images/pull`
+  - Verb: `create`
+
+- Endpoint: `GET /v3/images:pull/{operationId}`
+  - Resource: `images/pull/status`
+  - Verb: `get`
+
+- Endpoint: `POST /v3/images:load`
+  - Resource: `images/load`
+  - Verb: `create`
+
+- Endpoint: `POST /v3/images:prune`
+  - Resource: `images/prune`
+  - Verb: `create`
+
+- Endpoint: `POST /v3/images:remove`
+  - Resource: `images/remove`
+  - Verb: `create`
 
 - Endpoint: `GET /v3/system/gps`
   - Resource: `system/gps`
@@ -92,9 +117,68 @@ Evaluator alias policy is canonical + alias tolerant:
   - Verb: `get`
   - ResourceName: `{id}`
 
+- Endpoint: `DELETE /v3/ms/{id}`
+  - Resource: `microservices`
+  - Verb: `delete`
+  - ResourceName: `{id}`
+
+- Endpoint: `POST /v3/ms/{id}/start`
+  - Resource: `microservices`
+  - Verb: `create`
+  - ResourceName: `{id}`
+
+- Endpoint: `POST /v3/ms/{id}/stop`
+  - Resource: `microservices`
+  - Verb: `create`
+  - ResourceName: `{id}`
+
+- Endpoint: `POST /v3/ms/{id}/restart`
+  - Resource: `microservices`
+  - Verb: `create`
+  - ResourceName: `{id}`
+
+- Endpoint: `POST /v3/ms/{id}/kill`
+  - Resource: `microservices`
+  - Verb: `create`
+  - ResourceName: `{id}`
+
+- Endpoint: `GET /v3/ms/{id}/logs`
+  - Resource: `microservices`
+  - Verb: `get`
+  - ResourceName: `{id}`
+
+- Endpoint: `GET /v3/ms/{id}/logs:stream` (WSS upgrade)
+  - Resource: `microservices`
+  - Verb: `get`
+  - ResourceName: `{id}`
+
+- Endpoint: `POST /v3/ms/{id}/exec/sessions`
+  - Resource: `microservices`
+  - Verb: `create`
+  - ResourceName: `{id}`
+
+- Endpoint: `GET /v3/ms/{id}/exec/sessions/{sessionId}`
+  - Resource: `microservices`
+  - Verb: `get`
+  - ResourceName: `{id}`
+
+- Endpoint: `DELETE /v3/ms/{id}/exec/sessions/{sessionId}`
+  - Resource: `microservices`
+  - Verb: `delete`
+  - ResourceName: `{id}`
+
+- Endpoint: `GET /v3/ms/{id}/exec/sessions/{sessionId}:attach` (WSS upgrade)
+  - Resource: `microservices`
+  - Verb: `get`
+  - ResourceName: `{id}`
+
 - Endpoint: `POST /v3/deploy/microservices:apply`
   - Resource: `deploy/microservices`
   - Verb: `create`
+
+- Endpoint: `GET /v3/deploy/microservices:apply/{operationId}`
+  - Resource: `deploy/microservices/apply/status`
+  - Verb: `get`
 
 - Endpoint: `POST /v3/deploy/microservices:validate`
   - Resource: `deploy/microservices`
@@ -123,6 +207,14 @@ Evaluator alias policy is canonical + alias tolerant:
 - Endpoint: `GET /v3/deploy/registries`
   - Resource: `deploy/registries`
   - Verb: `get`
+
+- Endpoint: `GET /v3/deploy/registries/{id}`
+  - Resource: `deploy/registries`
+  - Verb: `get`
+
+- Endpoint: `DELETE /v3/deploy/registries/{id}`
+  - Resource: `deploy/registries`
+  - Verb: `delete`
 
 - Endpoint: `GET /v3/auth/whoami`
   - Resource: `auth/whoami`

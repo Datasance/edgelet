@@ -44,6 +44,18 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/config/switch", Verb: "update"}, true
 	case path == "/v3/system/gps":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/gps", Verb: verb}, true
+	case path == "/v3/images":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images", Verb: verb}, true
+	case path == "/v3/images:pull":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/pull", Verb: verb}, true
+	case strings.HasPrefix(path, "/v3/images:pull/"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/pull/status", Verb: verb}, true
+	case path == "/v3/images:load":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/load", Verb: verb}, true
+	case path == "/v3/images:prune":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/prune", Verb: verb}, true
+	case path == "/v3/images:remove":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/remove", Verb: verb}, true
 	case path == "/v3/microservices/config":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices/config/self", Verb: verb}, true
 	case path == "/v3/microservices/control":
@@ -51,7 +63,18 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 	case path == "/v3/ms":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb}, true
 	case strings.HasPrefix(path, "/v3/ms/"):
-		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb, ResourceName: strings.TrimPrefix(path, "/v3/ms/")}, true
+		if id, ok := microserviceResourceName(path); ok {
+			return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb, ResourceName: id}, true
+		}
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb}, true
+	case strings.HasPrefix(path, "/v3/deploy/microservices/"):
+		id := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/microservices/"))
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices", Verb: verb, ResourceName: id}, true
+	case strings.HasPrefix(path, "/v3/deploy/microservices:apply/"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices/apply/status", Verb: verb}, true
+	case strings.HasPrefix(path, "/v3/deploy/registries/"):
+		id := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/registries/"))
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb, ResourceName: id}, true
 	case strings.HasPrefix(path, "/v3/deploy/microservices"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices", Verb: verb}, true
 	case strings.HasPrefix(path, "/v3/deploy/registries"):
@@ -63,6 +86,23 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 	default:
 		return rbacPermission{}, false
 	}
+}
+
+func microserviceResourceName(path string) (string, bool) {
+	rest := strings.TrimPrefix(path, "/v3/ms/")
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 {
+		return "", false
+	}
+	id := strings.TrimSpace(parts[0])
+	if id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 func isAuthorized(claims jwt.MapClaims, p rbacPermission) bool {
