@@ -49,7 +49,7 @@ help: ## Show this help message
 build: build-cli build-daemon ## Build both binaries for FLAVOR (default: full)
 
 build-cli: ## Build CLI binary (flavor-agnostic)
-	@echo "Building iofog-agent (flavor=$(FLAVOR))..."
+	@echo "Building iofog-agent CLI..."
 	@mkdir -p build
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS_CLI) -o $(CLI_BINARY) ./cmd/iofog-agent
 	@echo "Built: $(CLI_BINARY)"

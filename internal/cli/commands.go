@@ -1,14 +1,25 @@
 package cli
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
+	"text/tabwriter"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -43,8 +54,10 @@ func HandleCommand(args []string) string {
 		"switch":      true,
 		"ms":          true,
 		"deploy":      true,
+		"registry":    true,
 		"system":      true,
 		"auth":        true,
+		"image":       true,
 	}
 
 	if needsDaemon[command] && !client.IsDaemonRunning() {
@@ -71,7 +84,7 @@ func HandleCommand(args []string) string {
 	case "help", "--help", "-h", "-?":
 		return showHelp()
 	case "prune":
-		return requestV3(client, "POST", "/v3/system/prune", nil)
+		return requestV3(client, "POST", "/v3/images:prune", nil)
 	case "cert":
 		return handleCert(client, args)
 	case "switch":
@@ -80,10 +93,14 @@ func HandleCommand(args []string) string {
 		return handleMicroserviceV3(client, args[1:])
 	case "deploy":
 		return handleDeployV3(client, args[1:])
+	case "registry":
+		return handleRegistryV3(client, args[1:])
 	case "system":
 		return handleSystemV3(client, args[1:])
 	case "auth":
 		return handleAuthV3(client, args[1:])
+	case "image":
+		return handleImageV3(client, args[1:])
 	default:
 		return fmt.Sprintf("Unknown command: %s\n\n%s", command, showHelp())
 	}
@@ -204,8 +221,10 @@ func showHelp() string {
 		"  ms inspect <id>\n" +
 		"  ms logs <id>\n" +
 		"  ms exec <id> -- <command...>\n" +
-		"  ms start|stop|kill|rm <id>\n" +
+		"  ms start|stop|restart|kill|rm <id>\n" +
 		"  deploy -f <manifest.yaml>\n" +
+		"  registry ls | inspect <id> | rm <id>\n" +
+		"  image ls | pull <image> | load -f <path> | prune | rm <selector>\n" +
 		"  auth whoami | auth tokens\n\n" +
 		"Use 'iofog-agent <command> --help' for detailed usage.\n\n" +
 		"Validation behavior:\n" +
@@ -279,29 +298,75 @@ func handleMicroserviceV3(client *Client, args []string) string {
 	}
 	switch args[0] {
 	case "ps":
-		return requestV3(client, "GET", "/v3/ms", nil)
+		source := "all"
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--source":
+				if i+1 >= len(args) {
+					return "Error[INVALID_ARGUMENT]: --source requires managed|local|all"
+				}
+				source = strings.ToLower(strings.TrimSpace(args[i+1]))
+				i++
+			case "-h", "--help", "-?":
+				return "Usage: iofog-agent ms ps [--source managed|local|all]"
+			default:
+				return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+			}
+		}
+		if source != "managed" && source != "local" && source != "all" {
+			return "Error[INVALID_ARGUMENT]: --source requires managed|local|all"
+		}
+		return requestV3(client, "GET", "/v3/ms?source="+source, nil)
 	case "inspect":
 		if len(args) < 2 {
-			return "Usage: iofog-agent ms inspect <id>"
+			return "Usage: iofog-agent ms inspect <id> [--summary]"
 		}
-		return requestV3(client, "GET", "/v3/ms/"+args[1], nil)
+		summary := false
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--summary" {
+				summary = true
+				continue
+			}
+			return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+		}
+		path := "/v3/ms/" + args[1]
+		if summary {
+			path += "?summary=true"
+		}
+		return requestV3(client, "GET", path, nil)
 	case "logs":
 		if len(args) < 2 {
-			return "Usage: iofog-agent ms logs <id>"
+			return "Usage: iofog-agent ms logs <id> [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]"
 		}
-		return requestV3(client, "GET", "/v3/ms/"+args[1]+"/logs", nil)
+		return handleMSLogs(client, args[1], args[2:])
 	case "exec":
-		if len(args) < 4 || args[2] != "--" {
-			return "Usage: iofog-agent ms exec <id> -- <command...>"
+		if len(args) < 2 {
+			return "Usage: iofog-agent ms exec <id> [-- <command...>]"
+		}
+		command := make([]string, 0)
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--" {
+				command = append(command, args[i+1:]...)
+				break
+			}
+			return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
 		}
 		payload := map[string]interface{}{
-			"command": args[3:],
+			"command": command,
 			"tty":     true,
 			"stdin":   true,
 			"stdout":  true,
 			"stderr":  true,
 		}
-		return requestV3(client, "POST", "/v3/ms/"+args[1]+"/exec/sessions", payload)
+		result, err := client.RequestV3("POST", "/v3/ms/"+args[1]+"/exec/sessions", payload)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		sessionID := mapValueAsString(result, "sessionId")
+		if sessionID == "<unknown>" {
+			return "Error[INTERNAL]: exec session id missing from response"
+		}
+		return attachExecSessionWS(client, args[1], sessionID)
 	case "start":
 		if len(args) < 2 {
 			return "Usage: iofog-agent ms start <id>"
@@ -317,6 +382,11 @@ func handleMicroserviceV3(client *Client, args []string) string {
 			return "Usage: iofog-agent ms kill <id>"
 		}
 		return requestV3(client, "POST", "/v3/ms/"+args[1]+"/kill", nil)
+	case "restart":
+		if len(args) < 2 {
+			return "Usage: iofog-agent ms restart <id>"
+		}
+		return requestV3(client, "POST", "/v3/ms/"+args[1]+"/restart", nil)
 	case "rm":
 		if len(args) < 2 {
 			return "Usage: iofog-agent ms rm <id>"
@@ -346,17 +416,69 @@ func handleDeployV3(client *Client, args []string) string {
 		return showDeployHelpV3()
 	}
 	manifestPath := args[fileArgOffset+1]
-	data, err := os.ReadFile(manifestPath) // #nosec G304 -- user-provided local file path expected for CLI manifests
-	if err != nil {
-		return fmt.Sprintf("Error reading manifest file: %v", err)
+	if target == "microservices" && len(args) > 0 && args[0] != "registry" && args[0] != "registries" {
+		if kind, err := detectManifestKind(manifestPath); err == nil && strings.EqualFold(kind, "Registry") {
+			target = "registries"
+		}
 	}
-	payload := map[string]interface{}{
-		"manifest": string(data),
+	fields := map[string]string{}
+	for i := fileArgOffset + 2; i < len(args); i++ {
+		switch args[i] {
+		case "--sourceName":
+			if i+1 >= len(args) {
+				return "Usage: --sourceName <value>"
+			}
+			fields["sourceName"] = args[i+1]
+			i++
+		case "--dry-run":
+			fields["dryRun"] = "true"
+		}
 	}
 	if mode == "validate" {
-		return requestV3(client, "POST", "/v3/deploy/"+target+":validate", payload)
+		result, err := client.RequestV3MultipartFile("POST", "/v3/deploy/"+target+":validate", "manifest", manifestPath, fields)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		return formatV3Output("/v3/deploy/"+target+":validate", result)
 	}
-	return requestV3(client, "POST", "/v3/deploy/"+target+":apply", payload)
+	if target == "microservices" {
+		fields["async"] = "true"
+		return handleDeployApplyWithProgress(client, manifestPath, fields)
+	}
+	result, err := client.RequestV3MultipartFile("POST", "/v3/deploy/"+target+":apply", "manifest", manifestPath, fields)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	return formatV3Output("/v3/deploy/"+target+":apply", result)
+}
+
+func handleRegistryV3(client *Client, args []string) string {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		return showRegistryHelpV3()
+	}
+	if len(args) == 0 {
+		return requestV3(client, "GET", "/v3/deploy/registries", nil)
+	}
+	switch args[0] {
+	case "ls":
+		return requestV3(client, "GET", "/v3/deploy/registries", nil)
+	case "inspect":
+		if len(args) < 2 {
+			return "Usage: iofog-agent registry inspect <id>"
+		}
+		items, err := client.RequestV3("GET", "/v3/deploy/registries", nil)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		return formatRegistryInspect(items, args[1])
+	case "rm":
+		if len(args) < 2 {
+			return "Usage: iofog-agent registry rm <id>"
+		}
+		return requestV3(client, "DELETE", "/v3/deploy/registries/"+args[1], nil)
+	default:
+		return showRegistryHelpV3()
+	}
 }
 
 func handleAuthV3(client *Client, args []string) string {
@@ -379,6 +501,212 @@ func handleAuthV3(client *Client, args []string) string {
 	default:
 		return showAuthHelpV3()
 	}
+}
+
+func handleImageV3(client *Client, args []string) string {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		return showImageHelpV3()
+	}
+	switch args[0] {
+	case "ls":
+		if len(args) > 1 {
+			return "Usage: iofog-agent image ls"
+		}
+		return requestV3(client, "GET", "/v3/images", nil)
+	case "pull":
+		if len(args) < 2 {
+			return "Usage: iofog-agent image pull <image> [-r|--registry-id <id>] [-p|--platform <platform>]"
+		}
+		imageRef := strings.TrimSpace(args[1])
+		if imageRef == "" {
+			return "Error[INVALID_ARGUMENT]: image is required"
+		}
+		payload := map[string]interface{}{"image": imageRef}
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "-r", "--registry-id":
+				if i+1 >= len(args) {
+					return "Error[INVALID_ARGUMENT]: --registry-id requires a positive integer"
+				}
+				id, err := strconv.Atoi(strings.TrimSpace(args[i+1]))
+				if err != nil || id <= 0 {
+					return "Error[INVALID_ARGUMENT]: --registry-id requires a positive integer"
+				}
+				payload["registryId"] = id
+				i++
+			case "-p", "--platform":
+				if i+1 >= len(args) {
+					return "Error[INVALID_ARGUMENT]: --platform requires os/arch[/variant]"
+				}
+				platform := strings.TrimSpace(args[i+1])
+				if platform == "" {
+					return "Error[INVALID_ARGUMENT]: --platform requires os/arch[/variant]"
+				}
+				payload["platform"] = platform
+				i++
+			case "-h", "--help", "-?":
+				return "Usage: iofog-agent image pull <image> [-r|--registry-id <id>] [-p|--platform <platform>]"
+			default:
+				return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+			}
+		}
+		payload["async"] = true
+		return handleImagePullWithProgress(client, payload)
+	case "load":
+		if len(args) < 3 {
+			return "Usage: iofog-agent image load -f <path-to-tar-file>"
+		}
+		path := ""
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "-f", "--file":
+				if i+1 >= len(args) {
+					return "Error[INVALID_ARGUMENT]: -f requires path-to-tar-file"
+				}
+				path = strings.TrimSpace(args[i+1])
+				i++
+			case "-h", "--help", "-?":
+				return "Usage: iofog-agent image load -f <path-to-tar-file>"
+			default:
+				return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+			}
+		}
+		if path == "" {
+			return "Error[INVALID_ARGUMENT]: path is required"
+		}
+		return requestV3(client, "POST", "/v3/images:load", map[string]interface{}{"path": path})
+	case "prune":
+		if len(args) > 1 {
+			return "Usage: iofog-agent image prune"
+		}
+		return requestV3(client, "POST", "/v3/images:prune", nil)
+	case "rm":
+		if len(args) != 2 {
+			return "Usage: iofog-agent image rm <image-id|id-prefix|name[:tag]|digest>"
+		}
+		selector := strings.TrimSpace(args[1])
+		if selector == "" {
+			return "Error[INVALID_ARGUMENT]: selector is required"
+		}
+		return requestV3(client, "POST", "/v3/images:remove", map[string]interface{}{"selector": selector})
+	default:
+		return showImageHelpV3()
+	}
+}
+
+func handleImagePullWithProgress(client *Client, payload map[string]interface{}) string {
+	startResult, err := client.RequestV3("POST", "/v3/images:pull", payload)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	operationID := strings.TrimSpace(mapValueAsString(startResult, "operationId"))
+	if operationID == "" || operationID == "<unknown>" {
+		return "Error[INTERNAL]: missing image pull operationId in response"
+	}
+	lastProgress := -1
+	for {
+		statusResult, err := client.RequestV3("GET", "/v3/images:pull/"+operationID, nil)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		progress := 0
+		switch typed := statusResult["progress"].(type) {
+		case float64:
+			progress = int(typed)
+		case int:
+			progress = typed
+		}
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 100 {
+			progress = 100
+		}
+		if progress != lastProgress {
+			fmt.Printf("\rpulling image... %d%%", progress)
+			lastProgress = progress
+		}
+		status := strings.ToLower(strings.TrimSpace(mapValueAsString(statusResult, "status")))
+		switch status {
+		case "succeeded":
+			fmt.Print("\r")
+			return formatImagePullResult(statusResult)
+		case "failed":
+			fmt.Print("\r")
+			errMsg := strings.TrimSpace(mapValueAsString(statusResult, "error"))
+			if errMsg == "" || errMsg == "<unknown>" {
+				errMsg = "image pull failed"
+			}
+			return "Error[INTERNAL]: " + errMsg
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func handleDeployApplyWithProgress(client *Client, manifestPath string, fields map[string]string) string {
+	startResult, err := client.RequestV3MultipartFile("POST", "/v3/deploy/microservices:apply", "manifest", manifestPath, fields)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	operationID := strings.TrimSpace(mapValueAsString(startResult, "operationId"))
+	if operationID == "" || operationID == "<unknown>" {
+		return "Error[INTERNAL]: missing deploy apply operationId in response"
+	}
+	lastLine := ""
+	for {
+		statusResult, err := client.RequestV3("GET", "/v3/deploy/microservices:apply/"+operationID, nil)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		status := strings.ToLower(strings.TrimSpace(mapValueAsString(statusResult, "status")))
+		stage := strings.TrimSpace(mapValueAsString(statusResult, "stage"))
+		if stage == "<unknown>" {
+			stage = ""
+		}
+		if status == "running" {
+			line := formatDeployApplyProgressLine(stage)
+			if line != lastLine {
+				fmt.Printf("\r%s", line)
+				lastLine = line
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		fmt.Print("\r")
+		if status == "succeeded" {
+			return formatDeployApplyResult(statusResult)
+		}
+		code, message := formatDeployApplyError(statusResult)
+		return fmt.Sprintf("Error[%s]: %s", code, message)
+	}
+}
+
+func formatDeployApplyProgressLine(stage string) string {
+	stage = strings.TrimSpace(stage)
+	if stage == "" || stage == "<unknown>" {
+		return "applying microservice manifest..."
+	}
+	return fmt.Sprintf("applying microservice manifest... (%s)", stage)
+}
+
+func formatDeployApplyError(statusResult map[string]interface{}) (string, string) {
+	code := "INTERNAL"
+	message := ""
+	if rawErr, ok := statusResult["error"].(map[string]interface{}); ok {
+		if c := strings.TrimSpace(mapValueAsString(rawErr, "code")); c != "" && c != "<unknown>" {
+			code = c
+		}
+		if m := strings.TrimSpace(mapValueAsString(rawErr, "message")); m != "" && m != "<unknown>" {
+			message = m
+		}
+	}
+	if message == "" || message == "<unknown>" {
+		message = strings.TrimSpace(mapValueAsString(statusResult, "error"))
+	}
+	if message == "" || message == "<unknown>" {
+		message = "deploy apply failed"
+	}
+	return code, message
 }
 
 func requestV3(client *Client, method, path string, payload interface{}) string {
@@ -411,7 +739,8 @@ func formatV3RequestError(err error) string {
 }
 
 func formatV3Output(path string, result map[string]interface{}) string {
-	switch path {
+	routePath := stripQuery(path)
+	switch routePath {
 	case "/v3/system/status":
 		return formatFlatMapWithOrder(result, statusOutputOrder)
 	case "/v3/system/info":
@@ -422,9 +751,297 @@ func formatV3Output(path string, result map[string]interface{}) string {
 		return "controller certificate updated successfully"
 	case "/v3/system/config/switch":
 		return formatSwitchResult(result)
+	case "/v3/ms":
+		return formatMSList(result)
+	case "/v3/images":
+		return formatImageList(result)
+	case "/v3/images:pull":
+		return formatImagePullResult(result)
+	case "/v3/images:load":
+		return formatImageLoadResult(result)
+	case "/v3/images:prune", "/v3/system/prune":
+		return formatImagePruneResult(result)
+	case "/v3/images:remove":
+		return formatImageRemoveResult(result)
+	case "/v3/deploy/registries":
+		return formatRegistryList(result)
+	case "/v3/deploy/microservices:validate", "/v3/deploy/registries:validate":
+		return formatDeployValidateResult(result)
+	case "/v3/deploy/microservices:apply", "/v3/deploy/registries:apply":
+		return formatDeployApplyResult(result)
 	default:
+		if strings.HasPrefix(routePath, "/v3/ms/") {
+			if strings.HasSuffix(routePath, "/start") || strings.HasSuffix(routePath, "/stop") ||
+				strings.HasSuffix(routePath, "/restart") || strings.HasSuffix(routePath, "/kill") {
+				return formatMSLifecycleResult(routePath, result)
+			}
+			// /v3/ms/{id} is shared by inspect + rm. Only format rm-style payloads.
+			if _, ok := result["microserviceUuid"]; ok {
+				if status, hasStatus := result["status"]; hasStatus && fmt.Sprintf("%v", status) == "ok" {
+					return formatMSLifecycleResult(routePath, result)
+				}
+			}
+		}
+		if strings.HasPrefix(routePath, "/v3/deploy/registries/") {
+			if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
+				return formatRegistryRemoveResult(result)
+			}
+		}
 		return ""
 	}
+}
+
+func formatDeployValidateResult(result map[string]interface{}) string {
+	if valid, ok := result["valid"].(bool); ok && valid {
+		return fmt.Sprintf("manifest is valid (kind=%v name=%v apiVersion=%v)", result["kind"], result["name"], result["apiVersion"])
+	}
+	return "manifest validation result unavailable"
+}
+
+func formatDeployApplyResult(result map[string]interface{}) string {
+	if strings.EqualFold(strings.TrimSpace(mapValueAsString(result, "status")), "succeeded") {
+		if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
+			return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
+		}
+		return "microservice manifest applied successfully"
+	}
+	if accepted, ok := result["accepted"].(bool); ok && accepted {
+		kind := strings.ToLower(strings.TrimSpace(mapValueAsString(result, "kind")))
+		switch kind {
+		case "registry":
+			if reg, ok := result["registry"].(map[string]interface{}); ok {
+				return fmt.Sprintf("registry manifest applied successfully (id=%s url=%s)", mapValueAsString(reg, "id"), mapValueAsString(reg, "url"))
+			}
+			return "registry manifest applied successfully"
+		case "microservice":
+			if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
+				return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
+			}
+			return "microservice manifest applied successfully"
+		default:
+			if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
+				return fmt.Sprintf("manifest applied successfully (deploymentId=%s)", id)
+			}
+			return "manifest applied successfully"
+		}
+	}
+	return "manifest apply result unavailable"
+}
+
+func formatMSList(result map[string]interface{}) string {
+	rawItems, ok := result["items"].([]interface{})
+	if !ok || len(rawItems) == 0 {
+		return "No microservices found."
+	}
+	rows := [][]string{
+		{"UUID", "APPLICATIONNAME", "MICROSERVICENAME", "STATE", "CONTAINERID", "IMAGE", "TYPE"},
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			mapValueAsString(item, "uuid"),
+			mapValueAsString(item, "application"),
+			mapValueAsString(item, "name"),
+			mapValueAsString(item, "state"),
+			mapValueAsString(item, "containerId"),
+			mapValueAsString(item, "image"),
+			mapValueAsString(item, "type"),
+		})
+	}
+	return formatAlignedTable(rows)
+}
+
+func formatRegistryList(result map[string]interface{}) string {
+	rawItems, ok := result["items"].([]interface{})
+	if !ok || len(rawItems) == 0 {
+		return "No registries found."
+	}
+	rows := [][]string{
+		{"ID", "URL", "PUBLIC", "USERNAME", "EMAIL"},
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			mapValueAsString(item, "id"),
+			mapValueAsString(item, "url"),
+			mapValueAsString(item, "isPublic"),
+			mapValueAsString(item, "userName"),
+			mapValueAsString(item, "userEmail"),
+		})
+	}
+	return formatAlignedTable(rows)
+}
+
+func formatImageList(result map[string]interface{}) string {
+	rawItems, ok := result["items"].([]interface{})
+	if !ok || len(rawItems) == 0 {
+		return "No images found."
+	}
+	rows := [][]string{
+		{"REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"},
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			valueOrDefault(mapValueAsString(item, "repository"), "<none>"),
+			valueOrDefault(mapValueAsString(item, "tag"), "<none>"),
+			valueOrDefault(mapValueAsString(item, "shortId"), "<none>"),
+			humanizeCreated(mapValueAsString(item, "createdAt")),
+			valueOrDefault(mapValueAsString(item, "sizeHuman"), "0 B"),
+		})
+	}
+	return formatAlignedTable(rows)
+}
+
+func formatImagePullResult(result map[string]interface{}) string {
+	return fmt.Sprintf(
+		"image pulled successfully: %s (engine=%s, platform=%s)",
+		mapValueAsString(result, "resolvedImage"),
+		valueOrDefault(mapValueAsString(result, "engine"), "<unknown>"),
+		valueOrDefault(mapValueAsString(result, "platform"), "<none>"),
+	)
+}
+
+func formatImageRemoveResult(result map[string]interface{}) string {
+	return fmt.Sprintf(
+		"image removed successfully: %s (engine=%s)",
+		valueOrDefault(mapValueAsString(result, "removed"), valueOrDefault(mapValueAsString(result, "selector"), "<unknown>")),
+		valueOrDefault(mapValueAsString(result, "engine"), "<unknown>"),
+	)
+}
+
+func formatImageLoadResult(result map[string]interface{}) string {
+	return fmt.Sprintf(
+		"image archive loaded successfully: %s image imported (engine=%s)",
+		mapValueAsString(result, "count"),
+		valueOrDefault(mapValueAsString(result, "engine"), "<unknown>"),
+	)
+}
+
+func formatImagePruneResult(result map[string]interface{}) string {
+	return fmt.Sprintf(
+		"pruned dangling images: deleted=%s reclaimed=%s (engine=%s)",
+		mapValueAsString(result, "deletedCount"),
+		valueOrDefault(mapValueAsString(result, "spaceReclaimedHuman"), valueOrDefault(mapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+		valueOrDefault(mapValueAsString(result, "engine"), "<unknown>"),
+	)
+}
+
+func formatRegistryInspect(result map[string]interface{}, id string) string {
+	rawItems, ok := result["items"].([]interface{})
+	if !ok {
+		return "No registries found."
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if mapValueAsString(item, "id") == id {
+			return strings.Join([]string{
+				fmt.Sprintf("ID: %s", mapValueAsString(item, "id")),
+				fmt.Sprintf("URL: %s", mapValueAsString(item, "url")),
+				fmt.Sprintf("PUBLIC: %s", mapValueAsString(item, "isPublic")),
+				fmt.Sprintf("USERNAME: %s", mapValueAsString(item, "userName")),
+				fmt.Sprintf("EMAIL: %s", mapValueAsString(item, "userEmail")),
+			}, "\n")
+		}
+	}
+	return fmt.Sprintf("Error[NOT_FOUND]: registry %s not found", id)
+}
+
+func formatRegistryRemoveResult(result map[string]interface{}) string {
+	if id := mapValueAsString(result, "id"); id != "<unknown>" {
+		return fmt.Sprintf("registry removed successfully (id=%s)", id)
+	}
+	return "registry removed successfully"
+}
+
+func formatMSLifecycleResult(path string, result map[string]interface{}) string {
+	operation := "operation"
+	switch {
+	case strings.HasSuffix(path, "/start"):
+		operation = "start"
+	case strings.HasSuffix(path, "/stop"):
+		operation = "stop"
+	case strings.HasSuffix(path, "/restart"):
+		operation = "restart"
+	case strings.HasSuffix(path, "/kill"):
+		operation = "kill"
+	default:
+		operation = "rm"
+	}
+	uuid := mapValueAsString(result, "microserviceUuid")
+	msg := fmt.Sprintf("microservice %s completed successfully", operation)
+	if uuid != "<unknown>" {
+		msg = fmt.Sprintf("microservice %s completed successfully (uuid=%s)", operation, uuid)
+	}
+	if warning := strings.TrimSpace(mapValueAsString(result, "warning")); warning != "" && warning != "<unknown>" {
+		msg += "\nwarning: " + warning
+	}
+	return msg
+}
+
+func formatAlignedTable(rows [][]string) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 8, 2, ' ', 0)
+	for _, row := range rows {
+		if len(row) == 0 {
+			continue
+		}
+		_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
+	}
+	_ = w.Flush()
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func stripQuery(path string) string {
+	if idx := strings.Index(path, "?"); idx >= 0 {
+		return path[:idx]
+	}
+	return path
+}
+
+func valueOrDefault(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "<unknown>" {
+		return fallback
+	}
+	return value
+}
+
+func humanizeCreated(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "<unknown>" {
+		return "<unknown>"
+	}
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return raw
+	}
+	d := time.Since(ts)
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%d minutes ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%d hours ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%d days ago", int(d.Hours()/24))
 }
 
 var statusOutputOrder = []string{
@@ -895,13 +1512,27 @@ func mapValueAsString(input map[string]interface{}, key string) string {
 	}
 }
 
+func mapValueAsRawString(input map[string]interface{}, key string) string {
+	if input == nil {
+		return ""
+	}
+	value, ok := input[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if typed, ok := value.(string); ok {
+		return typed
+	}
+	return fmt.Sprintf("%v", value)
+}
+
 func showMSHelpV3() string {
 	return "Usage:\n" +
-		"  iofog-agent ms ps\n" +
-		"  iofog-agent ms inspect <id>\n" +
-		"  iofog-agent ms logs <id>\n" +
-		"  iofog-agent ms exec <id> -- <command...>\n" +
-		"  iofog-agent ms start|stop|kill|rm <id>"
+		"  iofog-agent ms ps [--source managed|local|all]\n" +
+		"  iofog-agent ms inspect <id> [--summary]\n" +
+		"  iofog-agent ms logs <id> [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]\n" +
+		"  iofog-agent ms exec <id> [-- <command...>]\n" +
+		"  iofog-agent ms start|stop|restart|kill|rm <id>"
 }
 
 func showDeployHelpV3() string {
@@ -909,9 +1540,17 @@ func showDeployHelpV3() string {
 		"  iofog-agent deploy -f <manifest.yaml>\n" +
 		"  iofog-agent deploy apply -f <manifest.yaml>\n" +
 		"  iofog-agent deploy validate -f <manifest.yaml>\n\n" +
+		"  optional fields: --sourceName <name> --dry-run\n\n" +
 		"  iofog-agent deploy registry apply -f <registry.yaml>\n" +
 		"  iofog-agent deploy registry validate -f <registry.yaml>\n\n" +
 		"Deploys or validates local microservice/registry manifests via LocalAPI v3."
+}
+
+func showRegistryHelpV3() string {
+	return "Usage:\n" +
+		"  iofog-agent registry ls\n" +
+		"  iofog-agent registry inspect <id>\n" +
+		"  iofog-agent registry rm <id>"
 }
 
 func showAuthHelpV3() string {
@@ -919,4 +1558,267 @@ func showAuthHelpV3() string {
 		"  iofog-agent auth whoami\n" +
 		"  iofog-agent auth tokens\n" +
 		"  iofog-agent auth revoke <jti>"
+}
+
+func showImageHelpV3() string {
+	return "Usage:\n" +
+		"  iofog-agent image ls\n" +
+		"  iofog-agent image pull <image> [-r|--registry-id <id>] [-p|--platform <platform>]\n" +
+		"  iofog-agent image load -f <path-to-tar-file>\n" +
+		"  iofog-agent image prune\n" +
+		"  iofog-agent image rm <image-id|id-prefix|name[:tag]|digest>"
+}
+
+func handleMSLogs(client *Client, id string, args []string) string {
+	follow := false
+	tail := "100"
+	since := ""
+	until := ""
+	timestamps := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--follow", "-f":
+			follow = true
+		case "--tail":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --tail requires a number"
+			}
+			tail = strings.TrimSpace(args[i+1])
+			i++
+		case "--since":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --since requires an ISO8601 timestamp"
+			}
+			since = strings.TrimSpace(args[i+1])
+			i++
+		case "--until":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --until requires an ISO8601 timestamp"
+			}
+			until = strings.TrimSpace(args[i+1])
+			i++
+		case "--timestamps":
+			timestamps = true
+		case "--help", "-h", "-?":
+			return "Usage: iofog-agent ms logs <id> [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]"
+		default:
+			return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+		}
+	}
+
+	if follow {
+		return streamLogsWS(client, id, timestamps)
+	}
+
+	path := "/v3/ms/" + id + "/logs?tail=" + tail
+	if since != "" {
+		path += "&since=" + since
+	}
+	if until != "" {
+		path += "&until=" + until
+	}
+	result, err := client.RequestV3("GET", path, nil)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	rawEntries, _ := result["entries"].([]interface{})
+	var b strings.Builder
+	for _, raw := range rawEntries {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		line := mapValueAsRawString(entry, "line")
+		if timestamps {
+			ts := mapValueAsString(entry, "ts")
+			b.WriteString(ts + " ")
+		}
+		b.WriteString(line)
+		if !strings.HasSuffix(line, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func streamLogsWS(client *Client, id string, timestamps bool) string {
+	conn, err := dialWS(client, "/v3/ms/"+id+"/logs:stream")
+	if err != nil {
+		return fmt.Sprintf("Error[INTERNAL]: %v", err)
+	}
+	defer conn.Close()
+	for {
+		var event map[string]interface{}
+		if err := conn.ReadJSON(&event); err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				return ""
+			}
+			return ""
+		}
+		line := mapValueAsRawString(event, "line")
+		if timestamps {
+			ts := mapValueAsString(event, "ts")
+			fmt.Printf("%s %s\n", ts, line)
+		} else {
+			fmt.Println(line)
+		}
+	}
+}
+
+func attachExecSessionWS(client *Client, selector, sessionID string) string {
+	conn, err := dialWS(client, "/v3/ms/"+selector+"/exec/sessions/"+sessionID+":attach")
+	if err != nil {
+		return fmt.Sprintf("Error[INTERNAL]: %v", err)
+	}
+	defer conn.Close()
+
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	exitCode := 0
+	resizeDone := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGWINCH)
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		if oldState, rawErr := term.MakeRaw(int(os.Stdin.Fd())); rawErr == nil {
+			defer func() {
+				_ = term.Restore(int(os.Stdin.Fd()), oldState)
+			}()
+		}
+	}
+	sendResize := func() {
+		cols, rows, err := terminalSize()
+		if err != nil {
+			return
+		}
+		_ = conn.WriteJSON(map[string]interface{}{
+			"type": "resize",
+			"cols": cols,
+			"rows": rows,
+		})
+	}
+	sendResize()
+	go func() {
+		defer close(resizeDone)
+		for range sigCh {
+			sendResize()
+		}
+	}()
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, readErr := os.Stdin.Read(buf)
+			data := buf[:0]
+			if n > 0 {
+				data = buf[:n]
+			}
+			if len(data) > 0 {
+				_ = conn.WriteMessage(websocket.BinaryMessage, data)
+			}
+			if readErr != nil {
+				_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				doneOnce.Do(func() { close(done) })
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-done:
+			signal.Stop(sigCh)
+			close(sigCh)
+			<-resizeDone
+			if exitCode != 0 {
+				return fmt.Sprintf("__EXIT_CODE__=%d", exitCode)
+			}
+			return ""
+		default:
+		}
+		var event map[string]interface{}
+		if err := conn.ReadJSON(&event); err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				signal.Stop(sigCh)
+				close(sigCh)
+				<-resizeDone
+				if exitCode != 0 {
+					return fmt.Sprintf("__EXIT_CODE__=%d", exitCode)
+				}
+				return ""
+			}
+			signal.Stop(sigCh)
+			close(sigCh)
+			<-resizeDone
+			if exitCode != 0 {
+				return fmt.Sprintf("__EXIT_CODE__=%d", exitCode)
+			}
+			return ""
+		}
+		stream := mapValueAsString(event, "stream")
+		line := mapValueAsRawString(event, "line")
+		if stream == "control" {
+			if rawCode, ok := event["exitCode"]; ok {
+				switch typed := rawCode.(type) {
+				case float64:
+					exitCode = int(typed)
+				case int:
+					exitCode = typed
+				case string:
+					if parsed, parseErr := strconv.Atoi(strings.TrimSpace(typed)); parseErr == nil {
+						exitCode = parsed
+					}
+				}
+			}
+			continue
+		}
+		if stream == "stderr" {
+			_, _ = io.WriteString(os.Stderr, line)
+		} else if stream == "stdout" {
+			_, _ = io.WriteString(os.Stdout, line)
+		}
+	}
+}
+
+func terminalSize() (uint32, uint32, error) {
+	ws, err := os.Stdout.Stat()
+	if err != nil {
+		return 0, 0, err
+	}
+	if (ws.Mode() & os.ModeCharDevice) == 0 {
+		return 0, 0, fmt.Errorf("stdout is not terminal")
+	}
+	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return 0, 0, err
+	}
+	return uint32(cols), uint32(rows), nil
+}
+
+func dialWS(client *Client, path string) (*websocket.Conn, error) {
+	wsURL := "wss://localhost:54321" + path
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // #nosec G402 local daemon endpoint
+		},
+	}
+	header := map[string][]string{"Authorization": {"Bearer " + strings.TrimSpace(client.token)}}
+	conn, _, err := dialer.Dial(wsURL, header)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+func detectManifestKind(path string) (string, error) {
+	raw, err := os.ReadFile(path) // #nosec G304 CLI manifest path provided by caller
+	if err != nil {
+		return "", err
+	}
+	var doc struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(doc.Kind), nil
 }

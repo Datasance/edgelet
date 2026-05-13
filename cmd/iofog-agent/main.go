@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/eclipse-iofog/agent/internal/cli"
@@ -21,6 +22,14 @@ func main() {
 	// Handle all other commands
 	args := os.Args[1:]
 	result := cli.HandleCommand(args)
+	trimmedResult := strings.TrimSpace(result)
+	if strings.HasPrefix(trimmedResult, "__EXIT_CODE__=") {
+		codeRaw := strings.TrimSpace(strings.TrimPrefix(trimmedResult, "__EXIT_CODE__="))
+		if code, err := strconv.Atoi(codeRaw); err == nil {
+			os.Exit(code)
+		}
+		os.Exit(1)
+	}
 	if result != "" && !strings.HasSuffix(result, "\n") {
 		result += "\n"
 	}

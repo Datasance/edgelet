@@ -211,3 +211,180 @@ func TestFormatVersionOutput_IncludesDaemonFields(t *testing.T) {
 	}
 }
 
+func TestFormatV3Output_MSListHandlesQueryPath(t *testing.T) {
+	out := formatV3Output("/v3/ms?source=all", map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"uuid":        "u1",
+				"application": "app",
+				"name":        "ms",
+				"source":      "local",
+				"state":       "running",
+				"containerId": "c1",
+				"image":       "img:1",
+				"type":        "local",
+			},
+		},
+	})
+	if !strings.Contains(out, "UUID") || !strings.Contains(out, "APPLICATIONNAME") {
+		t.Fatalf("expected ms table headers, got: %s", out)
+	}
+	if strings.Contains(out, "SOURCE") {
+		t.Fatalf("did not expect SOURCE column in ms table output, got: %s", out)
+	}
+	if !strings.Contains(out, "u1") {
+		t.Fatalf("expected row content, got: %s", out)
+	}
+}
+
+func TestFormatV3Output_MSLifecycleFormatting(t *testing.T) {
+	out := formatV3Output("/v3/ms/abc/start", map[string]interface{}{
+		"status":           "ok",
+		"microserviceUuid": "abc",
+		"warning":          "controller reconcile may restart it",
+	})
+	if !strings.Contains(out, "microservice start completed successfully") {
+		t.Fatalf("expected lifecycle success message, got: %s", out)
+	}
+	if !strings.Contains(out, "warning: controller reconcile may restart it") {
+		t.Fatalf("expected warning visibility, got: %s", out)
+	}
+}
+
+func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
+	out := formatRegistryInspect(map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"id":       3,
+				"url":      "registry.example.com",
+				"isPublic": false,
+				"userName": "john",
+				"userEmail": "john@example.com",
+			},
+		},
+	}, "3")
+	if strings.Contains(out, "{") || strings.Contains(out, "}") {
+		t.Fatalf("expected non-JSON inspect output, got: %s", out)
+	}
+	if !strings.Contains(out, "ID: 3") || !strings.Contains(out, "URL: registry.example.com") {
+		t.Fatalf("expected inspect fields in output, got: %s", out)
+	}
+}
+
+func TestFormatDeployApplyResult_KindSpecific(t *testing.T) {
+	msOut := formatDeployApplyResult(map[string]interface{}{
+		"accepted":     true,
+		"kind":         "Microservice",
+		"deploymentId": "dep-1",
+	})
+	if !strings.Contains(msOut, "microservice manifest applied successfully") || !strings.Contains(msOut, "dep-1") {
+		t.Fatalf("expected microservice apply output, got: %s", msOut)
+	}
+
+	regOut := formatDeployApplyResult(map[string]interface{}{
+		"accepted": true,
+		"kind":     "Registry",
+		"registry": map[string]interface{}{
+			"id":  7,
+			"url": "docker.io",
+		},
+	})
+	if !strings.Contains(regOut, "registry manifest applied successfully") || !strings.Contains(regOut, "id=7") {
+		t.Fatalf("expected registry apply output, got: %s", regOut)
+	}
+}
+
+func TestFormatDeployApplyResult_AsyncSucceeded(t *testing.T) {
+	out := formatDeployApplyResult(map[string]interface{}{
+		"status":       "succeeded",
+		"deploymentId": "dep-42",
+	})
+	if !strings.Contains(out, "microservice manifest applied successfully") || !strings.Contains(out, "dep-42") {
+		t.Fatalf("expected async deploy success output, got: %s", out)
+	}
+}
+
+func TestFormatDeployApplyProgressLine(t *testing.T) {
+	if got := formatDeployApplyProgressLine("pulling"); !strings.Contains(got, "(pulling)") {
+		t.Fatalf("expected stage in progress line, got: %s", got)
+	}
+	if got := formatDeployApplyProgressLine(""); got != "applying microservice manifest..." {
+		t.Fatalf("unexpected fallback progress line: %s", got)
+	}
+}
+
+func TestFormatDeployApplyError(t *testing.T) {
+	code, message := formatDeployApplyError(map[string]interface{}{
+		"error": map[string]interface{}{
+			"code":    "INTERNAL",
+			"message": "failed to start",
+		},
+	})
+	if code != "INTERNAL" || message != "failed to start" {
+		t.Fatalf("unexpected structured error mapping: code=%s message=%s", code, message)
+	}
+	code, message = formatDeployApplyError(map[string]interface{}{})
+	if code != "INTERNAL" || message != "deploy apply failed" {
+		t.Fatalf("unexpected fallback error mapping: code=%s message=%s", code, message)
+	}
+}
+
+func TestFormatV3Output_ImageListTable(t *testing.T) {
+	out := formatV3Output("/v3/images", map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"repository": "ghcr.io/datasance/nats",
+				"tag":        "2.12.4",
+				"shortId":    "5af03c2768d3",
+				"createdAt":  "2026-05-13T14:21:30Z",
+				"sizeHuman":  "52.0 MB",
+			},
+		},
+	})
+	if !strings.Contains(out, "REPOSITORY") || !strings.Contains(out, "SIZE") {
+		t.Fatalf("expected image table headers, got: %s", out)
+	}
+	if !strings.Contains(out, "ghcr.io/datasance/nats") || !strings.Contains(out, "52.0 MB") {
+		t.Fatalf("expected image row, got: %s", out)
+	}
+}
+
+func TestFormatV3Output_ImagePruneMessage(t *testing.T) {
+	out := formatV3Output("/v3/images:prune", map[string]interface{}{
+		"deletedCount":        2,
+		"spaceReclaimedHuman": "8.0 MB",
+		"engine":              "docker",
+	})
+	if !strings.Contains(out, "pruned dangling images") ||
+		!strings.Contains(out, "deleted=2") ||
+		!strings.Contains(out, "reclaimed=8.0 MB") {
+		t.Fatalf("unexpected prune output: %s", out)
+	}
+}
+
+func TestHandleImageV3UsageValidation(t *testing.T) {
+	client := &Client{}
+	if got := handleImageV3(client, []string{"pull"}); !strings.Contains(got, "Usage: iofog-agent image pull") {
+		t.Fatalf("expected pull usage, got: %s", got)
+	}
+	if got := handleImageV3(client, []string{"load"}); !strings.Contains(got, "Usage: iofog-agent image load -f") {
+		t.Fatalf("expected load usage, got: %s", got)
+	}
+	if got := handleImageV3(client, []string{"prune", "extra"}); !strings.Contains(got, "Usage: iofog-agent image prune") {
+		t.Fatalf("expected prune usage, got: %s", got)
+	}
+	if got := handleImageV3(client, []string{"rm"}); !strings.Contains(got, "Usage: iofog-agent image rm") {
+		t.Fatalf("expected rm usage, got: %s", got)
+	}
+}
+
+func TestFormatV3Output_ImageRemoveMessage(t *testing.T) {
+	out := formatV3Output("/v3/images:remove", map[string]interface{}{
+		"removed": "sha256:abc123",
+		"engine":  "docker",
+	})
+	if !strings.Contains(out, "image removed successfully") || !strings.Contains(out, "sha256:abc123") {
+		t.Fatalf("unexpected image remove output: %s", out)
+	}
+}
+
