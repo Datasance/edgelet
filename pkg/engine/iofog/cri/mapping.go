@@ -17,8 +17,10 @@ import (
 
 // Runtime handler names — must match containerd config.
 const (
-	RuntimeHandlerRunc = "runc"
-	RuntimeHandlerSpin = "spin"
+	RuntimeHandlerRunc      = "runc"
+	RuntimeHandlerRuncLocal = "runc-local"
+	RuntimeHandlerSpin      = "spin"
+	RuntimeHandlerSpinLocal = "spin-local"
 )
 
 // linuxNamespaceOptionsFromMicroservice returns namespace options for both sandbox and
@@ -76,6 +78,12 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir 
 		"iofog-name": ms.MicroserviceName,
 		"iofog-app":  ms.ApplicationName,
 	}
+	annotations := map[string]string{
+		"iofog.network": constants.IofogNetworkName,
+	}
+	if isLocalWorkload(ms) && !ms.HostNetworkMode {
+		annotations["iofog.network"] = constants.IofogLocalNetworkName
+	}
 
 	// Hostname: must be empty when using host network (NODE) — CRI spec and runc
 	// require it ("unable to set hostname without a private UTS namespace").
@@ -90,6 +98,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir 
 		LogDirectory: logDir,
 		PortMappings: portMappings,
 		Labels:       labels,
+		Annotations:  annotations,
 	}
 
 	if podSandboxNeedsLinuxBlock(ms) {
@@ -195,15 +204,15 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 	}
 
 	config := &runtimeapi.ContainerConfig{
-		Metadata:     metadata,
-		Image:        image,
-		Args:         ms.Args,
-		Envs:         envs,
-		Mounts:       mounts,
-		Labels:       labels,
-		Annotations:  annotations,
-		LogPath:      logPath,
-		CDIDevices:   cdiDevices,
+		Metadata:    metadata,
+		Image:       image,
+		Args:        ms.Args,
+		Envs:        envs,
+		Mounts:      mounts,
+		Labels:      labels,
+		Annotations: annotations,
+		LogPath:     logPath,
+		CDIDevices:  cdiDevices,
 		Linux: &runtimeapi.LinuxContainerConfig{
 			SecurityContext: secCtx,
 			Resources:       resources,
@@ -276,6 +285,7 @@ func GetRuntimeHandler(ms *models.Microservice) string {
 	if ms == nil {
 		return RuntimeHandlerRunc
 	}
+	local := isLocalWorkload(ms) && !ms.HostNetworkMode
 	needsRunc := ms.IsPrivileged || ms.HostNetworkMode ||
 		(ms.PidMode != nil && strings.TrimSpace(*ms.PidMode) == "host") ||
 		(ms.IpcMode != nil && strings.TrimSpace(*ms.IpcMode) == "host")
@@ -283,9 +293,22 @@ func GetRuntimeHandler(ms *models.Microservice) string {
 		return RuntimeHandlerRunc
 	}
 	if ms.Runtime != nil && *ms.Runtime == "spin" {
+		if local {
+			return RuntimeHandlerSpinLocal
+		}
 		return RuntimeHandlerSpin
 	}
+	if local {
+		return RuntimeHandlerRuncLocal
+	}
 	return RuntimeHandlerRunc
+}
+
+func isLocalWorkload(ms *models.Microservice) bool {
+	if ms == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local")
 }
 
 // LogPathsForCRI returns the log directory and log path for the container.

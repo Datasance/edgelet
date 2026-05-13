@@ -43,6 +43,7 @@ func (e *Engine) CreateContainer(_ *models.Microservice, _ string) (string, erro
 }
 func (e *Engine) StartContainer(_ string) error          { return fmt.Errorf("unsupported") }
 func (e *Engine) StopContainer(_ string) error           { return fmt.Errorf("unsupported") }
+func (e *Engine) KillContainer(_ string) error           { return fmt.Errorf("unsupported") }
 func (e *Engine) RemoveContainer(_ string, _ bool) error { return fmt.Errorf("unsupported") }
 func (e *Engine) PullImage(_ string, _ *models.Registry, _ *engine.PullImageOptions) error {
 	return fmt.Errorf("unsupported")
@@ -76,11 +77,23 @@ func (e *Engine) StartExecSession(_ string, _ io.Reader, _, _ io.Writer) error {
 func (e *Engine) GetExecSessionStatus(_ string) (bool, error) {
 	return false, fmt.Errorf("unsupported")
 }
+func (e *Engine) GetExecSessionExitCode(_ string) (int, error) { return 0, fmt.Errorf("unsupported") }
+func (e *Engine) ResizeExecSession(_ string, _, _ uint32) error {
+	return fmt.Errorf("unsupported")
+}
 func (e *Engine) StopExecSession(_ string) error                         { return fmt.Errorf("unsupported") }
 func (e *Engine) GetContainerMicroserviceUUID(_ engine.Container) string { return "" }
 func (e *Engine) GetContainerName(_ engine.Container) string             { return "" }
 func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 	return nil, fmt.Errorf("unsupported")
 }
+func (e *Engine) LoadImageFromPath(_ context.Context, _ string) ([]engine.LoadedImage, error) {
+	return nil, fmt.Errorf("unsupported")
+}
 func (e *Engine) DeleteImage(_ context.Context, _ string) error { return fmt.Errorf("unsupported") }
-func (e *Engine) PruneDangling(_ context.Context) error         { return fmt.Errorf("unsupported") }
+func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
+	return nil, fmt.Errorf("unsupported")
+}
+func (e *Engine) InspectContainerRaw(_ string) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("unsupported")
+}

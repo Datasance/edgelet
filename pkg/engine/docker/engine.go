@@ -5,7 +5,11 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/pkg/docker"
@@ -82,6 +86,10 @@ func (e *Engine) StopContainer(containerID string) error {
 	return e.client.StopContainer(containerID)
 }
 
+func (e *Engine) KillContainer(containerID string) error {
+	return e.client.KillContainer(containerID)
+}
+
 func (e *Engine) RemoveContainer(containerID string, removeVolumes bool) error {
 	return e.client.RemoveContainer(containerID, removeVolumes)
 }
@@ -118,12 +126,60 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 	}
 	result := make([]engine.ImageInfo, 0, len(summaries))
 	for _, s := range summaries {
+		repository, tag := splitRepoTag("<none>:<none>")
+		if len(s.RepoTags) > 0 {
+			repository, tag = splitRepoTag(s.RepoTags[0])
+		}
+		shortID := strings.TrimPrefix(s.ID, "sha256:")
+		if len(shortID) > 12 {
+			shortID = shortID[:12]
+		}
+		digest := ""
+		if len(s.RepoDigests) > 0 {
+			digest = s.RepoDigests[0]
+		}
 		result = append(result, engine.ImageInfo{
-			ID:       s.ID,
-			RepoTags: s.RepoTags,
+			ID:         s.ID,
+			RepoTags:   s.RepoTags,
+			ShortID:    shortID,
+			Repository: repository,
+			Tag:        tag,
+			Digest:     digest,
+			CreatedAt:  time.Unix(s.Created, 0).UTC(),
+			SizeBytes:  s.Size,
+			Engine:     "docker",
 		})
 	}
 	return result, nil
+}
+
+func splitRepoTag(ref string) (string, string) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || ref == "<none>:<none>" {
+		return "<none>", "<none>"
+	}
+	idx := strings.LastIndex(ref, ":")
+	if idx <= 0 {
+		return ref, "<none>"
+	}
+	return ref[:idx], ref[idx+1:]
+}
+
+func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]engine.LoadedImage, error) {
+	f, err := os.Open(archivePath) // #nosec G304 daemon validates local path before opening
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	loaded, err := e.client.LoadImage(f)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]engine.LoadedImage, 0, len(loaded))
+	for _, item := range loaded {
+		out = append(out, engine.LoadedImage{Name: item.Name, ID: item.ID})
+	}
+	return out, nil
 }
 
 func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
@@ -132,9 +188,26 @@ func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
 
 // PruneDangling removes only untagged images not referenced by any container.
 // Matches Java DockerPruningManager.pruneAgent() which calls docker system prune (dangling only).
-func (e *Engine) PruneDangling(_ context.Context) error {
-	_, err := e.client.DockerPrune()
-	return err
+func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
+	report, err := e.client.DockerPrune()
+	if err != nil {
+		return nil, err
+	}
+	deleted := make([]string, 0, len(report.ImagesDeleted))
+	for _, item := range report.ImagesDeleted {
+		if strings.TrimSpace(item.Deleted) != "" {
+			deleted = append(deleted, strings.TrimSpace(item.Deleted))
+			continue
+		}
+		if strings.TrimSpace(item.Untagged) != "" {
+			deleted = append(deleted, strings.TrimSpace(item.Untagged))
+		}
+	}
+	return &engine.ImagePruneReport{
+		Deleted:             deleted,
+		DeletedCount:        len(deleted),
+		SpaceReclaimedBytes: int64(report.SpaceReclaimed),
+	}, nil
 }
 
 // --- Inspection / stats ---
@@ -160,6 +233,18 @@ func (e *Engine) GetContainerIPAddress(containerID string) (string, error) {
 
 func (e *Engine) GetContainerStartedAt(containerID string) (int64, error) {
 	return e.client.GetContainerStartedAt(containerID)
+}
+
+func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+	raw, err := e.client.GetContainerInspectRaw(containerID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // --- Log streaming ---
@@ -211,6 +296,14 @@ func (e *Engine) GetExecSessionStatus(execID string) (bool, error) {
 		return false, err
 	}
 	return info.Running, nil
+}
+
+func (e *Engine) GetExecSessionExitCode(execID string) (int, error) {
+	return e.client.GetExecSessionExitCode(execID)
+}
+
+func (e *Engine) ResizeExecSession(execID string, cols, rows uint32) error {
+	return e.client.ResizeExecSession(execID, cols, rows)
 }
 
 // --- Helpers ---

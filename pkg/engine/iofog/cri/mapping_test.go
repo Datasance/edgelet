@@ -76,4 +76,28 @@ func TestGetRuntimeHandler(t *testing.T) {
 	if GetRuntimeHandler(ms) != RuntimeHandlerRunc {
 		t.Fatal("host network forces runc")
 	}
+	ms.HostNetworkMode = false
+	ms.ApplicationName = "local"
+	ms.Runtime = nil
+	if GetRuntimeHandler(ms) != RuntimeHandlerRuncLocal {
+		t.Fatal("local non-host workload should use runc-local")
+	}
+	ms.Runtime = strPtr("spin")
+	if GetRuntimeHandler(ms) != RuntimeHandlerSpinLocal {
+		t.Fatal("local spin workload should use spin-local")
+	}
+}
+
+func TestPodSandboxConfigFromMicroserviceSetsNetworkAnnotation(t *testing.T) {
+	ms := models.NewMicroservice("u1", "img")
+	ms.ApplicationName = "local"
+	cfg := PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs")
+	if cfg.Annotations["iofog.network"] != "iofog-local" {
+		t.Fatalf("expected local annotation iofog-local, got %q", cfg.Annotations["iofog.network"])
+	}
+	ms.ApplicationName = "managed"
+	cfg = PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs")
+	if cfg.Annotations["iofog.network"] != "iofog" {
+		t.Fatalf("expected managed annotation iofog, got %q", cfg.Annotations["iofog.network"])
+	}
 }

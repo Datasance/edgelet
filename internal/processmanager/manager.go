@@ -11,10 +11,13 @@ import (
 
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
 
 const (
@@ -32,6 +35,15 @@ type ProcessManager struct {
 	cancel              context.CancelFunc
 	wg                  sync.WaitGroup
 	logger              *logging.ModuleLogger
+}
+
+// LocalDeployProgressCallback reports local deployment runtime stage transitions.
+type LocalDeployProgressCallback func(stage string, message string)
+
+func emitLocalDeployProgress(cb LocalDeployProgressCallback, stage, message string) {
+	if cb != nil {
+		cb(stage, message)
+	}
 }
 
 var (
@@ -631,6 +643,275 @@ func (pm *ProcessManager) updateCurrentMicroservices() {
 	pm.logger.Debug("Finished update current Microservices")
 }
 
+// GetContainerForMicroservice resolves runtime container by microservice UUID.
+func (pm *ProcessManager) GetContainerForMicroservice(microserviceUUID string) (*engine.Container, error) {
+	if pm.containerManager == nil {
+		return nil, fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.GetContainerForMicroservice(microserviceUUID)
+}
+
+// GetContainerByIDPrefix resolves a container by ID prefix.
+// Returns the matched container and a list of matching IDs for ambiguity reporting.
+func (pm *ProcessManager) GetContainerByIDPrefix(prefix string) (*engine.Container, []string, error) {
+	if pm.engine == nil {
+		return nil, nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	trimmed := strings.TrimSpace(prefix)
+	if trimmed == "" {
+		return nil, nil, fmt.Errorf("container id prefix is required")
+	}
+	all, err := pm.engine.GetAllContainers()
+	if err != nil {
+		return nil, nil, err
+	}
+	matches := make([]engine.Container, 0)
+	ids := make([]string, 0)
+	for _, cont := range all {
+		if strings.HasPrefix(cont.ID, trimmed) {
+			matches = append(matches, cont)
+			ids = append(ids, cont.ID)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, nil, nil
+	case 1:
+		c := matches[0]
+		return &c, ids, nil
+	default:
+		sort.Strings(ids)
+		return nil, ids, nil
+	}
+}
+
+// GetContainerByID resolves one container by concrete container id.
+func (pm *ProcessManager) GetContainerByID(containerID string) (*engine.Container, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.GetContainerByID(containerID)
+}
+
+// StartMicroservice starts a runtime microservice container.
+func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
+	if pm.containerManager == nil {
+		return fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.StartContainerByMicroserviceUUID(microserviceUUID)
+}
+
+// StopMicroservice stops a runtime microservice container.
+func (pm *ProcessManager) StopMicroservice(microserviceUUID string) error {
+	if pm.containerManager == nil {
+		return fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.StopContainerByMicroserviceUUID(microserviceUUID)
+}
+
+// KillMicroservice sends a forceful kill signal to a runtime microservice container.
+func (pm *ProcessManager) KillMicroservice(microserviceUUID string) error {
+	if pm.containerManager == nil {
+		return fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.KillContainerByMicroserviceUUID(microserviceUUID)
+}
+
+// RestartMicroservice performs stop then start for a runtime microservice container.
+func (pm *ProcessManager) RestartMicroservice(microserviceUUID string) error {
+	if err := pm.StopMicroservice(microserviceUUID); err != nil {
+		return err
+	}
+	return pm.StartMicroservice(microserviceUUID)
+}
+
+// RemoveMicroservice removes a runtime microservice container.
+func (pm *ProcessManager) RemoveMicroservice(microserviceUUID string) error {
+	if pm.containerManager == nil {
+		return fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.RemoveContainerByMicroserviceUUID(microserviceUUID, false, false)
+}
+
+// RemoveContainerByContainerID removes a runtime container by concrete container id.
+func (pm *ProcessManager) RemoveContainerByContainerID(containerID string) error {
+	if pm.containerManager == nil {
+		return fmt.Errorf("process manager is not initialized")
+	}
+	return pm.containerManager.RemoveContainerByID(containerID, false, false)
+}
+
+// GetMicroserviceUUIDForContainer derives a microservice selector from a container.
+func (pm *ProcessManager) GetMicroserviceUUIDForContainer(container engine.Container) string {
+	if pm.engine == nil {
+		return ""
+	}
+	return pm.engine.GetContainerMicroserviceUUID(container)
+}
+
+// ListImages returns local runtime images from the active engine.
+func (pm *ProcessManager) ListImages() ([]engine.ImageInfo, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.ListImages(context.Background())
+}
+
+// PullImage pulls an image using optional registry credentials and platform selector.
+func (pm *ProcessManager) PullImage(imageRef string, registry *models.Registry, platform string) error {
+	if pm.engine == nil {
+		return fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.PullImage(imageRef, registry, &engine.PullImageOptions{Platform: platform})
+}
+
+// PullImageWithProgress pulls an image and reports progress percent when available.
+func (pm *ProcessManager) PullImageWithProgress(imageRef string, registry *models.Registry, platform string, onProgress func(float32)) error {
+	if pm.engine == nil {
+		return fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.PullImage(imageRef, registry, &engine.PullImageOptions{
+		Platform:         platform,
+		ProgressCallback: onProgress,
+	})
+}
+
+// LoadImageFromPath imports an image archive from daemon-local path.
+func (pm *ProcessManager) LoadImageFromPath(path string) ([]engine.LoadedImage, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.LoadImageFromPath(context.Background(), path)
+}
+
+// RemoveImage removes an image by ID or name reference.
+func (pm *ProcessManager) RemoveImage(selector string) error {
+	if pm.engine == nil {
+		return fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.DeleteImage(context.Background(), selector)
+}
+
+// PruneDanglingImages prunes dangling images.
+func (pm *ProcessManager) PruneDanglingImages() (*engine.ImagePruneReport, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.PruneDangling(context.Background())
+}
+
+// InspectContainerRaw returns full engine-native inspect payload for a container.
+func (pm *ProcessManager) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.InspectContainerRaw(containerID)
+}
+
+// LaunchLocalMicroservice creates and starts a locally deployed microservice.
+func (pm *ProcessManager) LaunchLocalMicroservice(ms *models.Microservice, registry *models.Registry, hostIP string) (string, error) {
+	return pm.LaunchLocalMicroserviceWithProgress(ms, registry, hostIP, nil)
+}
+
+// LaunchLocalMicroserviceWithProgress creates and starts a locally deployed microservice
+// while reporting stage transitions.
+func (pm *ProcessManager) LaunchLocalMicroserviceWithProgress(ms *models.Microservice, registry *models.Registry, hostIP string, progress LocalDeployProgressCallback) (string, error) {
+	if pm.engine == nil {
+		return "", fmt.Errorf("process manager engine is not initialized")
+	}
+	if ms == nil {
+		return "", fmt.Errorf("microservice is nil")
+	}
+	if strings.TrimSpace(hostIP) == "" {
+		hostIP = network.GetInstance().GetCurrentIPAddress()
+	}
+	if registry != nil {
+		emitLocalDeployProgress(progress, "pulling", "resolving and preparing image")
+		fromCache := strings.EqualFold(strings.TrimSpace(registry.URL), "from_cache")
+		pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+		pullSucceeded := false
+		opts := &engine.PullImageOptions{Platform: msPlatform(ms)}
+		if !fromCache {
+			if err := pm.engine.PullImage(pullRef, registry, opts); err != nil {
+				pm.logger.Warnf("local pull failed for %s, continuing with cache: %v", pullRef, err)
+			} else {
+				pullSucceeded = true
+			}
+		}
+		matchedRef := ""
+		for _, ref := range lookupRefs {
+			exists, err := pm.engine.FindLocalImage(ref)
+			if err != nil {
+				return "", err
+			}
+			if exists {
+				matchedRef = ref
+				break
+			}
+		}
+		if matchedRef == "" {
+			return "", fmt.Errorf("image not found in local cache for refs: %v", lookupRefs)
+		}
+		if pullSucceeded {
+			ms.ImageName = pullRef
+		} else {
+			ms.ImageName = matchedRef
+		}
+	}
+	emitLocalDeployProgress(progress, "creating", "creating container")
+	containerID, err := pm.engine.CreateContainer(ms, hostIP)
+	if err != nil {
+		return "", err
+	}
+	if sandboxID, _ := pm.engine.GetContainerSandboxID(containerID); sandboxID != "" {
+		_ = store.GetInstance().SaveLocalContainerState(ms.MicroserviceUUID, containerID, sandboxID)
+	}
+	emitLocalDeployProgress(progress, "starting", "starting container")
+	if err := pm.engine.StartContainer(containerID); err != nil {
+		_ = pm.engine.RemoveContainer(containerID, false)
+		_ = store.GetInstance().DeleteLocalContainerState(ms.MicroserviceUUID)
+		return "", fmt.Errorf("failed to start local microservice runtime: %w", err)
+	}
+	return containerID, nil
+}
+
+// TailMicroserviceLogs returns bounded logs for one runtime microservice.
+func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *engine.TailConfig) ([]map[string]interface{}, error) {
+	container, err := pm.GetContainerForMicroservice(microserviceUUID)
+	if err != nil {
+		return nil, err
+	}
+	if container == nil {
+		return nil, fmt.Errorf("container not found for microservice: %s", microserviceUUID)
+	}
+	handler := &collectLogTailHandler{
+		entries: make([]collectedLogLine, 0),
+		done:    make(chan struct{}),
+	}
+	sessionID := fmt.Sprintf("localapi-log-%d", time.Now().UnixNano())
+	if err := pm.engine.TailContainerLogs(container.ID, sessionID, microserviceUUID, handler, cfg); err != nil {
+		return nil, err
+	}
+	// Some engines stream bounded logs asynchronously; wait for completion so
+	// non-follow requests return collected lines instead of racing empty output.
+	select {
+	case <-handler.done:
+	case <-time.After(5 * time.Second):
+	}
+	if handler.err != nil {
+		return nil, handler.err
+	}
+	result := make([]map[string]interface{}, 0, len(handler.entries))
+	for _, item := range handler.entries {
+		result = append(result, map[string]interface{}{
+			"ts":     item.ts,
+			"stream": item.stream,
+			"line":   item.line,
+		})
+	}
+	return result, nil
+}
+
 // ExecSessionCallbackInterface defines the interface for exec session callbacks
 type ExecSessionCallbackInterface interface {
 	GetStdinReader() io.Reader
@@ -639,6 +920,49 @@ type ExecSessionCallbackInterface interface {
 	OnComplete()
 	OnError(err error)
 	IsRunning() bool
+}
+
+type collectedLogLine struct {
+	ts     string
+	stream string
+	line   string
+}
+
+type collectLogTailHandler struct {
+	mu      sync.Mutex
+	entries []collectedLogLine
+	err     error
+	done    chan struct{}
+	once    sync.Once
+}
+
+func (h *collectLogTailHandler) OnLogLine(_, _ string, line []byte, st engine.StreamType) {
+	stream := "stdout"
+	if st == engine.Stderr {
+		stream = "stderr"
+	}
+	h.mu.Lock()
+	h.entries = append(h.entries, collectedLogLine{
+		ts:     time.Now().UTC().Format(time.RFC3339Nano),
+		stream: stream,
+		line:   string(line),
+	})
+	h.mu.Unlock()
+}
+
+func (h *collectLogTailHandler) OnComplete(_ string) {
+	h.once.Do(func() {
+		close(h.done)
+	})
+}
+
+func (h *collectLogTailHandler) OnError(_ string, err error) {
+	h.mu.Lock()
+	h.err = err
+	h.mu.Unlock()
+	h.once.Do(func() {
+		close(h.done)
+	})
 }
 
 // CreateExecSession creates and starts an exec session for a microservice.
@@ -696,8 +1020,25 @@ func (pm *ProcessManager) GetExecSessionStatus(execID string) (interface{}, erro
 	return running, nil
 }
 
+// GetExecSessionExitCode returns the exit status for completed exec sessions.
+func (pm *ProcessManager) GetExecSessionExitCode(execID string) (int, error) {
+	return pm.engine.GetExecSessionExitCode(execID)
+}
+
+// ResizeExecSession resizes a running tty exec session.
+func (pm *ProcessManager) ResizeExecSession(execID string, cols, rows uint32) error {
+	return pm.engine.ResizeExecSession(execID, cols, rows)
+}
+
 // StopExecSession kills and deregisters the exec process in the engine.
 // Called when the controller closes the WebSocket so the exec ID can be reused.
 func (pm *ProcessManager) StopExecSession(_ string, execID string) error {
 	return pm.engine.StopExecSession(execID)
+}
+
+func msPlatform(ms *models.Microservice) string {
+	if ms == nil || ms.Platform == nil {
+		return ""
+	}
+	return strings.TrimSpace(*ms.Platform)
 }

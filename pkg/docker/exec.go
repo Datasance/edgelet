@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
@@ -131,6 +132,30 @@ func (c *Client) GetExecSessionStatus(execID string) (*types.ContainerExecInspec
 	}
 
 	return &execInspect, nil
+}
+
+// GetExecSessionExitCode returns an exit code only for completed exec sessions.
+func (c *Client) GetExecSessionExitCode(execID string) (int, error) {
+	info, err := c.GetExecSessionStatus(execID)
+	if err != nil {
+		return 0, err
+	}
+	if info.Running {
+		return 0, fmt.Errorf("exec session is still running")
+	}
+	return info.ExitCode, nil
+}
+
+// ResizeExecSession resizes a running TTY exec session.
+func (c *Client) ResizeExecSession(execID string, cols, rows uint32) error {
+	cli := c.GetClient()
+	if cli == nil {
+		return fmt.Errorf("Docker client not initialized")
+	}
+	return cli.ContainerExecResize(c.GetContext(), execID, container.ResizeOptions{
+		Width:  uint(cols),
+		Height: uint(rows),
+	})
 }
 
 // KillExecSession kills an exec session

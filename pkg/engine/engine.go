@@ -3,14 +3,35 @@ package engine
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/eclipse-iofog/agent/internal/models"
 )
 
 // ImageInfo is the engine-agnostic representation of a local container image.
 type ImageInfo struct {
-	ID       string   // content-addressable digest or engine-specific ID
-	RepoTags []string // list of "name:tag" references; may be empty for dangling images
+	ID         string    // content-addressable digest or engine-specific ID
+	RepoTags   []string  // list of "name:tag" references; may be empty for dangling images
+	ShortID    string    // short display id when available
+	Repository string    // repository part of primary tag
+	Tag        string    // tag part of primary tag
+	Digest     string    // primary digest when available
+	CreatedAt  time.Time // image creation timestamp when available
+	SizeBytes  int64     // image size in bytes when available
+	Engine     string    // engine that emitted this record (docker|podman|iofog)
+}
+
+// LoadedImage is a normalized result entry returned by load/import operations.
+type LoadedImage struct {
+	Name string
+	ID   string
+}
+
+// ImagePruneReport captures normalized dangling-prune results.
+type ImagePruneReport struct {
+	Deleted             []string
+	DeletedCount        int
+	SpaceReclaimedBytes int64
 }
 
 // ContainerEngine is the abstraction over Docker, Podman, and the embedded
@@ -34,6 +55,7 @@ type ContainerEngine interface {
 	CreateContainer(ms *models.Microservice, hostname string) (string, error)
 	StartContainer(containerID string) error
 	StopContainer(containerID string) error
+	KillContainer(containerID string) error
 	RemoveContainer(containerID string, removeVolumes bool) error
 
 	// Image management
@@ -45,17 +67,20 @@ type ContainerEngine interface {
 	PruneImages() error
 	// ListImages returns all locally available images.
 	ListImages(ctx context.Context) ([]ImageInfo, error)
+	// LoadImageFromPath imports an image archive from daemon-local filesystem path.
+	LoadImageFromPath(ctx context.Context, archivePath string) ([]LoadedImage, error)
 	// DeleteImage removes an image by its ID or name:tag reference.
 	DeleteImage(ctx context.Context, nameOrID string) error
 	// PruneDangling removes only untagged images not referenced by any container.
 	// Matches Java DockerPruningManager.pruneAgent() / docker system prune (dangling only).
-	PruneDangling(ctx context.Context) error
+	PruneDangling(ctx context.Context) (*ImagePruneReport, error)
 
 	// Inspection / stats
 	GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
 	GetContainerStats(containerID string) (*ContainerStats, error)
 	GetContainerIPAddress(containerID string) (string, error)
 	GetContainerStartedAt(containerID string) (int64, error)
+	InspectContainerRaw(containerID string) (map[string]interface{}, error)
 
 	// Log streaming
 	TailContainerLogs(containerID, sessionID, microserviceUUID string, handler LogTailHandler, cfg *TailConfig) error
@@ -75,6 +100,10 @@ type ContainerEngine interface {
 	StartExecSession(execID string, stdin io.Reader, stdout, stderr io.Writer) error
 	// GetExecSessionStatus reports whether the exec process identified by execID is still running.
 	GetExecSessionStatus(execID string) (running bool, err error)
+	// GetExecSessionExitCode returns exit status when the exec process has completed.
+	GetExecSessionExitCode(execID string) (exitCode int, err error)
+	// ResizeExecSession resizes an interactive TTY exec session.
+	ResizeExecSession(execID string, cols, rows uint32) error
 	// StopExecSession kills and deregisters the exec process. For iofog engine this is required
 	// when the controller closes the WebSocket so the exec ID can be reused; Docker/Podman no-op.
 	StopExecSession(execID string) error

@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -132,6 +133,12 @@ type pullEvent struct {
 	} `json:"progressDetail"`
 }
 
+// LoadedImage is one entry produced by ImageLoad import stream.
+type LoadedImage struct {
+	Name string
+	ID   string
+}
+
 // readPullProgress parses Docker's newline-delimited JSON pull stream and reports
 // per-layer progress. Uses the same formula as Java: sum(layer_pcts)/(count-1).
 func readPullProgress(reader io.Reader, callback func(float32)) error {
@@ -215,17 +222,60 @@ func (c *Client) GetImages() ([]image.Summary, error) {
 
 // DockerPrune prunes Docker images (removes unused images)
 // This matches Java: dockerPrune()
-func (c *Client) DockerPrune() (types.ImagesPruneReport, error) {
+func (c *Client) DockerPrune() (image.PruneReport, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return types.ImagesPruneReport{}, fmt.Errorf("Docker client not initialized")
+		return image.PruneReport{}, fmt.Errorf("Docker client not initialized")
 	}
 
 	ctx := c.GetContext()
 	report, err := cli.ImagesPrune(ctx, filters.NewArgs())
 	if err != nil {
-		return types.ImagesPruneReport{}, err
+		return image.PruneReport{}, err
 	}
 
 	return report, nil
+}
+
+// LoadImage imports a Docker image archive stream.
+func (c *Client) LoadImage(archive io.Reader) ([]LoadedImage, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return nil, fmt.Errorf("Docker client not initialized")
+	}
+	ctx := c.GetContext()
+	resp, err := cli.ImageLoad(ctx, archive, false)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	loaded := make([]LoadedImage, 0)
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Docker emits messages like: "Loaded image: repo:tag"
+		if strings.HasPrefix(line, "Loaded image:") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "Loaded image:"))
+			loaded = append(loaded, LoadedImage{Name: name})
+			continue
+		}
+		// Podman-compatible API may emit JSON lines.
+		var item map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &item); err == nil {
+			if v, ok := item["stream"].(string); ok && strings.Contains(v, "Loaded image:") {
+				name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(v), "Loaded image:"))
+				if name != "" {
+					loaded = append(loaded, LoadedImage{Name: name})
+				}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return loaded, err
+	}
+	return loaded, nil
 }

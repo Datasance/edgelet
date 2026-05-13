@@ -182,6 +182,16 @@ func (c *Client) StopContainer(containerID string) error {
 	return cli.ContainerStop(ctx, containerID, container.StopOptions{})
 }
 
+// KillContainer sends SIGKILL to a container.
+func (c *Client) KillContainer(containerID string) error {
+	cli := c.GetClient()
+	if cli == nil {
+		return fmt.Errorf("Docker client not initialized")
+	}
+	ctx := c.GetContext()
+	return cli.ContainerKill(ctx, containerID, "SIGKILL")
+}
+
 // RemoveContainer removes a container
 func (c *Client) RemoveContainer(containerID string, removeVolumes bool) error {
 	cli := c.GetClient()
@@ -263,6 +273,20 @@ func (c *Client) GetContainerStartedAt(containerID string) (int64, error) {
 	}
 
 	return time.Now().UnixMilli(), nil
+}
+
+// GetContainerInspectRaw returns raw Docker inspect JSON payload for a container.
+func (c *Client) GetContainerInspectRaw(containerID string) ([]byte, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return nil, fmt.Errorf("Docker client not initialized")
+	}
+	ctx := c.GetContext()
+	inspect, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(inspect)
 }
 
 // GetRunningNonIofogContainers returns running containers not managed by ioFog
@@ -651,7 +675,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	// This guards against races where the network hasn't been created yet (e.g. after
 	// a Docker client re-init) — matches Java's synchronous ensureIoFogNetworkExists().
 	if !ms.HostNetworkMode {
-		if err := c.ensureIoFogNetworkExists(); err != nil {
+		if err := c.ensureNetworkLockFree(c.GetClient(), c.GetContext()); err != nil {
 			return "", fmt.Errorf("failed to ensure iofog network: %w", err)
 		}
 	}
@@ -818,7 +842,11 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	if ms.HostNetworkMode {
 		hostConfig.NetworkMode = container.NetworkMode("host")
 	} else {
-		hostConfig.NetworkMode = container.NetworkMode("iofog")
+		targetNetwork := "iofog"
+		if strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") {
+			targetNetwork = "iofog-local"
+		}
+		hostConfig.NetworkMode = container.NetworkMode(targetNetwork)
 		if len(validHosts) > 0 {
 			hostConfig.ExtraHosts = validHosts
 		}

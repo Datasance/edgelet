@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	iofogNetworkName = "iofog"
+	iofogNetworkName      = "iofog"
+	iofogLocalNetworkName = "iofog-local"
 )
 
 // ensureIoFogNetworkExists ensures the fixed "iofog" bridge network exists.
@@ -22,12 +23,19 @@ func (c *Client) ensureIoFogNetworkExists() error {
 	baseCtx := c.ctx
 	c.mu.RUnlock()
 
-	return c.ensureNetworkLockFree(cli, baseCtx)
+	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName)
 }
 
 // ensureNetworkLockFree is the mutex-free implementation; used when the caller
 // already holds c.mu (e.g. inside initDockerClient).
 func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Context) error {
+	if err := c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName); err != nil {
+		return err
+	}
+	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogLocalNetworkName)
+}
+
+func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.Context, networkName string) error {
 	if cli == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
@@ -36,19 +44,19 @@ func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Conte
 	defer cancel()
 
 	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", iofogNetworkName)),
+		Filters: filters.NewArgs(filters.Arg("name", networkName)),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	if len(networks) > 0 {
-		c.logger.Debugf("IoFog network \"%s\" already exists", iofogNetworkName)
+		c.logger.Debugf("IoFog network \"%s\" already exists", networkName)
 		return nil
 	}
 
-	c.logger.Infof("Creating IoFog network \"%s\"", iofogNetworkName)
-	_, err = cli.NetworkCreate(ctx, iofogNetworkName, types.NetworkCreate{
+	c.logger.Infof("Creating IoFog network \"%s\"", networkName)
+	_, err = cli.NetworkCreate(ctx, networkName, types.NetworkCreate{
 		Driver: "bridge",
 		Labels: map[string]string{
 			"iofog": "true",
@@ -61,7 +69,7 @@ func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Conte
 		return fmt.Errorf("failed to create network: %w", err)
 	}
 
-	c.logger.Infof("Successfully created IoFog network \"%s\"", iofogNetworkName)
+	c.logger.Infof("Successfully created IoFog network \"%s\"", networkName)
 	return nil
 }
 

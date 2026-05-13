@@ -43,6 +43,11 @@ func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string)
 			return c, nil
 		}
 	}
+	if cs, err := store.GetInstance().GetLocalContainerState(microserviceUUID); err == nil && cs != nil && cs.WorkloadID != "" {
+		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
+			return c, nil
+		}
+	}
 	c, err := cm.engine.GetContainer(microserviceUUID)
 	if err != nil {
 		return nil, err
@@ -177,6 +182,7 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
 		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
 	} else {
 		imageRef := container.Image
 
@@ -210,6 +216,7 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 
 		// Clear container state from DB (iofog engine uses this for lookup)
 		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
 	}
 
 	// Clean up per-microservice volume mounts (matching Java: VolumeMountManager.getInstance().cleanupMicroserviceVolumes())
@@ -257,6 +264,8 @@ func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup 
 	// Best-effort cleanup for iofog-managed containers.
 	if msUUID != "" {
 		_ = store.GetInstance().DeleteContainerState(msUUID)
+		_ = store.GetInstance().DeleteLocalContainerState(msUUID)
+		_ = store.GetInstance().DeleteLocalDeployedMicroservice(msUUID)
 		volumemount.GetInstance().CleanupMicroserviceVolumes(msUUID)
 	}
 
@@ -277,6 +286,32 @@ func (cm *ContainerManager) StopContainerByMicroserviceUUID(microserviceUUID str
 		return cm.engine.StopContainer(container.ID)
 	}
 
+	return nil
+}
+
+// StartContainerByMicroserviceUUID starts a container by microservice UUID.
+func (cm *ContainerManager) StartContainerByMicroserviceUUID(microserviceUUID string) error {
+	cm.logger.Debugf("Start container by microserviceuuid: %s", microserviceUUID)
+	container, err := cm.GetContainerForMicroservice(microserviceUUID)
+	if err != nil {
+		return err
+	}
+	if container != nil {
+		return cm.engine.StartContainer(container.ID)
+	}
+	return nil
+}
+
+// KillContainerByMicroserviceUUID forcefully stops a container by microservice UUID.
+func (cm *ContainerManager) KillContainerByMicroserviceUUID(microserviceUUID string) error {
+	cm.logger.Debugf("Kill container by microserviceuuid: %s", microserviceUUID)
+	container, err := cm.GetContainerForMicroservice(microserviceUUID)
+	if err != nil {
+		return err
+	}
+	if container != nil {
+		return cm.engine.KillContainer(container.ID)
+	}
 	return nil
 }
 

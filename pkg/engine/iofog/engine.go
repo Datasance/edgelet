@@ -75,6 +75,7 @@ type Engine struct {
 	store        *stateStore
 	pendingExecs map[string]*pendingExec   // execID -> pending (supports concurrent exec sessions)
 	runningProcs map[string]client.Process // execID -> process (for status/stop)
+	execExitCode map[string]int            // execID -> exit code after process completion
 	execMu       sync.Mutex                // protects pendingExecs and runningProcs
 	execSessions sync.Map                  // containerID -> []string (active exec IDs)
 	execToCont   sync.Map                  // execID -> containerID (for removal on StopExecSession)
@@ -91,6 +92,7 @@ func New(logDir string) *Engine {
 		store:        newStateStore(),
 		pendingExecs: make(map[string]*pendingExec),
 		runningProcs: make(map[string]client.Process),
+		execExitCode: make(map[string]int),
 	}
 }
 
@@ -431,6 +433,15 @@ func (e *Engine) StopContainer(containerID string) error {
 	return nil
 }
 
+// KillContainer forcefully terminates the container task.
+func (e *Engine) KillContainer(containerID string) error {
+	ctx := e.ctx()
+	if err := e.criClient.StopContainer(ctx, containerID, 0); err != nil {
+		return fmt.Errorf("KillContainer %s: %w", containerID, err)
+	}
+	return nil
+}
+
 // RemoveContainer stops and removes the container via CRI, then tears down the pod sandbox.
 // CRI handles CNI teardown in the correct order (StopPodSandbox triggers CNI DEL).
 func (e *Engine) RemoveContainer(containerID string, _ bool) error {
@@ -688,12 +699,59 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 	}
 	result := make([]engine.ImageInfo, 0, len(imgs))
 	for _, img := range imgs {
+		name := strings.TrimSpace(img.Name())
+		repository := "<none>"
+		tag := "<none>"
+		if name != "" {
+			repository = name
+			if idx := strings.LastIndex(name, ":"); idx > 0 {
+				repository = name[:idx]
+				tag = name[idx+1:]
+			}
+		}
+		id := img.Target().Digest.String()
+		shortID := strings.TrimPrefix(id, "sha256:")
+		if len(shortID) > 12 {
+			shortID = shortID[:12]
+		}
+		sizeBytes := int64(0)
+		if info, err := e.client.ContentStore().Info(ctx, img.Target().Digest); err == nil {
+			sizeBytes = info.Size
+		}
 		result = append(result, engine.ImageInfo{
-			ID:       img.Target().Digest.String(),
-			RepoTags: []string{img.Name()},
+			ID:         id,
+			RepoTags:   []string{name},
+			ShortID:    shortID,
+			Repository: repository,
+			Tag:        tag,
+			Digest:     id,
+			CreatedAt:  img.Metadata().CreatedAt.UTC(),
+			SizeBytes:  sizeBytes,
+			Engine:     "iofog",
 		})
 	}
 	return result, nil
+}
+
+func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]engine.LoadedImage, error) {
+	f, err := os.Open(archivePath) // #nosec G304 daemon validates path before calling engine
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	imported, err := e.client.Import(e.ctx(), f)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]engine.LoadedImage, 0, len(imported))
+	for _, img := range imported {
+		id := img.Target.Digest.String()
+		out = append(out, engine.LoadedImage{
+			Name: img.Name,
+			ID:   id,
+		})
+	}
+	return out, nil
 }
 
 // DeleteImage removes an image from the iofog containerd namespace by name or digest.
@@ -704,12 +762,12 @@ func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
 
 // PruneDangling removes images with no active containers referencing them and no tags,
 // matching Java's pruneAgent() / docker system prune --filter dangling=true semantics.
-func (e *Engine) PruneDangling(_ context.Context) error {
+func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
 	ctx := e.ctx()
 
 	containers, err := e.client.Containers(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	inUse := make(map[string]bool, len(containers))
 	for _, c := range containers {
@@ -720,9 +778,11 @@ func (e *Engine) PruneDangling(_ context.Context) error {
 
 	imgs, err := e.client.ListImages(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	is := e.client.ImageService()
+	deleted := make([]string, 0)
+	var reclaimed int64
 	for _, img := range imgs {
 		name := img.Name()
 		// "Dangling" in containerd terms: not referenced by any container AND the name
@@ -734,11 +794,20 @@ func (e *Engine) PruneDangling(_ context.Context) error {
 		if !strings.HasPrefix(name, "sha256:") && strings.Contains(name, ":") {
 			continue
 		}
+		if info, infoErr := e.client.ContentStore().Info(ctx, img.Target().Digest); infoErr == nil {
+			reclaimed += info.Size
+		}
 		if err := is.Delete(ctx, name, images.SynchronousDelete()); err != nil {
 			log.Warnf("PruneDangling: failed to remove %s: %v", name, err)
+			continue
 		}
+		deleted = append(deleted, name)
 	}
-	return nil
+	return &engine.ImagePruneReport{
+		Deleted:             deleted,
+		DeletedCount:        len(deleted),
+		SpaceReclaimedBytes: reclaimed,
+	}, nil
 }
 
 // --- Inspection / stats ---
@@ -918,6 +987,53 @@ func (e *Engine) GetContainerStartedAt(containerID string) (int64, error) {
 		}
 	}
 	return time.Now().UnixMilli(), nil
+}
+
+func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	spec, _ := c.Spec(ctx)
+	taskState := map[string]interface{}{}
+	if task, taskErr := c.Task(ctx, nil); taskErr == nil {
+		if st, stErr := task.Status(ctx); stErr == nil {
+			taskState["status"] = fmt.Sprintf("%v", st.Status)
+			taskState["exitStatus"] = st.ExitStatus
+			taskState["exitedAt"] = st.ExitTime.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	ip, _ := e.GetContainerIPAddress(containerID)
+	startedAt, _ := e.GetContainerStartedAt(containerID)
+	out := map[string]interface{}{
+		"id":          c.ID(),
+		"image":       info.Image,
+		"labels":      info.Labels,
+		"runtime":     info.Runtime,
+		"snapshotter": info.Snapshotter,
+		"createdAt":   info.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"updatedAt":   info.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		"spec":        spec,
+		"task":        taskState,
+		"network": map[string]interface{}{
+			"ipAddress": ip,
+		},
+		"state": map[string]interface{}{
+			"startedAtUnixMs": startedAt,
+		},
+	}
+	if raw, err := json.Marshal(out); err == nil {
+		normalized := map[string]interface{}{}
+		if err := json.Unmarshal(raw, &normalized); err == nil {
+			return normalized, nil
+		}
+	}
+	return out, nil
 }
 
 // --- Log streaming ---
@@ -1542,9 +1658,11 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 
 	// Block until the exec process exits so the caller (ProcessManager goroutine)
 	// only fires OnComplete() when the shell actually ends, not immediately after Start().
+	exitCode := 0
 	exitCh, err := proc.Wait(ctx)
 	if err == nil {
-		<-exitCh
+		status := <-exitCh
+		exitCode = int(status.ExitCode())
 	}
 
 	e.removeExecSession(execID)
@@ -1556,6 +1674,7 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 
 	e.execMu.Lock()
 	delete(e.runningProcs, execID)
+	e.execExitCode[execID] = exitCode
 	e.execMu.Unlock()
 
 	return nil
@@ -1665,6 +1784,31 @@ func (e *Engine) GetExecSessionStatus(execID string) (bool, error) {
 	}
 	// containerd reports the process as running when its status is "running".
 	return status.Status == client.Running, nil
+}
+
+// GetExecSessionExitCode reports the exit code for a completed exec process.
+func (e *Engine) GetExecSessionExitCode(execID string) (int, error) {
+	e.execMu.Lock()
+	defer e.execMu.Unlock()
+	if _, running := e.runningProcs[execID]; running {
+		return 0, fmt.Errorf("exec session is still running")
+	}
+	code, ok := e.execExitCode[execID]
+	if !ok {
+		return 0, fmt.Errorf("exec session exit code is unavailable")
+	}
+	return code, nil
+}
+
+// ResizeExecSession resizes a running tty exec process.
+func (e *Engine) ResizeExecSession(execID string, cols, rows uint32) error {
+	e.execMu.Lock()
+	proc := e.runningProcs[execID]
+	e.execMu.Unlock()
+	if proc == nil {
+		return fmt.Errorf("exec session is not running")
+	}
+	return proc.Resize(e.ctx(), cols, rows)
 }
 
 // --- Helpers ---

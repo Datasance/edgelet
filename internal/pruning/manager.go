@@ -381,7 +381,7 @@ func (m *Manager) PruneAgent() string {
 
 	ctx := context.Background()
 	if eng != nil {
-		if err := eng.PruneDangling(ctx); err != nil {
+		if _, err := eng.PruneDangling(ctx); err != nil {
 			logging.LogError(moduleName, "Error pruning dangling images via container engine", err)
 			return "\nFailure - error pruning dangling images"
 		}

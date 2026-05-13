@@ -1,7 +1,10 @@
 package processmanager
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/eclipse-iofog/agent/internal/models"
 )
 
 func TestProcessManager_GetInstance(t *testing.T) {
@@ -28,6 +31,25 @@ func TestProcessManager_GetModuleIndex(t *testing.T) {
 
 	if index < 0 {
 		t.Error("Module index should be non-negative")
+	}
+}
+
+func TestLaunchLocalMicroserviceWithProgress_EngineNotInitialized(t *testing.T) {
+	pm := &ProcessManager{}
+	called := false
+	_, err := pm.LaunchLocalMicroserviceWithProgress(&models.Microservice{}, models.NewRegistry(2, "from_cache", true, "", "", ""), "", func(stage string, message string) {
+		called = true
+		_ = stage
+		_ = message
+	})
+	if err == nil {
+		t.Fatalf("expected engine initialization error")
+	}
+	if !strings.Contains(err.Error(), "engine is not initialized") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatalf("expected no callback events when engine is missing")
 	}
 }
 

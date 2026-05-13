@@ -57,6 +57,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, h string) (string, err
 }
 func (e *Engine) StartContainer(id string) error          { return e.inner.StartContainer(id) }
 func (e *Engine) StopContainer(id string) error           { return e.inner.StopContainer(id) }
+func (e *Engine) KillContainer(id string) error           { return e.inner.KillContainer(id) }
 func (e *Engine) RemoveContainer(id string, v bool) error { return e.inner.RemoveContainer(id, v) }
 func (e *Engine) PullImage(ref string, reg *models.Registry, opts *engine.PullImageOptions) error {
 	return e.inner.PullImage(ref, reg, opts)
@@ -92,6 +93,12 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 func (e *Engine) GetExecSessionStatus(execID string) (bool, error) {
 	return e.inner.GetExecSessionStatus(execID)
 }
+func (e *Engine) GetExecSessionExitCode(execID string) (int, error) {
+	return e.inner.GetExecSessionExitCode(execID)
+}
+func (e *Engine) ResizeExecSession(execID string, cols, rows uint32) error {
+	return e.inner.ResizeExecSession(execID, cols, rows)
+}
 func (e *Engine) StopExecSession(execID string) error {
 	return e.inner.StopExecSession(execID)
 }
@@ -102,10 +109,18 @@ func (e *Engine) GetContainerName(c engine.Container) string { return e.inner.Ge
 func (e *Engine) ListImages(ctx context.Context) ([]engine.ImageInfo, error) {
 	return e.inner.ListImages(ctx)
 }
+func (e *Engine) LoadImageFromPath(ctx context.Context, archivePath string) ([]engine.LoadedImage, error) {
+	return e.inner.LoadImageFromPath(ctx, archivePath)
+}
 func (e *Engine) DeleteImage(ctx context.Context, nameOrID string) error {
 	return e.inner.DeleteImage(ctx, nameOrID)
 }
-func (e *Engine) PruneDangling(ctx context.Context) error { return e.inner.PruneDangling(ctx) }
+func (e *Engine) PruneDangling(ctx context.Context) (*engine.ImagePruneReport, error) {
+	return e.inner.PruneDangling(ctx)
+}
+func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+	return e.inner.InspectContainerRaw(containerID)
+}
 
 // detectPodmanSocket returns the first Podman socket path that exists on disk.
 func detectPodmanSocket() string {
