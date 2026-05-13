@@ -274,8 +274,16 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 
 	case "watchdogEnabled":
-		c.WatchdogEnabled = strings.ToLower(value) != "off"
-		if err := c.setYamlProperty("watchdogEnabled", value); err != nil {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch normalized {
+		case "off", "false", "0", "no":
+			c.WatchdogEnabled = false
+			normalized = "off"
+		default:
+			c.WatchdogEnabled = true
+			normalized = "on"
+		}
+		if err := c.setYamlProperty("watchdogEnabled", normalized); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
