@@ -61,13 +61,17 @@ Documentation=https://docs.datasance.com
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=300
-StartLimitBurst=10
+StartLimitBurst=20
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/iofog-agentd start
 Restart=always
-RestartSec=3s
+RestartSec=2s
+TimeoutStopSec=120s
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=iofog-agentd
