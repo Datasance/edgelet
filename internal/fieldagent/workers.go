@@ -8,7 +8,6 @@ import (
 
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/diagnostics"
 	"github.com/eclipse-iofog/agent/internal/gps"
 	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/serviceaccount"
@@ -296,76 +295,6 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	}
 
 	return status
-}
-
-// postDiagnosticsWorker periodically posts diagnostics (strace data) to the controller.
-// Uses a self-resetting timer so the interval is re-read from config on every tick.
-func (fa *FieldAgent) postDiagnosticsWorker() {
-	defer fa.wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
-		}
-	}()
-
-	timer := time.NewTimer(workerFreq(config.GetInstance().PostDiagnosticsFreq, 10))
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-fa.ctx.Done():
-			return
-		case <-timer.C:
-			fa.postDiagnosticsHelper()
-			timer.Reset(workerFreq(config.GetInstance().PostDiagnosticsFreq, 10))
-		}
-	}
-}
-
-// postDiagnosticsHelper posts strace diagnostics to the controller
-func (fa *FieldAgent) postDiagnosticsHelper() {
-	if fa.NotProvisioned() {
-		return
-	}
-	logging.LogDebug(moduleName, "Start posting diagnostic")
-
-	// Import diagnostics package here to avoid circular dependency
-	straceManager := diagnostics.GetStraceInstance()
-	monitoringMicroservices := straceManager.GetMonitoringMicroservices()
-
-	if len(monitoringMicroservices) == 0 {
-		logging.LogDebug(moduleName, "No microservices to monitor, skipping diagnostics post")
-		return
-	}
-
-	// Build strace data array
-	straceDataArray := make([]map[string]interface{}, 0)
-	for _, microservice := range monitoringMicroservices {
-		straceDataArray = append(straceDataArray, map[string]interface{}{
-			"microserviceUuid": microservice.GetMicroserviceUUID(),
-			"buffer":           microservice.GetResultBufferAsString(),
-		})
-		// Clear buffer after reading
-		microservice.ClearResultBuffer()
-	}
-
-	// Build request body
-	requestBody := map[string]interface{}{
-		"straceData": straceDataArray,
-	}
-
-	// Post to controller
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err := fa.apiClient.PutJSON(ctx, "strace", requestBody)
-	cancel()
-
-	if err != nil {
-		logging.LogError(moduleName, "Unable send strace logs", err)
-	} else {
-		logging.LogDebug(moduleName, "Successfully posted strace diagnostics")
-	}
-
-	logging.LogDebug(moduleName, "Finished posting diagnostic")
 }
 
 // isUnauthorizedError checks if an error is an unauthorized error

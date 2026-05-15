@@ -3,13 +3,11 @@ package fieldagent
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/diagnostics"
 	"github.com/eclipse-iofog/agent/internal/proxy"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
@@ -39,15 +37,6 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 			logging.LogDebug(moduleName, "Processing reboot change")
 			if err := fa.reboot(); err != nil {
 				logging.LogError(moduleName, "Unable to perform reboot", err)
-				resetChanges = false
-			}
-		}
-
-		// Process imageSnapshot change
-		if imageSnapshot, ok := changes["isImageSnapshot"].(bool); ok && imageSnapshot && !initialization {
-			logging.LogDebug(moduleName, "Processing imageSnapshot change")
-			if err := fa.createImageSnapshot(); err != nil {
-				logging.LogError(moduleName, "Unable to create snapshot", err)
 				resetChanges = false
 			}
 		}
@@ -139,15 +128,6 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 			}
 		}
 
-		// Process diagnostics change
-		if diagnostics, ok := changes["diagnostics"].(bool); ok && diagnostics && !initialization {
-			logging.LogDebug(moduleName, "Processing diagnostics change")
-			if err := fa.updateDiagnostics(); err != nil {
-				logging.LogError(moduleName, "Unable to update diagnostics", err)
-				resetChanges = false
-			}
-		}
-
 		// Process log sessions changes
 		microserviceLogs, _ := changes["microserviceLogs"].(bool)
 		fogLogs, _ := changes["fogLogs"].(bool)
@@ -202,48 +182,6 @@ func (fa *FieldAgent) reboot() error {
 	}
 	logging.LogInfo(moduleName, "Reboot command executed: "+output)
 	logging.LogInfo(moduleName, "Finished Remote reboot of Linux machine from IOFog controller")
-	return nil
-}
-
-// createImageSnapshot creates an image snapshot
-// This matches Java: createImageSnapshot() method
-func (fa *FieldAgent) createImageSnapshot() error {
-	logging.LogDebug(moduleName, "Create image snapshot")
-
-	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
-		return nil
-	}
-
-	// Get microservice UUID from controller
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	result, err := fa.apiClient.Request(ctx, "image-snapshot", GET, nil, nil)
-	cancel()
-
-	if err != nil {
-		logging.LogError(moduleName, "Unable get name of image snapshot", err)
-		return err
-	}
-
-	microserviceUUID, ok := result["uuid"].(string)
-	if !ok || microserviceUUID == "" {
-		logging.LogWarn(moduleName, "No microservice UUID provided for image snapshot")
-		return nil
-	}
-
-	// Check if running on Windows (not supported)
-	if runtime.GOOS == "windows" {
-		logging.LogWarn(moduleName, "Image snapshot not supported on Windows")
-		return nil
-	}
-
-	// Create image snapshot using Image Download Manager
-	imageManager := diagnostics.GetInstance()
-	if err := imageManager.CreateImageSnapshotForMicroservice(ctx, microserviceUUID); err != nil {
-		logging.LogError(moduleName, "Unable to create image snapshot", err)
-		return err
-	}
-
-	logging.LogDebug(moduleName, "Finished Create image snapshot")
 	return nil
 }
 
@@ -325,34 +263,6 @@ func (fa *FieldAgent) getProxyConfig() (map[string]interface{}, error) {
 	return nil, nil
 }
 
-// updateDiagnostics updates diagnostics configuration (placeholder)
-func (fa *FieldAgent) updateDiagnostics() error {
-	logging.LogInfo(moduleName, "Start update diagnostics")
-
-	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	result, err := fa.apiClient.Request(ctx, "strace", GET, nil, nil)
-	cancel()
-
-	if err != nil {
-		return fmt.Errorf("unable to get diagnostics update: %w", err)
-	}
-
-	// Update strace monitoring microservices
-	if result != nil {
-		straceManager := diagnostics.GetStraceInstance()
-		if err := straceManager.UpdateMonitoringMicroservices(result); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to update strace monitoring: %v", err))
-		}
-	}
-
-	logging.LogInfo(moduleName, "Finished update diagnostics")
-	return nil
-}
-
 // getFogConfig gets the fog configuration from controller
 func (fa *FieldAgent) getFogConfig() error {
 	logging.LogInfo(moduleName, "Starting Get ioFog config")
@@ -400,7 +310,6 @@ func (fa *FieldAgent) getFogConfig() error {
 		"logLevel":                  "ll",
 		"statusFrequency":           "sf",
 		"changeFrequency":           "cf",
-		"postDiagnosticsFreq":       "df",
 		"deviceScanFrequency":       "sd",
 		"watchdogEnabled":           "idc",
 		"edgeGuardFrequency":        "egf",

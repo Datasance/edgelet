@@ -12,7 +12,6 @@ import (
 
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/diagnostics"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/serviceaccount"
@@ -141,9 +140,6 @@ func (fa *FieldAgent) Start() error {
 	// Initialize Orchestrator
 	fa.orchestrator = NewOrchestrator(apiClient)
 	logging.LogDebug(moduleName, "Orchestrator initialized")
-
-	// Set up Image Download Manager file uploader
-	diagnostics.GetInstance().SetFileUploader(fa.orchestrator)
 
 	// Create context for cancellation
 	fa.ctx, fa.cancel = context.WithCancel(context.Background())
@@ -295,11 +291,10 @@ func (fa *FieldAgent) Start() error {
 
 	// Start background workers (matching Java: lines 1995-1998)
 	logging.LogDebug(moduleName, "Starting background workers")
-	fa.wg.Add(6)
+	fa.wg.Add(5)
 	go fa.pingControllerWorker()
 	go fa.getChangesWorker()
 	go fa.postStatusWorker()
-	go fa.postDiagnosticsWorker()
 	go fa.localAPITokenRotationWorker()
 	go fa.serviceAccountTokenRotationWorker()
 
