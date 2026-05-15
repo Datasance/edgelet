@@ -11,7 +11,6 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/edgeguard"
-	"github.com/eclipse-iofog/agent/internal/embedded"
 	"github.com/eclipse-iofog/agent/internal/engines"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
 	"github.com/eclipse-iofog/agent/internal/gps"
@@ -32,7 +31,8 @@ import (
 )
 
 const (
-	moduleName = "Supervisor"
+	moduleName                  = "Supervisor"
+	shutdownRuntimeDrainTimeout = 45 * time.Second
 )
 
 // Supervisor orchestrates all ioFog modules
@@ -130,21 +130,12 @@ func (s *Supervisor) Start() error {
 	cfg := config.GetInstance()
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
-	// It may already be started in main (SetPrestartedContainerd) for early bootstrap.
+	// Startup ownership is in cmd/iofog-agentd bootstrap; Supervisor only consumes prestarted runtime.
 	if cfg.ContainerEngine == constants.EngineIofog {
 		if s.containerdSvc == nil {
-			logging.LogInfo(moduleName, "Preparing embedded containerd (iofog engine)")
-			if err := embedded.EnsureEmbeddedDependencies(); err != nil {
-				return fmt.Errorf("failed to prepare embedded containerd dependencies: %w", err)
-			}
-			s.containerdSvc = iofogcontainerd.NewService()
-			if err := s.containerdSvc.Start(); err != nil {
-				return fmt.Errorf("failed to start embedded containerd: %w", err)
-			}
-			logging.LogInfo(moduleName, "Embedded containerd is ready")
-		} else {
-			logging.LogInfo(moduleName, "Using embedded containerd started before Supervisor")
+			return fmt.Errorf("embedded containerd must be prestarted before Supervisor when containerEngine=%q", constants.EngineIofog)
 		}
+		logging.LogInfo(moduleName, "Using embedded containerd started before Supervisor")
 
 		// Watchdog for embedded containerd socket liveness.
 		s.wg.Add(1)
@@ -210,22 +201,15 @@ func (s *Supervisor) Start() error {
 		return err
 	}
 
-	// Start Local API Server (runs in separate goroutine)
+	// Start Local API Server and wait until listeners are ready.
 	s.localAPI = localapi.GetInstance()
 	// Register Supervisor's ReloadConfig as the config reload callback
 	s.config.SetReloadCallback(s.ReloadConfig)
 	// Register FieldAgent GPS callback for dedicated config/gps controller sync.
 	s.config.SetGPSConfigCallback(s.fieldAgent.InstanceGPSConfigUpdated)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogError(moduleName, "Panic recovered", fmt.Errorf("%v", r))
-			}
-		}()
-		if err := s.localAPI.Start(); err != nil {
-			logging.LogError(moduleName, "Local API server error", err)
-		}
-	}()
+	if err := s.localAPI.Start(); err != nil {
+		return fmt.Errorf("failed to start Local API server: %w", err)
+	}
 
 	// Monitor Local API status (check every 10 seconds)
 	s.localAPIMonitorTicker = time.NewTicker(10 * time.Second)
@@ -390,6 +374,9 @@ func (s *Supervisor) Stop() error {
 	}
 
 	if s.processManager != nil {
+		if err := s.processManager.DrainRuntimeForShutdown(shutdownRuntimeDrainTimeout); err != nil {
+			logging.LogError(moduleName, "Runtime drain during shutdown timed out", err)
+		}
 		if err := s.processManager.Stop(); err != nil {
 			logging.LogError(moduleName, "Error stopping Process Manager", err)
 		}
@@ -485,9 +472,8 @@ func (s *Supervisor) operationDurationWorker() {
 }
 
 // containerdWatchdog runs periodic containerd socket liveness checks when
-// containerEngine=iofog. Containerd runs in-process (same binary); if the socket
-// becomes unresponsive we cannot restart it separately — we only log and alert.
-// The supervisor/process manager will restart the whole agent if the daemon crashes.
+// containerEngine=iofog. The runtime is a managed child process; watchdog does
+// not run a nested runtime restart loop and instead requests daemon restart.
 func (s *Supervisor) containerdWatchdog() {
 	defer s.wg.Done()
 

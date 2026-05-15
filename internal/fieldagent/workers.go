@@ -28,9 +28,9 @@ func workerFreq(seconds int, defaultSeconds int) time.Duration {
 }
 
 const (
-	pingBackoffMaxSeconds           = 300 // 5 min max backoff when controller offline
-	localAPITokenRotationInterval   = 30 * time.Second
-	serviceAccountRotationInterval  = 30 * time.Second
+	pingBackoffMaxSeconds          = 300 // 5 min max backoff when controller offline
+	localAPITokenRotationInterval  = 30 * time.Second
+	serviceAccountRotationInterval = 30 * time.Second
 )
 
 // pingControllerWorker periodically pings the controller.
