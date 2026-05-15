@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/base64"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net/http"
@@ -102,6 +103,39 @@ func TestHandleSystemConfigSwitch_SwitchesProfileAndTriggersReload(t *testing.T)
 	}
 }
 
+func TestHandleConfig_RejectsInvalidNetworkInterfaceWithoutPersisting(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ControllerURL = "http://127.0.0.1:51121"
+	cfg.NetworkInterface = "dynamic"
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodPatch, "/v3/system/config", bytes.NewBufferString(`{"set":{"networkInterface":"iface-does-not-exist-98765"}}`))
+	rec := httptest.NewRecorder()
+	handler.HandleConfig(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if envelope.Success {
+		t.Fatalf("expected success=false for invalid network interface, body=%s", rec.Body.String())
+	}
+	if envelope.Error.Code != ErrCodeInvalidArgument {
+		t.Fatalf("expected error code %s, got %s", ErrCodeInvalidArgument, envelope.Error.Code)
+	}
+	if cfg.NetworkInterface != "dynamic" {
+		t.Fatalf("expected networkInterface to remain unchanged, got %q", cfg.NetworkInterface)
+	}
+}
+
 func generateTestCertPEM(t *testing.T) string {
 	t.Helper()
 
@@ -126,4 +160,3 @@ func generateTestCertPEM(t *testing.T) string {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
-

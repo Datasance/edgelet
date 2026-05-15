@@ -18,6 +18,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/runtimeapi"
 	"github.com/eclipse-iofog/agent/internal/store"
@@ -588,7 +589,14 @@ func (h *V3Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "no supported config keys provided", nil)
 			return
 		}
-		errorsMap := config.GetInstance().SetConfig(configMap)
+		cfg := config.GetInstance()
+		if err := validateNetworkInterfaceUpdate(cfg, configMap); err != nil {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), map[string]interface{}{
+				"field": "networkInterface",
+			})
+			return
+		}
+		errorsMap := cfg.SetConfig(configMap)
 		writeSuccess(w, http.StatusOK, map[string]interface{}{
 			"status":   "ok",
 			"errorMap": errorsMap,
@@ -596,6 +604,22 @@ func (h *V3Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}
+}
+
+func validateNetworkInterfaceUpdate(cfg *config.Config, configMap map[string]interface{}) error {
+	rawNetworkInterface, hasNetworkInterface := configMap["n"]
+	if !hasNetworkInterface {
+		return nil
+	}
+	networkInterfaceValue := strings.TrimSpace(fmt.Sprintf("%v", rawNetworkInterface))
+	controllerURL := strings.TrimSpace(cfg.ControllerURL)
+	if rawControllerURL, hasControllerURL := configMap["a"]; hasControllerURL {
+		controllerURL = strings.TrimSpace(fmt.Sprintf("%v", rawControllerURL))
+	}
+	if err := network.GetInstance().ValidateNetworkInterfaceConfig(controllerURL, networkInterfaceValue); err != nil {
+		return fmt.Errorf("invalid networkInterface %q: %w", networkInterfaceValue, err)
+	}
+	return nil
 }
 
 func (h *V3Handler) HandleSystemControllerCert(w http.ResponseWriter, r *http.Request) {

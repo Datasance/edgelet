@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,6 +154,22 @@ func (m *Manager) UpdateNetworkInterface() error {
 	// Get PID
 	m.pid = os.Getpid()
 
+	configuredInterface := strings.TrimSpace(m.config.NetworkInterface)
+	if configuredInterface == "" {
+		configuredInterface = "dynamic"
+	}
+	selectedInterface := "unresolved"
+	if m.networkInterface != nil && m.networkInterface.Interface != nil {
+		if name := strings.TrimSpace(m.networkInterface.Interface.Name); name != "" {
+			selectedInterface = name
+		}
+	}
+	if strings.EqualFold(configuredInterface, "dynamic") {
+		logging.LogInfo(moduleName, fmt.Sprintf("Network interface selection: mode=dynamic selected=%s ip=%s", selectedInterface, m.currentIPAddress))
+	} else {
+		logging.LogInfo(moduleName, fmt.Sprintf("Network interface selection: mode=static configured=%s selected=%s ip=%s", configuredInterface, selectedInterface, m.currentIPAddress))
+	}
+
 	logging.LogDebug(moduleName, fmt.Sprintf("Network interface updated: IP=%s, Hostname=%s, PID=%d", m.currentIPAddress, m.hostName, m.pid))
 	return nil
 }
@@ -205,18 +223,57 @@ func (m *Manager) getAnyIPv4Address() (string, error) {
 // getNetworkInterface gets the network interface based on controller URL
 // Matches Java IOFogNetworkInterface.getNetworkInterface() and getOSNetworkInterface()
 func (m *Manager) getNetworkInterface() (*NetworkInterfaceInfo, error) {
-	controllerURL := m.config.ControllerURL
-	if controllerURL == "" {
+	return m.resolveNetworkInterface(m.config.ControllerURL, m.config.NetworkInterface)
+}
+
+// ValidateNetworkInterfaceConfig validates whether a config update can use the requested
+// network interface without mutating manager state.
+func (m *Manager) ValidateNetworkInterfaceConfig(controllerURL, networkInterfaceConfig string) error {
+	normalizedInterface := strings.TrimSpace(networkInterfaceConfig)
+	if normalizedInterface == "" || strings.EqualFold(normalizedInterface, "dynamic") {
+		return nil
+	}
+	resolved, err := m.resolveNetworkInterface(controllerURL, normalizedInterface)
+	if err != nil {
+		return err
+	}
+	if resolved == nil || resolved.Interface == nil {
+		return fmt.Errorf("no usable address found on network interface %s", normalizedInterface)
+	}
+	return nil
+}
+
+// GetAvailableNetworkInterfaces returns available non-loopback interface names.
+func (m *Manager) GetAvailableNetworkInterfaces() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Unable to list network interfaces: %v", err))
+		return nil
+	}
+	names := make([]string, 0, len(interfaces))
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		name := strings.TrimSpace(iface.Name)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (m *Manager) resolveNetworkInterface(controllerURL, networkInterfaceConfig string) (*NetworkInterfaceInfo, error) {
+	if strings.TrimSpace(controllerURL) == "" {
 		return nil, fmt.Errorf("controller URL not configured")
 	}
-
-	// Check if network interface is configured (matching Java: Configuration.getNetworkInterface())
-	networkInterfaceConfig := m.config.NetworkInterface
-	if networkInterfaceConfig != "" && networkInterfaceConfig != "dynamic" {
+	normalizedInterface := strings.TrimSpace(networkInterfaceConfig)
+	if normalizedInterface != "" && !strings.EqualFold(normalizedInterface, "dynamic") {
 		// Use specific network interface (matching Java: NetworkInterface.getByName())
-		return m.getSpecificNetworkInterface(networkInterfaceConfig, controllerURL)
+		return m.getSpecificNetworkInterface(normalizedInterface, controllerURL)
 	}
-
 	// Use dynamic detection (matching Java: getOSNetworkInterface())
 	return m.getOSNetworkInterface(controllerURL)
 }

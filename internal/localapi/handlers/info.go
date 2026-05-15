@@ -44,6 +44,7 @@ func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Parse config report into map
 	infoMap := parseInfoReport(configReport)
+	infoMap["networkInterface"] = formatInfoNetworkInterface(cfg.NetworkInterface, network.GetInstance().GetNetworkInterface())
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(infoMap)
@@ -79,4 +80,20 @@ func parseInfoReport(infoReport string) map[string]string {
 	}
 
 	return result
+}
+
+func formatInfoNetworkInterface(configuredValue string, detected *network.NetworkInterfaceInfo) string {
+	configured := strings.TrimSpace(configuredValue)
+	if !strings.EqualFold(configured, "dynamic") {
+		return configuredValue
+	}
+
+	if detected != nil && detected.Interface != nil {
+		detectedName := strings.TrimSpace(detected.Interface.Name)
+		if detectedName != "" {
+			return fmt.Sprintf("dynamic (%s)", detectedName)
+		}
+	}
+
+	return "dynamic"
 }
