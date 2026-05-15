@@ -33,9 +33,11 @@ import (
 	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/errdefs"
 	tuypeurl "github.com/containerd/typeurl/v2"
+	"github.com/eclipse-iofog/agent/internal/dnsresolver"
 	"github.com/eclipse-iofog/agent/pkg/engine/iofog/cri"
 	"github.com/nxadm/tail"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/constants"
@@ -54,6 +56,8 @@ const (
 
 	// hostsDir is the directory where per-container /etc/hosts files are written.
 	hostsDir = "/run/iofog-agent/hosts"
+	// resolvDir is the directory where per-container /etc/resolv.conf files are written.
+	resolvDir = "/run/iofog-agent/resolv"
 )
 
 var log = logging.NewModuleLogger("IofogEngine")
@@ -79,6 +83,7 @@ type Engine struct {
 	execMu       sync.Mutex                // protects pendingExecs and runningProcs
 	execSessions sync.Map                  // containerID -> []string (active exec IDs)
 	execToCont   sync.Map                  // execID -> containerID (for removal on StopExecSession)
+	dnsResolver  *dnsresolver.Resolver
 }
 
 // New returns an uninitialised iofog engine. logDir is the directory to write
@@ -123,6 +128,11 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 	}
 	e.criClient = criClient
 
+	e.dnsResolver = dnsresolver.GetInstance()
+	e.dnsResolver.SetRuntimeSnapshotProvider(e.runtimeDNSSnapshot)
+	if err := e.dnsResolver.Start(); err != nil {
+		log.Warnf("embedded DNS start failed (non-fatal): %v", err)
+	}
 	// Recover per-container state from existing container labels.
 	e.recoverState()
 	return nil
@@ -178,12 +188,27 @@ func (e *Engine) recoverState() {
 		if st.ip != "" || st.netnsPath != "" || st.sandboxID != "" || st.startedAt != 0 {
 			e.store.set(c.ID(), st)
 		}
+		rec := dnsRecordFromLabels(info.Labels, st.ip)
+		if rec.UUID == "" {
+			continue
+		}
+		if task, err := c.Task(e.ctx(), nil); err == nil {
+			if status, err := task.Status(e.ctx()); err == nil {
+				rec.Active = status.Status == client.Running
+			}
+		}
+		rec.StartedAt = st.startedAt
+		e.ensureDNSResolver()
+		e.dnsResolver.UpsertWorkload(rec)
 	}
 	log.Debugf("recoverState: recovered state for %d containers", len(cs))
 }
 
 // Close releases the containerd and CRI clients.
 func (e *Engine) Close() error {
+	if e.dnsResolver != nil {
+		_ = e.dnsResolver.Stop()
+	}
 	if e.criClient != nil {
 		_ = e.criClient.Close()
 	}
@@ -317,8 +342,18 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 
 	// Build /etc/hosts before RunPodSandbox (needed for ContainerConfig mounts).
 	hostsFilePath := ""
+	resolvFilePath := ""
 	if !ms.HostNetworkMode {
 		hostsFilePath = filepath.Join(hostsDir, containerName)
+		scope := dnsScopeFromMicroservice(ms)
+		gatewayIP, gwErr := dnsresolver.GatewayIPForScope(scope)
+		if gwErr == nil && gatewayIP != "" {
+			resolvFilePath = filepath.Join(resolvDir, containerName+".conf")
+			if err := buildResolvConfFile(resolvFilePath, gatewayIP); err != nil {
+				log.Warnf("buildResolvConfFile for %s: %v", containerName, err)
+				resolvFilePath = ""
+			}
+		}
 		routerIP := ""
 		if !ms.IsRouter && !cfg.IsRouterInterior {
 			routerContainerID := utils.IOFogDockerContainerNamePrefix + cfg.RouterUUID
@@ -352,7 +387,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		}
 	}
 
-	containerConfig, err := cri.ContainerConfigFromMicroservice(ms, hostname, envVars, logPath, hostsFilePath, sandboxID)
+	containerConfig, err := cri.ContainerConfigFromMicroservice(ms, hostname, envVars, logPath, hostsFilePath, resolvFilePath, sandboxID)
 	if err != nil {
 		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
 		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
@@ -395,6 +430,18 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		sandboxID: sandboxID,
 		ip:        ipAddr,
 	})
+	e.ensureDNSResolver()
+	e.dnsResolver.UpsertWorkload(dnsresolver.WorkloadRecord{
+		UUID:        ms.MicroserviceUUID,
+		Application: ms.ApplicationName,
+		Name:        ms.MicroserviceName,
+		Scope:       dnsScopeFromMicroservice(ms),
+		IP:          ipAddr,
+		HostNetwork: ms.HostNetworkMode,
+		IsRouter:    ms.IsRouter,
+		IsNats:      ms.IsNats,
+		Active:      false,
+	})
 	log.Debugf("container %s: CRI create complete, containerID=%s sandboxID=%s IP=%s", containerName, containerID, sandboxID, ipAddr)
 	return containerID, nil
 }
@@ -403,6 +450,34 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 func (e *Engine) StartContainer(containerID string) error {
 	ctx := e.ctx()
 	if err := e.criClient.StartContainer(ctx, containerID); err != nil {
+		reason, exitCode, message := e.readCRIContainerFailure(ctx, containerID)
+		if engine.IsNonRestartableCRIReason(reason) || strings.Contains(strings.ToUpper(err.Error()), engine.CRIReasonContainerExited) {
+			if strings.TrimSpace(reason) == "" {
+				reason = engine.CRIReasonContainerExited
+			}
+			nr := &engine.NonRestartableContainerError{
+				ContainerID: containerID,
+				Reason:      strings.TrimSpace(reason),
+				ExitCode:    exitCode,
+				Message:     fallbackMessage(message, err.Error()),
+			}
+			log.Warnf(
+				"start classification: non-restartable terminal state containerID=%s reason=%s exitCode=%d message=%q decision=recreate",
+				containerID,
+				nr.Reason,
+				nr.ExitCode,
+				nr.Message,
+			)
+			return nr
+		}
+		log.Warnf(
+			"start classification: transient start failure containerID=%s reason=%s exitCode=%d message=%q err=%v",
+			containerID,
+			reasonOrUnknown(reason),
+			exitCode,
+			strings.TrimSpace(message),
+			err,
+		)
 		return fmt.Errorf("StartContainer %s: %w", containerID, err)
 	}
 	c, err := e.client.LoadContainer(ctx, containerID)
@@ -410,6 +485,10 @@ func (e *Engine) StartContainer(containerID string) error {
 		return nil // Container started; recording start time is best-effort.
 	}
 	e.recordStartTime(ctx, c, containerID)
+	if msUUID := e.microserviceUUIDForContainer(ctx, containerID); msUUID != "" {
+		e.ensureDNSResolver()
+		e.dnsResolver.SetWorkloadActive(msUUID, true, time.Now().UnixMilli())
+	}
 	return nil
 }
 
@@ -430,6 +509,10 @@ func (e *Engine) StopContainer(containerID string) error {
 	if err := e.criClient.StopContainer(ctx, containerID, 10); err != nil {
 		return fmt.Errorf("StopContainer %s: %w", containerID, err)
 	}
+	if msUUID := e.microserviceUUIDForContainer(ctx, containerID); msUUID != "" {
+		e.ensureDNSResolver()
+		e.dnsResolver.SetWorkloadActive(msUUID, false, 0)
+	}
 	return nil
 }
 
@@ -438,6 +521,10 @@ func (e *Engine) KillContainer(containerID string) error {
 	ctx := e.ctx()
 	if err := e.criClient.StopContainer(ctx, containerID, 0); err != nil {
 		return fmt.Errorf("KillContainer %s: %w", containerID, err)
+	}
+	if msUUID := e.microserviceUUIDForContainer(ctx, containerID); msUUID != "" {
+		e.ensureDNSResolver()
+		e.dnsResolver.SetWorkloadActive(msUUID, false, 0)
 	}
 	return nil
 }
@@ -504,13 +591,111 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	// Remove per-container hosts file (path uses container name, not CRI-generated ID).
 	hostsFile := filepath.Join(hostsDir, utils.IOFogDockerContainerNamePrefix+msUUID)
 	_ = os.Remove(hostsFile)
+	resolvFile := filepath.Join(resolvDir, utils.IOFogDockerContainerNamePrefix+msUUID+".conf")
+	_ = os.Remove(resolvFile)
 
 	// Remove per-container log directory.
 	logPath := filepath.Join(e.logDir, msUUID)
 	_ = os.RemoveAll(logPath)
 
 	e.store.delete(containerID)
+	e.ensureDNSResolver()
+	e.dnsResolver.RemoveWorkload(msUUID)
 	return nil
+}
+
+func (e *Engine) ensureDNSResolver() {
+	if e.dnsResolver == nil {
+		e.dnsResolver = dnsresolver.GetInstance()
+		e.dnsResolver.SetRuntimeSnapshotProvider(e.runtimeDNSSnapshot)
+		if err := e.dnsResolver.Start(); err != nil {
+			log.Warnf("embedded DNS start failed (non-fatal): %v", err)
+		}
+	}
+}
+
+func dnsScopeFromMicroservice(ms *models.Microservice) dnsresolver.Scope {
+	if ms != nil && strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") && !ms.HostNetworkMode {
+		return dnsresolver.ScopeLocal
+	}
+	return dnsresolver.ScopeManaged
+}
+
+func dnsRecordFromLabels(labels map[string]string, ip string) dnsresolver.WorkloadRecord {
+	rec := dnsresolver.WorkloadRecord{
+		UUID:        strings.TrimSpace(labels["iofog-ms"]),
+		Name:        strings.TrimSpace(labels["iofog-name"]),
+		Application: strings.TrimSpace(labels["iofog-app"]),
+		IP:          strings.TrimSpace(ip),
+		HostNetwork: labels[labelHostNet] == "true",
+		IsRouter:    labels["iofog-router"] == "true",
+		IsNats:      labels["iofog-nats"] == "true",
+	}
+	if strings.EqualFold(strings.TrimSpace(rec.Application), "local") && !rec.HostNetwork {
+		rec.Scope = dnsresolver.ScopeLocal
+	} else {
+		rec.Scope = dnsresolver.ScopeManaged
+	}
+	return rec
+}
+
+func (e *Engine) runtimeDNSSnapshot(ctx context.Context) ([]dnsresolver.WorkloadRecord, error) {
+	if e.client == nil {
+		return nil, nil
+	}
+
+	nsCtx := namespaces.WithNamespace(ctx, constants.IofogContainerdNamespace)
+	cs, err := e.client.Containers(nsCtx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers for dns reconcile: %w", err)
+	}
+
+	records := make([]dnsresolver.WorkloadRecord, 0, len(cs))
+	for _, c := range cs {
+		if isSandboxContainer(nsCtx, c) {
+			continue
+		}
+		info, err := c.Info(nsCtx)
+		if err != nil || info.Labels == nil {
+			continue
+		}
+
+		st := stateFromLabels(info.Labels)
+		if cached, ok := e.store.get(c.ID()); ok && cached != nil {
+			if st.ip == "" {
+				st.ip = cached.ip
+			}
+			if st.startedAt == 0 {
+				st.startedAt = cached.startedAt
+			}
+		}
+
+		rec := dnsRecordFromLabels(info.Labels, st.ip)
+		if rec.UUID == "" {
+			continue
+		}
+		if task, err := c.Task(nsCtx, nil); err == nil {
+			if status, err := task.Status(nsCtx); err == nil {
+				rec.Active = status.Status == client.Running
+			}
+		}
+		rec.StartedAt = st.startedAt
+		records = append(records, rec)
+	}
+
+	return records, nil
+}
+
+func (e *Engine) microserviceUUIDForContainer(ctx context.Context, containerID string) string {
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return ""
+	}
+	info, err := c.Info(ctx)
+	if err != nil || info.Labels == nil {
+		return ""
+	}
+	return strings.TrimSpace(info.Labels["iofog-ms"])
 }
 
 // removeContainerNative removes a container directly via containerd APIs.
@@ -826,6 +1011,10 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 	if err != nil {
 		// Container created but not yet started — report Created, not Exiting
 		status.Status = models.MicroserviceStateCreated
+		if reason, exitCode, message := e.readCRIContainerFailure(ctx, containerID); reason != "" || message != "" || exitCode != 0 {
+			enriched := fmt.Sprintf("CRI reason=%s exitCode=%d message=%s", reasonOrUnknown(reason), exitCode, strings.TrimSpace(message))
+			status.ErrorMessage = &enriched
+		}
 		return status, nil
 	}
 
@@ -848,6 +1037,11 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 		status.Status = models.MicroserviceStateUnknown
 	}
 
+	if reason, exitCode, message := e.readCRIContainerFailure(ctx, containerID); reason != "" || message != "" || exitCode != 0 {
+		enriched := fmt.Sprintf("CRI reason=%s exitCode=%d message=%s", reasonOrUnknown(reason), exitCode, strings.TrimSpace(message))
+		status.ErrorMessage = &enriched
+	}
+
 	// Wire StartTime and IPAddress for status reporting.
 	if startTime, err := e.GetContainerStartedAt(containerID); err == nil && startTime > 0 {
 		status.StartTime = startTime
@@ -861,6 +1055,37 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 	}
 
 	return status, nil
+}
+
+func (e *Engine) readCRIContainerFailure(ctx context.Context, containerID string) (reason string, exitCode int32, message string) {
+	resp, err := e.criClient.ContainerStatus(ctx, containerID)
+	if err != nil || resp == nil || resp.Status == nil {
+		return "", 0, ""
+	}
+	return criStatusDetails(resp.Status)
+}
+
+func criStatusDetails(st *runtimeapi.ContainerStatus) (reason string, exitCode int32, message string) {
+	if st == nil {
+		return "", 0, ""
+	}
+	return strings.TrimSpace(st.Reason), st.ExitCode, strings.TrimSpace(st.Message)
+}
+
+func reasonOrUnknown(reason string) string {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "UNKNOWN"
+	}
+	return trimmed
+}
+
+func fallbackMessage(primary, fallback string) string {
+	primary = strings.TrimSpace(primary)
+	if primary != "" {
+		return primary
+	}
+	return strings.TrimSpace(fallback)
 }
 
 // GetContainerStats returns live CPU and memory usage for the container.

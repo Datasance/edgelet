@@ -116,7 +116,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir 
 // ContainerConfigFromMicroservice builds a CRI ContainerConfig from a
 // microservice. Includes image, env, args, mounts, and security context.
 // sandboxID is stored in labels for teardown and recovery.
-func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, envVars []string, logPath string, hostsFilePath string, sandboxID string) (*runtimeapi.ContainerConfig, error) {
+func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, envVars []string, logPath string, hostsFilePath string, resolvFilePath string, sandboxID string) (*runtimeapi.ContainerConfig, error) {
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
 	metadata := &runtimeapi.ContainerMetadata{
 		Name:    containerName,
@@ -136,7 +136,7 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 		}
 	}
 
-	mounts, err := buildCRIMounts(ms, hostsFilePath)
+	mounts, err := buildCRIMounts(ms, hostsFilePath, resolvFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func buildCRIPortMappings(ports []*models.PortMapping) []*runtimeapi.PortMapping
 	return out
 }
 
-func buildCRIMounts(ms *models.Microservice, hostsFilePath string) ([]*runtimeapi.Mount, error) {
+func buildCRIMounts(ms *models.Microservice, hostsFilePath string, resolvFilePath string) ([]*runtimeapi.Mount, error) {
 	vmm := volumemount.GetInstance()
 	var mounts []*runtimeapi.Mount
 
@@ -269,9 +269,13 @@ func buildCRIMounts(ms *models.Microservice, hostsFilePath string) ([]*runtimeap
 	}
 
 	if !ms.HostNetworkMode {
+		hostResolvPath := "/etc/resolv.conf"
+		if strings.TrimSpace(resolvFilePath) != "" {
+			hostResolvPath = strings.TrimSpace(resolvFilePath)
+		}
 		mounts = append(mounts, &runtimeapi.Mount{
 			ContainerPath: "/etc/resolv.conf",
-			HostPath:      "/etc/resolv.conf",
+			HostPath:      hostResolvPath,
 			Readonly:      true,
 		})
 	}

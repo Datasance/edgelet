@@ -62,3 +62,19 @@ func buildHostsFile(targetPath string, extraHosts []string, routerIP string) err
 
 	return os.WriteFile(targetPath, []byte(sb.String()), 0644)
 }
+
+// buildResolvConfFile writes a per-container /etc/resolv.conf file pointing at
+// the embedded bridge-scoped DNS server.
+func buildResolvConfFile(targetPath string, nameserver string) error {
+	if strings.TrimSpace(nameserver) == "" {
+		return fmt.Errorf("nameserver is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		return fmt.Errorf("mkdir resolv dir: %w", err)
+	}
+	content := "nameserver " + strings.TrimSpace(nameserver) + "\nsearch svc.bridge.local\noptions ndots:0\n"
+	if err := os.WriteFile(targetPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write resolv.conf: %w", err)
+	}
+	return nil
+}
