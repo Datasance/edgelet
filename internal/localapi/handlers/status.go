@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/eclipse-iofog/agent/internal/dnsresolver"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
@@ -35,6 +37,7 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Parse status report into a map
 	statusMap := parseStatusReport(statusReport)
+	augmentWithDNSStatus(statusMap)
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(statusMap)
@@ -71,4 +74,52 @@ func parseStatusReport(statusReport string) map[string]string {
 	}
 
 	return result
+}
+
+func augmentWithDNSStatus(status map[string]string) {
+	if status == nil {
+		return
+	}
+	s := dnsresolver.GetInstance().Snapshot()
+	status["dnsStarted"] = strconv.FormatBool(s.Started)
+	status["dnsCompatAliasesEnabled"] = strconv.FormatBool(s.CompatAliasesEnabled)
+	status["dnsRateLimitEnabled"] = strconv.FormatBool(s.RateLimitEnabled)
+	status["dnsRateLimitRPS"] = strconv.Itoa(s.RateLimitRPS)
+	status["dnsRateLimitBurst"] = strconv.Itoa(s.RateLimitBurst)
+	status["dnsMaxRequestBytes"] = strconv.Itoa(s.MaxRequestBytes)
+	status["dnsMaxQNameBytes"] = strconv.Itoa(s.MaxQNameBytes)
+	status["dnsScopeManagedListening"] = strconv.FormatBool(s.ScopeManaged.Listening)
+	status["dnsScopeManagedAddress"] = s.ScopeManaged.Address
+	status["dnsScopeLocalListening"] = strconv.FormatBool(s.ScopeLocal.Listening)
+	status["dnsScopeLocalAddress"] = s.ScopeLocal.Address
+	status["dnsQueriesTotal"] = strconv.FormatUint(s.QueriesTotal, 10)
+	status["dnsSuccessTotal"] = strconv.FormatUint(s.SuccessTotal, 10)
+	status["dnsNXDomainTotal"] = strconv.FormatUint(s.NXDomainTotal, 10)
+	status["dnsServFailTotal"] = strconv.FormatUint(s.ServFailTotal, 10)
+	status["dnsPolicyDeniedTotal"] = strconv.FormatUint(s.PolicyDeniedTotal, 10)
+	status["dnsInactiveTotal"] = strconv.FormatUint(s.InactiveTotal, 10)
+	status["dnsForwardedTotal"] = strconv.FormatUint(s.ForwardedTotal, 10)
+	status["dnsForwardErrTotal"] = strconv.FormatUint(s.ForwardErrTotal, 10)
+	status["dnsForwardingDegraded"] = strconv.FormatBool(s.ForwardingDegraded)
+	status["dnsForwardTotalUpstream"] = strconv.FormatUint(s.ForwardTotalUpstream, 10)
+	status["dnsForwardHealthyUpstream"] = strconv.FormatUint(s.ForwardHealthyUpstream, 10)
+	status["dnsForwardLastSuccessUnix"] = strconv.FormatInt(s.ForwardLastSuccessUnix, 10)
+	status["dnsForwardLastFailureUnix"] = strconv.FormatInt(s.ForwardLastFailureUnix, 10)
+	status["dnsForwardBackoffSkipTotal"] = strconv.FormatUint(s.ForwardBackoffSkipTotal, 10)
+	status["dnsRateLimitedTotal"] = strconv.FormatUint(s.RateLimitedTotal, 10)
+	status["dnsRejectedTotal"] = strconv.FormatUint(s.RejectedTotal, 10)
+	status["dnsHealth"] = deriveDNSHealth(s)
+}
+
+func deriveDNSHealth(s dnsresolver.StatsSnapshot) string {
+	if !s.Started {
+		return "stopped"
+	}
+	if !s.ScopeManaged.Listening && !s.ScopeLocal.Listening {
+		return "degraded"
+	}
+	if s.ForwardingDegraded {
+		return "degraded"
+	}
+	return "ready"
 }
