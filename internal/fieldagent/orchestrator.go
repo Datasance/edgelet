@@ -1,7 +1,6 @@
 package fieldagent
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -9,10 +8,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,91 +94,6 @@ func (o *Orchestrator) GetJSON(ctx context.Context, command string, result inter
 // This matches Java: request() method
 func (o *Orchestrator) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
 	return o.apiClient.Request(ctx, command, requestType, queryParams, body)
-}
-
-// UploadFile implements the diagnostics.FileUploader interface
-func (o *Orchestrator) UploadFile(ctx context.Context, command string, filePath string) error {
-	return o.SendFileToController(ctx, command, filePath)
-}
-
-// SendFileToController sends a file to the controller using multipart form data
-// This matches Java: sendFileToController() method
-func (o *Orchestrator) SendFileToController(ctx context.Context, command string, filePath string) error {
-	logging.LogDebug(orchestratorModuleName, fmt.Sprintf("Sending file to controller: %s", filePath))
-
-	// Open file
-	file, err := os.Open(filepath.Clean(filePath))
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// Get file info
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-
-	// Create multipart writer
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
-
-	// Add file field
-	part, err := writer.CreateFormFile("file", fileInfo.Name())
-	if err != nil {
-		return fmt.Errorf("failed to create form file: %w", err)
-	}
-
-	// Copy file content
-	if _, err := io.Copy(part, file); err != nil {
-		return fmt.Errorf("failed to copy file content: %w", err)
-	}
-
-	// Close writer to finalize multipart message
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-
-	// Create request with timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	// Access baseURL directly (it's a field, not a method)
-	// We need to add a getter or access it directly
-	baseURL := o.config.ControllerURL
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := baseURL + "/agent/" + command
-
-	req, err := http.NewRequestWithContext(reqCtx, "PUT", url, &requestBody)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set content type with boundary
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	// Add JWT token
-	token, err := o.apiClient.jwtManager.GenerateJWT()
-	if err != nil {
-		return fmt.Errorf("failed to generate JWT: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	// Perform request
-	resp, err := o.apiClient.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	logging.LogDebug(orchestratorModuleName, "File sent successfully")
-	return nil
 }
 
 // GetControllerCert gets the controller certificate from the controller
