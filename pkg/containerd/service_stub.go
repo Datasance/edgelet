@@ -5,7 +5,10 @@
 // dev builds) without compilation errors.
 package iofogcontainerd
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Service is a no-op placeholder on non-Linux platforms.
 type Service struct{}
@@ -21,6 +24,24 @@ func (s *Service) Start() error {
 // Stop is a no-op on non-Linux platforms.
 func (s *Service) Stop() {}
 
+// StopGraceful always returns an error on non-Linux platforms.
+func (s *Service) StopGraceful() error {
+	return fmt.Errorf("embedded containerd is only supported on Linux")
+}
+
+// StopForce always returns an error on non-Linux platforms.
+func (s *Service) StopForce() error {
+	return fmt.Errorf("embedded containerd is only supported on Linux")
+}
+
+// Reap is a no-op on non-Linux platforms.
+func (s *Service) Reap() error { return nil }
+
+// WaitReady always returns an error on non-Linux platforms.
+func (s *Service) WaitReady(_ time.Duration) error {
+	return fmt.Errorf("embedded containerd is only supported on Linux")
+}
+
 // Ready returns a closed channel (immediately "ready") so callers do not block.
 func (s *Service) Ready() <-chan struct{} {
 	ch := make(chan struct{})
@@ -33,3 +54,6 @@ func (s *Service) IsHealthy() bool { return false }
 
 // CleanupRuntimeArtifacts is a no-op on non-Linux platforms.
 func CleanupRuntimeArtifacts() error { return nil }
+
+// MaybeRunChildProcess is a no-op on non-Linux platforms.
+func MaybeRunChildProcess(_ []string) (bool, error) { return false, nil }

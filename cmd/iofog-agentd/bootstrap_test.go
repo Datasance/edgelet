@@ -15,6 +15,38 @@ type fakeContainerdService struct {
 func (f *fakeContainerdService) Start() error { return f.startErr }
 func (f *fakeContainerdService) Stop()        { f.stopCalled++ }
 
+func TestStartEmbeddedContainerdWithRetryDeps_PreStartCleanupRunsBeforeFirstAttempt(t *testing.T) {
+	cleanupCalls := 0
+	attempts := 0
+
+	deps := bootstrapDeps{
+		ensureDependencies: func() error { return nil },
+		newService: func() containerdStarter {
+			attempts++
+			return &fakeContainerdService{}
+		},
+		cleanupRuntime: func() error {
+			cleanupCalls++
+			return nil
+		},
+		sleep: func(time.Duration) {},
+	}
+
+	svc, err := startEmbeddedContainerdWithRetryDeps(deps)
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if svc == nil {
+		t.Fatal("expected non-nil service")
+	}
+	if attempts != 1 {
+		t.Fatalf("expected single attempt success, got attempts=%d", attempts)
+	}
+	if cleanupCalls != 1 {
+		t.Fatalf("expected exactly one pre-start cleanup call, got %d", cleanupCalls)
+	}
+}
+
 func TestStartEmbeddedContainerdWithRetryDeps_SucceedsAfterRetry(t *testing.T) {
 	attempt := 0
 	cleanupCalls := 0
@@ -45,8 +77,8 @@ func TestStartEmbeddedContainerdWithRetryDeps_SucceedsAfterRetry(t *testing.T) {
 	if attempt != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempt)
 	}
-	if cleanupCalls != 1 {
-		t.Fatalf("expected cleanup to run once between retries, got %d", cleanupCalls)
+	if cleanupCalls != 2 {
+		t.Fatalf("expected cleanup to run once before attempt and once between retries, got %d", cleanupCalls)
 	}
 }
 
@@ -80,7 +112,8 @@ func TestStartEmbeddedContainerdWithRetryDeps_FailsAfterMaxAttempts(t *testing.T
 	if attempt != containerdBootstrapMaxAttempts {
 		t.Fatalf("expected %d attempts, got %d", containerdBootstrapMaxAttempts, attempt)
 	}
-	if cleanupCalls != containerdBootstrapMaxAttempts-1 {
-		t.Fatalf("expected cleanup calls=%d, got %d", containerdBootstrapMaxAttempts-1, cleanupCalls)
+	expectedCleanupCalls := containerdBootstrapMaxAttempts // one pre-start + between retries
+	if cleanupCalls != expectedCleanupCalls {
+		t.Fatalf("expected cleanup calls=%d, got %d", expectedCleanupCalls, cleanupCalls)
 	}
 }

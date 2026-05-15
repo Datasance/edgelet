@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"debug/elf"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -236,11 +237,27 @@ func loadKernelModules() error {
 }
 
 // extractBinary writes data to destFile with 0755 permissions.
-// Always overwrites existing files so the correct architecture binary is used
-// after cross-compilation (e.g. make deps ARCH=arm64 && build-linux-arm64).
+// It avoids writing to an active executable path directly (ETXTBSY risk) by
+// writing a temp file in the same directory then atomically renaming.
 func extractBinary(data []byte, destFile string) error {
-	if err := os.WriteFile(destFile, data, 0755); err != nil { // #nosec G306 -- binaries need execute permission
-		return fmt.Errorf("write %s: %w", destFile, err)
+	// Skip rewrite when destination already has exact content.
+	if existing, err := os.ReadFile(destFile); err == nil {
+		if bytes.Equal(existing, data) {
+			loadLogger.Debugf("Binary already up-to-date, skipping rewrite: %s", destFile)
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read existing %s: %w", destFile, err)
+	}
+
+	tmpFile := destFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0755); err != nil { // #nosec G306 -- binaries need execute permission
+		return fmt.Errorf("write temp %s: %w", tmpFile, err)
+	}
+
+	if err := os.Rename(tmpFile, destFile); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("replace %s with temp binary: %w", destFile, err)
 	}
 	return nil
 }

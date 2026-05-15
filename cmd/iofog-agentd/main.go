@@ -31,6 +31,15 @@ func main() {
 		}
 	}()
 
+	// Internal child-process mode: run containerd and exit.
+	if handled, err := iofogcontainerd.MaybeRunChildProcess(os.Args); handled {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Embedded containerd child failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// Version (no config required)
 	if len(os.Args) > 1 {
 		switch os.Args[1] {

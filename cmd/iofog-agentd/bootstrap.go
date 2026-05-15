@@ -53,6 +53,12 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 	var lastErr error
 	backoff := containerdBootstrapBaseBackoff
 
+	// Pre-start cleanup before the first attempt helps clear stale runtime
+	// artifacts after crashes/reboots instead of waiting for attempt-1 failure.
+	if err := deps.cleanupRuntime(); err != nil {
+		logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("Embedded containerd pre-start runtime cleanup failed: %v", err))
+	}
+
 	for attempt := 1; attempt <= containerdBootstrapMaxAttempts; attempt++ {
 		if err := deps.ensureDependencies(); err != nil {
 			lastErr = fmt.Errorf("prepare embedded dependencies: %w", err)
