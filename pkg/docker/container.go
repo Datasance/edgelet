@@ -17,6 +17,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 )
 
 // Container represents a Docker container
@@ -688,32 +689,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	// Get config instance (needed for TZ and other config values)
 	cfg := config.GetInstance()
 
-	// Build container config
-	// Matches Java: List<String> envVars = new ArrayList<>(Arrays.asList("SELFNAME=" + microservice.getMicroserviceUuid()));
-	envVars := []string{fmt.Sprintf("SELFNAME=%s", ms.MicroserviceUUID)}
-
-	// Add user-defined env vars (matching Java: envVars.addAll(microservice.getEnvVars()...))
-	if len(ms.EnvVars) > 0 {
-		userEnvVars := buildEnvironmentVariables(ms.EnvVars)
-		envVars = append(envVars, userEnvVars...)
-	}
-
-	// Add TZ if not already present (matching Java: if (envVars.stream().filter(str -> str.trim().contains("TZ")).count() == 0))
-	hasTZ := false
-	for _, env := range envVars {
-		if strings.HasPrefix(strings.TrimSpace(env), "TZ=") {
-			hasTZ = true
-			break
-		}
-	}
-	if !hasTZ {
-		// Add TZ from config (matching Java: envVars.add("TZ=" + Configuration.getTimeZone()))
-		timeZone := cfg.TimeZone
-		if timeZone == "" {
-			timeZone = "UTC" // Default fallback
-		}
-		envVars = append(envVars, fmt.Sprintf("TZ=%s", timeZone))
-	}
+	labels, envVars := buildCanonicalContainerMetadata(ms, cfg)
 
 	config := &container.Config{
 		Image: ms.ImageName,
@@ -728,15 +704,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 
 	// Platform is set via ContainerCreate options, not Config
 
-	// Set labels
-	labels := make(map[string]string)
-	labels["iofog-uuid"] = cfg.IOFogUUID
-	if ms.IsRouter {
-		labels["iofog-router"] = "true"
-	}
-	if ms.IsNats {
-		labels["iofog-nats"] = "true"
-	}
+	// Set canonical labels.
 	config.Labels = labels
 
 	// Build host config — NetworkMode is set later after ExtraHosts are resolved,
@@ -938,20 +906,32 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 
 // Helper functions for building Docker configurations
 
-// buildEnvironmentVariables converts EnvVar models to Docker env var format
-// Matches Java: .map(env -> env.getKey() + "=" + env.getValue())
-func buildEnvironmentVariables(envVars []*models.EnvVar) []string {
-	if len(envVars) == 0 {
-		return nil
-	}
-
-	result := make([]string, 0, len(envVars))
+func envVarMap(envVars []*models.EnvVar) map[string]string {
+	result := make(map[string]string, len(envVars))
 	for _, env := range envVars {
 		if env.Key != "" || env.Value != "" {
-			result = append(result, fmt.Sprintf("%s=%s", env.Key, env.Value))
+			result[env.Key] = env.Value
 		}
 	}
 	return result
+}
+
+func buildCanonicalContainerMetadata(ms *models.Microservice, cfg *config.Config) (map[string]string, []string) {
+	in := workloadmeta.BuildInput{
+		MicroserviceUUID: ms.MicroserviceUUID,
+		MicroserviceName: ms.MicroserviceName,
+		ApplicationName:  ms.ApplicationName,
+		NodeUUID:         cfg.IOFogUUID,
+		RuntimeEngine:    workloadmeta.RuntimeEngineDocker,
+		IsRouter:         ms.IsRouter,
+		IsNats:           ms.IsNats,
+		HostNetwork:      ms.HostNetworkMode,
+		IsSystem:         false,
+		TimeZone:         cfg.TimeZone,
+		UserEnv:          envVarMap(ms.EnvVars),
+		UserLabels:       ms.Labels,
+	}
+	return workloadmeta.BuildLabels(in), workloadmeta.BuildEnv(in)
 }
 
 func buildPortBindings(portMappings []*models.PortMapping) (nat.PortMap, error) {
