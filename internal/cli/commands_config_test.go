@@ -144,7 +144,6 @@ func TestFormatInfoWithAliasOrder_UsesAliasesAndOrder(t *testing.T) {
 		"logFileDirectory":            "/var/log/iofog-agent",
 		"logFilesCount":               "10",
 		"logFilesLevel":               "DEBUG",
-		"postDiagnosticsFrequency":    "10",
 		"readyToUpgradeScanFrequency": "24",
 		"scanDevicesFrequency":        "60",
 		"dockerPruningFrequency":      "0",

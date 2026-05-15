@@ -57,7 +57,6 @@ func TestValidateConfig(t *testing.T) {
 	cfg.StatusFrequency = 10
 	cfg.ChangeFrequency = 20
 	cfg.DeviceScanFrequency = 60
-	cfg.PostDiagnosticsFreq = 10
 	cfg.EdgeGuardFrequency = 0
 	cfg.GPSScanFrequency = 60
 	cfg.DockerURL = "unix:///var/run/docker.sock"

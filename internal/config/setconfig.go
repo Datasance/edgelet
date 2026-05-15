@@ -31,7 +31,6 @@ var ConfigParamMap = map[string]string{
 	"ll":   "logLevel",
 	"sf":   "statusFrequency",
 	"cf":   "changeFrequency",
-	"df":   "postDiagnosticsFreq",
 	"sd":   "deviceScanFrequency",
 	"idc":  "watchdogEnabled",
 	"egf":  "edgeGuardFrequency",
@@ -250,16 +249,6 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 		c.ChangeFrequency = val
 		if err := c.setYamlProperty("changeFrequency", value); err != nil {
-			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
-		}
-
-	case "postDiagnosticsFreq":
-		val, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("invalid post diagnostics frequency: %w", err)
-		}
-		c.PostDiagnosticsFreq = val
-		if err := c.setYamlProperty("postDiagnosticsFreq", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -492,7 +481,6 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	defaultProfile.SetProperty("statusFrequency", "10")
 	defaultProfile.SetProperty("changeFrequency", "20")
 	defaultProfile.SetProperty("deviceScanFrequency", "60")
-	defaultProfile.SetProperty("postDiagnosticsFreq", "10")
 	defaultProfile.SetProperty("watchdogEnabled", "off")
 	defaultProfile.SetProperty("edgeGuardFrequency", "0")
 	defaultProfile.SetProperty("gpsDevice", "/dev/ttyUSB0")

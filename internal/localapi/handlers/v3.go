@@ -550,7 +550,6 @@ func (h *V3Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 			"logLevel":               cfg.LogLevel,
 			"statusFrequencySeconds": cfg.StatusFrequency,
 			"changeFrequencySeconds": cfg.ChangeFrequency,
-			"postDiagnosticsFreq":    cfg.PostDiagnosticsFreq,
 			"deviceScanFrequency":    cfg.DeviceScanFrequency,
 			"watchdogEnabled":        cfg.WatchdogEnabled,
 			"edgeGuardFrequency":     cfg.EdgeGuardFrequency,
@@ -1582,8 +1581,6 @@ func configKeyToShortCode(key string) (string, bool) {
 		return "sf", true
 	case "cf", "changeFrequencySeconds":
 		return "cf", true
-	case "df", "postDiagnosticsFreq":
-		return "df", true
 	case "sd", "deviceScanFrequency":
 		return "sd", true
 	case "idc", "watchdogEnabled":

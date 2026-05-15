@@ -182,7 +182,6 @@ func loadConfigValues(cfg *Config) {
 	cfg.StatusFrequency = parseInt("statusFrequency", "10")
 	cfg.ChangeFrequency = parseInt("changeFrequency", "20")
 	cfg.DeviceScanFrequency = parseInt("deviceScanFrequency", "60")
-	cfg.PostDiagnosticsFreq = parseInt("postDiagnosticsFreq", "10")
 	cfg.WatchdogEnabled = getProp("watchdogEnabled", "off") != "off"
 	cfg.EdgeGuardFrequency = parseInt64("edgeGuardFrequency", "0")
 	if cfg.IOFogUUID == "" && cfg.EdgeGuardFrequency > 0 {
@@ -234,7 +233,6 @@ func createDefaultYamlConfigForLoader() *models.YamlConfig {
 	defaultProfile.SetProperty("statusFrequency", "10")
 	defaultProfile.SetProperty("changeFrequency", "20")
 	defaultProfile.SetProperty("deviceScanFrequency", "60")
-	defaultProfile.SetProperty("postDiagnosticsFreq", "10")
 	defaultProfile.SetProperty("watchdogEnabled", "off")
 	defaultProfile.SetProperty("edgeGuardFrequency", "0")
 	defaultProfile.SetProperty("gpsDevice", "/dev/ttyUSB0")
