@@ -119,7 +119,6 @@ const (
 	FieldAgentGetChangeList                   = "FACL"
 	FieldAgentPostStatus                      = "FAPS"
 	FieldAgentPostDiagnostic                  = "FAPD"
-	MessageBusCalculateSpeed                  = "MBCS"
 	StatusReporterSetStatusReporterSystemTime = "SRST"
 	LocalAPIEvent                             = "LAPI"
 	ResourceConsumptionManagerGetUsageData    = "RCUD"

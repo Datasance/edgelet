@@ -64,7 +64,6 @@ type Config struct {
 	// Automatic configurable params (calculated)
 	StatusReportFreqSeconds            int
 	PingControllerFreqSeconds          int
-	SpeedCalculationFreqMinutes        int
 	MonitorContainersStatusFreqSeconds int
 	MonitorRegistriesStatusFreqSeconds int
 	HealthcheckIntervalSeconds         int // Interval for exec-based healthcheck (iofog engine only)

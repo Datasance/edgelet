@@ -259,7 +259,6 @@ func updateAutomaticConfigParams(cfg *Config) {
 	// This can be customized based on arch type
 	cfg.StatusReportFreqSeconds = 5
 	cfg.PingControllerFreqSeconds = 30
-	cfg.SpeedCalculationFreqMinutes = 1
 	cfg.MonitorContainersStatusFreqSeconds = 5
 	cfg.MonitorRegistriesStatusFreqSeconds = 60
 	cfg.HealthcheckIntervalSeconds = 30
