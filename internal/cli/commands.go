@@ -1050,12 +1050,12 @@ var statusOutputOrder = []string{
 	"diskUsage",
 	"iofogDaemon",
 	"memoryUsage",
-	"messagesProcessed",
 	"runningMicroservices",
 	"systemAvailableDisk",
 	"systemAvailableMemory",
 	"systemTime",
 	"systemTotalCpu",
+	"availableNetworkInterfaces",
 }
 
 var infoOutputOrder = []string{

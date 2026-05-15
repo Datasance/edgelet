@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/dnsresolver"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
@@ -37,7 +38,9 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Parse status report into a map
 	statusMap := parseStatusReport(statusReport)
-	augmentWithDNSStatus(statusMap)
+	if buildmeta.IsFull() {
+		augmentWithDNSStatus(statusMap)
+	}
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(statusMap)

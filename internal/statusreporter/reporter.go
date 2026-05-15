@@ -3,6 +3,9 @@ package statusreporter
 import (
 	"context"
 	"fmt"
+	"net"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -184,7 +187,6 @@ func (sr *StatusReporter) GetStatusReport() string {
 	result += fmt.Sprintf("CPU Usage                   : about %.2f %%\n", cpuUsage)
 	result += fmt.Sprintf("Running Microservices       : %d\n", sr.processManagerStatus.RunningMicroservicesCount)
 	result += fmt.Sprintf("Connection to Controller    : %s\n", connectionStatus)
-	result += fmt.Sprintf("Messages Processed          : about %d\n", 0)
 	result += fmt.Sprintf("System Time                 : %s\n", dateFormat)
 
 	// Calculate total disk for percentage
@@ -197,6 +199,12 @@ func (sr *StatusReporter) GetStatusReport() string {
 	result += fmt.Sprintf("System Available Disk       : %.2f MB (%.2f %%)\n", availableDisk, diskPercent)
 	result += fmt.Sprintf("System Available Memory     : %.2f MB\n", availableMemory)
 	result += fmt.Sprintf("System Total CPU            : %.2f %%\n", totalCPU)
+	availableInterfaces := getAvailableNetworkInterfaces()
+	availableInterfacesLine := "none"
+	if len(availableInterfaces) > 0 {
+		availableInterfacesLine = strings.Join(availableInterfaces, ", ")
+	}
+	result += fmt.Sprintf("Available Network Interfaces : %s\n", availableInterfacesLine)
 
 	logging.LogDebug(moduleName, "Finished Getting Status Report")
 	return result
@@ -237,6 +245,28 @@ func (sr *StatusReporter) GetStatusReporterStatus() *models.StatusReporterStatus
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	return sr.statusReporterStatus
+}
+
+func getAvailableNetworkInterfaces() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Unable to list network interfaces for status report: %v", err))
+		return nil
+	}
+
+	names := make([]string, 0, len(interfaces))
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		name := strings.TrimSpace(iface.Name)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // GetProcessManagerStatus returns the process manager status

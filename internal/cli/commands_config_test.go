@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"errors"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -110,7 +110,7 @@ func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {
 
 func TestFormatFlatMapWithOrder_PrefersConfiguredOrder(t *testing.T) {
 	out := formatFlatMapWithOrder(map[string]interface{}{
-		"controllerUrl":         "u",
+		"controllerUrl":          "u",
 		"connectionToController": "not provisioned",
 		"cpuUsage":               "1%",
 		"zzzExtra":               "x",
@@ -118,6 +118,25 @@ func TestFormatFlatMapWithOrder_PrefersConfiguredOrder(t *testing.T) {
 	expectedPrefix := "connectionToController: not provisioned\ncpuUsage: 1%"
 	if len(out) < len(expectedPrefix) || out[:len(expectedPrefix)] != expectedPrefix {
 		t.Fatalf("unexpected order output: %s", out)
+	}
+}
+
+func TestFormatFlatMapWithOrder_StatusIncludesAvailableNetworkInterfacesAfterTotalCPU(t *testing.T) {
+	out := formatFlatMapWithOrder(map[string]interface{}{
+		"systemTotalCpu":             "3200%",
+		"availableNetworkInterfaces": "eth0, wlan0",
+		"connectionToController":     "ok",
+	}, statusOutputOrder)
+
+	totalCPULine := "systemTotalCpu: 3200%"
+	availableInterfacesLine := "availableNetworkInterfaces: eth0, wlan0"
+	totalIdx := strings.Index(out, totalCPULine)
+	availableIdx := strings.Index(out, availableInterfacesLine)
+	if totalIdx == -1 || availableIdx == -1 {
+		t.Fatalf("expected both status lines in output, got: %s", out)
+	}
+	if availableIdx < totalIdx {
+		t.Fatalf("expected available interfaces after systemTotalCpu, got: %s", out)
 	}
 }
 
@@ -254,10 +273,10 @@ func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
 	out := formatRegistryInspect(map[string]interface{}{
 		"items": []interface{}{
 			map[string]interface{}{
-				"id":       3,
-				"url":      "registry.example.com",
-				"isPublic": false,
-				"userName": "john",
+				"id":        3,
+				"url":       "registry.example.com",
+				"isPublic":  false,
+				"userName":  "john",
 				"userEmail": "john@example.com",
 			},
 		},
@@ -386,4 +405,3 @@ func TestFormatV3Output_ImageRemoveMessage(t *testing.T) {
 		t.Fatalf("unexpected image remove output: %s", out)
 	}
 }
-
