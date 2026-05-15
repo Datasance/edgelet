@@ -12,6 +12,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
@@ -260,8 +261,8 @@ func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup 
 
 	imageRef := container.Image
 	msUUID := ""
-	if container.Labels["iofog-ms"] != "" || container.Labels["iofog-uuid"] != "" || container.Labels["iofog.uuid"] != "" {
-		msUUID = cm.engine.GetContainerMicroserviceUUID(*container)
+	if workloadmeta.IsManagedByIofog(container.Labels) {
+		msUUID = workloadmeta.MicroserviceUIDFromLabels(container.Labels)
 	}
 
 	if err := cm.engine.StopContainer(container.ID); err != nil {

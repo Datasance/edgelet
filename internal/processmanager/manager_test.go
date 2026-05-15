@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 )
 
 func TestProcessManager_GetInstance(t *testing.T) {
@@ -56,3 +58,29 @@ func TestLaunchLocalMicroserviceWithProgress_EngineNotInitialized(t *testing.T) 
 // Note: deleteRemainingMicroservices and updateRunningMicroservicesCount
 // require initialized ProcessManager with Docker client and microservice manager.
 // These are tested in integration tests.
+
+func TestCountManagedRunningContainers_UsesCanonicalLabels(t *testing.T) {
+	containers := []engine.Container{
+		{
+			Labels: map[string]string{
+				workloadmeta.LabelAppManagedBy:    workloadmeta.ManagedByValue,
+				workloadmeta.LabelMicroserviceUID: "ms-1",
+			},
+		},
+		{
+			Labels: map[string]string{
+				"example.com/non-canonical-identity": "not-ms",
+			},
+		},
+		{
+			Labels: map[string]string{
+				workloadmeta.LabelAppManagedBy: workloadmeta.ManagedByValue,
+			},
+		},
+	}
+
+	got := countManagedRunningContainers(containers)
+	if got != 1 {
+		t.Fatalf("expected 1 managed container, got %d", got)
+	}
+}

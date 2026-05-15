@@ -17,6 +17,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
@@ -165,12 +166,15 @@ func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup
 	runningMicroserviceUuids := make([]string, 0)
 
 	for _, container := range allContainers {
-		msUUID := pm.engine.GetContainerMicroserviceUUID(container)
+		msUUID := workloadmeta.MicroserviceUIDFromLabels(container.Labels)
 		if msUUID == "" {
 			continue
 		}
 
-		containerIOFogUUID := container.Labels["iofog-uuid"]
+		if !workloadmeta.IsManagedByIofog(container.Labels) {
+			continue
+		}
+		containerIOFogUUID := strings.TrimSpace(container.Labels[workloadmeta.LabelNodeUID])
 		if (containerIOFogUUID != "" && containerIOFogUUID == iofogUUID) || cfg.WatchdogEnabled {
 			runningMicroserviceUuids = append(runningMicroserviceUuids, msUUID)
 		}
@@ -742,7 +746,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	cfg := config.GetInstance()
 
 	for _, container := range allContainers {
-		msUUID := pm.engine.GetContainerMicroserviceUUID(container)
+		msUUID := workloadmeta.MicroserviceUIDFromLabels(container.Labels)
 		if msUUID == "" {
 			continue
 		}
@@ -750,7 +754,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		isCurrent := currentUUIDs[msUUID]
 		isLatest := latestUUIDs[msUUID]
 
-		isSystem := container.Labels["iofog-system"] == "true"
+		isSystem := workloadmeta.IsSystemWorkload(container.Labels)
 
 		// Old agent microservice: in current but not in latest → always remove
 		if isCurrent && !isLatest && !isSystem {
@@ -785,8 +789,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	pm.logger.Debug("Finished delete Remaining Microservices")
 }
 
-// updateRunningMicroservicesCount updates the count of running microservices.
-// Matches Java: getRunningIofogContainers() — filters by iofog_ name prefix only.
+// updateRunningMicroservicesCount updates the count of running managed microservices.
 func (pm *ProcessManager) updateRunningMicroservicesCount() {
 	pm.logger.Debug("Update running microservice count")
 
@@ -797,17 +800,22 @@ func (pm *ProcessManager) updateRunningMicroservicesCount() {
 	}
 
 	count := 0
-	for _, c := range containers {
-		name := pm.engine.GetContainerName(c)
-		if strings.HasPrefix(name, utils.IOFogDockerContainerNamePrefix) {
-			count++
-		}
-	}
+	count = countManagedRunningContainers(containers)
 
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetRunningMicroservicesCount(count)
 	})
 	pm.logger.Debugf("Updated running microservices count: %d", count)
+}
+
+func countManagedRunningContainers(containers []engine.Container) int {
+	count := 0
+	for _, c := range containers {
+		if workloadmeta.IsManagedByIofog(c.Labels) {
+			count++
+		}
+	}
+	return count
 }
 
 // updateCurrentMicroservices updates the current microservices list

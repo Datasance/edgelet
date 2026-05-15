@@ -1,6 +1,33 @@
 package pruning
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/eclipse-iofog/agent/pkg/engine"
+)
+
+func TestIsManagedContainer_UsesCanonicalLabelsOnly(t *testing.T) {
+	managed := engine.Container{
+		Labels: map[string]string{
+			workloadmeta.LabelAppManagedBy:    workloadmeta.ManagedByValue,
+			workloadmeta.LabelMicroserviceUID: "ms-1",
+		},
+	}
+	if !isManagedContainer(managed) {
+		t.Fatal("expected canonical managed labels to be treated as managed")
+	}
+
+	nonCanonicalOnly := engine.Container{
+		Labels: map[string]string{
+			"example.com/pretend-service": "x",
+			"example.com/pretend-node":    "y",
+		},
+	}
+	if isManagedContainer(nonCanonicalOnly) {
+		t.Fatal("containers without canonical managed-by + microservice uid must not be treated as managed")
+	}
+}
 
 func TestShouldRunImmediateFrequencyPrune(t *testing.T) {
 	m := &Manager{}

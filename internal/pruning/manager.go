@@ -9,6 +9,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/docker"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 )
@@ -246,7 +247,7 @@ func (m *Manager) pruneImages() {
 // getUnwantedImagesList returns image IDs/names that should be deleted during
 // scheduled or threshold pruning. The logic matches Java DockerPruningManager:
 //
-//   - Protect images used by running non-ioFog containers (by image name/ID).
+//   - Protect images used by running non-managed containers (by image name/ID).
 //   - Protect images for ALL configured microservices via getMicroserviceImages
 //     callback (includes stopped/restarting, not just running ones).
 //   - Delete every other image.
@@ -314,17 +315,10 @@ func (m *Manager) getUnwantedImagesList(ctx context.Context, eng engine.Containe
 
 	usedImageIDs := make(map[string]bool)
 
-	// Protect images used by running NON-ioFog containers.
+	// Protect images used by running non-managed containers.
 	nonIoFogCount := 0
 	for _, cont := range runningContainers {
-		isIoFog := false
-		for k := range cont.Labels {
-			if k == "iofog-uuid" || k == "iofog.uuid" || k == "iofog-ms" {
-				isIoFog = true
-				break
-			}
-		}
-		if isIoFog {
+		if isManagedContainer(cont) {
 			continue
 		}
 		nonIoFogCount++
@@ -334,7 +328,7 @@ func (m *Manager) getUnwantedImagesList(ctx context.Context, eng engine.Containe
 			usedImageIDs[cont.Image] = true // fallback: use image name directly
 		}
 	}
-	logging.LogDebug(moduleName, fmt.Sprintf("Running non-ioFog containers: %d", nonIoFogCount))
+	logging.LogDebug(moduleName, fmt.Sprintf("Running non-managed containers: %d", nonIoFogCount))
 
 	// Protect images for ALL configured microservices (running + stopped).
 	if m.getMicroserviceImages != nil {
@@ -454,4 +448,8 @@ func (m *Manager) GetName() string {
 // GetModuleIndex returns the module index (Docker Pruning Manager doesn't have a specific index)
 func (m *Manager) GetModuleIndex() int {
 	return -1 // Docker Pruning Manager is not tracked in status
+}
+
+func isManagedContainer(cont engine.Container) bool {
+	return workloadmeta.IsManagedByIofog(cont.Labels)
 }
