@@ -545,8 +545,11 @@ func (c *Client) isNetworkModeEqual(inspect types.ContainerJSON, ms *models.Micr
 		return containerNetworkMode == "host"
 	}
 
-	// All non-host-network containers must be on the "iofog" network.
-	return containerNetworkMode == "iofog"
+	expectedNetwork := "iofog"
+	if strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") {
+		expectedNetwork = "iofog-local"
+	}
+	return containerNetworkMode == expectedNetwork
 }
 
 // isEnvVarsEqual compares if microservice environment variables are equal to container environment variables
@@ -839,13 +842,13 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	// All non-host-network containers must be on the "iofog" user-defined bridge so that
 	// Docker DNS aliases (service discovery) work correctly.  ExtraHosts are independent
 	// — they add entries to /etc/hosts and are only set when there are valid entries.
+	targetNetwork := "iofog"
+	if strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") {
+		targetNetwork = "iofog-local"
+	}
 	if ms.HostNetworkMode {
 		hostConfig.NetworkMode = container.NetworkMode("host")
 	} else {
-		targetNetwork := "iofog"
-		if strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") {
-			targetNetwork = "iofog-local"
-		}
 		hostConfig.NetworkMode = container.NetworkMode(targetNetwork)
 		if len(validHosts) > 0 {
 			hostConfig.ExtraHosts = validHosts
@@ -917,7 +920,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	if !ms.HostNetworkMode && ms.ApplicationName != "" && ms.MicroserviceName != "" {
 		networkingConfig = &network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
-				"iofog": {
+				targetNetwork: {
 					Aliases: []string{ms.ApplicationName + "." + ms.MicroserviceName},
 				},
 			},
