@@ -1,0 +1,206 @@
+package dnsresolver
+
+import (
+	"net"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/miekg/dns"
+)
+
+func newTestResolver() *Resolver {
+	return &Resolver{
+		workloads: make(map[string]*WorkloadRecord),
+		index: map[Scope]map[string]map[string]struct{}{
+			ScopeManaged: make(map[string]map[string]struct{}),
+			ScopeLocal:   make(map[string]map[string]struct{}),
+		},
+		servers:          make(map[Scope]*serverSet),
+		forwardState:     make(map[string]*upstreamForwardState),
+		forwardResolveFn: defaultForwardResolvers,
+		forwardNowFn:     time.Now,
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	got := normalizeName("APP.Service.SVC.BRIDGE.LOCAL.")
+	if got != "app.service.svc.bridge.local" {
+		t.Fatalf("unexpected normalized name: %s", got)
+	}
+}
+
+func TestReservedTieBreakNewestThenUUID(t *testing.T) {
+	r := newTestResolver()
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "b",
+		Application: "core",
+		Name:        "router-b",
+		Scope:       ScopeManaged,
+		IP:          "10.1.1.2",
+		IsRouter:    true,
+		Active:      true,
+		StartedAt:   100,
+	})
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "a",
+		Application: "core",
+		Name:        "router-a",
+		Scope:       ScopeManaged,
+		IP:          "10.1.1.1",
+		IsRouter:    true,
+		Active:      true,
+		StartedAt:   100,
+	})
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "z",
+		Application: "core",
+		Name:        "router-z",
+		Scope:       ScopeManaged,
+		IP:          "10.1.1.9",
+		IsRouter:    true,
+		Active:      true,
+		StartedAt:   200,
+	})
+
+	known, answers, denied := r.resolveInternal(ScopeManaged, reservedRouterName, 1)
+	if !known || denied {
+		t.Fatalf("expected known reserved name without policy deny")
+	}
+	if len(answers) != 1 {
+		t.Fatalf("expected 1 answer, got %d", len(answers))
+	}
+	if answers[0].String() == "" || answers[0].Header().Name == "" {
+		t.Fatalf("expected valid RR for reserved router name")
+	}
+	// Newest startedAt should win (10.1.1.9).
+	if got := answers[0].String(); !strings.Contains(got, "10.1.1.9") {
+		t.Fatalf("expected newest router IP, got RR: %s", got)
+	}
+}
+
+func TestKnownInactiveReturnsNoData(t *testing.T) {
+	r := newTestResolver()
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "ms-1",
+		Application: "app",
+		Name:        "svc",
+		Scope:       ScopeManaged,
+		IP:          "10.2.2.2",
+		Active:      false,
+	})
+
+	known, answers, denied := r.resolveInternal(ScopeManaged, "app.svc", 1)
+	if !known || denied {
+		t.Fatalf("expected known name in scope")
+	}
+	if len(answers) != 0 {
+		t.Fatalf("expected NODATA style empty answer for inactive target")
+	}
+}
+
+func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
+	r := newTestResolver()
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "local-ms",
+		Application: "local",
+		Name:        "svc",
+		Scope:       ScopeLocal,
+		IP:          "10.3.3.3",
+		Active:      true,
+	})
+
+	known, _, denied := r.resolveInternal(ScopeManaged, "local.svc", 1)
+	if known {
+		t.Fatalf("managed scope should not treat local scope name as directly known")
+	}
+	if !denied {
+		t.Fatalf("expected policy denied indication for other-scope name")
+	}
+}
+
+func TestCompatHostAliasesArePolicyGated(t *testing.T) {
+	if !isHostReservedName(compatDockerHostName, true) {
+		t.Fatalf("compat host alias should be enabled when policy is on")
+	}
+	if isHostReservedName(compatDockerHostName, false) {
+		t.Fatalf("compat host alias should be disabled when policy is off")
+	}
+}
+
+func TestPerSourceRateLimitDoesNotAffectOtherSources(t *testing.T) {
+	r := newTestResolver()
+	r.rateLimitEnabled = true
+	r.rateLimitRPS = 1
+	r.rateLimitBurst = 1
+	r.rateLimiter = newSourceRateLimiter(1, 1, time.Minute)
+	r.logSampler = newSampledLogger(time.Millisecond)
+	r.maxRequestBytes = defaultMaxRequestBytes
+	r.maxQNameBytes = defaultMaxQNameBytes
+
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "ms1",
+		Application: "app",
+		Name:        "svc",
+		Scope:       ScopeManaged,
+		IP:          "10.9.9.9",
+		Active:      true,
+	})
+
+	req := new(dns.Msg)
+	req.SetQuestion("app.svc.", dns.TypeA)
+
+	w1 := &testDNSWriter{remote: &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 5300}}
+	r.handleDNSQuery(ScopeManaged, w1, req)
+	if w1.msg == nil || w1.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("first request should pass, got rcode=%v", w1.msg)
+	}
+
+	w2 := &testDNSWriter{remote: &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 5301}}
+	r.handleDNSQuery(ScopeManaged, w2, req)
+	if w2.msg == nil || w2.msg.Rcode != dns.RcodeRefused {
+		t.Fatalf("second same-source request should be rate-limited")
+	}
+
+	w3 := &testDNSWriter{remote: &net.UDPAddr{IP: net.ParseIP("10.0.0.2"), Port: 5301}}
+	r.handleDNSQuery(ScopeManaged, w3, req)
+	if w3.msg == nil || w3.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("different source should not be impacted by other source limit")
+	}
+
+	s := r.Snapshot()
+	if s.RateLimitedTotal == 0 {
+		t.Fatalf("expected rate_limited counter increment")
+	}
+}
+
+func TestSafetyRejectsOversizeAndUnsupportedType(t *testing.T) {
+	r := newTestResolver()
+	r.rateLimitEnabled = false
+	r.rateLimiter = newSourceRateLimiter(1, 1, time.Minute)
+	r.logSampler = newSampledLogger(time.Millisecond)
+	r.maxRequestBytes = 12
+	r.maxQNameBytes = defaultMaxQNameBytes
+
+	req := new(dns.Msg)
+	req.SetQuestion("oversized.example.org.", dns.TypeA)
+	w := &testDNSWriter{}
+	r.handleDNSQuery(ScopeManaged, w, req)
+	if w.msg == nil || w.msg.Rcode != dns.RcodeFormatError {
+		t.Fatalf("oversize request should be format error")
+	}
+
+	r.maxRequestBytes = defaultMaxRequestBytes
+	req2 := new(dns.Msg)
+	req2.SetQuestion("example.org.", dns.TypeTXT)
+	w2 := &testDNSWriter{}
+	r.handleDNSQuery(ScopeManaged, w2, req2)
+	if w2.msg == nil || w2.msg.Rcode != dns.RcodeNotImplemented {
+		t.Fatalf("unsupported qtype should be rejected with not implemented")
+	}
+
+	s := r.Snapshot()
+	if s.RejectedTotal < 2 {
+		t.Fatalf("expected rejected counter increment for safety checks, got=%d", s.RejectedTotal)
+	}
+}
