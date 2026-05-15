@@ -325,7 +325,6 @@ Build matrix (each arch emits **-lite** and **-full** binaries):
 | SSH proxy / tunnel | ✅ |
 | JWT authentication | ✅ |
 | TLS certificate management | ✅ |
-| Diagnostics & strace | ✅ |
 | Security hardening (gosec) | ✅ |
 | Tarball + `install.sh` (this repo) | ✅ |
 | Legacy DEB / RPM (Java line) | separate |

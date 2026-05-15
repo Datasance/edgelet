@@ -17,7 +17,6 @@ agent-go/
 │   ├── auth/                # JWT signing (RS256) for controller API authentication
 │   ├── config/              # Singleton Config; YAML load/save; SIGHUP reload
 │   ├── constants/           # Engine names, containerd namespace/path constants
-│   ├── diagnostics/         # strace monitoring, image snapshot upload
 │   ├── edgeguard/           # Hardware threshold monitor (disk, memory)
 │   ├── embedded/            # Extracts runc, shim, CNI plugins, pause.tar.gz from binary
 │   ├── engines/             # Factory: ContainerEngine from config string
@@ -137,7 +136,6 @@ The controller-facing brain. Runs three background workers:
 |--------|-----------|---------|
 | `postStatusWorker` | `cfg.StatusFrequency` | `PUT /api/v3/agent/status` with aggregated status |
 | `getChangesWorker` | `cfg.ChangeFrequency` | `GET /api/v3/agent/config/changes`; dispatches handlers |
-| `postDiagnosticsWorker` | 10 s | Posts strace data (only when strace monitoring is configured) |
 
 On each `getChangesWorker` cycle, the field agent checks a set of boolean change flags returned by the controller (`microserviceList`, `registries`, `volumeMounts`, `config`, `tunnel`, `version`, …). For each active flag it calls the corresponding loader:
 
