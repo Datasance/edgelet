@@ -18,6 +18,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/pruning"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/store"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
 	"github.com/google/uuid"
@@ -38,12 +39,12 @@ type Facade struct {
 type DeployProgressCallback func(stage string, message string)
 
 const (
-	DeployStageParsing   = "parsing"
-	DeployStagePulling   = "pulling"
-	DeployStageCreating  = "creating"
-	DeployStageStarting  = "starting"
+	DeployStageParsing    = "parsing"
+	DeployStagePulling    = "pulling"
+	DeployStageCreating   = "creating"
+	DeployStageStarting   = "starting"
 	DeployStagePersisting = "persisting"
-	DeployStageDone      = "done"
+	DeployStageDone       = "done"
 )
 
 func emitDeployProgress(cb DeployProgressCallback, stage, message string) {
@@ -381,9 +382,9 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 			"image":        local.ImageName,
 			"manifestYAML": local.ManifestYAML,
 			"raw": map[string]interface{}{
-				"localDeployment": local,
-				"engineInspect":   containerInspect,
-				"engineType":      currentEngineName(f.cfg),
+				"localDeployment":      local,
+				"engineInspect":        containerInspect,
+				"engineType":           currentEngineName(f.cfg),
 				"inspectSchemaVersion": "v1",
 			},
 		}, nil
@@ -417,9 +418,9 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 		"errorMessage": status.ErrorMessage,
 		"healthStatus": status.HealthStatus,
 		"raw": map[string]interface{}{
-			"processManager": status,
-			"engineInspect":  containerInspect,
-			"engineType":     currentEngineName(f.cfg),
+			"processManager":       status,
+			"engineInspect":        containerInspect,
+			"engineType":           currentEngineName(f.cfg),
 			"inspectSchemaVersion": "v1",
 		},
 	}, nil
@@ -503,17 +504,8 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 	} else if len(matches) > 1 {
 		return "", &ErrAmbiguousMicroserviceSelector{Matches: matches}
 	} else if cont != nil {
-		if uuid, ok := cont.Labels["iofog-ms"]; ok && strings.TrimSpace(uuid) != "" {
-			return strings.TrimSpace(uuid), nil
-		}
-		for _, name := range cont.Names {
-			clean := strings.TrimPrefix(strings.TrimSpace(name), "/")
-			if strings.HasPrefix(clean, "iofog_") {
-				candidate := strings.TrimPrefix(clean, "iofog_")
-				if strings.TrimSpace(candidate) != "" {
-					return candidate, nil
-				}
-			}
+		if uuid := workloadmeta.MicroserviceUIDFromLabels(cont.Labels); uuid != "" {
+			return uuid, nil
 		}
 		derived := processmanager.GetInstance().GetMicroserviceUUIDForContainer(*cont)
 		if strings.TrimSpace(derived) != "" && derived != cont.ID {
@@ -816,6 +808,7 @@ func manifestToMicroservice(doc *models.LocalDeployManifest, deploymentID, image
 	ms := models.NewMicroservice(deploymentID, image)
 	ms.MicroserviceName = doc.Metadata.Name
 	ms.ApplicationName = "local"
+	ms.Labels = cloneStringMap(doc.Metadata.Labels)
 	ms.RegistryID = 2
 	ms.HostNetworkMode = doc.Spec.Container.HostNetworkMode
 	ms.IsPrivileged = doc.Spec.Container.IsPrivileged
@@ -877,4 +870,19 @@ func manifestToMicroservice(doc *models.LocalDeployManifest, deploymentID, image
 		ms.ExtraHosts = append(ms.ExtraHosts, strings.TrimSpace(host.Name)+":"+strings.TrimSpace(host.Address))
 	}
 	return ms
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(v)
+	}
+	return out
 }

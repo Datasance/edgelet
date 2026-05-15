@@ -12,6 +12,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -63,7 +64,7 @@ func podSandboxNeedsLinuxBlock(ms *models.Microservice) bool {
 
 // PodSandboxConfigFromMicroservice builds a CRI PodSandboxConfig from a
 // microservice. 1 microservice = 1 pod sandbox.
-func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir string) *runtimeapi.PodSandboxConfig {
+func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir, nodeUID string) *runtimeapi.PodSandboxConfig {
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
 	metadata := &runtimeapi.PodSandboxMetadata{
 		Name:      containerName,
@@ -73,11 +74,18 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir 
 	}
 
 	portMappings := buildCRIPortMappings(ms.PortMappings)
-	labels := map[string]string{
-		"iofog-ms":   ms.MicroserviceUUID,
-		"iofog-name": ms.MicroserviceName,
-		"iofog-app":  ms.ApplicationName,
-	}
+	labels := workloadmeta.BuildLabels(workloadmeta.BuildInput{
+		MicroserviceUUID: ms.MicroserviceUUID,
+		MicroserviceName: ms.MicroserviceName,
+		ApplicationName:  ms.ApplicationName,
+		NodeUUID:         nodeUID,
+		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		IsRouter:         ms.IsRouter,
+		IsNats:           ms.IsNats,
+		HostNetwork:      ms.HostNetworkMode,
+		IsSystem:         false,
+		UserLabels:       ms.Labels,
+	})
 	annotations := map[string]string{
 		"iofog.network": constants.IofogNetworkName,
 	}
@@ -116,7 +124,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir 
 // ContainerConfigFromMicroservice builds a CRI ContainerConfig from a
 // microservice. Includes image, env, args, mounts, and security context.
 // sandboxID is stored in labels for teardown and recovery.
-func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, envVars []string, logPath string, hostsFilePath string, resolvFilePath string, sandboxID string) (*runtimeapi.ContainerConfig, error) {
+func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, envVars []string, logPath string, hostsFilePath string, resolvFilePath string, sandboxID string, nodeUID string) (*runtimeapi.ContainerConfig, error) {
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
 	metadata := &runtimeapi.ContainerMetadata{
 		Name:    containerName,
@@ -141,14 +149,19 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 		return nil, err
 	}
 
-	labels := map[string]string{
-		"iofog-ms":   ms.MicroserviceUUID,
-		"iofog-name": ms.MicroserviceName,
-		"iofog-app":  ms.ApplicationName,
-	}
-	if sandboxID != "" {
-		labels["iofog-sandbox-id"] = sandboxID
-	}
+	labels := workloadmeta.BuildLabels(workloadmeta.BuildInput{
+		MicroserviceUUID: ms.MicroserviceUUID,
+		MicroserviceName: ms.MicroserviceName,
+		ApplicationName:  ms.ApplicationName,
+		NodeUUID:         nodeUID,
+		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		IsRouter:         ms.IsRouter,
+		IsNats:           ms.IsNats,
+		HostNetwork:      ms.HostNetworkMode,
+		IsSystem:         false,
+		SandboxID:        sandboxID,
+		UserLabels:       ms.Labels,
+	})
 
 	secCtx := &runtimeapi.LinuxContainerSecurityContext{
 		Privileged: ms.IsPrivileged,

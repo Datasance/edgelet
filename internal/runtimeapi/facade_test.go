@@ -19,6 +19,21 @@ spec:
 `) + "\n"
 }
 
+func testLocalManifestWithLabelsYAML() string {
+	return strings.TrimSpace(`
+apiVersion: iofog.org/v3
+kind: Microservice
+metadata:
+  name: svc-a
+  labels:
+    team: edge
+    owner: runtime
+spec:
+  images:
+    x86: nginx:latest
+`) + "\n"
+}
+
 func TestFacadePullImage_ValidatesRequiredImage(t *testing.T) {
 	f := NewFacade()
 	if _, err := f.PullImage("   ", nil, ""); err == nil || !strings.Contains(err.Error(), "image is required") {
@@ -153,5 +168,27 @@ func TestFacadeApplyLocalManifest_ProgressIncludesPersisting_OnFailure(t *testin
 	}
 	if !foundPersisting {
 		t.Fatalf("expected %q stage before failure, got: %v", DeployStagePersisting, stages)
+	}
+}
+
+func TestManifestToMicroservice_PropagatesMetadataLabels(t *testing.T) {
+	f := NewFacade()
+	doc, err := f.ParseAndValidateLocalManifest(testLocalManifestWithLabelsYAML())
+	if err != nil {
+		t.Fatalf("expected manifest to parse: %v", err)
+	}
+
+	ms := manifestToMicroservice(doc, "dep-1", "nginx:latest")
+	if got := ms.Labels["team"]; got != "edge" {
+		t.Fatalf("expected propagated label team=edge, got %q", got)
+	}
+	if got := ms.Labels["owner"]; got != "runtime" {
+		t.Fatalf("expected propagated label owner=runtime, got %q", got)
+	}
+
+	// Ensure microservice labels are decoupled from manifest map mutations.
+	doc.Metadata.Labels["team"] = "mutated"
+	if got := ms.Labels["team"]; got != "edge" {
+		t.Fatalf("expected copied labels map, got team=%q", got)
 	}
 }
