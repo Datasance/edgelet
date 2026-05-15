@@ -22,7 +22,7 @@
 | MemoryLimit | LinuxContainerResources.MemoryLimitInBytes | DONE |
 | Annotations | ContainerConfig.Annotations | DONE |
 | CdiDevs | ContainerConfig.CDIDevices | DONE |
-| Healthcheck | Stored in labels (ProcessManager uses) | DONE (labels) |
+| Healthcheck | `iofog.org/healthcheck` label (JSON); exec runner | DONE (labels) |
 
 ## Pod Sandbox
 

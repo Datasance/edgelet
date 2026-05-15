@@ -240,7 +240,7 @@ Only active when `containerEngine=iofog`. Docker and Podman engines support nati
 
 On each interval (`cfg.HealthcheckIntervalSeconds`, default 30 s):
 1. `GetRunningContainers()` — lists running non-sandbox containers
-2. For each container, reads `*models.Healthcheck` from the `iofog-healthcheck` container label (written at creation; survives restarts)
+2. For each container, reads `*models.Healthcheck` from the `iofog.org/healthcheck` container label when not available from controller state (written at creation; survives restarts)
 3. Skips containers still in `startPeriod`
 4. Calls `ExecWithExitCode(containerID, cmd, timeout)` on the iofog engine
 5. Tracks `consecutiveFailures`; after `hc.Retries` failures reports `"unhealthy"` to Status Reporter
@@ -324,7 +324,7 @@ Every 5 seconds, `containersMonitor()` calls `AreMicroserviceAndContainerEqual(c
 1. Image name (from container metadata)
 2. Environment variables (desired keys present in actual OCI spec env)
 3. Port mappings — read from `iofog-ports` label (skipped for host-network containers where CRI ignores port bindings)
-4. Network mode — read from `iofog-hostnet` label (`"true"` = host network; label-based to avoid CRI OCI spec path ambiguity)
+4. Network mode — read from canonical `iofog.org/host-network` (`"true"` / `"false"`; label-based to avoid CRI OCI netns path ambiguity)
 
 Any mismatch schedules an `UPDATE` task which pulls the new image, removes the old container, and creates the replacement.
 

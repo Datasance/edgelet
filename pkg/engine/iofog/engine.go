@@ -44,6 +44,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
@@ -240,7 +241,7 @@ func isSandboxContainer(ctx context.Context, c client.Container) bool {
 
 func (e *Engine) GetContainer(microserviceUUID string) (*engine.Container, error) {
 	ctx := e.ctx()
-	cs, err := e.client.Containers(ctx, fmt.Sprintf(`labels."iofog-ms"=="%s"`, microserviceUUID))
+	cs, err := e.client.Containers(ctx, fmt.Sprintf(`labels."%s"=="%s"`, workloadmeta.LabelMicroserviceUID, microserviceUUID))
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +339,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		return "", fmt.Errorf("image %s not found (pull first): %w", ms.ImageName, err)
 	}
 
-	envVars := buildEnvVars(ms, cfg.TimeZone)
+	envVars := buildIofogContainerEnv(ms, cfg)
 
 	// Build /etc/hosts before RunPodSandbox (needed for ContainerConfig mounts).
 	hostsFilePath := ""
@@ -371,7 +372,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	}
 
 	logDirectory, logPath := cri.LogPathsForCRI(e.logDir, ms.MicroserviceUUID)
-	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory)
+	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory, cfg.IOFogUUID)
 	runtimeHandler := cri.GetRuntimeHandler(ms)
 
 	sandboxID, err := e.criClient.RunPodSandbox(ctx, podConfig, runtimeHandler)
@@ -387,32 +388,18 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		}
 	}
 
-	containerConfig, err := cri.ContainerConfigFromMicroservice(ms, hostname, envVars, logPath, hostsFilePath, resolvFilePath, sandboxID)
+	containerConfig, err := cri.ContainerConfigFromMicroservice(ms, hostname, envVars, logPath, hostsFilePath, resolvFilePath, sandboxID, cfg.IOFogUUID)
 	if err != nil {
 		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
 		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
 		return "", fmt.Errorf("build container config for %s: %w", containerName, err)
 	}
 
-	// Add extra labels for engine/ProcessManager.
-	containerConfig.Labels[labelIOFogUUID] = cfg.IOFogUUID
+	// Operational labels (runtime state not covered by workloadmeta BuildLabels).
 	portsJSON, _ := json.Marshal(ms.PortMappings)
 	containerConfig.Labels[labelPorts] = string(portsJSON)
 	containerConfig.Labels[labelLogSize] = labelInt64(ms.LogSize)
 	containerConfig.Labels[labelIP] = ipAddr
-	if ms.HostNetworkMode {
-		// Record host-network mode in a label so AreMicroserviceAndContainerEqual can
-		// detect it reliably. The OCI spec for a CRI container always has a non-empty
-		// network namespace path (pointing to the sandbox netns), which makes the
-		// spec-based hasHostNetNS check return false even for host-network containers.
-		containerConfig.Labels[labelHostNet] = "true"
-	}
-	if ms.IsRouter {
-		containerConfig.Labels["iofog-router"] = "true"
-	}
-	if ms.IsNats {
-		containerConfig.Labels["iofog-nats"] = "true"
-	}
 	if ms.Healthcheck != nil {
 		if hcJSON, err := json.Marshal(ms.Healthcheck); err == nil {
 			containerConfig.Labels[labelHealthcheck] = string(hcJSON)
@@ -537,7 +524,7 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	msUUID := ""
 	if c, err := e.client.LoadContainer(ctx, containerID); err == nil {
 		if info, err := c.Info(ctx); err == nil && info.Labels != nil {
-			msUUID = info.Labels["iofog-ms"]
+			msUUID = workloadmeta.MicroserviceUIDFromLabels(info.Labels)
 		}
 	}
 	if st, ok := e.store.get(containerID); ok {
@@ -622,14 +609,15 @@ func dnsScopeFromMicroservice(ms *models.Microservice) dnsresolver.Scope {
 }
 
 func dnsRecordFromLabels(labels map[string]string, ip string) dnsresolver.WorkloadRecord {
+	role := strings.TrimSpace(labels[workloadmeta.LabelRole])
 	rec := dnsresolver.WorkloadRecord{
-		UUID:        strings.TrimSpace(labels["iofog-ms"]),
-		Name:        strings.TrimSpace(labels["iofog-name"]),
-		Application: strings.TrimSpace(labels["iofog-app"]),
+		UUID:        workloadmeta.MicroserviceUIDFromLabels(labels),
+		Name:        strings.TrimSpace(labels[workloadmeta.LabelAppName]),
+		Application: strings.TrimSpace(labels[workloadmeta.LabelAppPartOf]),
 		IP:          strings.TrimSpace(ip),
-		HostNetwork: labels[labelHostNet] == "true",
-		IsRouter:    labels["iofog-router"] == "true",
-		IsNats:      labels["iofog-nats"] == "true",
+		HostNetwork: strings.EqualFold(strings.TrimSpace(labels[workloadmeta.LabelHostNetwork]), "true"),
+		IsRouter:    role == workloadmeta.RoleRouter,
+		IsNats:      role == workloadmeta.RoleNats,
 	}
 	if strings.EqualFold(strings.TrimSpace(rec.Application), "local") && !rec.HostNetwork {
 		rec.Scope = dnsresolver.ScopeLocal
@@ -695,7 +683,7 @@ func (e *Engine) microserviceUUIDForContainer(ctx context.Context, containerID s
 	if err != nil || info.Labels == nil {
 		return ""
 	}
-	return strings.TrimSpace(info.Labels["iofog-ms"])
+	return workloadmeta.MicroserviceUIDFromLabels(info.Labels)
 }
 
 // removeContainerNative removes a container directly via containerd APIs.
@@ -1654,7 +1642,7 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 	}
 
 	// 2. Environment variables (compare as sets; only desired keys are checked against actual).
-	desiredEnv := buildEnvVars(ms, config.GetInstance().TimeZone)
+	desiredEnv := buildIofogContainerEnv(ms, config.GetInstance())
 	if !envSetsEqual(spec.Process.Env, desiredEnv) {
 		log.Debugf("AreMicroserviceAndContainerEqual %s: env mismatch", shortID)
 		return false
@@ -1677,11 +1665,8 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 		}
 	}
 
-	// 4. Network mode — read from the iofog-hostnet label written at creation time.
-	// The CRI container's OCI spec always has a non-empty network namespace path
-	// (it references the sandbox netns even for host-network pods), so hasHostNetNS(spec)
-	// is unreliable for CRI containers.
-	storedHostNet := info.Labels[labelHostNet] == "true"
+	// 4. Network mode — read canonical host-network label (OCI netns path is ambiguous for CRI).
+	storedHostNet := strings.EqualFold(strings.TrimSpace(info.Labels[workloadmeta.LabelHostNetwork]), "true")
 	if ms.HostNetworkMode != storedHostNet {
 		log.Debugf("AreMicroserviceAndContainerEqual %s: network mismatch want hostNet=%v stored=%v",
 			shortID, ms.HostNetworkMode, storedHostNet)
@@ -2039,14 +2024,7 @@ func (e *Engine) ResizeExecSession(execID string, cols, rows uint32) error {
 // --- Helpers ---
 
 func (e *Engine) GetContainerMicroserviceUUID(cont engine.Container) string {
-	if uuid, ok := cont.Labels["iofog-ms"]; ok {
-		return uuid
-	}
-	prefix := utils.IOFogDockerContainerNamePrefix
-	if strings.HasPrefix(cont.ID, prefix) {
-		return cont.ID[len(prefix):]
-	}
-	return cont.ID
+	return workloadmeta.MicroserviceUIDFromLabels(cont.Labels)
 }
 
 func (e *Engine) GetContainerName(cont engine.Container) string {
@@ -2088,7 +2066,7 @@ func containerFromContainerd(ctx context.Context, c client.Container) (*engine.C
 	// value with the expected prefix and updateRunningMicroservicesCount counts correctly.
 	// Pause containers are already excluded by isSandboxContainer before this is called.
 	name := c.ID()
-	if uuid, ok := info.Labels["iofog-ms"]; ok && uuid != "" {
+	if uuid := workloadmeta.MicroserviceUIDFromLabels(info.Labels); uuid != "" {
 		name = utils.IOFogDockerContainerNamePrefix + uuid
 	}
 
@@ -2102,28 +2080,34 @@ func containerFromContainerd(ctx context.Context, c client.Container) (*engine.C
 	}, nil
 }
 
-// buildEnvVars builds the environment variable slice for a microservice,
-// injecting SELFNAME and TZ (if not already set by the user).
-func buildEnvVars(ms *models.Microservice, timeZone string) []string {
-	envVars := []string{fmt.Sprintf("SELFNAME=%s", ms.MicroserviceUUID)}
-	for _, ev := range ms.EnvVars {
-		envVars = append(envVars, fmt.Sprintf("%s=%s", ev.Key, ev.Value))
+func envVarMapFromMicroservice(envVars []*models.EnvVar) map[string]string {
+	m := make(map[string]string, len(envVars))
+	for _, ev := range envVars {
+		if ev != nil && (ev.Key != "" || ev.Value != "") {
+			m[ev.Key] = ev.Value
+		}
 	}
+	return m
+}
 
-	// Inject TZ if not already set — matches Docker engine behaviour.
-	hasTZ := false
-	for _, env := range envVars {
-		if strings.HasPrefix(strings.TrimSpace(env), "TZ=") {
-			hasTZ = true
-			break
-		}
+// buildIofogContainerEnv returns canonical IOFOG_* env and user env with reserved-key and TZ policy.
+func buildIofogContainerEnv(ms *models.Microservice, cfg *config.Config) []string {
+	if cfg == nil {
+		cfg = config.GetInstance()
 	}
-	if !hasTZ {
-		tz := timeZone
-		if tz == "" {
-			tz = "UTC"
-		}
-		envVars = append(envVars, fmt.Sprintf("TZ=%s", tz))
+	in := workloadmeta.BuildInput{
+		MicroserviceUUID: ms.MicroserviceUUID,
+		MicroserviceName: ms.MicroserviceName,
+		ApplicationName:  ms.ApplicationName,
+		NodeUUID:         cfg.IOFogUUID,
+		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		IsRouter:         ms.IsRouter,
+		IsNats:           ms.IsNats,
+		HostNetwork:      ms.HostNetworkMode,
+		IsSystem:         false,
+		TimeZone:         cfg.TimeZone,
+		UserEnv:          envVarMapFromMicroservice(ms.EnvVars),
+		UserLabels:       ms.Labels,
 	}
-	return envVars
+	return workloadmeta.BuildEnv(in)
 }

@@ -4,27 +4,22 @@ package iofog
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 )
 
-// Container label keys stored on each containerd container.
-// All keys are prefixed "iofog-" to avoid collisions with containerd's own labels.
+// Operational label keys persisted on containerd workloads (engine state; not workload identity).
+// Identity and RBAC-aligned metadata use workloadmeta canonical keys (iofog.org/*, app.kubernetes.io/*).
 const (
 	labelIP          = "iofog-ip"
 	labelNetns       = "iofog-netns"
-	labelSandboxID   = "iofog-sandbox-id"
 	labelStartedAt   = "iofog-started-at"
 	labelPorts       = "iofog-ports"
 	labelLogSize     = "iofog-log-size"
-	labelHealthcheck = "iofog-healthcheck"
-	// labelHostNet is set to "true" on host-network containers. The OCI spec for CRI
-	// containers always has a non-empty network namespace path (pointing to the sandbox
-	// netns), so spec-based detection of host-network mode is unreliable.
-	labelHostNet = "iofog-hostnet"
-	// labelIOFogUUID is the fog node's own UUID. Used by StopRunningMicroservices to
-	// filter containers belonging to this agent instance on deprovision.
-	labelIOFogUUID = "iofog-uuid"
+	labelHealthcheck = workloadmeta.LabelHealthcheck
 )
 
 // containerState holds per-container runtime state kept in memory.
@@ -73,7 +68,7 @@ func stateFromLabels(labels map[string]string) *containerState {
 	st := &containerState{
 		netnsPath: labels[labelNetns],
 		ip:        labels[labelIP],
-		sandboxID: labels[labelSandboxID],
+		sandboxID: strings.TrimSpace(labels[workloadmeta.LabelSandboxID]),
 	}
 	if v, ok := labels[labelStartedAt]; ok {
 		if ts, err := strconv.ParseInt(v, 10, 64); err == nil {
