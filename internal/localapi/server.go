@@ -2,12 +2,14 @@ package localapi
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/auth"
@@ -24,12 +26,15 @@ type Server struct {
 	httpServer       *http.Server
 	unixServer       *http.Server
 	unixListener     net.Listener
+	tcpListener      net.Listener
 	router           *Router
 	port             int
 	unixSocketPath   string
 	enableUnixSocket bool
 	tlsCertPath      string
 	tlsKeyPath       string
+	readyCh          chan struct{}
+	readyOnce        sync.Once
 }
 
 // NewServer creates a new Local API server
@@ -57,6 +62,7 @@ func NewServer(port int) *Server {
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
+		readyCh: make(chan struct{}),
 	}
 }
 
@@ -80,7 +86,30 @@ func (s *Server) Start() error {
 	}
 	s.tlsCertPath = certPath
 	s.tlsKeyPath = keyPath
-	return s.httpServer.ListenAndServeTLS(s.tlsCertPath, s.tlsKeyPath)
+
+	tcpListener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("failed to bind local api TCP listener on %s: %w", s.httpServer.Addr, err)
+	}
+	s.tcpListener = tcpListener
+
+	s.readyOnce.Do(func() { close(s.readyCh) })
+
+	cert, err := tls.LoadX509KeyPair(s.tlsCertPath, s.tlsKeyPath)
+	if err != nil {
+		_ = s.tcpListener.Close()
+		return fmt.Errorf("failed to load localapi TLS keypair: %w", err)
+	}
+
+	tlsListener := tls.NewListener(s.tcpListener, &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	})
+
+	if err := s.httpServer.Serve(tlsListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // Shutdown gracefully shuts down the server
@@ -99,11 +128,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.unixListener != nil {
 		_ = s.unixListener.Close()
 	}
+	if s.tcpListener != nil {
+		_ = s.tcpListener.Close()
+	}
 	if s.enableUnixSocket {
 		_ = os.Remove(s.unixSocketPath)
 	}
 
 	return firstErr
+}
+
+// Ready returns a channel closed once all API listeners are bound.
+func (s *Server) Ready() <-chan struct{} {
+	return s.readyCh
 }
 
 func (s *Server) startUnixSocket() error {

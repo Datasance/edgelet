@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
@@ -11,22 +14,69 @@ import (
 
 var (
 	agentStartTime = time.Now()
+	localAPIState  = localAPIStartupState{
+		phase:  LocalAPIStartupInitializing,
+		reason: "local_api_initializing",
+	}
+	localAPIStateMu sync.RWMutex
 )
+
+const (
+	LocalAPIStartupInitializing = "initializing"
+	LocalAPIStartupListening    = "listening"
+	LocalAPIStartupFailed       = "failed"
+)
+
+type localAPIStartupState struct {
+	phase  string
+	reason string
+}
+
+// SetLocalAPIStartupState updates the listener startup phase for health checks.
+func SetLocalAPIStartupState(phase, reason string) {
+	localAPIStateMu.Lock()
+	defer localAPIStateMu.Unlock()
+	localAPIState.phase = strings.TrimSpace(phase)
+	localAPIState.reason = strings.TrimSpace(reason)
+}
+
+func getLocalAPIStartupState() localAPIStartupState {
+	localAPIStateMu.RLock()
+	defer localAPIStateMu.RUnlock()
+	return localAPIState
+}
 
 // HealthLiveHandler handles /health/live — liveness probe.
 // Returns 200 if the process is running and the HTTP server can respond.
 // Used by orchestrators (Kubernetes, systemd) to determine if the process should be restarted.
 func HealthLiveHandler(w http.ResponseWriter, _ *http.Request) {
+	state := getLocalAPIStartupState()
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","localApiPhase":"%s"}`, state.phase)))
 }
 
 // HealthReadyHandler handles /health/ready — readiness probe.
 // Returns 200 if the agent is provisioned and ready to serve (e.g. modules started).
 // Returns 503 if not yet ready (e.g. still starting, not provisioned).
 func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
+	state := getLocalAPIStartupState()
+	if state.phase == LocalAPIStartupFailed {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_start_failed","detail":"%s"}`, state.reason)))
+		return
+	}
+	if state.phase != LocalAPIStartupListening {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_listener_not_ready","phase":"%s"}`, state.phase)))
+		return
+	}
+
 	cfg := config.GetInstance()
 	if cfg == nil {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"status":"not_ready","reason":"config_not_loaded"}`))
 		return
@@ -48,7 +98,7 @@ func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_, _ = w.Write([]byte(`{"status":"not_ready","reason":"not_provisioned_or_not_running"}`))
+	_, _ = w.Write([]byte(`{"status":"not_ready","reason":"daemon_not_running_or_not_provisioned"}`))
 }
 
 // MetricsStartTime returns agent start time for metrics.

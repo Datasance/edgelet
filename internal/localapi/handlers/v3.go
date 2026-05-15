@@ -79,31 +79,31 @@ type localExecCallback struct {
 }
 
 type imagePullOperation struct {
-	OperationID    string
-	Status         string
-	Progress       int
-	Image          string
-	ResolvedImage  string
-	RegistryID     *int
-	Platform       string
-	Engine         string
-	Error          string
-	StartedAt      time.Time
-	EndedAt        *time.Time
+	OperationID   string
+	Status        string
+	Progress      int
+	Image         string
+	ResolvedImage string
+	RegistryID    *int
+	Platform      string
+	Engine        string
+	Error         string
+	StartedAt     time.Time
+	EndedAt       *time.Time
 }
 
 type deployApplyOperation struct {
-	OperationID   string
-	Status        string
-	Stage         string
-	Kind          string
-	Name          string
-	Image         string
-	DeploymentID  string
-	ErrorCode     string
-	ErrorMessage  string
-	StartedAt     time.Time
-	EndedAt       *time.Time
+	OperationID  string
+	Status       string
+	Stage        string
+	Kind         string
+	Name         string
+	Image        string
+	DeploymentID string
+	ErrorCode    string
+	ErrorMessage string
+	StartedAt    time.Time
+	EndedAt      *time.Time
 }
 
 func newLocalExecCallback() *localExecCallback {
