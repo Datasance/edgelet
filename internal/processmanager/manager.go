@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,9 @@ import (
 )
 
 const (
-	ProcessManagerModuleName = "Process Manager"
+	ProcessManagerModuleName    = "Process Manager"
+	defaultShutdownDrainTimeout = 45 * time.Second
+	shutdownDrainPollInterval   = 1 * time.Second
 )
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
@@ -96,6 +99,54 @@ func (pm *ProcessManager) Stop() error {
 	pm.wg.Wait()
 	pm.logger.Info("Process Manager stopped")
 	return nil
+}
+
+// DrainRuntimeForShutdown best-effort drains runtime tasks before manager teardown.
+// It is used during daemon shutdown so containerd can stop without lingering shims.
+func (pm *ProcessManager) DrainRuntimeForShutdown(timeout time.Duration) error {
+	if pm.engine == nil {
+		return nil
+	}
+	if timeout <= 0 {
+		timeout = defaultShutdownDrainTimeout
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		running, err := pm.engine.GetRunningContainers()
+		if err != nil {
+			return fmt.Errorf("list running containers during shutdown drain: %w", err)
+		}
+
+		runtimeIDs := make([]string, 0, len(running))
+		for _, container := range running {
+			if msUUID := pm.engine.GetContainerMicroserviceUUID(container); msUUID != "" {
+				runtimeIDs = append(runtimeIDs, container.ID)
+			}
+		}
+		if len(runtimeIDs) == 0 {
+			pm.logger.Info("Shutdown runtime drain complete: no running workload containers")
+			return nil
+		}
+
+		for _, containerID := range runtimeIDs {
+			if err := pm.engine.StopContainer(containerID); err != nil {
+				pm.logger.Warnf("Shutdown drain: graceful stop failed for container %s: %v", containerID, err)
+				if killErr := pm.engine.KillContainer(containerID); killErr != nil {
+					pm.logger.Warnf("Shutdown drain: force stop failed for container %s: %v", containerID, killErr)
+				}
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf(
+				"timed out draining runtime containers after %s; remaining container IDs: %s",
+				timeout,
+				strings.Join(runtimeIDs, ","),
+			)
+		}
+		time.Sleep(shutdownDrainPollInterval)
+	}
 }
 
 // StopRunningMicroservices stops all running microservices matching the iofogUuid.
@@ -354,8 +405,20 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 		// Desired state: running.
 		if container == nil {
 			if ms.IsStuckInRestart && !ms.Rebuild {
-				pm.logger.Debugf("Skipping stuck microservice %s (rebuild not requested)", ms.MicroserviceUUID)
-				continue
+				existing := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus(ms.MicroserviceUUID)
+				if forceRecreate, reason, exitCode := shouldForceRecreateFromStatus(existing); forceRecreate {
+					pm.logger.Warnf(
+						"reconcile bypassing stuck gate for terminal runtime state msUUID=%s containerID=%s reason=%s exitCode=%d decision=recreate",
+						ms.MicroserviceUUID,
+						existing.ContainerID,
+						reason,
+						exitCode,
+					)
+					ms.IsStuckInRestart = false
+				} else {
+					pm.logger.Debugf("Skipping stuck microservice %s (rebuild not requested)", ms.MicroserviceUUID)
+					continue
+				}
 			}
 			// If status is FAILED and Rebuild not requested, skip — do not re-add (matches Java behavior)
 			if pmStatus := statusreporter.GetInstance().GetProcessManagerStatus(); pmStatus != nil {
@@ -386,10 +449,89 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			pm.logger.Warnf("Error getting microservice status for %s: %v", ms.MicroserviceUUID, err)
 			continue
 		}
+		checker := GetRestartStuckChecker()
+		if forceRecreate, reason, exitCode := shouldForceRecreateFromStatus(status); forceRecreate {
+			sandboxID, _ := pm.engine.GetContainerSandboxID(container.ID)
+			pm.logger.Warnf(
+				"reconcile detected non-restartable terminal state msUUID=%s containerID=%s sandboxID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
+				ms.MicroserviceUUID,
+				container.ID,
+				sandboxID,
+				reason,
+				exitCode,
+				safeErrorMessage(status),
+			)
+			ms.IsStuckInRestart = false
+			statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+				s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
+			})
+			pm.addTask(NewContainerTask(TaskActionUpdate, ms.MicroserviceUUID))
+			continue
+		}
+		if status.Status == models.MicroserviceStateCreated {
+			sandboxID, _ := pm.engine.GetContainerSandboxID(container.ID)
+			pm.logger.Infof(
+				"reconcile observed created container msUUID=%s containerID=%s sandboxID=%s criMessage=%q decision=start",
+				ms.MicroserviceUUID,
+				container.ID,
+				sandboxID,
+				safeErrorMessage(status),
+			)
+			if startErr := pm.containerManager.StartContainerByMicroserviceUUID(ms.MicroserviceUUID); startErr != nil {
+				if nr, ok := engine.IsNonRestartableContainerError(startErr); ok {
+					pm.logger.Warnf(
+						"reconcile created start failed with non-restartable terminal state msUUID=%s containerID=%s sandboxID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
+						ms.MicroserviceUUID,
+						container.ID,
+						sandboxID,
+						nr.Reason,
+						nr.ExitCode,
+						nr.Message,
+					)
+					ms.IsStuckInRestart = false
+					statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+						s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
+					})
+					pm.addTask(NewContainerTask(TaskActionUpdate, ms.MicroserviceUUID))
+					continue
+				}
+				if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
+					pm.logger.Warnf(
+						"reconcile created start failed repeatedly msUUID=%s containerID=%s sandboxID=%s err=%v decision=mark_stuck_in_restart",
+						ms.MicroserviceUUID,
+						container.ID,
+						sandboxID,
+						startErr,
+					)
+					status.Status = models.MicroserviceStateStuckInRestart
+					ms.IsStuckInRestart = true
+					stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, fmt.Sprintf("Container repeatedly failing to start: %v", startErr))
+					status.ErrorMessage = &stuckMsg
+					statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
+						pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
+					})
+					continue
+				}
+				pm.logger.Warnf(
+					"reconcile created start failed msUUID=%s containerID=%s sandboxID=%s err=%v decision=retry_start",
+					ms.MicroserviceUUID,
+					container.ID,
+					sandboxID,
+					startErr,
+				)
+			} else {
+				pm.logger.Infof(
+					"reconcile created start succeeded msUUID=%s containerID=%s sandboxID=%s decision=started",
+					ms.MicroserviceUUID,
+					container.ID,
+					sandboxID,
+				)
+			}
+			continue
+		}
 
 		// Detect containers stuck in exit/creation loops and mark them accordingly.
 		// Prefer existing error message from engine (e.g. Docker) when available; use static fallback otherwise (matching Java DockerUtil.getMicroserviceStatus).
-		checker := GetRestartStuckChecker()
 		if status.Status == models.MicroserviceStateExiting {
 			if checker.IsStuck(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
@@ -502,8 +644,7 @@ func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, cont
 	switch status.Status {
 	case models.MicroserviceStateQueued,
 		models.MicroserviceStateUpdating,
-		models.MicroserviceStateStuckInRestart,
-		models.MicroserviceStateCreated: // Container still starting — don't trigger update
+		models.MicroserviceStateStuckInRestart:
 		return false
 	default:
 	}
@@ -526,6 +667,49 @@ func stuckInRestartErrorMessage(microserviceUUID, fallback string) string {
 		return *existing.ErrorMessage
 	}
 	return fallback
+}
+
+func shouldForceRecreateFromStatus(status *models.MicroserviceStatus) (bool, string, int32) {
+	reason, exitCode := parseCRIReasonAndExitCode(safeErrorMessage(status))
+	if engine.IsNonRestartableCRIReason(reason) {
+		return true, reason, exitCode
+	}
+	return false, "", 0
+}
+
+func safeErrorMessage(status *models.MicroserviceStatus) string {
+	if status == nil || status.ErrorMessage == nil {
+		return ""
+	}
+	return strings.TrimSpace(*status.ErrorMessage)
+}
+
+func parseCRIReasonAndExitCode(message string) (string, int32) {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return "", 0
+	}
+	reason := ""
+	if idx := strings.Index(trimmed, "CRI reason="); idx >= 0 {
+		start := idx + len("CRI reason=")
+		end := len(trimmed)
+		if space := strings.Index(trimmed[start:], " "); space >= 0 {
+			end = start + space
+		}
+		reason = strings.TrimSpace(trimmed[start:end])
+	}
+	exitCode := int32(0)
+	if idx := strings.Index(trimmed, "exitCode="); idx >= 0 {
+		start := idx + len("exitCode=")
+		end := len(trimmed)
+		if space := strings.Index(trimmed[start:], " "); space >= 0 {
+			end = start + space
+		}
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(trimmed[start:end]), 10, 32); err == nil {
+			exitCode = int32(parsed)
+		}
+	}
+	return reason, exitCode
 }
 
 // deleteRemainingMicroservices deletes containers that are no longer in the latest microservices list

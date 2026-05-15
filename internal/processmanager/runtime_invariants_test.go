@@ -58,7 +58,6 @@ func TestShouldContainerBeUpdated_GuardRails(t *testing.T) {
 		models.MicroserviceStateQueued,
 		models.MicroserviceStateUpdating,
 		models.MicroserviceStateStuckInRestart,
-		models.MicroserviceStateCreated,
 	}
 	for _, st := range blockedStates {
 		st := st
@@ -69,6 +68,7 @@ func TestShouldContainerBeUpdated_GuardRails(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestExecuteTask_CreateExecIsFacadeOnly(t *testing.T) {

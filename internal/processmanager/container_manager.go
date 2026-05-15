@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -42,11 +43,23 @@ func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string)
 		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
 			return c, nil
 		}
+		cm.logger.Warnf(
+			"runtime drift cleanup: stale container_state entry msUUID=%s containerID=%s decision=cleanup-stale-db",
+			microserviceUUID,
+			cs.WorkloadID,
+		)
+		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
 	}
 	if cs, err := store.GetInstance().GetLocalContainerState(microserviceUUID); err == nil && cs != nil && cs.WorkloadID != "" {
 		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
 			return c, nil
 		}
+		cm.logger.Warnf(
+			"runtime drift cleanup: stale local_container_state entry msUUID=%s containerID=%s decision=cleanup-stale-db",
+			microserviceUUID,
+			cs.WorkloadID,
+		)
+		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
 	}
 	c, err := cm.engine.GetContainer(microserviceUUID)
 	if err != nil {
@@ -140,14 +153,18 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	if err := cm.RemoveContainerByMicroserviceUUID(ms.MicroserviceUUID, withCleanup, withCleanup); err != nil {
 		cm.logger.Warnf("Error removing old container: %v", err)
 		// Continue anyway
+	} else {
+		cm.logger.Infof("recreate phase result msUUID=%s phase=remove result=ok", ms.MicroserviceUUID)
 	}
 
 	// Step 3: Create and start new container (can use same ports now)
 	// Use the resolved runtime image ref so pull/check/create use the same reference.
 	ms.ImageName = effectiveRunRef
 	if err := cm.createContainer(ms); err != nil {
+		cm.logger.Warnf("recreate phase result msUUID=%s phase=create_or_start result=failed err=%v", ms.MicroserviceUUID, err)
 		return err
 	}
+	cm.logger.Infof("recreate phase result msUUID=%s phase=create_or_start result=ok", ms.MicroserviceUUID)
 
 	cm.logger.Debugf("Finished update container for microservice: %s", ms.ImageName)
 	return nil
@@ -297,7 +314,22 @@ func (cm *ContainerManager) StartContainerByMicroserviceUUID(microserviceUUID st
 		return err
 	}
 	if container != nil {
-		return cm.engine.StartContainer(container.ID)
+		err := cm.engine.StartContainer(container.ID)
+		if err == nil {
+			return nil
+		}
+		var nr *engine.NonRestartableContainerError
+		if errors.As(err, &nr) {
+			cm.logger.Warnf(
+				"start classification: non-restartable terminal state msUUID=%s containerID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
+				microserviceUUID,
+				nr.ContainerID,
+				nr.Reason,
+				nr.ExitCode,
+				nr.Message,
+			)
+		}
+		return err
 	}
 	return nil
 }
@@ -412,8 +444,20 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	ms.ContainerIPAddress = &ip
 
 	if err := cm.engine.StartContainer(containerID); err != nil {
+		var nr *engine.NonRestartableContainerError
+		if errors.As(err, &nr) {
+			cm.logger.Warnf(
+				"recreate phase result msUUID=%s phase=start result=failed reason=%s exitCode=%d criMessage=%q containerID=%s",
+				ms.MicroserviceUUID,
+				nr.Reason,
+				nr.ExitCode,
+				nr.Message,
+				nr.ContainerID,
+			)
+		}
 		return fmt.Errorf("failed to start container: %w", err)
 	}
+	cm.logger.Infof("recreate phase result msUUID=%s phase=start result=ok containerID=%s", ms.MicroserviceUUID, containerID)
 
 	// Clear rebuild flag after successful creation (matches Java ContainerManager.setRebuild(false))
 	ms.Rebuild = false
