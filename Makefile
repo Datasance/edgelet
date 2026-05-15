@@ -284,7 +284,6 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 			'    logLevel: "DEBUG"' \
 			'    statusFrequency: "30"' \
 			'    getChangesFreq: "60"' \
-			'    postDiagnosticsFreq: "10"' \
 			'    scanDevicesFreq: "60"' \
 			'    gps: "auto"' \
 			'    gpsCoordinates: "0,0"' \
