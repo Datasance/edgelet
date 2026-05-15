@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +66,11 @@ func (c *Client) IsDaemonRunning() bool {
 		return true
 	}
 
+	// Fallback for environments where PID file lifecycle differs.
+	if isDaemonProcessPresent() {
+		return true
+	}
+
 	// Fallback: try to connect to Local API via v3 status endpoint.
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.baseURL+"/v3/system/status", nil)
 	if err != nil {
@@ -81,7 +88,36 @@ func (c *Client) IsDaemonRunning() bool {
 	if err := resp.Body.Close(); err != nil {
 		_ = err // best-effort close for health check
 	}
-	return resp.StatusCode == http.StatusOK
+	// Any HTTP response means the daemon/local API is reachable.
+	// Authentication/authorization errors should not be treated as daemon down.
+	return true
+}
+
+func isDaemonProcessPresent() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		cmdlinePath := filepath.Join("/proc", entry.Name(), "cmdline")
+		cmdline, err := os.ReadFile(cmdlinePath) // #nosec G304 -- procfs path built from numeric pid
+		if err != nil || len(cmdline) == 0 {
+			continue
+		}
+		if bytes.Contains(cmdline, []byte("iofog-agentd")) {
+			return true
+		}
+	}
+	return false
 }
 
 // RequestV3 sends a typed request to LocalAPI v3 and returns JSON response map when possible.
@@ -122,6 +158,13 @@ func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[st
 	resp, err := c.doV3Request(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "connect: connection refused") {
+			if utils.IsAnotherInstanceRunning() || isDaemonProcessPresent() {
+				return nil, &V3APIError{
+					StatusCode: http.StatusServiceUnavailable,
+					Code:       "DAEMON_STARTING",
+					Message:    "Local API is still initializing. Daemon process is running; retry shortly.",
+				}
+			}
 			return nil, fmt.Errorf("Local API is not accessible. The daemon may be starting up or the Local API service is not running. Error: %w", err)
 		}
 		return nil, fmt.Errorf("failed to send v3 request: %w", err)
