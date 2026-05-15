@@ -10,6 +10,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 )
 
@@ -117,8 +118,8 @@ func (r *Runner) runOnce() {
 		var hc *models.Healthcheck
 		if ms != nil && ms.Healthcheck != nil {
 			hc = ms.Healthcheck
-		} else if c.Labels != nil && c.Labels["iofog-healthcheck"] != "" {
-			hc = parseHealthcheckFromLabel(c.Labels["iofog-healthcheck"])
+		} else {
+			hc = parseHealthcheckFromLabels(c.Labels)
 		}
 		if hc == nil || len(hc.Test) == 0 || (len(hc.Test) == 1 && (hc.Test[0] == "NONE" || hc.Test[0] == "")) {
 			log.Debugf("Healthcheck %s: skipping (no healthcheck config)", msUUID)
@@ -198,4 +199,15 @@ func parseHealthcheckFromLabel(label string) *models.Healthcheck {
 		return nil
 	}
 	return &hc
+}
+
+func parseHealthcheckFromLabels(labels map[string]string) *models.Healthcheck {
+	if labels == nil {
+		return nil
+	}
+	label := labels[workloadmeta.LabelHealthcheck]
+	if label == "" {
+		return nil
+	}
+	return parseHealthcheckFromLabel(label)
 }
