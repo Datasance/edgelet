@@ -1,28 +1,31 @@
 [Unit]
-Description=ioFog Agent
+Description=ioFog Agent Daemon
 Documentation=https://github.com/eclipse-iofog/agent
-After=docker.service network-online.target
-Requires=docker.service
 Wants=network-online.target
+After=network-online.target
 StartLimitIntervalSec=300
-StartLimitBurst=10
+StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/iofog-agentd
+ExecStart=/usr/local/bin/iofog-agentd start
 Restart=always
-RestartSec=3
+RestartSec=2s
+TimeoutStopSec=120s
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
 User=root
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=iofog-agent
+SyslogIdentifier=iofog-agentd
 
 # Security settings
-NoNewPrivileges=true
+NoNewPrivileges=no
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/var/lib/iofog-agent /var/log/iofog-agent /var/run/iofog-agent
+ProtectHome=true
+ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/lib/iofog-agent-containerd /var/log/iofog-agent /run/iofog-agent /var/backups/iofog-agent
 
 # Resource limits
 LimitNOFILE=65536

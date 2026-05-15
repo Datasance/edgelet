@@ -355,18 +355,21 @@ Description=ioFog Agent Daemon (full / embedded containerd)
 ${_wants}
 After=${_after}
 StartLimitIntervalSec=300
-StartLimitBurst=10
+StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iofog-agentd daemon
+ExecStart=/usr/local/bin/iofog-agentd start
 Restart=always
-RestartSec=3s
+RestartSec=2s
 StandardOutput=journal
 StandardError=journal
 LimitNOFILE=65536
 TimeoutStopSec=120
-NoNewPrivileges=true
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+NoNewPrivileges=no
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
@@ -386,17 +389,20 @@ Description=ioFog Agent Daemon (lite)
 ${_wants}
 After=${_after}
 StartLimitIntervalSec=300
-StartLimitBurst=10
+StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iofog-agentd daemon
+ExecStart=/usr/local/bin/iofog-agentd start
 Restart=always
-RestartSec=3s
+RestartSec=2s
 StandardOutput=journal
 StandardError=journal
 LimitNOFILE=65536
-TimeoutStopSec=90
+TimeoutStopSec=120
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
