@@ -32,15 +32,19 @@ const (
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
-	engine              engine.ContainerEngine
-	microserviceManager MicroserviceManagerInterface
-	containerManager    *ContainerManager
-	taskQueue           *TaskQueue
-	updateChan          chan struct{}
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	wg                  sync.WaitGroup
-	logger              *logging.ModuleLogger
+	engine                  engine.ContainerEngine
+	microserviceManager     MicroserviceManagerInterface
+	containerManager        *ContainerManager
+	taskQueue               *TaskQueue
+	updateChan              chan struct{}
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	wg                      sync.WaitGroup
+	logger                  *logging.ModuleLogger
+	startMicroserviceFn     func(microserviceUUID string) error
+	removeContainerByIDFn   func(containerID string) error
+	launchLocalDeploymentFn func(item *models.LocalDeployedMicroservice, now int64)
+	getContainerStatusFn    func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -380,11 +384,11 @@ func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeploye
 
 func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
 	if container == nil {
-		pm.launchLocalDeployment(item, now)
+		pm.launchLocalDeploymentWithHook(item, now)
 		return
 	}
 
-	status, err := pm.engine.GetContainerStatus(container.ID, item.LocalUUID)
+	status, err := pm.getLocalContainerStatus(container.ID, item.LocalUUID)
 	if err != nil {
 		item.RuntimeState = "unknown"
 		item.State = item.RuntimeState
@@ -406,7 +410,29 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 		item.LastError = ""
 		item.FailureCount = 0
 	case "created":
-		if err := pm.StartMicroservice(item.LocalUUID); err != nil {
+		if err := pm.startLocalMicroservice(item.LocalUUID); err != nil {
+			if nr, ok := engine.IsNonRestartableContainerError(err); ok {
+				pm.logger.Warnf(
+					"local reconcile created start failed with non-restartable terminal state localUUID=%s containerID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
+					item.LocalUUID,
+					container.ID,
+					nr.Reason,
+					nr.ExitCode,
+					nr.Message,
+				)
+				if rmErr := pm.removeLocalContainerByID(container.ID); rmErr != nil {
+					pm.bumpLocalFailure(item, fmt.Errorf("failed to remove non-restartable container: %w", rmErr), "created")
+					break
+				}
+				item.ContainerID = ""
+				item.RuntimeState = "unknown"
+				item.State = item.RuntimeState
+				item.LastError = ""
+				item.FailureCount = 0
+				item.LastTransitionAt = now
+				pm.launchLocalDeploymentWithHook(item, now)
+				return
+			}
 			pm.bumpLocalFailure(item, err, "created")
 		} else {
 			item.RuntimeState = "running"
@@ -493,6 +519,38 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 	item.FailureCount = 0
 	item.LastTransitionAt = now
 	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+}
+
+func (pm *ProcessManager) startLocalMicroservice(microserviceUUID string) error {
+	if pm.startMicroserviceFn != nil {
+		return pm.startMicroserviceFn(microserviceUUID)
+	}
+	return pm.StartMicroservice(microserviceUUID)
+}
+
+func (pm *ProcessManager) removeLocalContainerByID(containerID string) error {
+	if pm.removeContainerByIDFn != nil {
+		return pm.removeContainerByIDFn(containerID)
+	}
+	return pm.RemoveContainerByContainerID(containerID)
+}
+
+func (pm *ProcessManager) launchLocalDeploymentWithHook(item *models.LocalDeployedMicroservice, now int64) {
+	if pm.launchLocalDeploymentFn != nil {
+		pm.launchLocalDeploymentFn(item, now)
+		return
+	}
+	pm.launchLocalDeployment(item, now)
+}
+
+func (pm *ProcessManager) getLocalContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error) {
+	if pm.getContainerStatusFn != nil {
+		return pm.getContainerStatusFn(containerID, microserviceUUID)
+	}
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.GetContainerStatus(containerID, microserviceUUID)
 }
 
 // checkTasks is a long-running goroutine that drains the task queue.
@@ -1332,6 +1390,25 @@ func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *eng
 		})
 	}
 	return result, nil
+}
+
+// StreamMicroserviceLogs streams logs for one runtime microservice using the provided tail handler.
+func (pm *ProcessManager) StreamMicroserviceLogs(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error {
+	if pm.engine == nil {
+		return fmt.Errorf("process manager engine is not initialized")
+	}
+	if handler == nil {
+		return fmt.Errorf("log tail handler is nil")
+	}
+	container, err := pm.GetContainerForMicroservice(microserviceUUID)
+	if err != nil {
+		return err
+	}
+	if container == nil {
+		return fmt.Errorf("container not found for microservice: %s", microserviceUUID)
+	}
+	sessionID := fmt.Sprintf("localapi-log-stream-%d", time.Now().UnixNano())
+	return pm.engine.TailContainerLogs(container.ID, sessionID, microserviceUUID, handler, cfg)
 }
 
 // ExecSessionCallbackInterface defines the interface for exec session callbacks

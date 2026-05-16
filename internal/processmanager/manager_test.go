@@ -55,6 +55,17 @@ func TestLaunchLocalMicroserviceWithProgress_EngineNotInitialized(t *testing.T) 
 	}
 }
 
+func TestStreamMicroserviceLogs_EngineNotInitialized(t *testing.T) {
+	pm := &ProcessManager{}
+	err := pm.StreamMicroserviceLogs("ms-1", &engine.TailConfig{Follow: true, Lines: 10}, nil)
+	if err == nil {
+		t.Fatalf("expected engine initialization error")
+	}
+	if !strings.Contains(err.Error(), "engine is not initialized") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // Note: deleteRemainingMicroservices and updateRunningMicroservicesCount
 // require initialized ProcessManager with Docker client and microservice manager.
 // These are tested in integration tests.
