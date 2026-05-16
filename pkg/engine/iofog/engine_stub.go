@@ -94,6 +94,12 @@ func (e *Engine) DeleteImage(_ context.Context, _ string) error { return fmt.Err
 func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
 	return nil, fmt.Errorf("unsupported")
 }
+func (e *Engine) PruneContainers(_ context.Context) (*engine.ContainerPruneReport, error) {
+	return nil, fmt.Errorf("unsupported")
+}
+func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, error) {
+	return nil, fmt.Errorf("unsupported")
+}
 func (e *Engine) InspectContainerRaw(_ string) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("unsupported")
 }

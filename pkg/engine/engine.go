@@ -34,6 +34,19 @@ type ImagePruneReport struct {
 	SpaceReclaimedBytes int64
 }
 
+// ContainerPruneReport captures normalized container-prune results.
+type ContainerPruneReport struct {
+	Deleted      []string
+	DeletedCount int
+}
+
+// VolumePruneReport captures normalized volume-prune results.
+type VolumePruneReport struct {
+	Deleted             []string
+	DeletedCount        int
+	SpaceReclaimedBytes int64
+}
+
 // ContainerEngine is the abstraction over Docker, Podman, and the embedded
 // iofog containerd engine. ProcessManager uses only this interface so that the
 // underlying runtime is fully interchangeable via the containerEngine config field.
@@ -74,6 +87,10 @@ type ContainerEngine interface {
 	// PruneDangling removes only untagged images not referenced by any container.
 	// Matches Java DockerPruningManager.pruneAgent() / docker system prune (dangling only).
 	PruneDangling(ctx context.Context) (*ImagePruneReport, error)
+	// PruneContainers removes stopped/orphaned containers that are safe to delete.
+	PruneContainers(ctx context.Context) (*ContainerPruneReport, error)
+	// PruneVolumes removes unused/orphaned volume artifacts.
+	PruneVolumes(ctx context.Context) (*VolumePruneReport, error)
 
 	// Inspection / stats
 	GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)

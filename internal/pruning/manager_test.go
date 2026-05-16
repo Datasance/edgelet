@@ -3,6 +3,9 @@ package pruning
 import (
 	"testing"
 
+	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 )
@@ -52,5 +55,68 @@ func TestShouldRunImmediateFrequencyPrune(t *testing.T) {
 	m.setLastAppliedPruningFrequency(2)
 	if !m.shouldRunImmediateFrequencyPrune(1) {
 		t.Fatalf("expected immediate run when frequency changes from 2 to 1")
+	}
+}
+
+func TestRunScheduledPrune_Order(t *testing.T) {
+	order := make([]string, 0, 3)
+	m := &Manager{
+		pruneContainersHook: func() { order = append(order, "containers") },
+		pruneVolumesHook:    func() { order = append(order, "volumes") },
+		pruneImagesHook:     func() { order = append(order, "images") },
+	}
+
+	m.runScheduledPrune()
+	if len(order) != 3 || order[0] != "containers" || order[1] != "volumes" || order[2] != "images" {
+		t.Fatalf("expected prune order containers->volumes->images, got %v", order)
+	}
+}
+
+func TestTriggerPruneOnFrequency_SkipsWhenAlreadyPruning(t *testing.T) {
+	called := false
+	m := &Manager{
+		isPruning: true,
+		pruneContainersHook: func() {
+			called = true
+		},
+		pruneVolumesHook: func() {
+			called = true
+		},
+		pruneImagesHook: func() {
+			called = true
+		},
+	}
+
+	m.triggerPruneOnFrequency()
+	if called {
+		t.Fatalf("expected no prune steps when prune is already running")
+	}
+}
+
+func TestTriggerPruneOnThresholdBreach_UsesScheduledOrder(t *testing.T) {
+	cfg := config.GetInstance()
+	originalThreshold := cfg.AvailableDiskThreshold
+	cfg.AvailableDiskThreshold = 80
+	t.Cleanup(func() {
+		cfg.AvailableDiskThreshold = originalThreshold
+	})
+
+	sr := statusreporter.GetInstance()
+	sr.UpdateResourceConsumptionManagerStatus(func(rcm *models.ResourceConsumptionManagerStatus) {
+		rcm.TotalDiskSpace = 100
+		rcm.AvailableDisk = 10
+	})
+
+	order := make([]string, 0, 3)
+	m := &Manager{
+		config:              cfg,
+		pruneContainersHook: func() { order = append(order, "containers") },
+		pruneVolumesHook:    func() { order = append(order, "volumes") },
+		pruneImagesHook:     func() { order = append(order, "images") },
+	}
+
+	m.triggerPruneOnThresholdBreach()
+	if len(order) != 3 || order[0] != "containers" || order[1] != "volumes" || order[2] != "images" {
+		t.Fatalf("expected threshold prune order containers->volumes->images, got %v", order)
 	}
 }

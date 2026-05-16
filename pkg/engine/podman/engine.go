@@ -118,6 +118,12 @@ func (e *Engine) DeleteImage(ctx context.Context, nameOrID string) error {
 func (e *Engine) PruneDangling(ctx context.Context) (*engine.ImagePruneReport, error) {
 	return e.inner.PruneDangling(ctx)
 }
+func (e *Engine) PruneContainers(ctx context.Context) (*engine.ContainerPruneReport, error) {
+	return e.inner.PruneContainers(ctx)
+}
+func (e *Engine) PruneVolumes(ctx context.Context) (*engine.VolumePruneReport, error) {
+	return e.inner.PruneVolumes(ctx)
+}
 func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
 	return e.inner.InspectContainerRaw(containerID)
 }

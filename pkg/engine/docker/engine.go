@@ -210,6 +210,41 @@ func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, err
 	}, nil
 }
 
+func (e *Engine) PruneContainers(_ context.Context) (*engine.ContainerPruneReport, error) {
+	report, err := e.client.PruneContainers()
+	if err != nil {
+		return nil, err
+	}
+	deleted := make([]string, 0, len(report.ContainersDeleted))
+	for _, id := range report.ContainersDeleted {
+		if strings.TrimSpace(id) != "" {
+			deleted = append(deleted, strings.TrimSpace(id))
+		}
+	}
+	return &engine.ContainerPruneReport{
+		Deleted:      deleted,
+		DeletedCount: len(deleted),
+	}, nil
+}
+
+func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, error) {
+	report, err := e.client.PruneVolumes()
+	if err != nil {
+		return nil, err
+	}
+	deleted := make([]string, 0, len(report.VolumesDeleted))
+	for _, name := range report.VolumesDeleted {
+		if strings.TrimSpace(name) != "" {
+			deleted = append(deleted, strings.TrimSpace(name))
+		}
+	}
+	return &engine.VolumePruneReport{
+		Deleted:             deleted,
+		DeletedCount:        len(deleted),
+		SpaceReclaimedBytes: int64(report.SpaceReclaimed),
+	}, nil
+}
+
 // --- Inspection / stats ---
 
 func (e *Engine) GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error) {

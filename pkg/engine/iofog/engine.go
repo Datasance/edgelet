@@ -983,6 +983,92 @@ func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, err
 	}, nil
 }
 
+func (e *Engine) PruneContainers(_ context.Context) (*engine.ContainerPruneReport, error) {
+	ctx := e.ctx()
+	containers, err := e.client.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deleted := make([]string, 0)
+	for _, c := range containers {
+		id := c.ID()
+		task, taskErr := c.Task(ctx, nil)
+		if taskErr == nil {
+			st, stErr := task.Status(ctx)
+			if stErr == nil && st.Status == client.Running {
+				continue
+			}
+			if _, delErr := task.Delete(ctx, client.WithProcessKill); delErr != nil && !errdefs.IsNotFound(delErr) {
+				log.Warnf("PruneContainers: failed deleting task for %s: %v", id, delErr)
+				continue
+			}
+		}
+		if err := c.Delete(ctx, client.WithSnapshotCleanup); err != nil && !errdefs.IsNotFound(err) {
+			log.Warnf("PruneContainers: failed deleting container %s: %v", id, err)
+			continue
+		}
+		deleted = append(deleted, id)
+	}
+	return &engine.ContainerPruneReport{
+		Deleted:      deleted,
+		DeletedCount: len(deleted),
+	}, nil
+}
+
+func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, error) {
+	ctx := e.ctx()
+	containers, err := e.client.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activeUUIDs := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		info, infoErr := c.Info(ctx)
+		if infoErr != nil {
+			continue
+		}
+		if uuid := workloadmeta.MicroserviceUIDFromLabels(info.Labels); strings.TrimSpace(uuid) != "" {
+			activeUUIDs[uuid] = struct{}{}
+		}
+	}
+
+	baseVolumesDir := filepath.Join(config.GetInstance().DiskDirectory, "volumes")
+	deleted := make([]string, 0)
+	for _, subDir := range []string{"data", "microservices"} {
+		entries, readErr := os.ReadDir(filepath.Join(baseVolumesDir, subDir))
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				continue
+			}
+			return nil, readErr
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			uuid := strings.TrimSpace(entry.Name())
+			if uuid == "" {
+				continue
+			}
+			if _, ok := activeUUIDs[uuid]; ok {
+				continue
+			}
+			target := filepath.Join(baseVolumesDir, subDir, uuid)
+			if err := os.RemoveAll(target); err != nil {
+				log.Warnf("PruneVolumes: failed deleting %s: %v", target, err)
+				continue
+			}
+			deleted = append(deleted, target)
+		}
+	}
+
+	return &engine.VolumePruneReport{
+		Deleted:      deleted,
+		DeletedCount: len(deleted),
+	}, nil
+}
+
 // --- Inspection / stats ---
 
 func (e *Engine) GetContainerStatus(containerID, _ string) (*models.MicroserviceStatus, error) {

@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	dockerregistry "github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
 )
@@ -234,6 +236,36 @@ func (c *Client) DockerPrune() (image.PruneReport, error) {
 		return image.PruneReport{}, err
 	}
 
+	return report, nil
+}
+
+// PruneContainers removes stopped containers.
+func (c *Client) PruneContainers() (container.PruneReport, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return container.PruneReport{}, fmt.Errorf("Docker client not initialized")
+	}
+
+	ctx := c.GetContext()
+	report, err := cli.ContainersPrune(ctx, filters.NewArgs())
+	if err != nil {
+		return container.PruneReport{}, err
+	}
+	return report, nil
+}
+
+// PruneVolumes removes unused local volumes.
+func (c *Client) PruneVolumes() (volume.PruneReport, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return volume.PruneReport{}, fmt.Errorf("Docker client not initialized")
+	}
+
+	ctx := c.GetContext()
+	report, err := cli.VolumesPrune(ctx, filters.NewArgs())
+	if err != nil {
+		return volume.PruneReport{}, err
+	}
 	return report, nil
 }
 

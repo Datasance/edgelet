@@ -42,6 +42,12 @@ type Manager struct {
 	// It is used to trigger an immediate frequency prune only when pruning is
 	// enabled (0 -> N) or the frequency value actually changes (N1 -> N2).
 	lastAppliedPruningFrequency int64
+
+	// Optional test hooks to observe scheduled prune ordering without touching
+	// real runtime daemons.
+	pruneContainersHook func()
+	pruneVolumesHook    func()
+	pruneImagesHook     func()
 }
 
 var (
@@ -190,8 +196,8 @@ func (m *Manager) triggerPruneOnThresholdBreach() {
 			m.mu.Unlock()
 		}()
 
-		logging.LogInfo(moduleName, "Disk threshold breached, pruning images")
-		m.pruneImages()
+		logging.LogInfo(moduleName, "Disk threshold breached, pruning runtime artifacts")
+		m.runScheduledPrune()
 	}
 }
 
@@ -212,8 +218,62 @@ func (m *Manager) triggerPruneOnFrequency() {
 	}()
 
 	logging.LogInfo(moduleName, "Start pruning job")
-	m.pruneImages()
+	m.runScheduledPrune()
 	logging.LogInfo(moduleName, "Pruning of unwanted images finished")
+}
+
+func (m *Manager) runScheduledPrune() {
+	m.pruneContainers()
+	m.pruneVolumes()
+	m.pruneImagesRunner()
+}
+
+func (m *Manager) pruneContainers() {
+	if m.pruneContainersHook != nil {
+		m.pruneContainersHook()
+		return
+	}
+	ctx := context.Background()
+	m.mu.Lock()
+	eng := m.containerEngine
+	m.mu.Unlock()
+	if eng != nil {
+		if _, err := eng.PruneContainers(ctx); err != nil {
+			logging.LogError(moduleName, "Error pruning containers via container engine", err)
+		}
+		return
+	}
+	if _, err := m.dockerClient.PruneContainers(); err != nil {
+		logging.LogError(moduleName, "Error pruning Docker containers", err)
+	}
+}
+
+func (m *Manager) pruneVolumes() {
+	if m.pruneVolumesHook != nil {
+		m.pruneVolumesHook()
+		return
+	}
+	ctx := context.Background()
+	m.mu.Lock()
+	eng := m.containerEngine
+	m.mu.Unlock()
+	if eng != nil {
+		if _, err := eng.PruneVolumes(ctx); err != nil {
+			logging.LogError(moduleName, "Error pruning volumes via container engine", err)
+		}
+		return
+	}
+	if _, err := m.dockerClient.PruneVolumes(); err != nil {
+		logging.LogError(moduleName, "Error pruning Docker volumes", err)
+	}
+}
+
+func (m *Manager) pruneImagesRunner() {
+	if m.pruneImagesHook != nil {
+		m.pruneImagesHook()
+		return
+	}
+	m.pruneImages()
 }
 
 // pruneImages removes unused images using the unified getUnwantedImagesList() logic
