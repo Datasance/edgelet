@@ -347,6 +347,22 @@ func (sr *StatusReporter) UpdateProcessManagerStatus(fn func(*models.ProcessMana
 	fn(sr.processManagerStatus)
 }
 
+// ResetProcessManagerStatus clears all process-manager status data.
+func (sr *StatusReporter) ResetProcessManagerStatus() {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())
+	sr.processManagerStatus.ClearMicroserviceStatuses()
+}
+
+// PruneProcessManagerStatus removes process-manager entries matching predicate.
+func (sr *StatusReporter) PruneProcessManagerStatus(predicate func(uuid string, status *models.MicroserviceStatus) bool) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())
+	sr.processManagerStatus.PruneMicroserviceStatus(predicate)
+}
+
 // UpdateLocalAPIStatus updates the local API status securely
 func (sr *StatusReporter) UpdateLocalAPIStatus(fn func(*models.LocalAPIStatus)) {
 	sr.mu.Lock()

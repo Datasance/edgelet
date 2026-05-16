@@ -67,4 +67,3 @@ func TestIsSystemWorkload(t *testing.T) {
 		t.Fatal("expected false for non-system workload")
 	}
 }
-

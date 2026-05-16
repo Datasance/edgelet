@@ -1389,3 +1389,37 @@ func (vmm *VolumeMountManager) Clear() error {
 	logging.LogDebug(moduleName, "Finished clearing volume mounts")
 	return nil
 }
+
+// ClearControllerArtifacts clears only controller-origin volume mount artifacts
+// while preserving local data directories under volumes/data.
+func (vmm *VolumeMountManager) ClearControllerArtifacts() error {
+	vmm.indexLock.Lock()
+	defer vmm.indexLock.Unlock()
+
+	logging.LogDebug(moduleName, "Start clearing controller volume-mount artifacts")
+
+	// Remove controller mount source roots only.
+	for _, dirName := range []string{secretsDir, configMapsDir} {
+		dirPath := filepath.Join(vmm.baseDirectory, dirName)
+		if err := os.RemoveAll(dirPath); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error deleting controller artifact directory %s: %v", dirPath, err))
+		}
+	}
+
+	// Clear persisted volume_mounts records.
+	if db := store.GetInstance(); db.Conn() != nil {
+		if err := db.ClearAllVolumeMounts(); err != nil {
+			logging.LogError(moduleName, "Error clearing controller volume mounts from SQLite", err)
+		}
+	}
+
+	// Reset in-memory index/cache to match persisted state.
+	vmm.indexData = make(map[string]interface{})
+	vmm.typeCacheLock.Lock()
+	vmm.typeCache = make(map[string]VolumeMountType)
+	vmm.typeCacheLock.Unlock()
+
+	statusreporter.GetInstance().UpdateVolumeMountManagerStatus(0, time.Now().UnixMilli())
+	logging.LogDebug(moduleName, "Finished clearing controller volume-mount artifacts")
+	return nil
+}

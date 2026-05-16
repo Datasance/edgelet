@@ -136,6 +136,28 @@ func TestHandleConfig_RejectsInvalidNetworkInterfaceWithoutPersisting(t *testing
 	}
 }
 
+func TestHandleSystemProvisionDelete_RejectsInvalidScope(t *testing.T) {
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodDelete, "/v3/system/provision?scope=bad", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleSystemProvision(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSystemPrune_RejectsInvalidMode(t *testing.T) {
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v3/system/prune?mode=bad", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleSystemPrune(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func generateTestCertPEM(t *testing.T) string {
 	t.Helper()
 

@@ -110,6 +110,20 @@ func TestHandleImagePrune_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestHandleImagePrune_InvalidMode(t *testing.T) {
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v3/images:prune?mode=bad", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleImagePrune(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "only mode=dangling") {
+		t.Fatalf("expected dangling-only validation message, got: %s", rec.Body.String())
+	}
+}
+
 func TestHandleImagePullStatus_NotFound(t *testing.T) {
 	handler := NewV3Handler()
 	req := httptest.NewRequest(http.MethodGet, "/v3/images:pull/non-existent", nil)

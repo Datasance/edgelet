@@ -76,7 +76,7 @@ func HandleCommand(args []string) string {
 	case "provision":
 		return handleProvisionV3(client, args)
 	case "deprovision":
-		return handleDeprovisionV3(client)
+		return handleDeprovisionV3(client, args[1:])
 	case "config":
 		return handleConfigV3(client, args)
 	case "version", "--version", "-v":
@@ -84,7 +84,7 @@ func HandleCommand(args []string) string {
 	case "help", "--help", "-h", "-?":
 		return showHelp()
 	case "prune":
-		return requestV3(client, "POST", "/v3/images:prune", nil)
+		return handlePruneV3(client, args[1:])
 	case "cert":
 		return handleCert(client, args)
 	case "switch":
@@ -139,12 +139,39 @@ func handleProvisionV3(client *Client, args []string) string {
 	return formatProvisionSuccess(agentUUID)
 }
 
-func handleDeprovisionV3(client *Client) string {
-	_, err := client.RequestV3("DELETE", "/v3/system/provision", nil)
+func handleDeprovisionV3(client *Client, args []string) string {
+	scope := "all"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--scope":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --scope requires all|local"
+			}
+			scope = strings.ToLower(strings.TrimSpace(args[i+1]))
+			i++
+		case "--keep-local":
+			scope = "local"
+		case "-h", "--help", "-?":
+			return "Usage: iofog-agent deprovision [--scope all|local] [--keep-local]"
+		default:
+			return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+		}
+	}
+	if scope != "all" && scope != "local" {
+		return "Error[INVALID_ARGUMENT]: --scope requires all|local"
+	}
+	path := "/v3/system/provision"
+	if scope != "all" {
+		path += "?scope=" + scope
+	}
+	_, err := client.RequestV3("DELETE", path, nil)
 	if err != nil {
 		return formatV3RequestError(err)
 	}
-	return "agent deprovisioned successfully; started cleanup of all local microservices"
+	if scope == "local" {
+		return "agent deprovisioned successfully; preserving local microservices"
+	}
+	return "agent deprovisioned successfully; started cleanup of managed and local microservices"
 }
 
 func formatProvisionSuccess(agentUUID string) string {
@@ -212,7 +239,7 @@ func showHelp() string {
 		"Usage:\n" +
 		"  iofog-agent [command]\n\n" +
 		"Core commands:\n" +
-		"  status | info | provision <key> | deprovision | prune\n" +
+		"  status | info | provision <key> | deprovision [--scope all|local] [--keep-local] | prune\n" +
 		"  config <key> <value> [<key> <value> ...]\n" +
 		"  config -n <iface> -a <controllerUrl> ...\n" +
 		"  cert <base64-or-pem-certificate>\n" +
@@ -241,7 +268,7 @@ func showHelp() string {
 
 func handleSystemV3(client *Client, args []string) string {
 	if len(args) == 0 {
-		return "Usage: iofog-agent system <status|info|version|reload|prune>"
+		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]>"
 	}
 	switch args[0] {
 	case "status":
@@ -253,9 +280,62 @@ func handleSystemV3(client *Client, args []string) string {
 	case "reload":
 		return requestV3(client, "POST", "/v3/system/reload", nil)
 	case "prune":
-		return requestV3(client, "POST", "/v3/system/prune", nil)
+		mode, errOut := parsePruneModeArgs(args[1:], "Usage: iofog-agent system prune [dangling|containers|volumes|all]")
+		if errOut != "" {
+			return errOut
+		}
+		path := "/v3/system/prune"
+		if mode != "" {
+			path += "?mode=" + mode
+		}
+		return requestV3(client, "POST", path, nil)
 	default:
-		return "Usage: iofog-agent system <status|info|version|reload|prune>"
+		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]>"
+	}
+}
+
+func handlePruneV3(client *Client, args []string) string {
+	mode, errOut := parsePruneModeArgs(args, "Usage: iofog-agent prune [dangling|containers|volumes|all]")
+	if errOut != "" {
+		return errOut
+	}
+	path := "/v3/system/prune"
+	if mode != "" {
+		path += "?mode=" + mode
+	}
+	return requestV3(client, "POST", path, nil)
+}
+
+func parsePruneModeArgs(args []string, usage string) (string, string) {
+	mode := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-h", "--help", "-?":
+			return "", usage
+		case "-m", "--mode":
+			if i+1 >= len(args) {
+				return "", "Error[INVALID_ARGUMENT]: --mode requires dangling|containers|volumes|all"
+			}
+			mode = strings.ToLower(strings.TrimSpace(args[i+1]))
+			i++
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return "", fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+			}
+			if mode != "" {
+				return "", "Error[INVALID_ARGUMENT]: prune mode provided multiple times"
+			}
+			mode = strings.ToLower(strings.TrimSpace(args[i]))
+		}
+	}
+	if mode == "" {
+		return "", ""
+	}
+	switch mode {
+	case "dangling", "containers", "volumes", "all":
+		return mode, ""
+	default:
+		return "", "Error[INVALID_ARGUMENT]: prune mode must be dangling|containers|volumes|all"
 	}
 }
 
@@ -576,10 +656,15 @@ func handleImageV3(client *Client, args []string) string {
 		}
 		return requestV3(client, "POST", "/v3/images:load", map[string]interface{}{"path": path})
 	case "prune":
-		if len(args) > 1 {
-			return "Usage: iofog-agent image prune"
+		mode, errOut := parseImagePruneModeArgs(args[1:], "Usage: iofog-agent image prune [dangling]")
+		if errOut != "" {
+			return errOut
 		}
-		return requestV3(client, "POST", "/v3/images:prune", nil)
+		path := "/v3/images:prune"
+		if mode != "" {
+			path += "?mode=" + mode
+		}
+		return requestV3(client, "POST", path, nil)
 	case "rm":
 		if len(args) != 2 {
 			return "Usage: iofog-agent image rm <image-id|id-prefix|name[:tag]|digest>"
@@ -592,6 +677,20 @@ func handleImageV3(client *Client, args []string) string {
 	default:
 		return showImageHelpV3()
 	}
+}
+
+func parseImagePruneModeArgs(args []string, usage string) (string, string) {
+	mode, errOut := parsePruneModeArgs(args, usage)
+	if errOut != "" {
+		return "", errOut
+	}
+	if mode == "" {
+		return "", ""
+	}
+	if mode != "dangling" {
+		return "", "Error[INVALID_ARGUMENT]: image prune supports only dangling mode"
+	}
+	return mode, ""
 }
 
 func handleImagePullWithProgress(client *Client, payload map[string]interface{}) string {
@@ -928,11 +1027,37 @@ func formatImageLoadResult(result map[string]interface{}) string {
 }
 
 func formatImagePruneResult(result map[string]interface{}) string {
+	mode := strings.ToLower(strings.TrimSpace(mapValueAsString(result, "mode")))
+	engineName := valueOrDefault(mapValueAsString(result, "engine"), "<unknown>")
+	switch mode {
+	case "containers":
+		return fmt.Sprintf(
+			"pruned containers: deleted=%s (engine=%s)",
+			mapValueAsString(result, "deletedCount"),
+			engineName,
+		)
+	case "volumes":
+		return fmt.Sprintf(
+			"pruned volumes: deleted=%s reclaimed=%s (engine=%s)",
+			mapValueAsString(result, "deletedCount"),
+			valueOrDefault(mapValueAsString(result, "spaceReclaimedHuman"), valueOrDefault(mapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+			engineName,
+		)
+	case "all":
+		return fmt.Sprintf(
+			"pruned all: containers=%s volumes=%s images=%s reclaimed=%s (engine=%s)",
+			mapValueAsString(result, "containersDeletedCount"),
+			mapValueAsString(result, "volumesDeletedCount"),
+			mapValueAsString(result, "imagesDeletedCount"),
+			valueOrDefault(mapValueAsString(result, "spaceReclaimedHuman"), valueOrDefault(mapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+			engineName,
+		)
+	}
 	return fmt.Sprintf(
 		"pruned dangling images: deleted=%s reclaimed=%s (engine=%s)",
 		mapValueAsString(result, "deletedCount"),
 		valueOrDefault(mapValueAsString(result, "spaceReclaimedHuman"), valueOrDefault(mapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
-		valueOrDefault(mapValueAsString(result, "engine"), "<unknown>"),
+		engineName,
 	)
 }
 
@@ -1529,7 +1654,8 @@ func showMSHelpV3() string {
 		"  iofog-agent ms inspect <id> [--summary]\n" +
 		"  iofog-agent ms logs <id> [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]\n" +
 		"  iofog-agent ms exec <id> [-- <command...>]\n" +
-		"  iofog-agent ms start|stop|restart|kill|rm <id>"
+		"  iofog-agent ms start|stop|restart|kill|rm <id>\n\n" +
+		"ID selectors: <uuid>, <container-id-prefix>, <application>.<name> (example: local.<name>)"
 }
 
 func showDeployHelpV3() string {

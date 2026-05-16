@@ -20,12 +20,14 @@ import (
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	ProcessManagerModuleName    = "Process Manager"
 	defaultShutdownDrainTimeout = 45 * time.Second
 	shutdownDrainPollInterval   = 1 * time.Second
+	localReconcileMaxFailures   = 5
 )
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
@@ -153,6 +155,12 @@ func (pm *ProcessManager) DrainRuntimeForShutdown(timeout time.Duration) error {
 // StopRunningMicroservices stops all running microservices matching the iofogUuid.
 // When withCleanup=true (deprovision flow), containers are also removed along with their volumes.
 func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup bool) error {
+	return pm.StopRunningMicroservicesWithScope(iofogUUID, withCleanup, true)
+}
+
+// StopRunningMicroservicesWithScope stops running microservices matching iofogUuid.
+// includeLocal=false preserves local-scope workloads during deprovision cleanup.
+func (pm *ProcessManager) StopRunningMicroservicesWithScope(iofogUUID string, withCleanup bool, includeLocal bool) error {
 	pm.logger.Info("Stop running Microservices")
 
 	// Get all containers regardless of state for complete cleanup
@@ -172,6 +180,9 @@ func (pm *ProcessManager) StopRunningMicroservices(iofogUUID string, withCleanup
 		}
 
 		if !workloadmeta.IsManagedByIofog(container.Labels) {
+			continue
+		}
+		if !includeLocal && strings.EqualFold(strings.TrimSpace(container.Labels[workloadmeta.LabelScope]), workloadmeta.ScopeLocal) {
 			continue
 		}
 		containerIOFogUUID := strings.TrimSpace(container.Labels[workloadmeta.LabelNodeUID])
@@ -273,12 +284,215 @@ func (pm *ProcessManager) containersMonitor() {
 
 		// Handle microservices (matching Java: handleLatestMicroservices(), deleteRemainingMicroservices(), etc.)
 		pm.handleLatestMicroservices()
+		pm.reconcileLocalDeployments()
 		pm.deleteRemainingMicroservices()
 		pm.updateRunningMicroservicesCount()
 		pm.updateCurrentMicroservices()
 
 		pm.logger.Debug("Finished Monitoring containers")
 	}
+}
+
+func (pm *ProcessManager) reconcileLocalDeployments() {
+	items, err := store.GetInstance().ListLocalDeployedMicroservices()
+	if err != nil {
+		pm.logger.Warnf("local reconcile list deployments failed: %v", err)
+		return
+	}
+	for _, item := range items {
+		if item == nil || strings.TrimSpace(item.LocalUUID) == "" {
+			continue
+		}
+		pm.reconcileOneLocalDeployment(item)
+	}
+}
+
+func (pm *ProcessManager) reconcileOneLocalDeployment(item *models.LocalDeployedMicroservice) {
+	now := time.Now().Unix()
+	item.NormalizeDefaults()
+	item.LastReconcileAt = now
+
+	desired := strings.ToLower(strings.TrimSpace(item.DesiredState))
+	if desired == "" {
+		desired = "running"
+	}
+
+	container, err := pm.containerManager.GetContainerForMicroservice(item.LocalUUID)
+	if err != nil {
+		item.LastError = err.Error()
+		item.RuntimeState = "unknown"
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	}
+
+	switch desired {
+	case "stopped":
+		pm.reconcileLocalDesiredStopped(item, container, now)
+	case "deleted":
+		pm.reconcileLocalDesiredDeleted(item, container, now)
+	default:
+		pm.reconcileLocalDesiredRunning(item, container, now)
+	}
+}
+
+func (pm *ProcessManager) reconcileLocalDesiredDeleted(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
+	item.RuntimeState = "deleted"
+	item.State = item.RuntimeState
+	item.LastTransitionAt = now
+	item.ObservedGeneration = item.Generation
+	if item.DeletedAt == nil {
+		ts := now
+		item.DeletedAt = &ts
+	}
+	if container != nil {
+		if err := pm.RemoveContainerByContainerID(container.ID); err != nil {
+			item.LastError = err.Error()
+			item.RuntimeState = "deleting"
+			item.State = item.RuntimeState
+			_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+			return
+		}
+	}
+	item.ContainerID = ""
+	item.LastError = ""
+	item.FailureCount = 0
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+}
+
+func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
+	item.ObservedGeneration = item.Generation
+	item.LastTransitionAt = now
+	if container != nil {
+		if err := pm.StopMicroservice(item.LocalUUID); err != nil {
+			item.LastError = err.Error()
+			item.RuntimeState = "stopping"
+			item.State = item.RuntimeState
+			_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+			return
+		}
+	}
+	item.RuntimeState = "stopped"
+	item.State = item.RuntimeState
+	item.LastError = ""
+	item.FailureCount = 0
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+}
+
+func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
+	if container == nil {
+		pm.launchLocalDeployment(item, now)
+		return
+	}
+
+	status, err := pm.engine.GetContainerStatus(container.ID, item.LocalUUID)
+	if err != nil {
+		item.RuntimeState = "unknown"
+		item.State = item.RuntimeState
+		item.LastError = err.Error()
+		item.LastTransitionAt = now
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	}
+
+	runtime := strings.ToLower(string(status.Status))
+	item.RuntimeState = runtime
+	item.State = runtime
+	item.ContainerID = container.ID
+	item.LastTransitionAt = now
+
+	switch runtime {
+	case "running":
+		item.ObservedGeneration = item.Generation
+		item.LastError = ""
+		item.FailureCount = 0
+	case "created":
+		if err := pm.StartMicroservice(item.LocalUUID); err != nil {
+			pm.bumpLocalFailure(item, err, "created")
+		} else {
+			item.RuntimeState = "running"
+			item.State = item.RuntimeState
+			item.ObservedGeneration = item.Generation
+			item.LastError = ""
+			item.FailureCount = 0
+		}
+	case "failed", "exiting", "unknown":
+		pm.bumpLocalFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
+	default:
+		if status.ErrorMessage != nil {
+			item.LastError = strings.TrimSpace(*status.ErrorMessage)
+		}
+	}
+
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+}
+
+func (pm *ProcessManager) bumpLocalFailure(item *models.LocalDeployedMicroservice, cause error, runtime string) {
+	item.FailureCount++
+	item.RestartCount++
+	if cause != nil {
+		item.LastError = cause.Error()
+	}
+	if item.FailureCount >= localReconcileMaxFailures {
+		item.RuntimeState = "stuck_in_restart"
+		item.State = item.RuntimeState
+		return
+	}
+	item.RuntimeState = runtime
+	item.State = item.RuntimeState
+}
+
+func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicroservice, now int64) {
+	doc := &models.LocalDeployManifest{}
+	dec := yaml.NewDecoder(strings.NewReader(item.ManifestYAML))
+	dec.KnownFields(true)
+	if err := dec.Decode(doc); err != nil {
+		item.RuntimeState = "failed"
+		item.State = item.RuntimeState
+		pm.bumpLocalFailure(item, fmt.Errorf("invalid persisted manifest: %w", err), item.RuntimeState)
+		item.LastTransitionAt = now
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	}
+	if err := doc.Validate(); err != nil {
+		item.RuntimeState = "failed"
+		item.State = item.RuntimeState
+		pm.bumpLocalFailure(item, fmt.Errorf("invalid persisted manifest: %w", err), item.RuntimeState)
+		item.LastTransitionAt = now
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	}
+
+	arch := strings.ToLower(strings.TrimSpace(config.GetInstance().Arch))
+	image := doc.ResolveImageForArch(arch)
+	localMS := models.BuildMicroserviceFromLocalManifest(doc, item.LocalUUID, image)
+	registry := models.NewRegistry(2, "from_cache", true, "", "", "")
+	if doc.Spec.Images.Registry != nil {
+		if reg, err := store.GetInstance().GetLocalRegistry(*doc.Spec.Images.Registry); err == nil && reg != nil {
+			registry = reg
+			localMS.RegistryID = reg.ID
+		}
+	}
+
+	item.LastStartAttemptAt = now
+	hostIP := network.GetInstance().GetCurrentIPAddress()
+	containerID, err := pm.LaunchLocalMicroservice(localMS, registry, hostIP)
+	if err != nil {
+		item.RuntimeState = "failed"
+		item.State = item.RuntimeState
+		pm.bumpLocalFailure(item, err, item.RuntimeState)
+		item.LastTransitionAt = now
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	}
+	item.ContainerID = containerID
+	item.ImageName = image
+	item.RuntimeState = "running"
+	item.State = item.RuntimeState
+	item.ObservedGeneration = item.Generation
+	item.LastError = ""
+	item.FailureCount = 0
+	item.LastTransitionAt = now
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
 }
 
 // checkTasks is a long-running goroutine that drains the task queue.
@@ -990,6 +1204,22 @@ func (pm *ProcessManager) PruneDanglingImages() (*engine.ImagePruneReport, error
 		return nil, fmt.Errorf("process manager engine is not initialized")
 	}
 	return pm.engine.PruneDangling(context.Background())
+}
+
+// PruneContainers prunes stopped/orphaned containers.
+func (pm *ProcessManager) PruneContainers() (*engine.ContainerPruneReport, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.PruneContainers(context.Background())
+}
+
+// PruneVolumes prunes unused/orphaned volume artifacts.
+func (pm *ProcessManager) PruneVolumes() (*engine.VolumePruneReport, error) {
+	if pm.engine == nil {
+		return nil, fmt.Errorf("process manager engine is not initialized")
+	}
+	return pm.engine.PruneVolumes(context.Background())
 }
 
 // InspectContainerRaw returns full engine-native inspect payload for a container.

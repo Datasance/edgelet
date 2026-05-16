@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/serviceaccount"
@@ -23,9 +25,11 @@ import (
 )
 
 const (
-	moduleName    = "Field Agent"
-	halHWInfoURL  = "http://localhost:54331/hal/hwc/lshw"
-	halUSBInfoURL = "http://localhost:54331/hal/hwc/lsusb"
+	moduleName            = "Field Agent"
+	halHWInfoURL          = "http://localhost:54331/hal/hwc/lshw"
+	halUSBInfoURL         = "http://localhost:54331/hal/hwc/lsusb"
+	DeprovisionScopeAll   = "all"
+	DeprovisionScopeLocal = "local"
 )
 
 // getArchitectureCode converts architecture string to integer code
@@ -693,6 +697,30 @@ func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 // Deprovision deprovisions the agent (matching Java: deProvision(boolean isTokenExpired))
 // clearCredentials=true matches Java's isTokenExpired=true (skip controller request)
 func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
+	return fa.DeprovisionWithScope(clearCredentials, DeprovisionScopeAll)
+}
+
+func normalizeDeprovisionScope(scope string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(scope))
+	if normalized == "" {
+		return DeprovisionScopeAll, nil
+	}
+	switch normalized {
+	case DeprovisionScopeAll, DeprovisionScopeLocal:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid deprovision scope %q (allowed: %s|%s)", scope, DeprovisionScopeAll, DeprovisionScopeLocal)
+	}
+}
+
+// DeprovisionWithScope deprovisions the agent and controls cleanup scope.
+// scope=all removes managed+local workloads; scope=local preserves local workloads.
+func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) error {
+	normalizedScope, scopeErr := normalizeDeprovisionScope(scope)
+	if scopeErr != nil {
+		return scopeErr
+	}
+	preserveLocal := normalizedScope == DeprovisionScopeLocal
 	logging.LogInfo(moduleName, "Start Deprovisioning")
 
 	// Acquire provisioning lock (matching Java: provisioningLock.tryLock())
@@ -828,9 +856,16 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 
 	// Clear microservice manager (matching Java: microserviceManager.clear())
 	fa.Clear()
+	// Clear stale runtime status cache so /v3/ms and CLI cannot show ghost entries
+	// after deprovision while cleanup continues in background.
+	statusreporter.GetInstance().ResetProcessManagerStatus()
 
 	// Run slow cleanup in background so HTTP handler can return quickly (avoids CLI timeout)
 	go func() {
+		// For scope=all, purge persisted local desired-state first so local reconciler
+		// cannot recreate workloads while cleanup is still in progress.
+		fa.clearSQLiteCacheTablesOnDeprovision(preserveLocal)
+
 		// Stop running microservices (matching Java: ProcessManager.getInstance().stopRunningMicroservices(false, iofogUuid))
 		if fa.processManager != nil {
 			func() {
@@ -839,45 +874,41 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 						logging.LogError(moduleName, "Error stopping running microservices", fmt.Errorf("%v", r))
 					}
 				}()
-				if err := fa.processManager.StopRunningMicroservices(iofogUUID, true); err != nil {
+				if err := fa.processManager.StopRunningMicroservicesWithScope(iofogUUID, true, !preserveLocal); err != nil {
 					logging.LogError(moduleName, "Error stopping running microservices", err)
 				}
 			}()
 		}
 
-		// Clear volume mounts (matching Java: volumeMountManager.clear())
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logging.LogError(moduleName, "Error clearing volume mounts", fmt.Errorf("%v", r))
-				}
-			}()
-			if err := volumemount.GetInstance().Clear(); err != nil {
-				logging.LogError(moduleName, "Error clearing volume mounts", err)
+		// Lite all-scope deprovision: prune residual runtime artifacts after workload removal.
+		fa.clearLiteRuntimeArtifactsOnDeprovision(preserveLocal, func() error {
+			if fa.processManager == nil {
+				return nil
 			}
-		}()
+			_, err := fa.processManager.PruneContainers()
+			return err
+		}, func() error {
+			if fa.processManager == nil {
+				return nil
+			}
+			_, err := fa.processManager.PruneVolumes()
+			return err
+		})
+
+		// Clear volume mounts with scope-aware behavior:
+		// - keep-local: clear controller artifacts only (volume_mounts + secrets/configMaps)
+		// - all-scope: full volume-mount clear
+		fa.clearVolumeMountsOnDeprovision(preserveLocal, func() error {
+			return volumemount.GetInstance().Clear()
+		}, func() error {
+			return volumemount.GetInstance().ClearControllerArtifacts()
+		})
 
 		// Clear service-account token projections and metadata.
 		serviceaccount.GetInstance().Clear()
 
-		// Clear SQLite tables for microservices and registries on deprovision
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing SQLite cache tables: %v", r))
-				}
-			}()
-			db := store.GetInstance()
-			if db.Conn() != nil {
-				if err := db.ClearMicroservices(); err != nil {
-					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
-				}
-				if err := db.ClearRegistries(); err != nil {
-					logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
-				}
-				logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")
-			}
-		}()
+		// Run again after runtime cleanup for best-effort convergence.
+		fa.clearSQLiteCacheTablesOnDeprovision(preserveLocal)
 
 		// Notify modules AFTER configuration is cleared (matching Java: notifyModules())
 		func() {
@@ -906,16 +937,107 @@ func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 		}()
 
 		resultMessage := "Success - cleaned up locally"
+		if preserveLocal {
+			resultMessage = "Success - deprovisioned while preserving local microservices"
+		}
 		if deprovisionRequestSuccessful {
 			resultMessage = "Success - deprovisioned from controller and cleaned up locally"
+			if preserveLocal {
+				resultMessage = "Success - deprovisioned from controller and preserved local microservices"
+			}
 		} else if !clearCredentials {
 			resultMessage = "Success - cleaned up locally (controller deprovision failed)"
+			if preserveLocal {
+				resultMessage = "Success - preserved local microservices (controller deprovision failed)"
+			}
 		}
 		logging.LogInfo(moduleName, fmt.Sprintf("Finished Deprovisioning : %s", resultMessage))
 	}()
 
 	logging.LogInfo(moduleName, "Deprovision accepted — cleanup running in background")
 	return nil
+}
+
+func (fa *FieldAgent) clearSQLiteCacheTablesOnDeprovision(preserveLocal bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing SQLite cache tables: %v", r))
+		}
+	}()
+	db := store.GetInstance()
+	if db.Conn() == nil {
+		return
+	}
+	if err := db.ClearMicroservices(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
+	}
+	if err := db.ClearRegistries(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
+	}
+	if !preserveLocal {
+		if err := db.ClearLocalDeployedMicroservices(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local deployments table: %v", err))
+		}
+		if err := db.ClearLocalContainerStates(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local container state table: %v", err))
+		}
+	}
+	logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")
+}
+
+func (fa *FieldAgent) clearVolumeMountsOnDeprovision(preserveLocal bool, clearAllFn func() error, clearLocalFn func() error) {
+	clearFn := clearAllFn
+	if preserveLocal {
+		clearFn = clearLocalFn
+	}
+	if clearFn == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Error clearing volume mounts", fmt.Errorf("%v", r))
+		}
+	}()
+	if err := clearFn(); err != nil {
+		logging.LogError(moduleName, "Error clearing volume mounts", err)
+	}
+}
+
+func (fa *FieldAgent) clearLiteRuntimeArtifactsOnDeprovision(preserveLocal bool, pruneContainersFn func() error, pruneVolumesFn func() error) {
+	if preserveLocal {
+		return
+	}
+	if !buildmeta.IsLite() {
+		return
+	}
+	engineType := strings.ToLower(strings.TrimSpace(fa.config.ContainerEngine))
+	if engineType != constants.EngineDocker && engineType != constants.EnginePodman {
+		return
+	}
+
+	logging.LogDebug(moduleName, "Start lite runtime artifact prune on deprovision (containers -> volumes)")
+	for _, step := range []struct {
+		name string
+		fn   func() error
+	}{
+		{name: "container prune", fn: pruneContainersFn},
+		{name: "volume prune", fn: pruneVolumesFn},
+	} {
+		if step.fn == nil {
+			continue
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(moduleName, fmt.Sprintf("Error during deprovision %s", step.name), fmt.Errorf("%v", r))
+				}
+			}()
+			if err := step.fn(); err != nil {
+				logging.LogError(moduleName, fmt.Sprintf("Error during deprovision %s", step.name), err)
+			}
+		}()
+	}
+	logging.LogDebug(moduleName, "Finished lite runtime artifact prune on deprovision")
 }
 
 // Update updates the FieldAgent when configuration changes.

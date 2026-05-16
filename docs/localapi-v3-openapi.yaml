@@ -113,6 +113,16 @@ paths:
     delete:
       tags: [System]
       summary: Deprovision agent
+      description: >
+        Optional scope controls cleanup behavior. Default scope is all.
+        scope=local preserves local microservices while deprovisioning from controller.
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          schema:
+            type: string
+            enum: [all, local]
       responses:
         "200":
           description: Deprovisioned successfully
@@ -121,6 +131,8 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -138,6 +150,14 @@ paths:
     post:
       tags: [System]
       summary: Trigger prune operation
+      parameters:
+        - in: query
+          name: mode
+          required: false
+          schema:
+            type: string
+            enum: [dangling, containers, volumes, all]
+            default: dangling
       responses:
         "200":
           description: Prune accepted
@@ -223,6 +243,14 @@ paths:
     post:
       tags: [Images]
       summary: Prune dangling images
+      parameters:
+        - in: query
+          name: mode
+          required: false
+          schema:
+            type: string
+            enum: [dangling]
+            default: dangling
       responses:
         "200":
           description: Prune result
@@ -472,6 +500,9 @@ paths:
     get:
       tags: [Microservices]
       summary: Inspect microservice
+      description: >
+        Selector supports UUID, container ID prefix, or dotted application/name.
+        Local microservices can be resolved as local.<name> (for example local.router).
       parameters:
         - in: path
           name: id
@@ -1276,11 +1307,18 @@ components:
               type: string
             mode:
               type: string
+              enum: [dangling, containers, volumes, all]
             deleted:
               type: array
               items:
                 type: string
             deletedCount:
+              type: integer
+            containersDeletedCount:
+              type: integer
+            volumesDeletedCount:
+              type: integer
+            imagesDeletedCount:
               type: integer
             spaceReclaimedBytes:
               type: integer

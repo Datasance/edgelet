@@ -388,8 +388,8 @@ func TestHandleImageV3UsageValidation(t *testing.T) {
 	if got := handleImageV3(client, []string{"load"}); !strings.Contains(got, "Usage: iofog-agent image load -f") {
 		t.Fatalf("expected load usage, got: %s", got)
 	}
-	if got := handleImageV3(client, []string{"prune", "extra"}); !strings.Contains(got, "Usage: iofog-agent image prune") {
-		t.Fatalf("expected prune usage, got: %s", got)
+	if got := handleImageV3(client, []string{"prune", "invalid"}); !strings.Contains(got, "Error[INVALID_ARGUMENT]") {
+		t.Fatalf("expected prune invalid argument, got: %s", got)
 	}
 	if got := handleImageV3(client, []string{"rm"}); !strings.Contains(got, "Usage: iofog-agent image rm") {
 		t.Fatalf("expected rm usage, got: %s", got)

@@ -172,7 +172,12 @@ func (h *V3Handler) HandleSystemProvision(w http.ResponseWriter, r *http.Request
 			"agentUuid": strings.TrimSpace(cfg.IOFogUUID),
 		})
 	case http.MethodDelete:
-		if err := h.facade.Deprovision(); err != nil {
+		scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+		if err := h.facade.Deprovision(scope); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "invalid deprovision scope") {
+				writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+				return
+			}
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
@@ -199,9 +204,13 @@ func (h *V3Handler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	result := h.facade.Prune()
-	if status, _ := result["status"].(string); strings.EqualFold(status, "failed") {
-		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, fmt.Sprintf("%v", result["message"]), nil)
+	result, err := h.facade.Prune(r.URL.Query().Get("mode"))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "invalid prune mode") {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
 	writeSuccess(w, http.StatusOK, result)
@@ -248,6 +257,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "image is required", nil)
 		return
 	}
+	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull requested image=%s async=%v", strings.TrimSpace(req.Image), req.Async))
 	if req.Async {
 		op := &imagePullOperation{
 			OperationID: uuid.NewString(),
@@ -262,6 +272,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		h.pullMu.Lock()
 		h.pullOps[op.OperationID] = op
 		h.pullMu.Unlock()
+		logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull operation started operationId=%s image=%s engine=%s", op.OperationID, op.Image, op.Engine))
 
 		go func(operationID string) {
 			resolvedImage, err := h.facade.PullImageWithProgress(req.Image, req.RegistryID, req.Platform, func(progress float32) {
@@ -293,10 +304,12 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				current.Status = "failed"
 				current.Error = err.Error()
+				logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local image pull failed operationId=%s image=%s err=%v", operationID, strings.TrimSpace(req.Image), err))
 				return
 			}
 			current.Progress = 100
 			current.Status = "succeeded"
+			logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull succeeded operationId=%s image=%s resolvedImage=%s", operationID, strings.TrimSpace(req.Image), current.ResolvedImage))
 		}(op.OperationID)
 
 		writeSuccess(w, http.StatusAccepted, map[string]interface{}{
@@ -321,6 +334,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
+	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull succeeded image=%s resolvedImage=%s", strings.TrimSpace(req.Image), strings.TrimSpace(resolvedImage)))
 	payload := map[string]interface{}{
 		"status":        "ok",
 		"image":         strings.TrimSpace(req.Image),
@@ -418,9 +432,18 @@ func (h *V3Handler) HandleImagePrune(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	result := h.facade.Prune()
-	if status, _ := result["status"].(string); strings.EqualFold(status, "failed") {
-		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, fmt.Sprintf("%v", result["message"]), nil)
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	if mode != "" && mode != runtimeapi.PruneModeDangling {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "image prune supports only mode=dangling", nil)
+		return
+	}
+	result, err := h.facade.Prune(runtimeapi.PruneModeDangling)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "invalid prune mode") {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
 	writeSuccess(w, http.StatusOK, result)
@@ -1012,6 +1035,7 @@ func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *htt
 	h.deployMu.Lock()
 	h.deployOps[op.OperationID] = op
 	h.deployMu.Unlock()
+	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local deploy apply operation started operationId=%s source=%s dryRun=%v name=%s image=%s", op.OperationID, strings.TrimSpace(sourceName), dryRun, op.Name, op.Image))
 
 	go func(operationID string, manifestText string, source string, applyDryRun bool) {
 		deploymentID, _, applyErr := h.facade.ApplyLocalManifest(manifestText, source, applyDryRun, func(stage string, _ string) {
@@ -1040,11 +1064,13 @@ func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *htt
 			current.Status = "failed"
 			current.ErrorCode = ErrCodeInternal
 			current.ErrorMessage = applyErr.Error()
+			logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local deploy apply failed operationId=%s source=%s err=%v", operationID, strings.TrimSpace(source), applyErr))
 			return
 		}
 		current.Status = "succeeded"
 		current.Stage = runtimeapi.DeployStageDone
 		current.DeploymentID = strings.TrimSpace(deploymentID)
+		logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local deploy apply succeeded operationId=%s deploymentId=%s stage=%s", operationID, current.DeploymentID, current.Stage))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
 	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
@@ -1187,11 +1213,14 @@ func (h *V3Handler) HandleDeployRegistriesApply(w http.ResponseWriter, r *http.R
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
+	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local registry apply requested dryRun=%v", dryRun))
 	reg, err := h.facade.ApplyLocalRegistryManifest(manifest, dryRun)
 	if err != nil {
+		logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local registry apply failed dryRun=%v err=%v", dryRun, err))
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
+	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), dryRun))
 	writeSuccess(w, http.StatusOK, map[string]interface{}{
 		"accepted": true,
 		"dryRun":   dryRun,
