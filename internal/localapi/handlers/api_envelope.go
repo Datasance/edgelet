@@ -7,14 +7,14 @@ import (
 
 const (
 	// Stable v3 error code taxonomy.
-	ErrCodeInvalidArgument   = "INVALID_ARGUMENT"
-	ErrCodeUnauthorized      = "UNAUTHORIZED"
-	ErrCodeForbidden         = "FORBIDDEN"
-	ErrCodeNotFound          = "NOT_FOUND"
-	ErrCodeConflict          = "CONFLICT"
-	ErrCodeNotImplemented    = "NOT_IMPLEMENTED"
-	ErrCodeInternal          = "INTERNAL"
-	ErrCodeMethodNotAllowed  = "METHOD_NOT_ALLOWED"
+	ErrCodeInvalidArgument  = "INVALID_ARGUMENT"
+	ErrCodeUnauthorized     = "UNAUTHORIZED"
+	ErrCodeForbidden        = "FORBIDDEN"
+	ErrCodeNotFound         = "NOT_FOUND"
+	ErrCodeConflict         = "CONFLICT"
+	ErrCodeNotImplemented   = "NOT_IMPLEMENTED"
+	ErrCodeInternal         = "INTERNAL"
+	ErrCodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
 )
 
 type apiErrorBody struct {

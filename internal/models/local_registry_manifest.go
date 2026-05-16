@@ -9,12 +9,12 @@ import (
 type LocalRegistryManifest struct {
 	APIVersion string `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string `yaml:"kind" json:"kind"`
-	Spec struct {
-		URL      string `yaml:"url" json:"url"`
-		UserName string `yaml:"username,omitempty" json:"username,omitempty"`
-		Password string `yaml:"password,omitempty" json:"password,omitempty"`
+	Spec       struct {
+		URL       string `yaml:"url" json:"url"`
+		UserName  string `yaml:"username,omitempty" json:"username,omitempty"`
+		Password  string `yaml:"password,omitempty" json:"password,omitempty"`
 		UserEmail string `yaml:"email,omitempty" json:"email,omitempty"`
-		Private  bool   `yaml:"private" json:"private"`
+		Private   bool   `yaml:"private" json:"private"`
 	} `yaml:"spec" json:"spec"`
 }
 

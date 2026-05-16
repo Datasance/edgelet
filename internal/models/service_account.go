@@ -117,4 +117,3 @@ func (r RBACRuleV1) ToMap() map[string]interface{} {
 	}
 	return result
 }
-

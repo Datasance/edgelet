@@ -128,4 +128,3 @@ func TestUpdateCoordinates_AutoModeDoesNotTriggerGPSCallbackOnFailure(t *testing
 		t.Fatalf("expected GPS callback not to be triggered, got %d", got)
 	}
 }
-

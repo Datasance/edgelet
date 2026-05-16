@@ -53,4 +53,3 @@ func TestWebHandlerUpdateCoordinates_MissingLatLonFails(t *testing.T) {
 		t.Fatalf("coordinates should remain unchanged on failure, got %s", cfg.GPSCoordinates)
 	}
 }
-

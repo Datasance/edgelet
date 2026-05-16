@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"crypto/rand"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/base64"
@@ -21,19 +21,19 @@ import (
 )
 
 const (
-	moduleName                     = "JWT Manager"
-	jwtExpiration                  = 10 * time.Minute
-	jwtIssuer                      = "https://iofog.default.svc.bridge.local"
-	jwtAudience                    = "https://iofog.default.svc.bridge.local"
-	localAPIAudience               = "iofog-agent://localapi/v3"
-	serviceAccountAudience         = "https://iofog.default.svc.bridge.local"
-	edgeGuardAudience              = "iofog-agent://edgeguard/v1"
-	tokenUseController             = "controller"
-	tokenUseLocalAPI               = "localapi"
-	tokenUseServiceAccount         = "serviceaccount"
-	tokenUseEdgeGuard              = "edgeguard"
+	moduleName                      = "JWT Manager"
+	jwtExpiration                   = 10 * time.Minute
+	jwtIssuer                       = "https://iofog.default.svc.bridge.local"
+	jwtAudience                     = "https://iofog.default.svc.bridge.local"
+	localAPIAudience                = "iofog-agent://localapi/v3"
+	serviceAccountAudience          = "https://iofog.default.svc.bridge.local"
+	edgeGuardAudience               = "iofog-agent://edgeguard/v1"
+	tokenUseController              = "controller"
+	tokenUseLocalAPI                = "localapi"
+	tokenUseServiceAccount          = "serviceaccount"
+	tokenUseEdgeGuard               = "edgeguard"
 	rotationLeadFractionDenominator = 5
-	maxRotationLeadWindow          = 2 * time.Minute
+	maxRotationLeadWindow           = 2 * time.Minute
 )
 
 // JWTManager handles JWT token generation and validation

@@ -15,9 +15,9 @@ func TestBuildLabelsCanonicalAndProtected(t *testing.T) {
 		IsSystem:         true,
 		SandboxID:        "sandbox-1",
 		UserLabels: map[string]string{
-			"custom.label":             "ok",
-			LabelMicroserviceUID:       "override-disallowed",
-			"APP.KUBERNETES.IO/NAME":   "override-disallowed",
+			"custom.label":               "ok",
+			LabelMicroserviceUID:         "override-disallowed",
+			"APP.KUBERNETES.IO/NAME":     "override-disallowed",
 			"  iofog.org/runtime-engine": "override-disallowed",
 		},
 	}
@@ -138,8 +138,8 @@ func TestBuildEnvInjectTZWhenMissing(t *testing.T) {
 
 func TestMergeUserLabelsCanonicalWins(t *testing.T) {
 	user := map[string]string{
-		"custom.one":           "1",
-		LabelScope:             "override",
+		"custom.one":             "1",
+		LabelScope:               "override",
 		"APP.KUBERNETES.IO/NAME": "override",
 	}
 	canonical := map[string]string{
@@ -159,4 +159,3 @@ func TestMergeUserLabelsCanonicalWins(t *testing.T) {
 		t.Fatal("protected app label from user input should not be present without canonical value")
 	}
 }
-

@@ -31,4 +31,3 @@ func normalizeReportKey(raw string) string {
 	}
 	return camel
 }
-

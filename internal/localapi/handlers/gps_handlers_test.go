@@ -85,4 +85,3 @@ func setupConfigForGPSTests(t *testing.T) *config.Config {
 	cfg.GPSCoordinates = "0.00000,0.00000"
 	return cfg
 }
-

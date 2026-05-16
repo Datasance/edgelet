@@ -30,4 +30,3 @@ func TestReadLineWithTimeout_TimesOutWithoutData(t *testing.T) {
 		t.Fatalf("read returned too quickly, expected timeout wait")
 	}
 }
-

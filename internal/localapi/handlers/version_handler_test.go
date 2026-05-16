@@ -28,4 +28,3 @@ func TestHandleVersion_IncludesFlavorAndAllowedEngine(t *testing.T) {
 		}
 	}
 }
-
