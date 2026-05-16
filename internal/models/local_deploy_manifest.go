@@ -2,6 +2,8 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -67,6 +69,10 @@ type LocalDeployManifest struct {
 	} `yaml:"spec" json:"spec"`
 }
 
+var localDeployNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+var localDeployVolumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+var windowsAbsPathPattern = regexp.MustCompile(`^[a-zA-Z]:[\\/].+`)
+
 func (m *LocalDeployManifest) Validate() error {
 	if m == nil {
 		return fmt.Errorf("manifest is nil")
@@ -88,10 +94,48 @@ func (m *LocalDeployManifest) Validate() error {
 	if strings.TrimSpace(m.Metadata.Name) == "" {
 		return fmt.Errorf("metadata.name is required")
 	}
+	name := strings.TrimSpace(m.Metadata.Name)
+	if len(name) > 63 {
+		return fmt.Errorf("metadata.name must be <= 63 characters and follow DNS-1123 label format")
+	}
+	if !localDeployNamePattern.MatchString(name) {
+		return fmt.Errorf("metadata.name must match DNS-1123 label format: lowercase alphanumeric or '-', start/end alphanumeric")
+	}
 	if strings.TrimSpace(m.Spec.Images.X86) == "" && strings.TrimSpace(m.Spec.Images.Arm) == "" {
 		return fmt.Errorf("spec.images.x86 or spec.images.arm is required")
 	}
+	for i := range m.Spec.Container.Volumes {
+		volume := &m.Spec.Container.Volumes[i]
+		effectiveType := strings.ToUpper(strings.TrimSpace(volume.Type))
+		if effectiveType == "" {
+			effectiveType = string(VolumeMappingTypeBind)
+		}
+		volume.Type = effectiveType
+
+		switch VolumeMappingType(effectiveType) {
+		case VolumeMappingTypeBind:
+			if !isValidHostPath(volume.HostDestination) {
+				return fmt.Errorf("spec.container.volumes[%d].hostDestination must be an absolute host path for type BIND", i)
+			}
+		case VolumeMappingTypeVolume:
+			if !localDeployVolumeNamePattern.MatchString(strings.TrimSpace(volume.HostDestination)) {
+				return fmt.Errorf("spec.container.volumes[%d].hostDestination includes invalid characters for a local volume name, only \"[a-zA-Z0-9][a-zA-Z0-9_.-]*\" are allowed. If you intended to pass a host directory, use type: bind", i)
+			}
+		case VolumeMappingTypeVolumeMount:
+			return fmt.Errorf("spec.container.volumes[%d].type VOLUME_MOUNT is not supported for local manifests", i)
+		default:
+			return fmt.Errorf("spec.container.volumes[%d].type must be BIND or VOLUME", i)
+		}
+	}
 	return nil
+}
+
+func isValidHostPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return false
+	}
+	return filepath.IsAbs(trimmed) || windowsAbsPathPattern.MatchString(trimmed)
 }
 
 func (m *LocalDeployManifest) ResolveImageForArch(arch string) string {
