@@ -511,4 +511,3 @@ func (m *Manager) InstanceConfigUpdated() {
 		logging.LogInfo(moduleName, fmt.Sprintf("Edge Guard Manager frequency updated to: %d seconds", currentFreq))
 	}
 }
-
