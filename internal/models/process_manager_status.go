@@ -124,6 +124,28 @@ func (p *ProcessManagerStatus) RemoveNotRunningMicroserviceStatus() {
 	}
 }
 
+// PruneMicroserviceStatus removes entries matching predicate.
+func (p *ProcessManagerStatus) PruneMicroserviceStatus(predicate func(uuid string, status *MicroserviceStatus) bool) {
+	if predicate == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for uuid, status := range p.MicroservicesStatus {
+		if predicate(uuid, status) {
+			delete(p.MicroservicesStatus, uuid)
+		}
+	}
+}
+
+// ClearMicroserviceStatuses clears all tracked microservice statuses and resets count.
+func (p *ProcessManagerStatus) ClearMicroserviceStatuses() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.MicroservicesStatus = make(map[string]*MicroserviceStatus)
+	p.RunningMicroservicesCount = 0
+}
+
 // GetJSONMicroservicesStatus returns the microservices status as a JSON string
 func (p *ProcessManagerStatus) GetJSONMicroservicesStatus() string {
 	p.mu.RLock()

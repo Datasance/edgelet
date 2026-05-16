@@ -49,3 +49,12 @@ func (d *DB) DeleteLocalContainerState(msUUID string) error {
 	_, err := d.Conn().Exec("DELETE FROM local_container_state WHERE ms_uuid = ?", msUUID)
 	return err
 }
+
+// ClearLocalContainerStates removes all local container state rows.
+func (d *DB) ClearLocalContainerStates() error {
+	if d.Conn() == nil {
+		return nil
+	}
+	_, err := d.Conn().Exec("DELETE FROM local_container_state")
+	return err
+}
