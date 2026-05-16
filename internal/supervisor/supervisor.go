@@ -86,6 +86,9 @@ func (s *Supervisor) Start() error {
 		return fmt.Errorf("failed to open SQLite database: %w", err)
 	}
 	logging.LogInfo(moduleName, "SQLite database opened")
+	if err := s.ensureDefaultLocalRegistriesOnStartup(db); err != nil {
+		return fmt.Errorf("failed to seed default local registries: %w", err)
+	}
 
 	// Create context for cancellation
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -441,6 +444,17 @@ func (s *Supervisor) monitorLocalAPI() {
 			logging.LogDebug(moduleName, "Finished checking local API status")
 		}
 	}
+}
+
+func (s *Supervisor) ensureDefaultLocalRegistriesOnStartup(db *store.DB) error {
+	if db == nil || db.Conn() == nil {
+		return nil
+	}
+	if err := db.EnsureDefaultLocalRegistries(); err != nil {
+		return err
+	}
+	logging.LogDebug(moduleName, "Default local registries ensured on startup")
+	return nil
 }
 
 // operationDurationWorker periodically updates the operation duration

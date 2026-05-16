@@ -39,5 +39,13 @@ func (m *LocalRegistryManifest) Validate() error {
 	if strings.TrimSpace(m.Spec.URL) == "" {
 		return fmt.Errorf("spec.url is required")
 	}
+	if m.Spec.Private {
+		if strings.TrimSpace(m.Spec.UserName) == "" {
+			return fmt.Errorf("spec.username is required when spec.private=true")
+		}
+		if strings.TrimSpace(m.Spec.Password) == "" {
+			return fmt.Errorf("spec.password is required when spec.private=true")
+		}
+	}
 	return nil
 }
