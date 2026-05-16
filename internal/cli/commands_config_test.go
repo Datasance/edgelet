@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"math/big"
@@ -271,21 +272,78 @@ func TestFormatV3Output_MSLifecycleFormatting(t *testing.T) {
 
 func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
 	out := formatRegistryInspect(map[string]interface{}{
-		"items": []interface{}{
-			map[string]interface{}{
-				"id":        3,
-				"url":       "registry.example.com",
-				"isPublic":  false,
-				"userName":  "john",
-				"userEmail": "john@example.com",
-			},
-		},
-	}, "3")
+		"id":        3,
+		"url":       "registry.example.com",
+		"isPublic":  false,
+		"userName":  "john",
+		"userEmail": "john@example.com",
+		"password":  "s3cr3t",
+	}, false)
 	if strings.Contains(out, "{") || strings.Contains(out, "}") {
 		t.Fatalf("expected non-JSON inspect output, got: %s", out)
 	}
 	if !strings.Contains(out, "ID: 3") || !strings.Contains(out, "URL: registry.example.com") {
 		t.Fatalf("expected inspect fields in output, got: %s", out)
+	}
+	expectedB64 := base64.StdEncoding.EncodeToString([]byte("s3cr3t"))
+	if !strings.Contains(out, "PASSWORD_B64: "+expectedB64) {
+		t.Fatalf("expected PASSWORD_B64 output, got: %s", out)
+	}
+	if strings.Contains(out, "PASSWORD: s3cr3t") {
+		t.Fatalf("did not expect plain password by default, got: %s", out)
+	}
+}
+
+func TestFormatRegistryInspect_PlainPasswordOptIn(t *testing.T) {
+	out := formatRegistryInspect(map[string]interface{}{
+		"id":       3,
+		"url":      "registry.example.com",
+		"isPublic": false,
+		"userName": "john",
+		"password": "s3cr3t",
+	}, true)
+	if !strings.Contains(out, "PASSWORD: s3cr3t") {
+		t.Fatalf("expected plain password output, got: %s", out)
+	}
+	if strings.Contains(out, "PASSWORD_B64:") {
+		t.Fatalf("did not expect PASSWORD_B64 in plain mode, got: %s", out)
+	}
+}
+
+func TestFormatRegistryInspect_PublicRegistryOmitsPassword(t *testing.T) {
+	out := formatRegistryInspect(map[string]interface{}{
+		"id":       1,
+		"url":      "docker.io",
+		"isPublic": true,
+	}, false)
+	if strings.Contains(out, "PASSWORD") {
+		t.Fatalf("expected no password fields for public registry, got: %s", out)
+	}
+}
+
+func TestFormatLogEntries_PreservesDockerStyleSpacing(t *testing.T) {
+	out := formatLogEntries(map[string]interface{}{
+		"entries": []interface{}{
+			map[string]interface{}{"line": "line1\n"},
+			map[string]interface{}{"line": "\n"},
+			map[string]interface{}{"line": "line3\n"},
+		},
+	}, false)
+	if out != "line1\n\nline3\n" {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestFormatLogEntries_AppendsMissingTrailingNewlinePerEntry(t *testing.T) {
+	out := formatLogEntries(map[string]interface{}{
+		"entries": []interface{}{
+			map[string]interface{}{"line": "line1"},
+			map[string]interface{}{"line": ""},
+			map[string]interface{}{"line": "line3"},
+		},
+	}, false)
+	if out != "line1\n\nline3\n" {
+		t.Fatalf("unexpected output: %q", out)
 	}
 }
 

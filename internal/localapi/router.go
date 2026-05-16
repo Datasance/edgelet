@@ -88,6 +88,8 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("/v3/system/provision", chainMiddleware(withRoute("/v3/system/provision", r.v3Handler.HandleSystemProvision), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 	r.mux.HandleFunc("/v3/system/reload", chainMiddleware(withRoute("/v3/system/reload", r.v3Handler.HandleSystemReload), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 	r.mux.HandleFunc("/v3/system/prune", chainMiddleware(withRoute("/v3/system/prune", r.v3Handler.HandleSystemPrune), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/logs", chainMiddleware(withRoute("/v3/system/logs", r.v3Handler.HandleSystemLogs), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
+	r.mux.HandleFunc("/v3/system/logs:stream", chainMiddleware(withRoute("/v3/system/logs:stream", r.v3Handler.HandleSystemLogs), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 	r.mux.HandleFunc("/v3/system/gps", chainMiddleware(withRoute("/v3/system/gps", r.v3Handler.HandleSystemGPS), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 	r.mux.HandleFunc("/v3/system/config", chainMiddleware(withRoute("/v3/system/config", r.v3Handler.HandleConfig), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))
 	r.mux.HandleFunc("/v3/system/controller/cert", chainMiddleware(withRoute("/v3/system/controller/cert", r.v3Handler.HandleSystemControllerCert), authMiddlewareV3, accessLoggingMiddleware, requestIdMiddleware))

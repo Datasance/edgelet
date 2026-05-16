@@ -1,11 +1,11 @@
 package docker
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -140,55 +140,13 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 		// Read stdout
 		stdoutDone := make(chan error, 1)
 		go func() {
-			buf := make([]byte, 4096)
-			for {
-				n, err := stdoutReader.Read(buf)
-				if n > 0 {
-					lines := strings.Split(string(buf[:n]), "\n")
-					for _, line := range lines {
-						if line != "" {
-							if handler != nil {
-								handler.OnLogLine(sessionID, microserviceUUID, []byte(line+"\n"), STDOUT)
-							}
-						}
-					}
-				}
-				if errors.Is(err, io.EOF) {
-					stdoutDone <- nil
-					break
-				}
-				if err != nil {
-					stdoutDone <- err
-					break
-				}
-			}
+			stdoutDone <- forwardDemuxedLogStream(stdoutReader, sessionID, microserviceUUID, handler, STDOUT)
 		}()
 
 		// Read stderr
 		stderrDone := make(chan error, 1)
 		go func() {
-			buf := make([]byte, 4096)
-			for {
-				n, err := stderrReader.Read(buf)
-				if n > 0 {
-					lines := strings.Split(string(buf[:n]), "\n")
-					for _, line := range lines {
-						if line != "" {
-							if handler != nil {
-								handler.OnLogLine(sessionID, microserviceUUID, []byte(line+"\n"), STDERR)
-							}
-						}
-					}
-				}
-				if errors.Is(err, io.EOF) {
-					stderrDone <- nil
-					break
-				}
-				if err != nil {
-					stderrDone <- err
-					break
-				}
-			}
+			stderrDone <- forwardDemuxedLogStream(stderrReader, sessionID, microserviceUUID, handler, STDERR)
 		}()
 
 		// Wait for demux to complete or error
@@ -210,6 +168,22 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 
 	c.logger.Infof("Started tailing container logs: containerId=%s", containerID)
 	return nil
+}
+
+func forwardDemuxedLogStream(reader io.Reader, sessionID, microserviceUUID string, handler LogTailHandler, streamType StreamType) error {
+	buffered := bufio.NewReader(reader)
+	for {
+		line, err := buffered.ReadString('\n')
+		if len(line) > 0 && handler != nil {
+			handler.OnLogLine(sessionID, microserviceUUID, []byte(line), streamType)
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // parseISOTimestamp parses an ISO 8601 timestamp string

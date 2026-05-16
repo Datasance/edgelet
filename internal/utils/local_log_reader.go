@@ -293,7 +293,6 @@ func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 	}
 
 	lastPosition := stat.Size()
-	lastInode := stat.Sys()
 
 	var untilT time.Time
 	hasUntil := false
@@ -349,9 +348,10 @@ func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 				continue
 			}
 
-			currentInode := currentStat.Sys()
-			if currentInode != lastInode {
-				// File was rotated, reopen
+			// Detect truncate/rotation by size drop and reopen the file once.
+			// This avoids unstable inode/interface equality checks that can
+			// incorrectly trigger full-file replay in follow mode.
+			if currentStat.Size() < lastPosition {
 				if cerr := file.Close(); cerr != nil {
 					logging.LogWarn(localLogReaderModuleName, fmt.Sprintf("Failed to close rotated log file: %v", cerr))
 				}
@@ -361,7 +361,7 @@ func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 					continue
 				}
 				lastPosition = 0
-				lastInode = currentInode
+				continue
 			}
 
 			// Check if file size increased
@@ -375,9 +375,6 @@ func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 				scanner := bufio.NewScanner(file)
 				for scanner.Scan() {
 					line := scanner.Text()
-					if line == "" {
-						continue
-					}
 					if !shouldIncludeAgentLine(line, sinceT, untilT, hasSince, hasUntil) {
 						if hasUntil {
 							if t, ok := extractTimestampFromAgentLine(line); ok && t.After(untilT) {

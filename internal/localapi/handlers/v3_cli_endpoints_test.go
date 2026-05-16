@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 )
 
@@ -155,6 +157,100 @@ func TestHandleSystemPrune_RejectsInvalidMode(t *testing.T) {
 	handler.HandleSystemPrune(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSystemLogs_RejectsInvalidTail(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/system/logs?tailLines=bad", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleSystemLogs(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSystemLogs_BoundedReturnsEntries(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
+	logFile := filepath.Join(cfg.LogDiskDirectory, "iofog-agent.0.log")
+	logLines := strings.Join([]string{
+		"2026-05-17 00:00:01.000 [info] boot",
+		"2026-05-17 00:00:02.000 [info] ready",
+	}, "\n") + "\n"
+	if err := os.WriteFile(logFile, []byte(logLines), 0o600); err != nil {
+		t.Fatalf("failed to write log file: %v", err)
+	}
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/system/logs?tailLines=2", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleSystemLogs(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Entries []map[string]interface{} `json:"entries"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse response: %v body=%s", err, rec.Body.String())
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success=true body=%s", rec.Body.String())
+	}
+	if len(envelope.Data.Entries) < 2 {
+		t.Fatalf("expected at least 2 log entries, got %d body=%s", len(envelope.Data.Entries), rec.Body.String())
+	}
+}
+
+func TestHandleDeployRegistries_GetByID_IncludesPassword(t *testing.T) {
+	db := store.GetInstance()
+	_ = db.Close()
+	if err := db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.EnsureDefaultLocalRegistries(); err != nil {
+		t.Fatalf("failed to seed default registries: %v", err)
+	}
+	if err := db.UpsertLocalRegistry(models.NewRegistry(7, "private.example.com", false, "john", "s3cr3t", "john@example.com")); err != nil {
+		t.Fatalf("failed to upsert local registry: %v", err)
+	}
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/registries/7", nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleDeployRegistries(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ID       int    `json:"id"`
+			Password string `json:"password"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse response: %v body=%s", err, rec.Body.String())
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success=true body=%s", rec.Body.String())
+	}
+	if envelope.Data.ID != 7 {
+		t.Fatalf("expected id=7, got %d", envelope.Data.ID)
+	}
+	if envelope.Data.Password != "s3cr3t" {
+		t.Fatalf("expected password in data payload, got %q", envelope.Data.Password)
 	}
 }
 

@@ -163,6 +163,62 @@ paths:
           description: Prune accepted
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v3/system/logs:
+    get:
+      tags: [Logs]
+      summary: Fetch bounded daemon logs
+      parameters:
+        - in: query
+          name: tailLines
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: until
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Daemon log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v3/system/logs:stream:
+    get:
+      tags: [Logs]
+      summary: Stream daemon logs over websocket (follow mode)
+      parameters:
+        - in: query
+          name: tailLines
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: until
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v3/images:
     get:
       tags: [Images]

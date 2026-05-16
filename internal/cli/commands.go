@@ -3,10 +3,12 @@ package cli
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
@@ -268,7 +270,7 @@ func showHelp() string {
 
 func handleSystemV3(client *Client, args []string) string {
 	if len(args) == 0 {
-		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]>"
+		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]|logs [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]>"
 	}
 	switch args[0] {
 	case "status":
@@ -289,8 +291,10 @@ func handleSystemV3(client *Client, args []string) string {
 			path += "?mode=" + mode
 		}
 		return requestV3(client, "POST", path, nil)
+	case "logs":
+		return handleSystemLogs(client, args[1:])
 	default:
-		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]>"
+		return "Usage: iofog-agent system <status|info|version|reload|prune [dangling|containers|volumes|all]|logs [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]>"
 	}
 }
 
@@ -543,14 +547,15 @@ func handleRegistryV3(client *Client, args []string) string {
 	case "ls":
 		return requestV3(client, "GET", "/v3/deploy/registries", nil)
 	case "inspect":
-		if len(args) < 2 {
-			return "Usage: iofog-agent registry inspect <id>"
+		id, passwordPlain, parseErr := parseRegistryInspectArgs(args[1:])
+		if parseErr != "" {
+			return parseErr
 		}
-		items, err := client.RequestV3("GET", "/v3/deploy/registries", nil)
+		item, err := client.RequestV3("GET", "/v3/deploy/registries/"+id, nil)
 		if err != nil {
 			return formatV3RequestError(err)
 		}
-		return formatRegistryInspect(items, args[1])
+		return formatRegistryInspect(item, passwordPlain)
 	case "rm":
 		if len(args) < 2 {
 			return "Usage: iofog-agent registry rm <id>"
@@ -1061,27 +1066,45 @@ func formatImagePruneResult(result map[string]interface{}) string {
 	)
 }
 
-func formatRegistryInspect(result map[string]interface{}, id string) string {
-	rawItems, ok := result["items"].([]interface{})
-	if !ok {
-		return "No registries found."
+func formatRegistryInspect(result map[string]interface{}, passwordPlain bool) string {
+	if len(result) == 0 {
+		return "Error[NOT_FOUND]: registry not found"
 	}
-	for _, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if mapValueAsString(item, "id") == id {
-			return strings.Join([]string{
-				fmt.Sprintf("ID: %s", mapValueAsString(item, "id")),
-				fmt.Sprintf("URL: %s", mapValueAsString(item, "url")),
-				fmt.Sprintf("PUBLIC: %s", mapValueAsString(item, "isPublic")),
-				fmt.Sprintf("USERNAME: %s", mapValueAsString(item, "userName")),
-				fmt.Sprintf("EMAIL: %s", mapValueAsString(item, "userEmail")),
-			}, "\n")
+	password := mapValueAsString(result, "password")
+	lines := []string{
+		fmt.Sprintf("ID: %s", mapValueAsString(result, "id")),
+		fmt.Sprintf("URL: %s", mapValueAsString(result, "url")),
+		fmt.Sprintf("PUBLIC: %s", mapValueAsString(result, "isPublic")),
+		fmt.Sprintf("USERNAME: %s", mapValueAsString(result, "userName")),
+		fmt.Sprintf("EMAIL: %s", mapValueAsString(result, "userEmail")),
+	}
+	if mapValueAsString(result, "isPublic") == "false" {
+		if passwordPlain {
+			lines = append(lines, fmt.Sprintf("PASSWORD: %s", password))
+		} else {
+			lines = append(lines, fmt.Sprintf("PASSWORD_B64: %s", base64.StdEncoding.EncodeToString([]byte(password))))
 		}
 	}
-	return fmt.Sprintf("Error[NOT_FOUND]: registry %s not found", id)
+	return strings.Join(lines, "\n")
+}
+
+func parseRegistryInspectArgs(args []string) (id string, passwordPlain bool, err string) {
+	if len(args) == 0 {
+		return "", false, "Usage: iofog-agent registry inspect <id> [--password-plain]"
+	}
+	id = strings.TrimSpace(args[0])
+	if id == "" {
+		return "", false, "Usage: iofog-agent registry inspect <id> [--password-plain]"
+	}
+	for i := 1; i < len(args); i++ {
+		switch strings.TrimSpace(args[i]) {
+		case "--password-plain":
+			passwordPlain = true
+		default:
+			return "", false, fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+		}
+	}
+	return id, passwordPlain, ""
 }
 
 func formatRegistryRemoveResult(result map[string]interface{}) string {
@@ -1672,7 +1695,7 @@ func showDeployHelpV3() string {
 func showRegistryHelpV3() string {
 	return "Usage:\n" +
 		"  iofog-agent registry ls\n" +
-		"  iofog-agent registry inspect <id>\n" +
+		"  iofog-agent registry inspect <id> [--password-plain]\n" +
 		"  iofog-agent registry rm <id>"
 }
 
@@ -1730,7 +1753,7 @@ func handleMSLogs(client *Client, id string, args []string) string {
 	}
 
 	if follow {
-		return streamLogsWS(client, id, timestamps)
+		return streamLogsWS(client, id, tail, since, until, timestamps)
 	}
 
 	path := "/v3/ms/" + id + "/logs?tail=" + tail
@@ -1764,8 +1787,70 @@ func handleMSLogs(client *Client, id string, args []string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func streamLogsWS(client *Client, id string, timestamps bool) string {
-	conn, err := dialWS(client, "/v3/ms/"+id+"/logs:stream")
+func handleSystemLogs(client *Client, args []string) string {
+	follow := false
+	tail := "100"
+	since := ""
+	until := ""
+	timestamps := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--follow", "-f":
+			follow = true
+		case "--tail":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --tail requires a number"
+			}
+			tail = strings.TrimSpace(args[i+1])
+			i++
+		case "--since":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --since requires an ISO8601 timestamp"
+			}
+			since = strings.TrimSpace(args[i+1])
+			i++
+		case "--until":
+			if i+1 >= len(args) {
+				return "Error[INVALID_ARGUMENT]: --until requires an ISO8601 timestamp"
+			}
+			until = strings.TrimSpace(args[i+1])
+			i++
+		case "--timestamps":
+			timestamps = true
+		case "--help", "-h", "-?":
+			return "Usage: iofog-agent system logs [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]"
+		default:
+			return fmt.Sprintf("Error[INVALID_ARGUMENT]: unknown flag %s", args[i])
+		}
+	}
+
+	if follow {
+		return streamSystemLogsWS(client, tail, since, until, timestamps)
+	}
+
+	path := "/v3/system/logs?tailLines=" + url.QueryEscape(tail)
+	if since != "" {
+		path += "&since=" + url.QueryEscape(since)
+	}
+	if until != "" {
+		path += "&until=" + url.QueryEscape(until)
+	}
+	result, err := client.RequestV3("GET", path, nil)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	return formatLogEntries(result, timestamps)
+}
+
+func streamLogsWS(client *Client, id, tail, since, until string, timestamps bool) string {
+	wsPath := "/v3/ms/" + id + "/logs:stream?tail=" + url.QueryEscape(tail)
+	if since != "" {
+		wsPath += "&since=" + url.QueryEscape(since)
+	}
+	if until != "" {
+		wsPath += "&until=" + url.QueryEscape(until)
+	}
+	conn, err := dialWS(client, wsPath)
 	if err != nil {
 		return fmt.Sprintf("Error[INTERNAL]: %v", err)
 	}
@@ -1779,13 +1864,59 @@ func streamLogsWS(client *Client, id string, timestamps bool) string {
 			return ""
 		}
 		line := mapValueAsRawString(event, "line")
-		if timestamps {
-			ts := mapValueAsString(event, "ts")
-			fmt.Printf("%s %s\n", ts, line)
-		} else {
-			fmt.Println(line)
-		}
+		writeStreamLogLine(os.Stdout, mapValueAsString(event, "ts"), line, timestamps)
 	}
+}
+
+func streamSystemLogsWS(client *Client, tail, since, until string, timestamps bool) string {
+	wsPath := "/v3/system/logs:stream?tailLines=" + url.QueryEscape(tail)
+	if since != "" {
+		wsPath += "&since=" + url.QueryEscape(since)
+	}
+	if until != "" {
+		wsPath += "&until=" + url.QueryEscape(until)
+	}
+	conn, err := dialWS(client, wsPath)
+	if err != nil {
+		return fmt.Sprintf("Error[INTERNAL]: %v", err)
+	}
+	defer conn.Close()
+	for {
+		var event map[string]interface{}
+		if err := conn.ReadJSON(&event); err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				return ""
+			}
+			return ""
+		}
+		line := mapValueAsRawString(event, "line")
+		writeStreamLogLine(os.Stdout, mapValueAsString(event, "ts"), line, timestamps)
+	}
+}
+
+func formatLogEntries(result map[string]interface{}, timestamps bool) string {
+	rawEntries, _ := result["entries"].([]interface{})
+	var b strings.Builder
+	for _, raw := range rawEntries {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		line := mapValueAsRawString(entry, "line")
+		writeStreamLogLine(&b, mapValueAsString(entry, "ts"), line, timestamps)
+	}
+	return b.String()
+}
+
+func writeStreamLogLine(w io.Writer, ts, line string, timestamps bool) {
+	if !strings.HasSuffix(line, "\n") {
+		line += "\n"
+	}
+	if timestamps {
+		_, _ = fmt.Fprintf(w, "%s %s", ts, line)
+		return
+	}
+	_, _ = io.WriteString(w, line)
 }
 
 func attachExecSessionWS(client *Client, selector, sessionID string) string {

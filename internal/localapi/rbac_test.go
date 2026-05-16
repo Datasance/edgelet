@@ -73,6 +73,8 @@ func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 	}{
 		{method: http.MethodPost, path: "/v3/system/controller/cert", resource: "system/controller/cert", verb: "update"},
 		{method: http.MethodPost, path: "/v3/system/config/switch", resource: "system/config/switch", verb: "update"},
+		{method: http.MethodGet, path: "/v3/system/logs", resource: "system/logs", verb: "get"},
+		{method: http.MethodGet, path: "/v3/system/logs:stream", resource: "system/logs/stream", verb: "get"},
 		{method: http.MethodGet, path: "/v3/images", resource: "images", verb: "get"},
 		{method: http.MethodPost, path: "/v3/images:pull", resource: "images/pull", verb: "create"},
 		{method: http.MethodGet, path: "/v3/images:pull/abc", resource: "images/pull/status", verb: "get"},

@@ -24,6 +24,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -34,22 +35,31 @@ const (
 
 // V3Handler handles v3 endpoint groups.
 type V3Handler struct {
-	facade       *runtimeapi.Facade
-	execSessions map[string]*localExecSession
-	execMu       sync.RWMutex
-	pullOps      map[string]*imagePullOperation
-	pullMu       sync.RWMutex
-	deployOps    map[string]*deployApplyOperation
-	deployMu     sync.RWMutex
+	facade               *runtimeapi.Facade
+	execSessions         map[string]*localExecSession
+	execMu               sync.RWMutex
+	pullOps              map[string]*imagePullOperation
+	pullMu               sync.RWMutex
+	deployOps            map[string]*deployApplyOperation
+	deployMu             sync.RWMutex
+	resolveMicroservice  func(selector string) (string, error)
+	streamMicroservicLog func(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error
 }
 
 // NewV3Handler creates a new v3 handler.
 func NewV3Handler() *V3Handler {
+	facade := runtimeapi.NewFacade()
 	return &V3Handler{
-		facade:       runtimeapi.NewFacade(),
+		facade:       facade,
 		execSessions: make(map[string]*localExecSession),
 		pullOps:      make(map[string]*imagePullOperation),
 		deployOps:    make(map[string]*deployApplyOperation),
+		resolveMicroservice: func(selector string) (string, error) {
+			return facade.ResolveMicroserviceID(selector)
+		},
+		streamMicroservicLog: func(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error {
+			return processmanager.GetInstance().StreamMicroserviceLogs(microserviceUUID, cfg, handler)
+		},
 	}
 }
 
@@ -214,6 +224,72 @@ func (h *V3Handler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSuccess(w, http.StatusOK, result)
+}
+
+func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v3/system/logs:stream" {
+		if r.Method != http.MethodGet {
+			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+			return
+		}
+		h.handleSystemLogsStreamWS(w, r)
+		return
+	}
+	if r.URL.Path != "/v3/system/logs" {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+
+	tailLines := 100
+	tailRaw := strings.TrimSpace(r.URL.Query().Get("tailLines"))
+	if tailRaw == "" {
+		tailRaw = strings.TrimSpace(r.URL.Query().Get("tail"))
+	}
+	if tailRaw != "" {
+		parsed, err := strconv.Atoi(tailRaw)
+		if err != nil || parsed <= 0 {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "tailLines must be a positive integer", nil)
+			return
+		}
+		tailLines = parsed
+	}
+
+	cfg := config.GetInstance()
+	iofogUUID := strings.TrimSpace(cfg.IOFogUUID)
+	if iofogUUID == "" {
+		iofogUUID = "local-agent"
+	}
+	readerHandler := newSystemLogsCollectHandler()
+	reader := utils.NewLocalLogReader(
+		fmt.Sprintf("localapi-system-logs-%d", time.Now().UnixNano()),
+		iofogUUID,
+		cfg.LogDiskDirectory,
+		&utils.TailConfig{
+			Follow: false,
+			Lines:  tailLines,
+			Since:  strings.TrimSpace(r.URL.Query().Get("since")),
+			Until:  strings.TrimSpace(r.URL.Query().Get("until")),
+		},
+		readerHandler,
+	)
+	reader.Start()
+	select {
+	case <-readerHandler.done:
+	case <-time.After(5 * time.Second):
+	}
+	reader.Stop()
+	if readerHandler.err != nil {
+		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, readerHandler.err.Error(), nil)
+		return
+	}
+	writeSuccess(w, http.StatusOK, map[string]interface{}{
+		"iofogUuid": iofogUUID,
+		"entries":   readerHandler.entries,
+	})
 }
 
 func (h *V3Handler) HandleImages(w http.ResponseWriter, r *http.Request) {
@@ -1574,28 +1650,221 @@ func (h *V3Handler) handleLogsStreamWS(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	defer conn.Close()
-	uuid, err := h.facade.ResolveMicroserviceID(selector)
+
+	uuid, err := h.resolveMicroservice(selector)
 	if err != nil {
 		_ = conn.WriteJSON(map[string]interface{}{"error": err.Error()})
 		return
 	}
-	seen := make(map[string]struct{})
-	for i := 0; i < 300; i++ {
-		_, entries, logsErr := h.facade.GetRuntimeMicroserviceLogs(uuid, 50, "", "")
-		if logsErr != nil {
-			_ = conn.WriteJSON(map[string]interface{}{"error": logsErr.Error()})
+
+	tailLines := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("tail")); raw != "" {
+		n, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || n <= 0 {
+			_ = conn.WriteJSON(map[string]interface{}{"error": "invalid tail parameter"})
 			return
 		}
-		for _, entry := range entries {
-			key := fmt.Sprintf("%v|%v|%v", entry["ts"], entry["stream"], entry["line"])
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			_ = conn.WriteJSON(entry)
-		}
-		time.Sleep(1 * time.Second)
+		tailLines = n
 	}
+	since := strings.TrimSpace(r.URL.Query().Get("since"))
+	until := strings.TrimSpace(r.URL.Query().Get("until"))
+
+	tailHandler := newWSLogTailHandler(conn)
+	cfg := &engine.TailConfig{
+		Follow: true,
+		Lines:  tailLines,
+		Since:  since,
+		Until:  until,
+	}
+	if err := h.streamMicroservicLog(uuid, cfg, tailHandler); err != nil {
+		_ = conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	// Keep one read loop so websocket close is detected and stream can terminate.
+	go func() {
+		for {
+			if _, _, readErr := conn.ReadMessage(); readErr != nil {
+				tailHandler.OnError("ws", readErr)
+				return
+			}
+		}
+	}()
+
+	<-tailHandler.done
+}
+
+func (h *V3Handler) handleSystemLogsStreamWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := localAPIUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	tailLines := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("tailLines")); raw != "" {
+		n, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || n <= 0 {
+			_ = conn.WriteJSON(map[string]interface{}{"error": "invalid tailLines parameter"})
+			return
+		}
+		tailLines = n
+	}
+	since := strings.TrimSpace(r.URL.Query().Get("since"))
+	until := strings.TrimSpace(r.URL.Query().Get("until"))
+
+	cfg := config.GetInstance()
+	iofogUUID := strings.TrimSpace(cfg.IOFogUUID)
+	if iofogUUID == "" {
+		iofogUUID = "local-agent"
+	}
+	tailHandler := newWSSystemLogTailHandler(conn)
+	reader := utils.NewLocalLogReader(
+		fmt.Sprintf("localapi-system-log-stream-%d", time.Now().UnixNano()),
+		iofogUUID,
+		cfg.LogDiskDirectory,
+		&utils.TailConfig{
+			Follow: true,
+			Lines:  tailLines,
+			Since:  since,
+			Until:  until,
+		},
+		tailHandler,
+	)
+	reader.Start()
+	defer reader.Stop()
+
+	go func() {
+		for {
+			if _, _, readErr := conn.ReadMessage(); readErr != nil {
+				tailHandler.OnError("ws", readErr)
+				return
+			}
+		}
+	}()
+	<-tailHandler.done
+}
+
+type wsLogTailHandler struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+	done    chan struct{}
+	once    sync.Once
+}
+
+func newWSLogTailHandler(conn *websocket.Conn) *wsLogTailHandler {
+	return &wsLogTailHandler{
+		conn: conn,
+		done: make(chan struct{}),
+	}
+}
+
+func (h *wsLogTailHandler) OnLogLine(_, _ string, line []byte, st engine.StreamType) {
+	stream := "stdout"
+	if st == engine.Stderr {
+		stream = "stderr"
+	}
+	event := map[string]interface{}{
+		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
+		"stream": stream,
+		"line":   string(line),
+	}
+	h.writeMu.Lock()
+	err := h.conn.WriteJSON(event)
+	h.writeMu.Unlock()
+	if err != nil {
+		h.once.Do(func() { close(h.done) })
+	}
+}
+
+func (h *wsLogTailHandler) OnComplete(_ string) {
+	h.once.Do(func() { close(h.done) })
+}
+
+func (h *wsLogTailHandler) OnError(_ string, err error) {
+	if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+		h.writeMu.Lock()
+		_ = h.conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		h.writeMu.Unlock()
+	}
+	h.once.Do(func() { close(h.done) })
+}
+
+type systemLogsCollectHandler struct {
+	mu      sync.Mutex
+	entries []map[string]interface{}
+	err     error
+	done    chan struct{}
+	once    sync.Once
+}
+
+func newSystemLogsCollectHandler() *systemLogsCollectHandler {
+	return &systemLogsCollectHandler{
+		entries: make([]map[string]interface{}, 0),
+		done:    make(chan struct{}),
+	}
+}
+
+func (h *systemLogsCollectHandler) OnLogLine(_, _ string, line string) {
+	h.mu.Lock()
+	h.entries = append(h.entries, map[string]interface{}{
+		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
+		"stream": "stdout",
+		"line":   line,
+	})
+	h.mu.Unlock()
+}
+
+func (h *systemLogsCollectHandler) OnComplete(_ string) {
+	h.once.Do(func() { close(h.done) })
+}
+
+func (h *systemLogsCollectHandler) OnError(_ string, err error) {
+	h.mu.Lock()
+	h.err = err
+	h.mu.Unlock()
+	h.once.Do(func() { close(h.done) })
+}
+
+type wsSystemLogTailHandler struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+	done    chan struct{}
+	once    sync.Once
+}
+
+func newWSSystemLogTailHandler(conn *websocket.Conn) *wsSystemLogTailHandler {
+	return &wsSystemLogTailHandler{
+		conn: conn,
+		done: make(chan struct{}),
+	}
+}
+
+func (h *wsSystemLogTailHandler) OnLogLine(_, _ string, line string) {
+	event := map[string]interface{}{
+		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
+		"stream": "stdout",
+		"line":   line,
+	}
+	h.writeMu.Lock()
+	err := h.conn.WriteJSON(event)
+	h.writeMu.Unlock()
+	if err != nil {
+		h.once.Do(func() { close(h.done) })
+	}
+}
+
+func (h *wsSystemLogTailHandler) OnComplete(_ string) {
+	h.once.Do(func() { close(h.done) })
+}
+
+func (h *wsSystemLogTailHandler) OnError(_ string, err error) {
+	if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+		h.writeMu.Lock()
+		_ = h.conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		h.writeMu.Unlock()
+	}
+	h.once.Do(func() { close(h.done) })
 }
 
 func configKeyToShortCode(key string) (string, bool) {

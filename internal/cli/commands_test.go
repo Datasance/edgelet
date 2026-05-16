@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -51,5 +52,55 @@ func TestHandleImageV3_PruneRejectsNonDanglingMode(t *testing.T) {
 	out := handleImageV3(&Client{}, []string{"prune", "volumes"})
 	if !strings.Contains(out, "supports only dangling mode") {
 		t.Fatalf("expected dangling-only validation error, got: %s", out)
+	}
+}
+
+func TestHandleSystemV3_LogsRejectsUnknownFlag(t *testing.T) {
+	out := handleSystemV3(&Client{}, []string{"logs", "--bad"})
+	if !strings.Contains(out, "Error[INVALID_ARGUMENT]") {
+		t.Fatalf("expected invalid argument error, got: %s", out)
+	}
+}
+
+func TestHandleSystemV3_LogsMissingTailValue(t *testing.T) {
+	out := handleSystemV3(&Client{}, []string{"logs", "--tail"})
+	if !strings.Contains(out, "--tail requires a number") {
+		t.Fatalf("expected missing tail value error, got: %s", out)
+	}
+}
+
+func TestParseRegistryInspectArgs_PasswordPlain(t *testing.T) {
+	id, passwordPlain, err := parseRegistryInspectArgs([]string{"7", "--password-plain"})
+	if err != "" {
+		t.Fatalf("expected no parse error, got: %s", err)
+	}
+	if id != "7" {
+		t.Fatalf("expected id 7, got: %s", id)
+	}
+	if !passwordPlain {
+		t.Fatalf("expected passwordPlain=true")
+	}
+}
+
+func TestParseRegistryInspectArgs_RejectsUnknownFlag(t *testing.T) {
+	_, _, err := parseRegistryInspectArgs([]string{"7", "--bad"})
+	if !strings.Contains(err, "Error[INVALID_ARGUMENT]") {
+		t.Fatalf("expected invalid argument error, got: %s", err)
+	}
+}
+
+func TestWriteStreamLogLine_PreservesIncomingNewline(t *testing.T) {
+	var b bytes.Buffer
+	writeStreamLogLine(&b, "", "line1\n\nline3\n", false)
+	if b.String() != "line1\n\nline3\n" {
+		t.Fatalf("unexpected output: %q", b.String())
+	}
+}
+
+func TestWriteStreamLogLine_AppendsMissingTrailingNewline(t *testing.T) {
+	var b bytes.Buffer
+	writeStreamLogLine(&b, "", "line-without-newline", false)
+	if b.String() != "line-without-newline\n" {
+		t.Fatalf("unexpected output: %q", b.String())
 	}
 }
