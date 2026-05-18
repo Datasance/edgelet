@@ -37,4 +37,3 @@ func TestEnsureDefaultLocalRegistriesOnStartup_SeedsDefaults(t *testing.T) {
 		t.Fatalf("expected default local registries to exist, got %+v", registries)
 	}
 }
-
