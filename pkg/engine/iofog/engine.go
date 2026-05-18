@@ -355,17 +355,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 				resolvFilePath = ""
 			}
 		}
-		routerIP := ""
-		if !ms.IsRouter && !cfg.IsRouterInterior {
-			routerContainerID := utils.IOFogDockerContainerNamePrefix + cfg.RouterUUID
-			if st, ok := e.store.get(routerContainerID); ok && st.ip != "" {
-				routerIP = st.ip
-			}
-		} else if cfg.IsRouterInterior && hostname != "" {
-			routerIP = hostname
-		}
-		extraHosts := buildExtraHostsWithIoFog(ms.ExtraHosts, hostname)
-		if err := buildHostsFile(hostsFilePath, extraHosts, routerIP); err != nil {
+		if err := buildHostsFile(hostsFilePath, ms.ExtraHosts); err != nil {
 			log.Warnf("buildHostsFile for %s: %v", containerName, err)
 			hostsFilePath = ""
 		}

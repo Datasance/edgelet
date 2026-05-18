@@ -20,6 +20,12 @@ import (
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 )
 
+const (
+	canonicalAgentHost  = "iofog.default.svc.bridge.local"
+	canonicalRouterHost = "router.default.svc.bridge.local"
+	canonicalNatsHost   = "nats.default.svc.bridge.local"
+)
+
 // Container represents a Docker container
 type Container struct {
 	ID     string
@@ -309,22 +315,58 @@ func (c *Client) GetRunningNonIofogContainers() ([]Container, error) {
 	return result, nil
 }
 
-// GetRouterMicroserviceIP gets the IP address of the router microservice container
-func (c *Client) GetRouterMicroserviceIP(routerUUID string) (string, error) {
-	if routerUUID == "" {
-		return "", nil
+// GetRouterMicroserviceIP gets the IP address of a running router microservice container.
+func (c *Client) GetRouterMicroserviceIP() (string, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return "", fmt.Errorf("Docker client not initialized")
 	}
-
-	container, err := c.GetContainer(routerUUID)
+	ctx := c.GetContext()
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		All: false,
+		Filters: filters.NewArgs(
+			filters.Arg("label", workloadmeta.LabelRole+"="+workloadmeta.RoleRouter),
+			filters.Arg("status", "running"),
+		),
+	})
 	if err != nil {
 		return "", err
 	}
-
-	if container == nil {
-		return "", nil
+	for _, cont := range containers {
+		ip, ipErr := c.GetContainerIPAddress(cont.ID)
+		if ipErr != nil || strings.TrimSpace(ip) == "" {
+			continue
+		}
+		return ip, nil
 	}
+	return "", nil
+}
 
-	return c.GetContainerIPAddress(container.ID)
+// GetNatsMicroserviceIP gets the IP address of a running NATS microservice container.
+func (c *Client) GetNatsMicroserviceIP() (string, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return "", fmt.Errorf("Docker client not initialized")
+	}
+	ctx := c.GetContext()
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		All: false,
+		Filters: filters.NewArgs(
+			filters.Arg("label", workloadmeta.LabelRole+"="+workloadmeta.RoleNats),
+			filters.Arg("status", "running"),
+		),
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, cont := range containers {
+		ip, ipErr := c.GetContainerIPAddress(cont.ID)
+		if ipErr != nil || strings.TrimSpace(ip) == "" {
+			continue
+		}
+		return ip, nil
+	}
+	return "", nil
 }
 
 // ParseAnnotationsString parses annotations JSON string into a map
@@ -652,19 +694,57 @@ func portMappingsEqual(a, b *models.PortMapping) bool {
 	return a.Outside == b.Outside && a.Inside == b.Inside && a.UDP == b.UDP
 }
 
-// buildExtraHostsWithIoFog returns extraHosts with "iofog:hostIP" prepended for non-host-network
-// containers, unless the user already has an iofog entry. Matches Java DockerUtil.createContainer.
-func buildExtraHostsWithIoFog(extraHosts []string, hostIP string) []string {
-	hasIoFog := false
+func hostKey(extraHost string) (string, bool) {
+	trimmed := strings.TrimSpace(extraHost)
+	idx := strings.Index(trimmed, ":")
+	if idx <= 0 {
+		return "", false
+	}
+	key := strings.ToLower(strings.TrimSpace(trimmed[:idx]))
+	if key == "" {
+		return "", false
+	}
+	return key, true
+}
+
+func hasHostMapping(extraHosts []string, hostName string) bool {
+	target := strings.ToLower(strings.TrimSpace(hostName))
+	if target == "" {
+		return false
+	}
 	for _, h := range extraHosts {
-		if strings.Contains(strings.TrimSpace(h), "iofog") {
-			hasIoFog = true
-			break
+		if key, ok := hostKey(h); ok && key == target {
+			return true
 		}
 	}
-	if hostIP != "" && !hasIoFog {
-		return append([]string{"iofog:" + hostIP}, extraHosts...)
+	return false
+}
+
+func appendHostMapping(extraHosts []string, hostName string, ip string) []string {
+	hostName = strings.TrimSpace(hostName)
+	ip = strings.TrimSpace(ip)
+	if hostName == "" || ip == "" {
+		return extraHosts
 	}
+	if hasHostMapping(extraHosts, hostName) {
+		return extraHosts
+	}
+	return append(extraHosts, hostName+":"+ip)
+}
+
+// buildExtraHostsWithIoFog returns extraHosts with canonical agent host prepended for
+// non-host-network containers, unless the user already has the same hostname entry.
+func buildExtraHostsWithIoFog(extraHosts []string, hostIP string) []string {
+	hostIP = strings.TrimSpace(hostIP)
+	if hostIP != "" && !hasHostMapping(extraHosts, canonicalAgentHost) {
+		return append([]string{canonicalAgentHost + ":" + hostIP}, extraHosts...)
+	}
+	return extraHosts
+}
+
+func appendCanonicalReservedHosts(extraHosts []string, routerIP string, natsIP string) []string {
+	extraHosts = appendHostMapping(extraHosts, canonicalRouterHost, routerIP)
+	extraHosts = appendHostMapping(extraHosts, canonicalNatsHost, natsIP)
 	return extraHosts
 }
 
@@ -767,25 +847,29 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		hostConfig.CapDrop = ms.CapDrop
 	}
 
-	// Build extra hosts with iofog and service.local (matches Java DockerUtil.createContainer).
-	// iofog:hostIP lets non-host-network containers reach the host/agent local API.
+	// Build extra hosts with canonical reserved names.
 	extraHosts := buildExtraHostsWithIoFog(ms.ExtraHosts, hostName)
 
-	// Add service.local host for non-router microservices (matches Java logic)
+	routerIP := ""
 	if !ms.HostNetworkMode && !ms.IsRouter {
 		if !cfg.IsRouterInterior {
-			// Get router IP
-			routerIP, err := c.GetRouterMicroserviceIP(cfg.RouterUUID)
-			if err == nil && routerIP != "" {
-				extraHosts = append(extraHosts, fmt.Sprintf("service.local:%s", routerIP))
+			resolvedRouterIP, err := c.GetRouterMicroserviceIP()
+			if err == nil && resolvedRouterIP != "" {
+				routerIP = resolvedRouterIP
 			}
 		} else {
-			// Router interior mode - use host parameter
 			if hostName != "" {
-				extraHosts = append(extraHosts, fmt.Sprintf("service.local:%s", hostName))
+				routerIP = hostName
 			}
 		}
 	}
+	natsIP := ""
+	if !ms.HostNetworkMode {
+		if resolvedNatsIP, err := c.GetNatsMicroserviceIP(); err == nil {
+			natsIP = resolvedNatsIP
+		}
+	}
+	extraHosts = appendCanonicalReservedHosts(extraHosts, routerIP, natsIP)
 
 	// Filter and validate extra hosts (matches Java validation)
 	validHosts := make([]string, 0)

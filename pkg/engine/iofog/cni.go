@@ -9,25 +9,9 @@ import (
 	"strings"
 )
 
-// buildExtraHostsWithIoFog returns extraHosts with "iofog:hostIP" prepended for non-host-network
-// containers, unless the user already has an iofog entry. Matches Java DockerUtil.createContainer.
-func buildExtraHostsWithIoFog(extraHosts []string, hostIP string) []string {
-	hasIoFog := false
-	for _, h := range extraHosts {
-		if strings.Contains(strings.TrimSpace(h), "iofog") {
-			hasIoFog = true
-			break
-		}
-	}
-	if hostIP != "" && !hasIoFog {
-		return append([]string{"iofog:" + hostIP}, extraHosts...)
-	}
-	return extraHosts
-}
-
 // buildHostsFile writes a per-container /etc/hosts file to targetPath.
-// It injects service.local → routerIP (if non-empty) and any caller-supplied extraHosts.
-func buildHostsFile(targetPath string, extraHosts []string, routerIP string) error {
+// It includes baseline localhost entries and validated caller-supplied extraHosts only.
+func buildHostsFile(targetPath string, extraHosts []string) error {
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 		return fmt.Errorf("mkdir hosts dir: %w", err)
 	}
@@ -39,10 +23,6 @@ func buildHostsFile(targetPath string, extraHosts []string, routerIP string) err
 	sb.WriteString("ff00::0\tip6-mcastprefix\n")
 	sb.WriteString("ff02::1\tip6-allnodes\n")
 	sb.WriteString("ff02::2\tip6-allrouters\n")
-
-	if routerIP != "" {
-		sb.WriteString(fmt.Sprintf("%s\tservice.local\n", routerIP))
-	}
 
 	for _, h := range extraHosts {
 		h = strings.TrimSpace(h)
