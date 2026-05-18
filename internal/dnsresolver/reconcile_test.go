@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/eclipse-iofog/agent/internal/config"
 )
 
 func TestReconcileAgainstRecordsRepairsLossDriftAndStaleIndex(t *testing.T) {
@@ -120,6 +122,88 @@ func TestReconcileIntervalFromEnv(t *testing.T) {
 	t.Setenv("IOFOG_DNS_RECONCILE_INTERVAL_SECONDS", "-2")
 	if got := reconcileIntervalFromEnv(); got != reconcileDefaultEvery {
 		t.Fatalf("expected default interval on invalid value, got %s", got)
+	}
+}
+
+func TestFilterRecordsByEnabledScopes_RemovesDisabledScopeRecords(t *testing.T) {
+	r := newTestResolver()
+	r.scopeEnabled[ScopeManaged] = true
+	r.scopeEnabled[ScopeLocal] = false
+
+	filtered := r.filterRecordsByEnabledScopes([]WorkloadRecord{
+		{UUID: "managed-1", Scope: ScopeManaged},
+		{UUID: "local-1", Scope: ScopeLocal},
+	})
+	if len(filtered) != 1 {
+		t.Fatalf("expected only managed record, got %d", len(filtered))
+	}
+	if filtered[0].UUID != "managed-1" {
+		t.Fatalf("unexpected filtered record %+v", filtered[0])
+	}
+}
+
+func TestRunReconcileOnce_SkipsWhenNoRunningBridgeWorkloads(t *testing.T) {
+	r := newTestResolver()
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "existing",
+		Application: "app",
+		Name:        "svc",
+		Scope:       ScopeManaged,
+		IP:          "10.9.9.9",
+		Active:      true,
+	})
+	r.SetRuntimeSnapshotProvider(func(_ context.Context) ([]WorkloadRecord, error) {
+		return []WorkloadRecord{
+			{
+				UUID:        "managed-hostnet",
+				Application: "app",
+				Name:        "svc",
+				Scope:       ScopeManaged,
+				HostNetwork: true,
+				Active:      true,
+			},
+		}, nil
+	})
+
+	r.runReconcileOnce(context.Background())
+
+	if _, ok := r.workloads["existing"]; !ok {
+		t.Fatalf("expected existing workload to remain when reconcile has no eligible scope records")
+	}
+	s := r.Snapshot()
+	if s.ReconcileRunsTotal != 1 {
+		t.Fatalf("expected reconcile runs counter increment, got %d", s.ReconcileRunsTotal)
+	}
+}
+
+func TestRunReconcileOnce_DisablesLocalScopeWhenWatchdogEnabled(t *testing.T) {
+	r := newTestResolver()
+	cfg := config.GetInstance()
+	origWatchdog := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = true
+	t.Cleanup(func() { cfg.WatchdogEnabled = origWatchdog })
+
+	r.SetRuntimeSnapshotProvider(func(_ context.Context) ([]WorkloadRecord, error) {
+		return []WorkloadRecord{
+			{
+				UUID:        "local-1",
+				Application: "local",
+				Name:        "svc",
+				Scope:       ScopeLocal,
+				IP:          "10.8.8.8",
+				HostNetwork: false,
+				Active:      true,
+			},
+		}, nil
+	})
+
+	r.runReconcileOnce(context.Background())
+
+	if r.isScopeEnabled(ScopeLocal) {
+		t.Fatalf("expected local scope disabled with watchdog enabled")
+	}
+	if _, ok := r.workloads["local-1"]; ok {
+		t.Fatalf("expected local workload not reconciled when local scope disabled by watchdog")
 	}
 }
 

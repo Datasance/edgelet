@@ -72,8 +72,15 @@ func (r *Resolver) runReconcileOnce(ctx context.Context) {
 		logging.LogWarn(moduleName, fmt.Sprintf("dns reconcile snapshot read failed: %v", err))
 		return
 	}
+	r.updateScopePolicy(records)
+	filteredRecords := r.filterRecordsByEnabledScopes(records)
+	if len(filteredRecords) == 0 {
+		r.reconcileRuns.Add(1)
+		logging.LogDebug(moduleName, "dns reconcile skipped: no eligible scope records")
+		return
+	}
 
-	report := r.reconcileAgainstRecords(records)
+	report := r.reconcileAgainstRecords(filteredRecords)
 	r.reconcileRuns.Add(1)
 	if report.added > 0 || report.updated > 0 || report.removed > 0 {
 		logging.LogInfo(

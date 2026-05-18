@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/miekg/dns"
 )
 
@@ -15,6 +16,10 @@ func newTestResolver() *Resolver {
 		index: map[Scope]map[string]map[string]struct{}{
 			ScopeManaged: make(map[string]map[string]struct{}),
 			ScopeLocal:   make(map[string]map[string]struct{}),
+		},
+		scopeEnabled: map[Scope]bool{
+			ScopeManaged: false,
+			ScopeLocal:   false,
 		},
 		servers:          make(map[Scope]*serverSet),
 		forwardState:     make(map[string]*upstreamForwardState),
@@ -202,5 +207,83 @@ func TestSafetyRejectsOversizeAndUnsupportedType(t *testing.T) {
 	s := r.Snapshot()
 	if s.RejectedTotal < 2 {
 		t.Fatalf("expected rejected counter increment for safety checks, got=%d", s.RejectedTotal)
+	}
+}
+
+func TestUpdateScopePolicy_ManagedEnabledOnRunningBridgeWorkload(t *testing.T) {
+	r := newTestResolver()
+	cfg := config.GetInstance()
+	origWatchdog := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = false
+	t.Cleanup(func() { cfg.WatchdogEnabled = origWatchdog })
+
+	r.updateScopePolicy([]WorkloadRecord{
+		{
+			UUID:        "managed-1",
+			Scope:       ScopeManaged,
+			Active:      true,
+			HostNetwork: false,
+		},
+	})
+
+	if !r.isScopeEnabled(ScopeManaged) {
+		t.Fatalf("expected managed scope enabled")
+	}
+	if r.isScopeEnabled(ScopeLocal) {
+		t.Fatalf("expected local scope disabled with no local bridge workloads")
+	}
+}
+
+func TestUpdateScopePolicy_LocalDisabledWhenWatchdogEnabled(t *testing.T) {
+	r := newTestResolver()
+	cfg := config.GetInstance()
+	origWatchdog := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = true
+	t.Cleanup(func() { cfg.WatchdogEnabled = origWatchdog })
+
+	r.updateScopePolicy([]WorkloadRecord{
+		{
+			UUID:        "local-1",
+			Scope:       ScopeLocal,
+			Active:      true,
+			HostNetwork: false,
+		},
+	})
+
+	if r.isScopeEnabled(ScopeLocal) {
+		t.Fatalf("expected local scope disabled when watchdog is enabled")
+	}
+}
+
+func TestTryBindMissingServers_DoesNotBindDisabledScope(t *testing.T) {
+	r := newTestResolver()
+	attempts := map[Scope]int{
+		ScopeManaged: 0,
+		ScopeLocal:   0,
+	}
+	r.startScopeServerFn = func(scope Scope, _ string) error {
+		attempts[scope]++
+		return nil
+	}
+	r.scopeEnabled[ScopeManaged] = false
+	r.scopeEnabled[ScopeLocal] = false
+
+	r.tryBindMissingServers()
+
+	if attempts[ScopeManaged] != 0 || attempts[ScopeLocal] != 0 {
+		t.Fatalf("expected no bind attempts for disabled scopes, got %+v", attempts)
+	}
+}
+
+func TestTryBindMissingServers_StopsEnabledScopeWhenPolicyTurnsOff(t *testing.T) {
+	r := newTestResolver()
+	r.scopeEnabled[ScopeManaged] = false
+	r.scopeEnabled[ScopeLocal] = false
+	r.servers[ScopeManaged] = &serverSet{addr: "127.0.0.1:53"}
+
+	r.tryBindMissingServers()
+
+	if _, ok := r.servers[ScopeManaged]; ok {
+		t.Fatalf("expected disabled managed scope listener removed")
 	}
 }

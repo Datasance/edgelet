@@ -100,8 +100,9 @@ type StatsSnapshot struct {
 type Resolver struct {
 	mu sync.RWMutex
 
-	workloads map[string]*WorkloadRecord
-	index     map[Scope]map[string]map[string]struct{}
+	workloads    map[string]*WorkloadRecord
+	index        map[Scope]map[string]map[string]struct{}
+	scopeEnabled map[Scope]bool
 
 	servers map[Scope]*serverSet
 
@@ -127,6 +128,7 @@ type Resolver struct {
 	snapshotPath           string
 	snapshotEvery          time.Duration
 	snapshotTriggerCh      chan struct{}
+	startScopeServerFn     func(scope Scope, addr string) error
 
 	queriesTotal        atomic.Uint64
 	successTotal        atomic.Uint64
@@ -160,6 +162,10 @@ func GetInstance() *Resolver {
 			index: map[Scope]map[string]map[string]struct{}{
 				ScopeManaged: make(map[string]map[string]struct{}),
 				ScopeLocal:   make(map[string]map[string]struct{}),
+			},
+			scopeEnabled: map[Scope]bool{
+				ScopeManaged: false,
+				ScopeLocal:   false,
 			},
 			servers:          make(map[Scope]*serverSet),
 			forwardState:     make(map[string]*upstreamForwardState),
@@ -327,7 +333,14 @@ func (r *Resolver) tryBindMissingServers() {
 	for _, scope := range []Scope{ScopeManaged, ScopeLocal} {
 		r.mu.RLock()
 		_, exists := r.servers[scope]
+		enabled := r.scopeEnabled[scope]
 		r.mu.RUnlock()
+		if !enabled {
+			if exists {
+				r.stopScopeServer(scope)
+			}
+			continue
+		}
 		if exists {
 			continue
 		}
@@ -335,10 +348,80 @@ func (r *Resolver) tryBindMissingServers() {
 		if err != nil {
 			continue
 		}
-		if err := r.startScopeServer(scope, addr); err != nil {
+		startFn := r.startScopeServerFn
+		if startFn == nil {
+			startFn = r.startScopeServer
+		}
+		if err := startFn(scope, addr); err != nil {
 			logging.LogDebug(moduleName, fmt.Sprintf("DNS bind retry for scope %s failed: %v", scope, err))
 		}
 	}
+}
+
+func (r *Resolver) stopScopeServer(scope Scope) {
+	r.mu.Lock()
+	ss, ok := r.servers[scope]
+	if ok {
+		delete(r.servers, scope)
+	}
+	r.mu.Unlock()
+	if !ok || ss == nil {
+		return
+	}
+	if ss.udp != nil {
+		_ = ss.udp.Shutdown()
+	}
+	if ss.tcp != nil {
+		_ = ss.tcp.Shutdown()
+	}
+	logging.LogInfo(moduleName, fmt.Sprintf("DNS scope %s listener disabled", scope))
+}
+
+func (r *Resolver) updateScopePolicy(records []WorkloadRecord) {
+	managedCount := 0
+	localCount := 0
+	for _, rec := range records {
+		if !rec.Active || rec.HostNetwork {
+			continue
+		}
+		switch normalizeScope(rec.Scope) {
+		case ScopeLocal:
+			localCount++
+		default:
+			managedCount++
+		}
+	}
+	localEnabled := localCount > 0 && !config.GetInstance().WatchdogEnabled
+	managedEnabled := managedCount > 0
+
+	r.mu.Lock()
+	if r.scopeEnabled == nil {
+		r.scopeEnabled = map[Scope]bool{
+			ScopeManaged: false,
+			ScopeLocal:   false,
+		}
+	}
+	r.scopeEnabled[ScopeManaged] = managedEnabled
+	r.scopeEnabled[ScopeLocal] = localEnabled
+	r.mu.Unlock()
+}
+
+func (r *Resolver) isScopeEnabled(scope Scope) bool {
+	scope = normalizeScope(scope)
+	r.mu.RLock()
+	enabled := r.scopeEnabled[scope]
+	r.mu.RUnlock()
+	return enabled
+}
+
+func (r *Resolver) filterRecordsByEnabledScopes(records []WorkloadRecord) []WorkloadRecord {
+	filtered := make([]WorkloadRecord, 0, len(records))
+	for _, rec := range records {
+		if r.isScopeEnabled(rec.Scope) {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
 }
 
 func (r *Resolver) startScopeServer(scope Scope, addr string) error {
