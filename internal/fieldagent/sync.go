@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/serviceaccount"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
@@ -158,6 +159,11 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 	if isRouter, ok := data["isRouter"].(bool); ok {
 		microservice.IsRouter = isRouter
+		if isRouter {
+			cfg := config.GetInstance()
+			cfg.SetRouterUUID(uuid)
+			cfg.SetRouterInterior(microservice.HostNetworkMode)
+		}
 	}
 	if execEnabled, ok := data["execEnabled"].(bool); ok {
 		microservice.ExecEnabled = execEnabled

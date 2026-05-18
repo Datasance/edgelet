@@ -188,6 +188,18 @@ func (c *Config) SetConfigPath(path string) {
 	c.configPath = path
 }
 
+func (c *Config) SetRouterUUID(uuid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.RouterUUID = strings.TrimSpace(uuid)
+}
+
+func (c *Config) SetRouterInterior(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.IsRouterInterior = v
+}
+
 // GetConfigPath returns the config file path (thread-safe)
 func (c *Config) GetConfigPath() string {
 	c.mu.RLock()

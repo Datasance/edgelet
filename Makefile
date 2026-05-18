@@ -262,9 +262,6 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 			'' \
 			'profiles:' \
 			'  development:' \
-			'    routerHost: ""' \
-			'    routerPort: ""' \
-			'    routerUuid: ""' \
 			'    controllerUrl: "http://localhost:54421/api/v3/"' \
 			'    iofogUuid: ""' \
 			'    secureMode: "off"' \

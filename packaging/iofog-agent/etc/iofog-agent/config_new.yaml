@@ -15,7 +15,6 @@ currentProfile: default  # default | development | production
 
 profiles:
   default:
-    routerUuid: ""
     controllerUrl: "http://localhost:54421/api/v3/"
     iofogUuid: ""
     secureMode: "off"
@@ -61,7 +60,6 @@ profiles:
     namespace: "default"
 
   development:
-    routerUuid: ""
     controllerUrl: "http://localhost:51121/api/v3/"
     iofogUuid: ""
     secureMode: "off"
@@ -107,7 +105,6 @@ profiles:
     namespace: "default"
 
   production:
-    routerUuid: ""
     controllerUrl: "http://localhost:54421/api/v3/"
     iofogUuid: ""
     secureMode: "on"
