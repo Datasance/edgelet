@@ -9,6 +9,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/gps"
+	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/serviceaccount"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
@@ -193,7 +194,7 @@ func (fa *FieldAgent) PostStatusHelper() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err := fa.apiClient.PutJSON(ctx, "status", status)
+	err := fa.putStatus(ctx, status)
 	cancel()
 
 	if err != nil {
@@ -210,9 +211,24 @@ func (fa *FieldAgent) PostStatusHelper() {
 		} else {
 			logging.LogError(moduleName, "Unable to send status", err)
 		}
+		logging.LogDebug(moduleName, "Finished posting ioFog status")
+		return
 	}
+	statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
+		pmStatus.RemoveNotRunningMicroserviceStatus()
+	})
 
 	logging.LogDebug(moduleName, "Finished posting ioFog status")
+}
+
+func (fa *FieldAgent) putStatus(ctx context.Context, status map[string]interface{}) error {
+	if fa.postStatusFn != nil {
+		return fa.postStatusFn(ctx, status)
+	}
+	if fa.apiClient == nil {
+		return fmt.Errorf("api client is not initialized")
+	}
+	return fa.apiClient.PutJSON(ctx, "status", status)
 }
 
 // getFogStatus creates the fog status report

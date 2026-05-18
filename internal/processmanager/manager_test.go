@@ -95,3 +95,42 @@ func TestCountManagedRunningContainers_UsesCanonicalLabels(t *testing.T) {
 		t.Fatalf("expected 1 managed container, got %d", got)
 	}
 }
+
+func TestCleanupDecisionForContainer_RemovesManagedStaleEvenWhenNotCurrentAndWatchdogOff(t *testing.T) {
+	labels := map[string]string{
+		workloadmeta.LabelAppManagedBy:    workloadmeta.ManagedByValue,
+		workloadmeta.LabelMicroserviceUID: "ms-stale",
+		workloadmeta.LabelScope:           workloadmeta.ScopeManaged,
+	}
+
+	removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
+		labels,
+		false, // not in current set
+		false, // not in latest set
+		false, // watchdog disabled
+	)
+	if !removeManagedByUUID {
+		t.Fatalf("expected stale managed workload to be removed by uuid when watchdog is disabled")
+	}
+	if removeUnknownByID {
+		t.Fatalf("did not expect unknown-by-id removal path for managed stale workload")
+	}
+}
+
+func TestCleanupDecisionForContainer_DoesNotRemoveLocalScopeAsManagedStale(t *testing.T) {
+	labels := map[string]string{
+		workloadmeta.LabelAppManagedBy:    workloadmeta.ManagedByValue,
+		workloadmeta.LabelMicroserviceUID: "local-ms",
+		workloadmeta.LabelScope:           workloadmeta.ScopeLocal,
+	}
+
+	removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
+		labels,
+		false,
+		false,
+		false,
+	)
+	if removeManagedByUUID || removeUnknownByID {
+		t.Fatalf("expected local scope workload to be preserved by managed stale cleanup")
+	}
+}

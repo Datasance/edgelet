@@ -330,6 +330,30 @@ func TestFacadeListRuntimeMicroservices_DoesNotDuplicateLocalUUIDAsManaged(t *te
 	}
 }
 
+func TestFacadeListRuntimeMicroservices_StaleRunningAbsentAfterPrune(t *testing.T) {
+	f := NewFacade()
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = f.db.Close()
+		f.sr.ResetProcessManagerStatus()
+	})
+	f.fa.Clear()
+	f.sr.ResetProcessManagerStatus()
+	f.sr.UpdateProcessManagerStatus(func(pm *models.ProcessManagerStatus) {
+		pm.SetMicroservicesState("stale-running-ms", models.MicroserviceStateRunning)
+	})
+	f.sr.PruneProcessManagerStatus(func(uuid string, _ *models.MicroserviceStatus) bool {
+		return uuid == "stale-running-ms"
+	})
+
+	items := f.ListRuntimeMicroservices()
+	if len(items) != 0 {
+		t.Fatalf("expected stale running entry to be absent after prune, got: %#v", items)
+	}
+}
+
 func TestFacadeApplyLocalManifest_NormalizesLocalLifecycleFields(t *testing.T) {
 	f := NewFacade()
 	if err := f.db.Open(t.TempDir()); err != nil {

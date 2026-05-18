@@ -290,6 +290,7 @@ func (pm *ProcessManager) containersMonitor() {
 		pm.handleLatestMicroservices()
 		pm.reconcileLocalDeployments()
 		pm.deleteRemainingMicroservices()
+		pm.pruneStaleProcessManagerStatuses()
 		pm.updateRunningMicroservicesCount()
 		pm.updateCurrentMicroservices()
 
@@ -309,6 +310,100 @@ func (pm *ProcessManager) reconcileLocalDeployments() {
 		}
 		pm.reconcileOneLocalDeployment(item)
 	}
+}
+
+func (pm *ProcessManager) pruneStaleProcessManagerStatuses() {
+	if pm.microserviceManager == nil || pm.engine == nil {
+		pm.logger.Debug("process-manager status prune skipped: dependencies not initialized")
+		return
+	}
+
+	managedUUIDs := make(map[string]struct{})
+	for _, ms := range pm.microserviceManager.GetLatestMicroservices() {
+		if ms == nil {
+			continue
+		}
+		uuid := strings.TrimSpace(ms.MicroserviceUUID)
+		if uuid != "" {
+			managedUUIDs[uuid] = struct{}{}
+		}
+	}
+
+	localItems, err := store.GetInstance().ListLocalDeployedMicroservices()
+	if err != nil {
+		pm.logger.Warnf("process-manager status prune skipped: local deployment list unavailable err=%v", err)
+		return
+	}
+	localUUIDs := make(map[string]struct{}, len(localItems))
+	for _, item := range localItems {
+		if item == nil {
+			continue
+		}
+		uuid := strings.TrimSpace(item.LocalUUID)
+		if uuid != "" {
+			localUUIDs[uuid] = struct{}{}
+		}
+	}
+
+	runtimeContainers, err := pm.engine.GetAllContainers()
+	if err != nil {
+		pm.logger.Warnf("process-manager status prune skipped: runtime container list unavailable err=%v", err)
+		return
+	}
+	runtimeUUIDs := make(map[string]struct{}, len(runtimeContainers))
+	for _, container := range runtimeContainers {
+		uuid := strings.TrimSpace(workloadmeta.MicroserviceUIDFromLabels(container.Labels))
+		if uuid == "" {
+			uuid = strings.TrimSpace(pm.engine.GetContainerMicroserviceUUID(container))
+		}
+		if uuid != "" {
+			runtimeUUIDs[uuid] = struct{}{}
+		}
+	}
+
+	totalSeen := 0
+	pruned := 0
+	droppedInvalid := 0
+	keptManaged := 0
+	keptLocal := 0
+	keptRuntimeOnly := 0
+	statusreporter.GetInstance().PruneProcessManagerStatus(func(uuid string, status *models.MicroserviceStatus) bool {
+		totalSeen++
+		trimmedUUID := strings.TrimSpace(uuid)
+		if trimmedUUID == "" || status == nil {
+			droppedInvalid++
+			pruned++
+			return true
+		}
+		if _, ok := managedUUIDs[trimmedUUID]; ok {
+			keptManaged++
+			return false
+		}
+		if _, ok := localUUIDs[trimmedUUID]; ok {
+			keptLocal++
+			return false
+		}
+		if _, ok := runtimeUUIDs[trimmedUUID]; ok {
+			keptRuntimeOnly++
+			return false
+		}
+		// Keep terminal tombstones until FieldAgent posts status and calls
+		// RemoveNotRunningMicroserviceStatus after a successful controller PUT.
+		if isProcessManagerStatusReportTombstone(status) {
+			return false
+		}
+		pruned++
+		return true
+	})
+	pm.logger.Debugf(
+		"process-manager status prune total=%d pruned=%d droppedInvalid=%d keptManaged=%d keptLocal=%d keptRuntimeOnly=%d",
+		totalSeen,
+		pruned,
+		droppedInvalid,
+		keptManaged,
+		keptLocal,
+		keptRuntimeOnly,
+	)
 }
 
 func (pm *ProcessManager) reconcileOneLocalDeployment(item *models.LocalDeployedMicroservice) {
@@ -1026,18 +1121,18 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 		isCurrent := currentUUIDs[msUUID]
 		isLatest := latestUUIDs[msUUID]
 
-		isSystem := workloadmeta.IsSystemWorkload(container.Labels)
-
-		// Old agent microservice: in current but not in latest → always remove
-		if isCurrent && !isLatest && !isSystem {
+		removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
+			container.Labels,
+			isCurrent,
+			isLatest,
+			cfg.WatchdogEnabled,
+		)
+		if removeManagedByUUID {
 			oldAgentUUIDs = append(oldAgentUUIDs, msUUID)
+			continue
 		}
-
-		// Unknown: not in current or latest → only remove if watchdog enabled
-		if !isCurrent && !isLatest && !isSystem {
-			if cfg.WatchdogEnabled {
-				unknownContainerIDs = append(unknownContainerIDs, container.ID)
-			}
+		if removeUnknownByID {
+			unknownContainerIDs = append(unknownContainerIDs, container.ID)
 		}
 	}
 
@@ -1059,6 +1154,40 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	}
 
 	pm.logger.Debug("Finished delete Remaining Microservices")
+}
+
+func isProcessManagerStatusReportTombstone(status *models.MicroserviceStatus) bool {
+	if status == nil {
+		return false
+	}
+	switch status.Status {
+	case models.MicroserviceStateDeleted,
+		models.MicroserviceStateUnknown,
+		models.MicroserviceStateDeleting,
+		models.MicroserviceStateMarkedForDeletion:
+		return true
+	default:
+		return false
+	}
+}
+
+func cleanupDecisionForContainer(labels map[string]string, isCurrent, isLatest, watchdogEnabled bool) (removeManagedByUUID bool, removeUnknownByID bool) {
+	if workloadmeta.IsSystemWorkload(labels) {
+		return false, false
+	}
+
+	isLocalScope := strings.EqualFold(strings.TrimSpace(labels[workloadmeta.LabelScope]), workloadmeta.ScopeLocal)
+	// Agent-managed, non-local workloads that no longer exist in desired latest set
+	// should be removed regardless of watchdog setting.
+	if !isLatest && workloadmeta.IsManagedByIofog(labels) && !isLocalScope {
+		return true, false
+	}
+
+	// Unknown workload cleanup remains watchdog-gated.
+	if !isCurrent && !isLatest && watchdogEnabled {
+		return false, true
+	}
+	return false, false
 }
 
 // updateRunningMicroservicesCount updates the count of running managed microservices.

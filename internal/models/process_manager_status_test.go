@@ -33,3 +33,35 @@ func TestProcessManagerStatusClearMicroserviceStatuses(t *testing.T) {
 		t.Fatalf("expected running count reset to 0, got=%d", pm.RunningMicroservicesCount)
 	}
 }
+
+func TestProcessManagerStatusPruneMicroserviceStatus_NoOpForNilPredicate(t *testing.T) {
+	pm := NewProcessManagerStatus()
+	pm.SetMicroservicesState("ms-a", MicroserviceStateRunning)
+
+	pm.PruneMicroserviceStatus(nil)
+
+	if got := len(pm.MicroservicesStatus); got != 1 {
+		t.Fatalf("expected prune with nil predicate to keep entries, got len=%d", got)
+	}
+}
+
+func TestProcessManagerStatusPruneMicroserviceStatus_RemovesInvalidEntries(t *testing.T) {
+	pm := NewProcessManagerStatus()
+	pm.SetMicroservicesState("valid-ms", MicroserviceStateRunning)
+	pm.MicroservicesStatus[""] = NewMicroserviceStatusWithState(MicroserviceStateRunning)
+	pm.MicroservicesStatus["nil-ms"] = nil
+
+	pm.PruneMicroserviceStatus(func(uuid string, status *MicroserviceStatus) bool {
+		return uuid == "" || status == nil
+	})
+
+	if _, ok := pm.MicroservicesStatus[""]; ok {
+		t.Fatalf("expected empty uuid entry to be pruned")
+	}
+	if _, ok := pm.MicroservicesStatus["nil-ms"]; ok {
+		t.Fatalf("expected nil status entry to be pruned")
+	}
+	if st, ok := pm.MicroservicesStatus["valid-ms"]; !ok || st == nil || st.Status != MicroserviceStateRunning {
+		t.Fatalf("expected valid status entry to remain")
+	}
+}

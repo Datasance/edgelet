@@ -281,6 +281,10 @@ func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup 
 
 	// Best-effort cleanup for iofog-managed containers.
 	if msUUID != "" {
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+			s.SetMicroservicesState(msUUID, models.MicroserviceStateDeleted)
+			s.SetMicroservicesStatusErrorMessage(msUUID, "")
+		})
 		_ = store.GetInstance().DeleteContainerState(msUUID)
 		_ = store.GetInstance().DeleteLocalContainerState(msUUID)
 		_ = store.GetInstance().DeleteLocalDeployedMicroservice(msUUID)

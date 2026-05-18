@@ -100,6 +100,9 @@ type FieldAgent struct {
 
 	// Provisioning lock (matching Java: provisioningLock)
 	provisioningMu sync.Mutex
+
+	// test hook: allows status POST override in unit tests.
+	postStatusFn func(ctx context.Context, status map[string]interface{}) error
 }
 
 var (
