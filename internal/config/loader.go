@@ -192,6 +192,10 @@ func loadConfigValues(cfg *Config) {
 	cfg.DockerPruningFrequency = parseInt64("dockerPruningFrequency", "0")
 	cfg.AvailableDiskThreshold = parseInt64("availableDiskThreshold", "20")
 	cfg.UpgradeScanFrequency = parseInt("upgradeScanFrequency", "24")
+	cfg.LogReconcileCycleEveryNTicks = parseInt("logReconcileCycleEveryNTicks", "60")
+	if cfg.LogReconcileCycleEveryNTicks < 1 {
+		cfg.LogReconcileCycleEveryNTicks = 60
+	}
 	cfg.DevMode = getProp("devMode", "off") != "off"
 	cfg.ShutdownGracePeriodSeconds = parseInt("shutdownGracePeriodSeconds", "90")
 	if cfg.ShutdownGracePeriodSeconds < 1 {
@@ -244,6 +248,7 @@ func createDefaultYamlConfigForLoader() *models.YamlConfig {
 	defaultProfile.SetProperty("dockerPruningFrequency", "0")
 	defaultProfile.SetProperty("availableDiskThreshold", "20")
 	defaultProfile.SetProperty("upgradeScanFrequency", "24")
+	defaultProfile.SetProperty("logReconcileCycleEveryNTicks", "60")
 	defaultProfile.SetProperty("devMode", "off")
 	defaultProfile.SetProperty("timeZone", "")
 	defaultProfile.SetProperty("namespace", "default")

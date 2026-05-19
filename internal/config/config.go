@@ -65,6 +65,8 @@ type Config struct {
 	StatusReportFreqSeconds            int
 	PingControllerFreqSeconds          int
 	MonitorContainersStatusFreqSeconds int
+	// LogReconcileCycleEveryNTicks emits reconcile.cycle at Info when idle (no scheduling) every N monitor ticks.
+	LogReconcileCycleEveryNTicks       int
 	MonitorRegistriesStatusFreqSeconds int
 	HealthcheckIntervalSeconds         int // Interval for exec-based healthcheck (iofog engine only)
 	GetUsageDataFreqSeconds            int64
