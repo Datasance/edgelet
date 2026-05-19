@@ -42,6 +42,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/runtimeops"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
@@ -74,17 +75,18 @@ type pendingExec struct {
 
 // Engine implements engine.ContainerEngine using the embedded containerd.
 type Engine struct {
-	client       *client.Client
-	criClient    *cri.Client
-	logDir       string
-	store        *stateStore
-	pendingExecs map[string]*pendingExec   // execID -> pending (supports concurrent exec sessions)
-	runningProcs map[string]client.Process // execID -> process (for status/stop)
-	execExitCode map[string]int            // execID -> exit code after process completion
-	execMu       sync.Mutex                // protects pendingExecs and runningProcs
-	execSessions sync.Map                  // containerID -> []string (active exec IDs)
-	execToCont   sync.Map                  // execID -> containerID (for removal on StopExecSession)
-	dnsResolver  *dnsresolver.Resolver
+	client              *client.Client
+	criClient           *cri.Client
+	logDir              string
+	store               *stateStore
+	pendingExecs        map[string]*pendingExec   // execID -> pending (supports concurrent exec sessions)
+	runningProcs        map[string]client.Process // execID -> process (for status/stop)
+	execExitCode        map[string]int            // execID -> exit code after process completion
+	execMu              sync.Mutex                // protects pendingExecs and runningProcs
+	execSessions        sync.Map                  // containerID -> []string (active exec IDs)
+	execToCont          sync.Map                  // execID -> containerID (for removal on StopExecSession)
+	dnsResolver         *dnsresolver.Resolver
+	runtimeEventsCancel context.CancelFunc
 }
 
 // New returns an uninitialised iofog engine. logDir is the directory to write
@@ -105,6 +107,7 @@ func New(logDir string) *Engine {
 // Init connects to the embedded containerd socket, initialises CNI, and
 // recovers per-container state from existing container labels.
 func (e *Engine) Init(cfg engine.EngineConfig) error {
+	initStart := time.Now()
 	socketPath := cfg.SocketURL
 	if socketPath == "" {
 		socketPath = constants.IofogContainerdSocket
@@ -119,7 +122,7 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 
 	// Import embedded pause (sandbox) image so CRI podsandbox can use it.
 	if err := e.importPauseImage(); err != nil {
-		log.Warnf("Pause image import failed (non-fatal): %v", err)
+		e.emitEngineWarn(runtimeops.EventEngineInit, "", "", "", "", "pause image import failed (non-fatal)", initStart, err, map[string]any{"operation": "importPauseImage"})
 	}
 
 	// CRI client for RunPodSandbox, CreateContainer, etc. CNI lifecycle is managed by containerd.
@@ -132,10 +135,22 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 	e.dnsResolver = dnsresolver.GetInstance()
 	e.dnsResolver.SetRuntimeSnapshotProvider(e.runtimeDNSSnapshot)
 	if err := e.dnsResolver.Start(); err != nil {
-		log.Warnf("embedded DNS start failed (non-fatal): %v", err)
+		e.emitEngineWarn(runtimeops.EventEngineInit, "", "", "", "", "embedded DNS start failed (non-fatal)", initStart, err, map[string]any{"operation": "dnsStart"})
 	}
 	// Recover per-container state from existing container labels.
 	e.recoverState()
+	e.startContainerdRuntimeEventMonitor()
+	e.emitRuntime(runtimeops.RuntimeEvent{
+		Event:      runtimeops.EventEngineInit,
+		Level:      runtimeops.LevelInfo,
+		Message:    "iofog engine initialized",
+		Result:     runtimeops.ResultOK,
+		DurationMs: time.Since(initStart).Milliseconds(),
+		Fields: map[string]any{
+			"socket":    socketPath,
+			"namespace": constants.IofogContainerdNamespace,
+		},
+	})
 	return nil
 }
 
@@ -207,6 +222,10 @@ func (e *Engine) recoverState() {
 
 // Close releases the containerd and CRI clients.
 func (e *Engine) Close() error {
+	if e.runtimeEventsCancel != nil {
+		e.runtimeEventsCancel()
+		e.runtimeEventsCancel = nil
+	}
 	if e.dnsResolver != nil {
 		_ = e.dnsResolver.Stop()
 	}
@@ -330,6 +349,7 @@ func (e *Engine) GetAllContainers() ([]engine.Container, error) {
 // CreateContainer creates the container via CRI: RunPodSandbox (CNI managed by containerd)
 // then CreateContainer. It does NOT start the container — that is deferred to StartContainer.
 func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (string, error) {
+	createStart := time.Now()
 	ctx := e.ctx()
 	cfg := config.GetInstance()
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
@@ -351,12 +371,12 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		if gwErr == nil && gatewayIP != "" {
 			resolvFilePath = filepath.Join(resolvDir, containerName+".conf")
 			if err := buildResolvConfFile(resolvFilePath, gatewayIP); err != nil {
-				log.Warnf("buildResolvConfFile for %s: %v", containerName, err)
+				e.emitEngineWarn(runtimeops.EventEngineCRIContainerCreated, "", "", ms.ImageName, runtimeops.ReasonCreateFailed, "build resolv.conf failed", createStart, err, map[string]any{"step": "buildResolvConf"})
 				resolvFilePath = ""
 			}
 		}
 		if err := buildHostsFile(hostsFilePath, ms.ExtraHosts); err != nil {
-			log.Warnf("buildHostsFile for %s: %v", containerName, err)
+			e.emitEngineWarn(runtimeops.EventEngineCRIContainerCreated, "", "", ms.ImageName, runtimeops.ReasonCreateFailed, "build hosts file failed", createStart, err, map[string]any{"step": "buildHostsFile"})
 			hostsFilePath = ""
 		}
 	}
@@ -365,10 +385,16 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory, cfg.IOFogUUID)
 	runtimeHandler := cri.GetRuntimeHandler(ms)
 
+	sandboxStart := time.Now()
 	sandboxID, err := e.criClient.RunPodSandbox(ctx, podConfig, runtimeHandler)
 	if err != nil {
+		e.emitCRISubstep(runtimeops.EventEngineCRISandboxCreated, "criRunPodSandbox", "", "", ms.ImageName, runtimeops.ReasonCreateFailed, sandboxStart, err)
 		return "", fmt.Errorf("RunPodSandbox for %s: %w", containerName, err)
 	}
+	e.emitEngineInfo(runtimeops.EventEngineCRISandboxCreated, "", sandboxID, ms.ImageName, "pod sandbox created", sandboxStart, map[string]any{
+		"msUUID": ms.MicroserviceUUID,
+	})
+	e.emitCRISubstep(runtimeops.EventEngineCRISandboxCreated, "criRunPodSandbox", "", sandboxID, ms.ImageName, runtimeops.ReasonCreateFailed, sandboxStart, nil)
 
 	// Get pod IP from sandbox status (for bridge network).
 	ipAddr := ""
@@ -396,12 +422,15 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		}
 	}
 
+	containerStart := time.Now()
 	containerID, err := e.criClient.CreateContainer(ctx, sandboxID, containerConfig, podConfig)
 	if err != nil {
+		e.emitCRISubstep(runtimeops.EventEngineCRIContainerCreated, "criCreateContainer", "", sandboxID, ms.ImageName, runtimeops.ReasonCreateFailed, containerStart, err)
 		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
 		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
 		return "", fmt.Errorf("CreateContainer for %s: %w", containerName, err)
 	}
+	e.emitCRISubstep(runtimeops.EventEngineCRIContainerCreated, "criCreateContainer", containerID, sandboxID, ms.ImageName, runtimeops.ReasonCreateFailed, containerStart, nil)
 
 	e.store.set(containerID, &containerState{
 		sandboxID: sandboxID,
@@ -419,13 +448,19 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		IsNats:      ms.IsNats,
 		Active:      false,
 	})
-	log.Debugf("container %s: CRI create complete, containerID=%s sandboxID=%s IP=%s", containerName, containerID, sandboxID, ipAddr)
+	e.emitEngineSuccess(runtimeops.EventEngineCRIContainerCreated, containerID, sandboxID, ms.ImageName, "CRI create complete", createStart, map[string]any{
+		"step":   "criCreateComplete",
+		"msUUID": ms.MicroserviceUUID,
+		"ip":     ipAddr,
+	})
 	return containerID, nil
 }
 
 // StartContainer starts the container via CRI. CRI manages logs; we only record start time.
 func (e *Engine) StartContainer(containerID string) error {
+	start := time.Now()
 	ctx := e.ctx()
+	sandboxID := e.sandboxIDFor(containerID)
 	if err := e.criClient.StartContainer(ctx, containerID); err != nil {
 		reason, exitCode, message := e.readCRIContainerFailure(ctx, containerID)
 		if engine.IsNonRestartableCRIReason(reason) || strings.Contains(strings.ToUpper(err.Error()), engine.CRIReasonContainerExited) {
@@ -438,23 +473,18 @@ func (e *Engine) StartContainer(containerID string) error {
 				ExitCode:    exitCode,
 				Message:     fallbackMessage(message, err.Error()),
 			}
-			log.Warnf(
-				"start classification: non-restartable terminal state containerID=%s reason=%s exitCode=%d message=%q decision=recreate",
-				containerID,
-				nr.Reason,
-				nr.ExitCode,
-				nr.Message,
-			)
+			e.emitEngineWarn(runtimeops.EventEngineContainerStart, containerID, sandboxID, "", runtimeops.ReasonNonRestartableExit, "non-restartable terminal state on start", start, err, map[string]any{
+				"criReason":  nr.Reason,
+				"exitCode":   nr.ExitCode,
+				"criMessage": nr.Message,
+			})
 			return nr
 		}
-		log.Warnf(
-			"start classification: transient start failure containerID=%s reason=%s exitCode=%d message=%q err=%v",
-			containerID,
-			reasonOrUnknown(reason),
-			exitCode,
-			strings.TrimSpace(message),
-			err,
-		)
+		e.emitEngineWarn(runtimeops.EventEngineContainerStart, containerID, sandboxID, "", runtimeops.ReasonStartFailed, "transient start failure", start, err, map[string]any{
+			"criReason":  reasonOrUnknown(reason),
+			"exitCode":   exitCode,
+			"criMessage": strings.TrimSpace(message),
+		})
 		return fmt.Errorf("StartContainer %s: %w", containerID, err)
 	}
 	c, err := e.client.LoadContainer(ctx, containerID)
@@ -466,6 +496,7 @@ func (e *Engine) StartContainer(containerID string) error {
 		e.ensureDNSResolver()
 		e.dnsResolver.SetWorkloadActive(msUUID, true, time.Now().UnixMilli())
 	}
+	e.emitEngineSuccess(runtimeops.EventEngineContainerStart, containerID, sandboxID, "", "container started", start, nil)
 	return nil
 }
 
@@ -482,33 +513,42 @@ func (e *Engine) recordStartTime(ctx context.Context, c client.Container, contai
 
 // StopContainer stops the container via CRI (SIGTERM, then SIGKILL after timeout).
 func (e *Engine) StopContainer(containerID string) error {
+	start := time.Now()
 	ctx := e.ctx()
+	sandboxID := e.sandboxIDFor(containerID)
 	if err := e.criClient.StopContainer(ctx, containerID, 10); err != nil {
+		e.emitEngineWarn(runtimeops.EventEngineContainerStop, containerID, sandboxID, "", runtimeops.ReasonStopFailed, "container stop failed", start, err, nil)
 		return fmt.Errorf("StopContainer %s: %w", containerID, err)
 	}
 	if msUUID := e.microserviceUUIDForContainer(ctx, containerID); msUUID != "" {
 		e.ensureDNSResolver()
 		e.dnsResolver.SetWorkloadActive(msUUID, false, 0)
 	}
+	e.emitEngineSuccess(runtimeops.EventEngineContainerStop, containerID, sandboxID, "", "container stopped", start, nil)
 	return nil
 }
 
 // KillContainer forcefully terminates the container task.
 func (e *Engine) KillContainer(containerID string) error {
+	start := time.Now()
 	ctx := e.ctx()
+	sandboxID := e.sandboxIDFor(containerID)
 	if err := e.criClient.StopContainer(ctx, containerID, 0); err != nil {
+		e.emitEngineWarn(runtimeops.EventEngineContainerStop, containerID, sandboxID, "", runtimeops.ReasonStopFailed, "container kill failed", start, err, map[string]any{"force": true})
 		return fmt.Errorf("KillContainer %s: %w", containerID, err)
 	}
 	if msUUID := e.microserviceUUIDForContainer(ctx, containerID); msUUID != "" {
 		e.ensureDNSResolver()
 		e.dnsResolver.SetWorkloadActive(msUUID, false, 0)
 	}
+	e.emitEngineSuccess(runtimeops.EventEngineContainerStop, containerID, sandboxID, "", "container killed", start, map[string]any{"force": true})
 	return nil
 }
 
 // RemoveContainer stops and removes the container via CRI, then tears down the pod sandbox.
 // CRI handles CNI teardown in the correct order (StopPodSandbox triggers CNI DEL).
 func (e *Engine) RemoveContainer(containerID string, _ bool) error {
+	removeStart := time.Now()
 	ctx := e.ctx()
 	sandboxIDStr := ""
 	msUUID := ""
@@ -528,16 +568,24 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	}
 
 	// CRI teardown order: StopContainer, RemoveContainer, StopPodSandbox, RemovePodSandbox.
+	stopStart := time.Now()
 	stopErr := e.criClient.StopContainer(ctx, containerID, 10)
+
+	removeStepStart := time.Now()
 	removeErr := e.criClient.RemoveContainer(ctx, containerID)
 	if removeErr != nil {
+		e.emitCRITeardownStep("criStopContainer", containerID, sandboxIDStr, stopStart, stopErr, false)
+		e.emitCRITeardownStep("criRemoveContainer", containerID, sandboxIDStr, removeStepStart, removeErr, false)
 		// Fallback path for non-CRI/manual containers (e.g. created via ctr run).
+		nativeStart := time.Now()
 		if err := e.removeContainerNative(ctx, containerID); err != nil {
+			e.emitEngineWarn(runtimeops.EventEngineContainerRemove, containerID, sandboxIDStr, "", runtimeops.ReasonRemoveFailed, "native fallback remove failed", removeStart, err, map[string]any{"step": "nativeFallback"})
 			return fmt.Errorf("remove container %s (CRI: %v, native fallback: %w)", containerID, removeErr, err)
 		}
-	} else if stopErr != nil {
-		// Stop failures are tolerated only when removal succeeded.
-		log.Warnf("StopContainer %s returned warning before successful removal: %v", containerID, stopErr)
+		e.emitCRITeardownStep("nativeRemoveContainer", containerID, sandboxIDStr, nativeStart, nil, false)
+	} else {
+		e.emitCRITeardownStep("criStopContainer", containerID, sandboxIDStr, stopStart, stopErr, stopErr != nil)
+		e.emitCRITeardownStep("criRemoveContainer", containerID, sandboxIDStr, removeStepStart, nil, false)
 	}
 
 	// Some manually created containers (ctr run) may survive CRI remove without
@@ -551,12 +599,19 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	}
 
 	if sandboxIDStr != "" {
-		if err := e.criClient.StopPodSandbox(ctx, sandboxIDStr); err != nil && !errdefs.IsNotFound(err) {
-			log.Warnf("StopPodSandbox %s: %v", sandboxIDStr, err)
+		sandboxStopStart := time.Now()
+		stopSandboxErr := e.criClient.StopPodSandbox(ctx, sandboxIDStr)
+		if stopSandboxErr != nil && errdefs.IsNotFound(stopSandboxErr) {
+			stopSandboxErr = nil
 		}
-		if err := e.criClient.RemovePodSandbox(ctx, sandboxIDStr); err != nil && !errdefs.IsNotFound(err) {
-			log.Warnf("RemovePodSandbox %s: %v", sandboxIDStr, err)
+		e.emitCRITeardownStep("criStopPodSandbox", containerID, sandboxIDStr, sandboxStopStart, stopSandboxErr, false)
+
+		sandboxRemoveStart := time.Now()
+		removeSandboxErr := e.criClient.RemovePodSandbox(ctx, sandboxIDStr)
+		if removeSandboxErr != nil && errdefs.IsNotFound(removeSandboxErr) {
+			removeSandboxErr = nil
 		}
+		e.emitCRITeardownStep("criRemovePodSandbox", containerID, sandboxIDStr, sandboxRemoveStart, removeSandboxErr, false)
 	}
 
 	if _, err := e.client.LoadContainer(ctx, containerID); err == nil {
@@ -578,6 +633,9 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	e.store.delete(containerID)
 	e.ensureDNSResolver()
 	e.dnsResolver.RemoveWorkload(msUUID)
+	e.emitEngineSuccess(runtimeops.EventEngineContainerRemove, containerID, sandboxIDStr, "", "container remove complete", removeStart, map[string]any{
+		"msUUID": msUUID,
+	})
 	return nil
 }
 
@@ -586,7 +644,7 @@ func (e *Engine) ensureDNSResolver() {
 		e.dnsResolver = dnsresolver.GetInstance()
 		e.dnsResolver.SetRuntimeSnapshotProvider(e.runtimeDNSSnapshot)
 		if err := e.dnsResolver.Start(); err != nil {
-			log.Warnf("embedded DNS start failed (non-fatal): %v", err)
+			e.emitEngineWarn(runtimeops.EventEngineInit, "", "", "", "", "embedded DNS start failed (non-fatal)", time.Now(), err, map[string]any{"operation": "dnsStart"})
 		}
 	}
 }
@@ -688,10 +746,10 @@ func (e *Engine) removeContainerNative(ctx context.Context, containerID string) 
 	}
 	if task, err := c.Task(ctx, nil); err == nil {
 		if err := task.Kill(ctx, syscall.SIGKILL); err != nil && !errdefs.IsNotFound(err) {
-			log.Warnf("Native kill task %s: %v", containerID, err)
+			e.emitEngineWarn(runtimeops.EventEngineContainerRemove, containerID, e.sandboxIDFor(containerID), "", runtimeops.ReasonRemoveFailed, "native kill task failed", time.Now(), err, map[string]any{"step": "nativeKillTask"})
 		}
 		if _, err := task.Delete(ctx, client.WithProcessKill); err != nil && !errdefs.IsNotFound(err) {
-			log.Warnf("Native delete task %s: %v", containerID, err)
+			e.emitEngineWarn(runtimeops.EventEngineContainerRemove, containerID, e.sandboxIDFor(containerID), "", runtimeops.ReasonRemoveFailed, "native delete task failed", time.Now(), err, map[string]any{"step": "nativeDeleteTask"})
 		}
 	}
 	return c.Delete(ctx, client.WithSnapshotCleanup)
@@ -700,6 +758,7 @@ func (e *Engine) removeContainerNative(ctx context.Context, containerID string) 
 // --- Image management ---
 
 func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *engine.PullImageOptions) error {
+	pullStart := time.Now()
 	ctx := e.ctx()
 
 	var cb func(float32)
@@ -735,12 +794,14 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 		defer close(stopProgress)
 	}
 
-	log.Infof("Pulling image %s via embedded containerd", imageRef)
 	img, err := e.client.Pull(ctx, imageRef, append(remoteOpts, client.WithPullUnpack)...)
 	if err != nil {
+		e.emitEngineWarn(runtimeops.EventEngineImagePulled, "", "", imageRef, runtimeops.ReasonPullFailed, "image pull failed", pullStart, err, nil)
 		return fmt.Errorf("pull image %s: %w", imageRef, err)
 	}
-	log.Infof("Pulled image %s (id=%s)", imageRef, img.Name())
+	e.emitEngineSuccess(runtimeops.EventEngineImagePulled, "", "", imageRef, "image pulled", pullStart, map[string]any{
+		"imageId": img.Name(),
+	})
 	if cb != nil {
 		cb(100)
 	}
@@ -823,6 +884,7 @@ func (e *Engine) RemoveImage(imageRef string) error {
 
 // PruneImages deletes images that are not referenced by any existing container.
 func (e *Engine) PruneImages() error {
+	pruneStart := time.Now()
 	ctx := e.ctx()
 
 	// Build set of images currently referenced by containers.
@@ -842,14 +904,18 @@ func (e *Engine) PruneImages() error {
 		return err
 	}
 	is := e.client.ImageService()
+	deletedCount := 0
 	for _, img := range imgs {
 		if inUse[img.Name()] {
 			continue
 		}
 		if err := is.Delete(ctx, img.Name(), images.SynchronousDelete()); err != nil {
-			log.Warnf("Failed to prune image %s: %v", img.Name(), err)
+			e.emitEngineWarn(runtimeops.EventEnginePrune, "", "", img.Name(), runtimeops.ReasonRemoveFailed, "prune image failed", pruneStart, err, map[string]any{"operation": "pruneImages"})
+			continue
 		}
+		deletedCount++
 	}
+	e.emitEnginePruneSummary("pruneImages", pruneStart, map[string]any{"deletedCount": deletedCount})
 	return nil
 }
 
@@ -926,6 +992,7 @@ func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
 // PruneDangling removes images with no active containers referencing them and no tags,
 // matching Java's pruneAgent() / docker system prune --filter dangling=true semantics.
 func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
+	pruneStart := time.Now()
 	ctx := e.ctx()
 
 	containers, err := e.client.Containers(ctx)
@@ -961,19 +1028,25 @@ func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, err
 			reclaimed += info.Size
 		}
 		if err := is.Delete(ctx, name, images.SynchronousDelete()); err != nil {
-			log.Warnf("PruneDangling: failed to remove %s: %v", name, err)
+			e.emitEngineWarn(runtimeops.EventEnginePrune, "", "", name, runtimeops.ReasonRemoveFailed, "prune dangling image failed", pruneStart, err, map[string]any{"operation": "pruneDangling"})
 			continue
 		}
 		deleted = append(deleted, name)
 	}
-	return &engine.ImagePruneReport{
+	report := &engine.ImagePruneReport{
 		Deleted:             deleted,
 		DeletedCount:        len(deleted),
 		SpaceReclaimedBytes: reclaimed,
-	}, nil
+	}
+	e.emitEnginePruneSummary("pruneDangling", pruneStart, map[string]any{
+		"deletedCount":        report.DeletedCount,
+		"spaceReclaimedBytes": report.SpaceReclaimedBytes,
+	})
+	return report, nil
 }
 
 func (e *Engine) PruneContainers(_ context.Context) (*engine.ContainerPruneReport, error) {
+	pruneStart := time.Now()
 	ctx := e.ctx()
 	containers, err := e.client.Containers(ctx)
 	if err != nil {
@@ -990,23 +1063,26 @@ func (e *Engine) PruneContainers(_ context.Context) (*engine.ContainerPruneRepor
 				continue
 			}
 			if _, delErr := task.Delete(ctx, client.WithProcessKill); delErr != nil && !errdefs.IsNotFound(delErr) {
-				log.Warnf("PruneContainers: failed deleting task for %s: %v", id, delErr)
+				e.emitEngineWarn(runtimeops.EventEnginePrune, id, "", "", runtimeops.ReasonRemoveFailed, "prune container task delete failed", pruneStart, delErr, map[string]any{"operation": "pruneContainers"})
 				continue
 			}
 		}
 		if err := c.Delete(ctx, client.WithSnapshotCleanup); err != nil && !errdefs.IsNotFound(err) {
-			log.Warnf("PruneContainers: failed deleting container %s: %v", id, err)
+			e.emitEngineWarn(runtimeops.EventEnginePrune, id, "", "", runtimeops.ReasonRemoveFailed, "prune container delete failed", pruneStart, err, map[string]any{"operation": "pruneContainers"})
 			continue
 		}
 		deleted = append(deleted, id)
 	}
-	return &engine.ContainerPruneReport{
+	report := &engine.ContainerPruneReport{
 		Deleted:      deleted,
 		DeletedCount: len(deleted),
-	}, nil
+	}
+	e.emitEnginePruneSummary("pruneContainers", pruneStart, map[string]any{"deletedCount": report.DeletedCount})
+	return report, nil
 }
 
 func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, error) {
+	pruneStart := time.Now()
 	ctx := e.ctx()
 	containers, err := e.client.Containers(ctx)
 	if err != nil {
@@ -1046,17 +1122,19 @@ func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, err
 			}
 			target := filepath.Join(baseVolumesDir, subDir, uuid)
 			if err := os.RemoveAll(target); err != nil {
-				log.Warnf("PruneVolumes: failed deleting %s: %v", target, err)
+				e.emitEngineWarn(runtimeops.EventEnginePrune, "", "", "", runtimeops.ReasonRemoveFailed, "prune volume path failed", pruneStart, err, map[string]any{"operation": "pruneVolumes"})
 				continue
 			}
 			deleted = append(deleted, target)
 		}
 	}
 
-	return &engine.VolumePruneReport{
+	report := &engine.VolumePruneReport{
 		Deleted:      deleted,
 		DeletedCount: len(deleted),
-	}, nil
+	}
+	e.emitEnginePruneSummary("pruneVolumes", pruneStart, map[string]any{"deletedCount": report.DeletedCount})
+	return report, nil
 }
 
 // --- Inspection / stats ---
