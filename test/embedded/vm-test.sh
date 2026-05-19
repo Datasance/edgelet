@@ -44,8 +44,8 @@ log_step "Phase 1: Extracted embedded binaries"
 assert_ok "containerd-shim-runc-v2 extracted" \
     R "test -x /var/lib/iofog-agent-containerd/bin/containerd-shim-runc-v2"
 
-assert_ok "runc extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/bin/runc"
+assert_ok "crun extracted" \
+    R "test -x /var/lib/iofog-agent-containerd/bin/crun"
 
 assert_ok "CNI bridge plugin extracted" \
     R "test -x /var/lib/iofog-agent-containerd/cni/plugins/bridge"
@@ -155,7 +155,7 @@ spec:
     commands:
       - /bin/sh
       - -lc
-      - sleep 10
+      - sleep 14000
   schedule: 50
 EOF"
 
@@ -300,9 +300,9 @@ log_step "Phase 5: Runtime prerequisites"
 assert_ok "IP forwarding enabled" \
     R "cat /proc/sys/net/ipv4/ip_forward | grep -q 1"
 
-# Check runc is functional
-assert_ok "runc is executable and reports version" \
-    R "/var/lib/iofog-agent-containerd/bin/runc --version"
+# Check crun is functional
+assert_ok "crun is executable and reports version" \
+    R "/var/lib/iofog-agent-containerd/bin/crun --version"
 
 ###############################################################################
 # Phase 6 — CLI integration

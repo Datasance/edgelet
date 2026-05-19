@@ -10,7 +10,7 @@
 # Outputs to: internal/embedded/bin/
 #   containerd/bin/containerd-shim-runc-v2
 #   containerd-shim-spin            (skipped on riscv64)
-#   runc
+#   crun
 #   cni/bridge
 #   cni/host-local
 #   cni/portmap
@@ -24,7 +24,7 @@ ARCH="amd64"
 
 # Dependency versions
 CONTAINERD_VERSION="2.1.5"
-RUNC_VERSION="v1.3.5"
+CRUN_VERSION="1.27.1"
 CNI_VERSION="v1.9.0"
 SPIN_SHIM_VERSION="v0.24.0"
 
@@ -48,7 +48,7 @@ mkdir -p "${EMBED_DIR}/images"
 # ─── containerd-shim-runc-v2 ─────────────────────────────────────────────────
 if [ "${ARCH}" = "arm" ]; then
     # ARM32: containerd does not publish a standalone shim binary for armhf in
-    # the standard containerd release; cross-compile via Docker (same as kubesolo).
+    # the standard containerd release; cross-compile via Docker.
     echo "Building containerd-shim-runc-v2 for ${OS}-${ARCH} via Docker cross-compile..."
     if ! command -v docker &>/dev/null; then
         echo "ERROR: Docker is required for ARM32 containerd build." >&2
@@ -76,18 +76,19 @@ tar -xzf "${EMBED_DIR}/containerd.tar.gz" -C "${EMBED_DIR}/containerd"
 rm "${EMBED_DIR}/containerd.tar.gz"
 echo "containerd-shim-runc-v2 extracted."
 
-# ─── runc ────────────────────────────────────────────────────────────────────
-RUNC_ARCH="${ARCH}"
+# ─── crun ────────────────────────────────────────────────────────────────────
+CRUN_ARCH="${ARCH}"
 if [ "${ARCH}" = "arm" ]; then
-    RUNC_ARCH="armhf"
+    CRUN_ARCH="arm"
 elif [ "${ARCH}" = "riscv64" ]; then
-    RUNC_ARCH="riscv64"
+    CRUN_ARCH="riscv64"
 fi
-echo "Downloading runc ${RUNC_VERSION} for ${RUNC_ARCH}..."
-curl -fsSL -o "${EMBED_DIR}/runc" \
-    "https://github.com/opencontainers/runc/releases/download/${RUNC_VERSION}/runc.${RUNC_ARCH}"
-chmod +x "${EMBED_DIR}/runc"
-echo "runc downloaded."
+CRUN_ASSET="crun-${CRUN_VERSION}-linux-${CRUN_ARCH}"
+echo "Downloading crun ${CRUN_VERSION} for ${CRUN_ARCH}..."
+curl -fsSL -o "${EMBED_DIR}/crun" \
+    "https://github.com/containers/crun/releases/download/${CRUN_VERSION}/${CRUN_ASSET}"
+chmod +x "${EMBED_DIR}/crun"
+echo "crun downloaded."
 
 # ─── CNI plugins ─────────────────────────────────────────────────────────────
 echo "Downloading CNI plugins ${CNI_VERSION} for ${OS}-${ARCH}..."
@@ -178,7 +179,7 @@ echo "All dependencies downloaded successfully for ${OS}-${ARCH}."
 echo ""
 echo "Staged assets:"
 echo "  ${EMBED_DIR}/containerd/bin/containerd-shim-runc-v2"
-echo "  ${EMBED_DIR}/runc"
+echo "  ${EMBED_DIR}/crun"
 echo "  ${EMBED_DIR}/cni/{bridge,host-local,portmap,loopback}"
 echo "  ${EMBED_DIR}/images/pause.tar.gz"
 [ "${ARCH}" != "riscv64" ] && echo "  ${EMBED_DIR}/containerd-shim-spin"

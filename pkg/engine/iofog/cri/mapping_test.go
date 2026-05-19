@@ -69,8 +69,8 @@ func TestPodSandboxNeedsLinuxBlock(t *testing.T) {
 }
 
 func TestGetRuntimeHandler(t *testing.T) {
-	if GetRuntimeHandler(nil) != RuntimeHandlerRunc {
-		t.Fatal("nil -> runc")
+	if GetRuntimeHandler(nil) != RuntimeHandlerCrun {
+		t.Fatal("nil -> crun")
 	}
 	ms := models.NewMicroservice("u1", "img")
 	ms.Runtime = strPtr("spin")
@@ -78,20 +78,20 @@ func TestGetRuntimeHandler(t *testing.T) {
 		t.Fatal("spin only when safe")
 	}
 	ms.IsPrivileged = true
-	if GetRuntimeHandler(ms) != RuntimeHandlerRunc {
-		t.Fatal("privileged forces runc")
+	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
+		t.Fatal("privileged forces crun")
 	}
 	ms.IsPrivileged = false
 	ms.Runtime = strPtr("spin")
 	ms.HostNetworkMode = true
-	if GetRuntimeHandler(ms) != RuntimeHandlerRunc {
-		t.Fatal("host network forces runc")
+	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
+		t.Fatal("host network forces crun")
 	}
 	ms.HostNetworkMode = false
 	ms.ApplicationName = "local"
 	ms.Runtime = nil
-	if GetRuntimeHandler(ms) != RuntimeHandlerRuncLocal {
-		t.Fatal("local non-host workload should use runc-local")
+	if GetRuntimeHandler(ms) != RuntimeHandlerCrunLocal {
+		t.Fatal("local non-host workload should use crun-local")
 	}
 	ms.Runtime = strPtr("spin")
 	if GetRuntimeHandler(ms) != RuntimeHandlerSpinLocal {

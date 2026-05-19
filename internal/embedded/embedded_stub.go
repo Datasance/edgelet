@@ -15,7 +15,7 @@ func EnsureEmbeddedDependencies() error {
 var (
 	ContainerdShimRuncBinary []byte
 	ContainerdShimSpinBinary []byte
-	RuncBinary               []byte
+	CrunBinary               []byte
 	CNIPluginBridge          []byte
 	CNIPluginHostLocal       []byte
 	CNIPluginPortmap         []byte

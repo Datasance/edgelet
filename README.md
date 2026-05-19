@@ -81,7 +81,7 @@ There are two **build flavors** (set at compile time via `-ldflags`; see `intern
 |-------|-------------|
 | `docker` | Host Docker daemon (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
 | `podman` | Host Podman (`dockerUrl` e.g. `unix:///run/podman/podman.sock`) |
-| `iofog` | Embedded containerd + runc + CNI + Spin (WebAssembly) — **full flavor only** |
+| `iofog` | Embedded containerd + crun + CNI + Spin (WebAssembly) — **full flavor only** |
 
 ```yaml
 profiles:
@@ -95,9 +95,11 @@ profiles:
 When `containerEngine: iofog` is selected, `iofog-agentd` starts an in-process containerd instance. No external container runtime is required. The binary bundles:
 
 - `containerd-shim-runc-v2` — OCI runtime shim
-- `runc` — low-level OCI container runtime
+- `crun` — low-level OCI container runtime
 - CNI plugins: `bridge`, `host-local`, `portmap`, `loopback`
 - `containerd-shim-spin` — WebAssembly/WASI runtime (via [spinframework](https://github.com/spinframework/containerd-shim-spin))
+
+For OCI workloads, containerd continues to use `runtime_type = io.containerd.runc.v2` with `containerd-shim-runc-v2`; runtime handlers are named `crun`/`crun-local` and both point to the `crun` binary.
 
 **Path layout** (isolated from any host Docker/Podman installation):
 
@@ -126,7 +128,7 @@ make build-daemon-full     # Daemon only, CGO=1 + embedded deps
 ### Embedded dependencies (full flavor)
 
 ```bash
-make deps ARCH=amd64      # Download containerd shims, runc, CNI, etc.
+make deps ARCH=amd64      # Download containerd shims, crun, CNI, etc.
 make build-daemon-full    # Same as build-daemon-embedded (alias)
 ```
 
@@ -338,7 +340,7 @@ Build matrix (each arch emits **-lite** and **-full** binaries):
 | Startup time | < 2 s | ~4 s (containerd init) | ~5 s |
 | CPU at idle | < 1 % | < 1 % | ~2–3 % |
 
-The iofog binary is larger because it bundles containerd shims, runc, and CNI plugins. This is expected and intentional — the embedded engine requires no pre-installed container runtime on the host.
+The iofog binary is larger because it bundles containerd shims, crun, and CNI plugins. This is expected and intentional — the embedded engine requires no pre-installed container runtime on the host.
 
 ## Security
 

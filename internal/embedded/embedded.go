@@ -18,10 +18,10 @@ var ContainerdShimRuncBinary []byte
 //go:embed bin/containerd-shim-spin
 var ContainerdShimSpinBinary []byte
 
-// runc is the low-level OCI container runtime binary.
+// crun is the low-level OCI container runtime binary.
 //
-//go:embed bin/runc
-var RuncBinary []byte
+//go:embed bin/crun
+var CrunBinary []byte
 
 // CNI plugin binaries — bridge, host-local, portmap, loopback.
 //

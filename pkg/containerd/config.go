@@ -37,16 +37,17 @@ func writeConfigFile() error {
 }
 
 // generateConfig returns the containerd config map.
-// Uses config version 3 (containerd v2+) and registers runc and, when
+// Uses config version 3 (containerd v2+) and registers crun handlers backed by
+// crun and, when
 // available, the spin/WASM shim. Options are aligned with kubesolo's
 // production config for maximum compatibility.
 func generateConfig() map[string]any {
 	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
-	runcPath := filepath.Join(constants.IofogContainerdBinDir, "runc")
+	crunPath := filepath.Join(constants.IofogContainerdBinDir, "crun")
 	shimSpinPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-spin")
 
 	runtimes := map[string]any{
-		"runc": map[string]any{
+		"crun": map[string]any{
 			"runtime_type":                    "io.containerd.runc.v2",
 			"runtime_path":                    shimRuncPath,
 			"pod_annotations":                 []string{"iofog.network"},
@@ -60,12 +61,12 @@ func generateConfig() map[string]any {
 			"sandboxer":         "podsandbox",
 			"io_type":           "",
 			"options": map[string]any{
-				// BinaryName points at our extracted runc so containerd-shim-runc-v2
-				// uses our binary rather than any system-installed runc.
-				"BinaryName": runcPath,
+				// BinaryName points at our extracted crun so containerd-shim-runc-v2
+				// uses our binary rather than any system-installed runtime.
+				"BinaryName": crunPath,
 			},
 		},
-		"runc-local": map[string]any{
+		"crun-local": map[string]any{
 			"runtime_type":                    "io.containerd.runc.v2",
 			"runtime_path":                    shimRuncPath,
 			"pod_annotations":                 []string{"iofog.network"},
@@ -79,9 +80,9 @@ func generateConfig() map[string]any {
 			"sandboxer":         "podsandbox",
 			"io_type":           "",
 			"options": map[string]any{
-				// BinaryName points at our extracted runc so containerd-shim-runc-v2
-				// uses our binary rather than any system-installed runc.
-				"BinaryName": runcPath,
+				// BinaryName points at our extracted crun so containerd-shim-runc-v2
+				// uses our binary rather than any system-installed runtime.
+				"BinaryName": crunPath,
 			},
 		},
 	}
@@ -192,7 +193,7 @@ func generateConfig() map[string]any {
 				"drain_exec_sync_io_timeout":             "0s",
 				"ignore_deprecation_warnings":            []string{},
 				"containerd": map[string]any{
-					"default_runtime_name":              "runc",
+					"default_runtime_name":              "crun",
 					"ignore_blockio_not_enabled_errors": false,
 					"ignore_rdt_not_enabled_errors":     false,
 					"runtimes":                          runtimes,

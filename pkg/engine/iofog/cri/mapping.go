@@ -18,8 +18,8 @@ import (
 
 // Runtime handler names — must match containerd config.
 const (
-	RuntimeHandlerRunc      = "runc"
-	RuntimeHandlerRuncLocal = "runc-local"
+	RuntimeHandlerCrun      = "crun"
+	RuntimeHandlerCrunLocal = "crun-local"
 	RuntimeHandlerSpin      = "spin"
 	RuntimeHandlerSpinLocal = "spin-local"
 )
@@ -93,7 +93,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir,
 		annotations["iofog.network"] = constants.IofogLocalNetworkName
 	}
 
-	// Hostname: must be empty when using host network (NODE) — CRI spec and runc
+	// Hostname: must be empty when using host network (NODE) — CRI spec and OCI runtimes
 	// require it ("unable to set hostname without a private UTS namespace").
 	// For non-host-network pods, use container name as hostname.
 	sandboxHostname := ""
@@ -297,17 +297,17 @@ func buildCRIMounts(ms *models.Microservice, hostsFilePath string, resolvFilePat
 }
 
 // GetRuntimeHandler returns the CRI runtime handler for the microservice.
-// Privileged and host-namespace workloads use runc, not spin.
+// Privileged and host-namespace workloads use crun, not spin.
 func GetRuntimeHandler(ms *models.Microservice) string {
 	if ms == nil {
-		return RuntimeHandlerRunc
+		return RuntimeHandlerCrun
 	}
 	local := isLocalWorkload(ms) && !ms.HostNetworkMode
-	needsRunc := ms.IsPrivileged || ms.HostNetworkMode ||
+	needsCrun := ms.IsPrivileged || ms.HostNetworkMode ||
 		(ms.PidMode != nil && strings.TrimSpace(*ms.PidMode) == "host") ||
 		(ms.IpcMode != nil && strings.TrimSpace(*ms.IpcMode) == "host")
-	if needsRunc {
-		return RuntimeHandlerRunc
+	if needsCrun {
+		return RuntimeHandlerCrun
 	}
 	if ms.Runtime != nil && *ms.Runtime == "spin" {
 		if local {
@@ -316,9 +316,9 @@ func GetRuntimeHandler(ms *models.Microservice) string {
 		return RuntimeHandlerSpin
 	}
 	if local {
-		return RuntimeHandlerRuncLocal
+		return RuntimeHandlerCrunLocal
 	}
-	return RuntimeHandlerRunc
+	return RuntimeHandlerCrun
 }
 
 func isLocalWorkload(ms *models.Microservice) bool {

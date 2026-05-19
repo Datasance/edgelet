@@ -3,6 +3,7 @@
 package iofogcontainerd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/eclipse-iofog/agent/internal/constants"
@@ -15,13 +16,25 @@ func TestGenerateConfigUsesSplitCNIDirsForRuntimes(t *testing.T) {
 	containerdCfg := criRuntime["containerd"].(map[string]any)
 	runtimes := containerdCfg["runtimes"].(map[string]any)
 
-	runc := runtimes["runc"].(map[string]any)
-	if got := runc["cni_conf_dir"]; got != constants.IofogManagedCNIConfDir {
-		t.Fatalf("runc cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogManagedCNIConfDir)
+	crun := runtimes["crun"].(map[string]any)
+	if got := crun["cni_conf_dir"]; got != constants.IofogManagedCNIConfDir {
+		t.Fatalf("crun cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogManagedCNIConfDir)
 	}
-	runcLocal := runtimes["runc-local"].(map[string]any)
-	if got := runcLocal["cni_conf_dir"]; got != constants.IofogLocalCNIConfDir {
-		t.Fatalf("runc-local cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogLocalCNIConfDir)
+	crunOpts := crun["options"].(map[string]any)
+	if got := crunOpts["BinaryName"]; got != filepath.Join(constants.IofogContainerdBinDir, "crun") {
+		t.Fatalf("crun BinaryName mismatch: got=%v want=%s", got, filepath.Join(constants.IofogContainerdBinDir, "crun"))
+	}
+	crunLocal := runtimes["crun-local"].(map[string]any)
+	if got := crunLocal["cni_conf_dir"]; got != constants.IofogLocalCNIConfDir {
+		t.Fatalf("crun-local cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogLocalCNIConfDir)
+	}
+	crunLocalOpts := crunLocal["options"].(map[string]any)
+	if got := crunLocalOpts["BinaryName"]; got != filepath.Join(constants.IofogContainerdBinDir, "crun") {
+		t.Fatalf("crun-local BinaryName mismatch: got=%v want=%s", got, filepath.Join(constants.IofogContainerdBinDir, "crun"))
+	}
+
+	if got := containerdCfg["default_runtime_name"]; got != "crun" {
+		t.Fatalf("default_runtime_name mismatch: got=%v want=crun", got)
 	}
 }
 

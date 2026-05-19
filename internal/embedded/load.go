@@ -50,7 +50,7 @@ func EnsureEmbeddedDependencies() error {
 }
 
 // loadContainerdComponents extracts the containerd-shim-runc-v2,
-// containerd-shim-spin (when non-nil), and runc binaries to disk, then
+// containerd-shim-spin (when non-nil), and crun binaries to disk, then
 // symlinks them into /usr/local/bin so that containerd's runtime v2 task
 // plugin can resolve the shim by name (e.g. "io.containerd.runc.v2" →
 // containerd-shim-runc-v2) without requiring the bin dir to be in PATH.
@@ -66,7 +66,7 @@ func loadContainerdComponents() error {
 		symlink bool // create a /usr/local/bin symlink for PATH resolution
 	}{
 		{ContainerdShimRuncBinary, filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2"), "containerd-shim-runc-v2", true},
-		{RuncBinary, filepath.Join(constants.IofogContainerdBinDir, "runc"), "runc", true},
+		{CrunBinary, filepath.Join(constants.IofogContainerdBinDir, "crun"), "crun", true},
 	}
 
 	// containerd-shim-spin is nil on riscv64.

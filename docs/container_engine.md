@@ -177,11 +177,15 @@ Before the containerd service starts, `EnsureEmbeddedDependencies()` extracts bi
 
 | Extracted file | Destination | Purpose |
 |----------------|-------------|---------|
-| `runc` | `…/bin/runc` | OCI container runtime |
-| `containerd-shim-runc-v2` | `…/bin/` | Containerd shim for runc |
+| `crun` | `…/bin/crun` | OCI container runtime |
+| `containerd-shim-runc-v2` | `…/bin/` | Containerd shim for OCI runtime v2 (`io.containerd.runc.v2`) |
 | `containerd-shim-spin-v2` (optional) | `…/bin/` | WASM shim (Spin framework) |
 | CNI plugins (`bridge`, `loopback`, `portmap`, `firewall`, `host-local`) | `…/bin/cni/` | Pod network setup |
 | `pause.tar.gz` | `…/images/` | Pause image for pod sandboxes |
+
+For OCI workloads, the runtime executable is `crun`; handler names are `crun`/`crun-local`,
+while containerd runtime wiring remains `runtime_type = "io.containerd.runc.v2"` with
+`containerd-shim-runc-v2`.
 
 ### Startup Sequence
 
@@ -193,7 +197,7 @@ sequenceDiagram
     participant IofogEngine
 
     Supervisor->>Embedded: EnsureEmbeddedDependencies()
-    Embedded->>Embedded: extract runc, shim, CNI, pause.tar.gz
+    Embedded->>Embedded: extract crun, shim, CNI, pause.tar.gz
     Supervisor->>ContainerdService: Start()
     ContainerdService->>ContainerdService: write config.toml
     ContainerdService->>ContainerdService: containerd.App().Run() in goroutine
