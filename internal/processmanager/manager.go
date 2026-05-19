@@ -13,6 +13,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/runtimeops"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
@@ -20,6 +21,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 	"github.com/eclipse-iofog/agent/pkg/imageref"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,11 +30,13 @@ const (
 	defaultShutdownDrainTimeout = 45 * time.Second
 	shutdownDrainPollInterval   = 1 * time.Second
 	localReconcileMaxFailures   = 5
+	maxTaskRetries              = 5
 )
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
 	engine                  engine.ContainerEngine
+	engineName              string
 	microserviceManager     MicroserviceManagerInterface
 	containerManager        *ContainerManager
 	taskQueue               *TaskQueue
@@ -45,6 +49,7 @@ type ProcessManager struct {
 	removeContainerByIDFn   func(containerID string) error
 	launchLocalDeploymentFn func(item *models.LocalDeployedMicroservice, now int64)
 	getContainerStatusFn    func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
+	reconcileMonitorTick    uint64
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -78,7 +83,10 @@ func (pm *ProcessManager) Start(eng engine.ContainerEngine, microserviceManager 
 
 	pm.engine = eng
 	pm.microserviceManager = microserviceManager
-	pm.containerManager = NewContainerManager(eng, microserviceManager)
+	if cfg := config.GetInstance(); cfg != nil {
+		pm.engineName = cfg.ContainerEngine
+	}
+	pm.containerManager = NewContainerManager(eng, microserviceManager, pm.engineName)
 
 	pm.ctx, pm.cancel = context.WithCancel(context.Background())
 	pm.taskQueue = NewTaskQueue(100)
@@ -132,20 +140,47 @@ func (pm *ProcessManager) DrainRuntimeForShutdown(timeout time.Duration) error {
 			}
 		}
 		if len(runtimeIDs) == 0 {
-			pm.logger.Info("Shutdown runtime drain complete: no running workload containers")
+			pm.emitShutdownDrain("shutdown runtime drain complete: no running workload containers", runtimeops.LevelInfo, "", map[string]any{
+				"result": runtimeops.ResultOK,
+			})
 			return nil
 		}
 
 		for _, containerID := range runtimeIDs {
+			msUUID := ""
+			if c, err := pm.engine.GetContainerByID(containerID); err == nil && c != nil {
+				msUUID = pm.engine.GetContainerMicroserviceUUID(*c)
+			}
+			stopStart := time.Now()
 			if err := pm.engine.StopContainer(containerID); err != nil {
-				pm.logger.Warnf("Shutdown drain: graceful stop failed for container %s: %v", containerID, err)
+				pm.emitShutdownDrain("shutdown drain: graceful stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
+					"containerId": containerID,
+					"msUUID":      msUUID,
+					"error":       err.Error(),
+					"durationMs":  time.Since(stopStart).Milliseconds(),
+				})
 				if killErr := pm.engine.KillContainer(containerID); killErr != nil {
-					pm.logger.Warnf("Shutdown drain: force stop failed for container %s: %v", containerID, killErr)
+					pm.emitShutdownDrain("shutdown drain: force stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
+						"containerId": containerID,
+						"msUUID":      msUUID,
+						"error":       killErr.Error(),
+					})
 				}
+			} else {
+				pm.emitShutdownDrain("shutdown drain: container stopped", runtimeops.LevelInfo, "", map[string]any{
+					"containerId": containerID,
+					"msUUID":      msUUID,
+					"result":      runtimeops.ResultOK,
+					"durationMs":  time.Since(stopStart).Milliseconds(),
+				})
 			}
 		}
 
 		if time.Now().After(deadline) {
+			pm.emitShutdownDrain("shutdown runtime drain timed out", runtimeops.LevelError, runtimeops.ReasonShutdownDrainTimeout, map[string]any{
+				"remainingContainerIds": strings.Join(runtimeIDs, ","),
+				"result":                runtimeops.ResultFailed,
+			})
 			return fmt.Errorf(
 				"timed out draining runtime containers after %s; remaining container IDs: %s",
 				timeout,
@@ -199,11 +234,11 @@ func (pm *ProcessManager) StopRunningMicroservicesWithScope(iofogUUID string, wi
 	// removeImage=false: deprovision path matches Java ProcessManager private method (no image removal).
 	for _, msUUID := range runningMicroserviceUuids {
 		if withCleanup {
-			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(msUUID, true, false); err != nil {
+			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(pm.operationContext(msUUID), msUUID, true, false); err != nil {
 				pm.logger.Warnf("Error removing microservice %s: %v", msUUID, err)
 			}
 		} else {
-			if err := pm.containerManager.StopContainerByMicroserviceUUID(msUUID); err != nil {
+			if err := pm.containerManager.StopContainerByMicroserviceUUID(pm.operationContext(msUUID), msUUID); err != nil {
 				pm.logger.Warnf("Error stopping microservice %s: %v", msUUID, err)
 			}
 		}
@@ -285,14 +320,28 @@ func (pm *ProcessManager) containersMonitor() {
 		}
 
 		pm.logger.Debug("Start Monitoring containers")
+		tickStart := time.Now()
+		reconcileStats := &reconcileCycleStats{}
 
-		// Handle microservices (matching Java: handleLatestMicroservices(), deleteRemainingMicroservices(), etc.)
-		pm.handleLatestMicroservices()
+		pm.handleLatestMicroservices(reconcileStats)
 		pm.reconcileLocalDeployments()
 		pm.deleteRemainingMicroservices()
 		pm.pruneStaleProcessManagerStatuses()
 		pm.updateRunningMicroservicesCount()
 		pm.updateCurrentMicroservices()
+
+		desiredCount := 0
+		if pm.microserviceManager != nil {
+			desiredCount = len(pm.microserviceManager.GetLatestMicroservices())
+		}
+		runningCount := 0
+		if pmStatus := statusreporter.GetInstance().GetProcessManagerStatus(); pmStatus != nil {
+			runningCount = pmStatus.RunningMicroservicesCount
+		}
+		pm.reconcileMonitorTick++
+		if shouldEmitReconcileCycle(reconcileStats, pm.reconcileMonitorTick, cfg.LogReconcileCycleEveryNTicks) {
+			pm.emitReconcileCycle(tickStart, reconcileStats, desiredCount, runningCount)
+		}
 
 		pm.logger.Debug("Finished Monitoring containers")
 	}
@@ -666,10 +715,10 @@ func (pm *ProcessManager) checkTasks() {
 
 		if err := pm.executeTask(task); err != nil {
 			pm.logger.Errorf("Error executing task %s for microservice %s: %v", task.Action, task.MicroserviceUUID, err)
-			if task.Retries < 5 {
-				task.IncrementRetries()
-				pm.taskQueue.Add(task)
+			if task.Retries < maxTaskRetries {
+				pm.retryTask(task)
 			} else {
+				pm.emitTaskFailed(task, err)
 				pm.logger.Errorf("Task %s for microservice %s failed after %d retries, giving up", task.Action, task.MicroserviceUUID, task.Retries)
 				// Set FAILED status and error message so controller receives it (matches Java ProcessManager.retryTask)
 				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
@@ -686,28 +735,109 @@ func (pm *ProcessManager) checkTasks() {
 	}
 }
 
+func (pm *ProcessManager) retryTask(task *ContainerTask) {
+	task.IncrementRetries()
+	pm.emitTaskRetry(task)
+	pm.taskQueue.Add(task)
+}
+
+func (pm *ProcessManager) emitTaskRetry(task *ContainerTask) {
+	opID := task.OperationID
+	if opID == "" {
+		opID = uuid.NewString()
+		task.OperationID = opID
+	}
+	runtimeops.Emit(pm.ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventTaskRetry,
+		Level:       runtimeops.LevelWarn,
+		Module:      ProcessManagerModuleName,
+		OperationID: opID,
+		Engine:      pm.engineName,
+		MsUUID:      task.MicroserviceUUID,
+		Source:      runtimeops.SourceTask,
+		Message:     "task scheduled for retry",
+		Fields: map[string]any{
+			"action":     string(task.Action),
+			"attempt":    task.Retries,
+			"maxRetries": maxTaskRetries,
+		},
+	})
+}
+
+func (pm *ProcessManager) emitTaskFailed(task *ContainerTask, err error) {
+	opID := task.OperationID
+	if opID == "" {
+		opID = uuid.NewString()
+	}
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	runtimeops.Emit(pm.ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventTaskFailed,
+		Level:       runtimeops.LevelError,
+		Module:      ProcessManagerModuleName,
+		OperationID: opID,
+		Engine:      pm.engineName,
+		MsUUID:      task.MicroserviceUUID,
+		ReasonCode:  runtimeops.ReasonTaskExhaustedRetries,
+		Source:      runtimeops.SourceTask,
+		Message:     "task failed after max retries",
+		Error:       errMsg,
+		Fields: map[string]any{
+			"action":  string(task.Action),
+			"retries": task.Retries,
+		},
+	})
+}
+
+// operationContext returns a context with a new operationId for non-task call paths.
+func (pm *ProcessManager) operationContext(msUUID string) context.Context {
+	base := pm.ctx
+	if base == nil {
+		base = context.Background()
+	}
+	return runtimeops.WithOperation(base, uuid.NewString(), pm.engineName, msUUID)
+}
+
 // executeTask executes a container task
 func (pm *ProcessManager) executeTask(task *ContainerTask) error {
+	if task.OperationID == "" {
+		task.OperationID = uuid.NewString()
+	}
+	opCtx := runtimeops.WithOperation(pm.ctx, task.OperationID, pm.engineName, task.MicroserviceUUID)
+	start := time.Now()
+
+	runtimeops.Emit(opCtx, runtimeops.RuntimeEvent{
+		Event:   runtimeops.EventTaskStarted,
+		Level:   runtimeops.LevelInfo,
+		Module:  ProcessManagerModuleName,
+		Source:  runtimeops.SourceTask,
+		Message: "task started",
+		Fields:  map[string]any{"action": string(task.Action)},
+	})
+
 	pm.logger.Debugf("Executing task %s for microservice %s", task.Action, task.MicroserviceUUID)
 
 	ms := pm.microserviceManager.FindLatestMicroserviceByUUID(task.MicroserviceUUID)
 
+	var err error
 	switch task.Action {
 	case TaskActionAdd:
 		if ms != nil {
-			return pm.containerManager.AddContainer(ms)
+			err = pm.containerManager.AddContainer(opCtx, ms)
 		}
 	case TaskActionUpdate:
 		if ms != nil {
-			return pm.containerManager.UpdateContainer(ms, false)
+			err = pm.containerManager.UpdateContainer(opCtx, ms, false)
 		}
 	case TaskActionRemove:
-		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, false, false)
+		err = pm.containerManager.RemoveContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID, false, false)
 	case TaskActionRemoveWithCleanup:
 		// removeImage=true: matches Java ContainerManager behavior for clean removal
-		return pm.containerManager.RemoveContainerByMicroserviceUUID(task.MicroserviceUUID, true, true)
+		err = pm.containerManager.RemoveContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID, true, true)
 	case TaskActionStop:
-		return pm.containerManager.StopContainerByMicroserviceUUID(task.MicroserviceUUID)
+		err = pm.containerManager.StopContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID)
 	case TaskActionCreateExec:
 		if ms != nil {
 			// Exec session creation would create an interactive exec session
@@ -719,12 +849,45 @@ func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 		pm.logger.Warnf("Unknown task action: %s", task.Action)
 	}
 
-	return nil
+	if err == nil {
+		runtimeops.Emit(opCtx, runtimeops.RuntimeEvent{
+			Event:      runtimeops.EventTaskCompleted,
+			Level:      runtimeops.LevelInfo,
+			Module:     ProcessManagerModuleName,
+			Source:     runtimeops.SourceTask,
+			Result:     runtimeops.ResultOK,
+			DurationMs: time.Since(start).Milliseconds(),
+			Message:    "task completed",
+			Fields:     map[string]any{"action": string(task.Action)},
+		})
+	}
+	return err
 }
 
-// addTask adds a task to the queue
+// addTask adds a task to the queue and emits a structured enqueue audit event.
 func (pm *ProcessManager) addTask(task *ContainerTask) {
+	if task.OperationID == "" {
+		task.OperationID = uuid.NewString()
+	}
 	pm.taskQueue.Add(task)
+	queueDepth := 0
+	if pm.taskQueue != nil {
+		queueDepth = pm.taskQueue.Size()
+	}
+	runtimeops.Emit(pm.ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventTaskEnqueued,
+		Level:       runtimeops.LevelInfo,
+		Module:      ProcessManagerModuleName,
+		OperationID: task.OperationID,
+		Engine:      pm.engineName,
+		MsUUID:      task.MicroserviceUUID,
+		Source:      runtimeops.SourceTask,
+		Message:     "task enqueued",
+		Fields: map[string]any{
+			"action":     string(task.Action),
+			"queueDepth": queueDepth,
+		},
+	})
 }
 
 // handleLatestMicroservices is the core reconciliation loop.
@@ -738,7 +901,7 @@ func (pm *ProcessManager) addTask(task *ContainerTask) {
 // An ADD or UPDATE task sets ms.IsUpdating = true; the loop skips any microservice
 // that already has an in-flight task, providing exactly-once per-cycle semantics and
 // preventing task-queue flooding.
-func (pm *ProcessManager) handleLatestMicroservices() {
+func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) {
 	pm.logger.Debug("Start handle latest microservices")
 
 	latestMicroservices := pm.microserviceManager.GetLatestMicroservices()
@@ -767,6 +930,10 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 					s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateMarkedForDeletion)
 				})
+				if stats != nil {
+					stats.scheduledRemove++
+				}
+				pm.emitReconcileDecision(ms.MicroserviceUUID, "REMOVE", "delete_requested", "scheduling container removal", runtimeops.LevelInfo, nil)
 				pm.deleteMicroservice(ms)
 			}
 			// If container is already gone, nothing to do.
@@ -778,13 +945,11 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			if ms.IsStuckInRestart && !ms.Rebuild {
 				existing := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus(ms.MicroserviceUUID)
 				if forceRecreate, reason, exitCode := shouldForceRecreateFromStatus(existing); forceRecreate {
-					pm.logger.Warnf(
-						"reconcile bypassing stuck gate for terminal runtime state msUUID=%s containerID=%s reason=%s exitCode=%d decision=recreate",
-						ms.MicroserviceUUID,
-						existing.ContainerID,
-						reason,
-						exitCode,
-					)
+					pm.emitReconcileDecision(ms.MicroserviceUUID, "ADD", "stuck_gate_bypass", "bypassing stuck gate for terminal runtime state", runtimeops.LevelWarn, map[string]any{
+						"containerId": existing.ContainerID,
+						"exitCode":    exitCode,
+						"detail":      reason,
+					})
 					ms.IsStuckInRestart = false
 				} else {
 					pm.logger.Debugf("Skipping stuck microservice %s (rebuild not requested)", ms.MicroserviceUUID)
@@ -800,7 +965,12 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 				}
 			}
 			// Container is missing — schedule creation. Clear stuck flag when Rebuild=true.
-			pm.logger.Infof("Container missing for microservice %s (%s), scheduling creation", ms.MicroserviceUUID, ms.ImageName)
+			if stats != nil {
+				stats.scheduledAdd++
+			}
+			pm.emitReconcileDecision(ms.MicroserviceUUID, "ADD", "missing_container", "scheduling container creation", runtimeops.LevelInfo, map[string]any{
+				"imageName": ms.ImageName,
+			})
 			ms.IsStuckInRestart = false
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 				s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUnknown)
@@ -823,15 +993,16 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 		checker := GetRestartStuckChecker()
 		if forceRecreate, reason, exitCode := shouldForceRecreateFromStatus(status); forceRecreate {
 			sandboxID, _ := pm.engine.GetContainerSandboxID(container.ID)
-			pm.logger.Warnf(
-				"reconcile detected non-restartable terminal state msUUID=%s containerID=%s sandboxID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
-				ms.MicroserviceUUID,
-				container.ID,
-				sandboxID,
-				reason,
-				exitCode,
-				safeErrorMessage(status),
-			)
+			if stats != nil {
+				stats.scheduledUpdate++
+			}
+			pm.emitReconcileDecision(ms.MicroserviceUUID, "UPDATE", "non_restartable", "recreating after non-restartable terminal state", runtimeops.LevelWarn, map[string]any{
+				"containerId": container.ID,
+				"sandboxId":   sandboxID,
+				"exitCode":    exitCode,
+				"detail":      reason,
+				"criMessage":  safeErrorMessage(status),
+			})
 			ms.IsStuckInRestart = false
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 				s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
@@ -841,24 +1012,23 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 		}
 		if status.Status == models.MicroserviceStateCreated {
 			sandboxID, _ := pm.engine.GetContainerSandboxID(container.ID)
-			pm.logger.Infof(
-				"reconcile observed created container msUUID=%s containerID=%s sandboxID=%s criMessage=%q decision=start",
-				ms.MicroserviceUUID,
-				container.ID,
-				sandboxID,
-				safeErrorMessage(status),
-			)
-			if startErr := pm.containerManager.StartContainerByMicroserviceUUID(ms.MicroserviceUUID); startErr != nil {
+			pm.emitReconcileDecision(ms.MicroserviceUUID, "START", "created_container", "starting created container", runtimeops.LevelInfo, map[string]any{
+				"containerId": container.ID,
+				"sandboxId":   sandboxID,
+				"criMessage":  safeErrorMessage(status),
+			})
+			if startErr := pm.containerManager.StartContainerByMicroserviceUUID(pm.reconcileOperationContext(ms.MicroserviceUUID), ms.MicroserviceUUID); startErr != nil {
 				if nr, ok := engine.IsNonRestartableContainerError(startErr); ok {
-					pm.logger.Warnf(
-						"reconcile created start failed with non-restartable terminal state msUUID=%s containerID=%s sandboxID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
-						ms.MicroserviceUUID,
-						container.ID,
-						sandboxID,
-						nr.Reason,
-						nr.ExitCode,
-						nr.Message,
-					)
+					if stats != nil {
+						stats.scheduledUpdate++
+					}
+					pm.emitReconcileDecision(ms.MicroserviceUUID, "UPDATE", "non_restartable", "recreating after non-restartable start failure", runtimeops.LevelWarn, map[string]any{
+						"containerId": container.ID,
+						"sandboxId":   sandboxID,
+						"exitCode":    nr.ExitCode,
+						"detail":      nr.Reason,
+						"criMessage":  nr.Message,
+					})
 					ms.IsStuckInRestart = false
 					statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 						s.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
@@ -867,13 +1037,11 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 					continue
 				}
 				if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
-					pm.logger.Warnf(
-						"reconcile created start failed repeatedly msUUID=%s containerID=%s sandboxID=%s err=%v decision=mark_stuck_in_restart",
-						ms.MicroserviceUUID,
-						container.ID,
-						sandboxID,
-						startErr,
-					)
+					pm.emitReconcileDecision(ms.MicroserviceUUID, "START", "stuck_in_restart", "created start failed repeatedly", runtimeops.LevelWarn, map[string]any{
+						"containerId": container.ID,
+						"sandboxId":   sandboxID,
+						"error":       startErr.Error(),
+					})
 					status.Status = models.MicroserviceStateStuckInRestart
 					ms.IsStuckInRestart = true
 					stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, fmt.Sprintf("Container repeatedly failing to start: %v", startErr))
@@ -883,20 +1051,16 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 					})
 					continue
 				}
-				pm.logger.Warnf(
-					"reconcile created start failed msUUID=%s containerID=%s sandboxID=%s err=%v decision=retry_start",
-					ms.MicroserviceUUID,
-					container.ID,
-					sandboxID,
-					startErr,
-				)
+				pm.emitReconcileDecision(ms.MicroserviceUUID, "START", "retry_start", "created start failed", runtimeops.LevelWarn, map[string]any{
+					"containerId": container.ID,
+					"sandboxId":   sandboxID,
+					"error":       startErr.Error(),
+				})
 			} else {
-				pm.logger.Infof(
-					"reconcile created start succeeded msUUID=%s containerID=%s sandboxID=%s decision=started",
-					ms.MicroserviceUUID,
-					container.ID,
-					sandboxID,
-				)
+				pm.emitReconcileDecision(ms.MicroserviceUUID, "START", "created_container", "created container started", runtimeops.LevelInfo, map[string]any{
+					"containerId": container.ID,
+					"sandboxId":   sandboxID,
+				})
 			}
 			continue
 		}
@@ -935,7 +1099,7 @@ func (pm *ProcessManager) handleLatestMicroservices() {
 			pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
 		})
 
-		pm.updateMicroservice(container, ms)
+		pm.updateMicroservice(container, ms, stats)
 	}
 
 	pm.logger.Debug("Finished handle latest microservices")
@@ -966,7 +1130,7 @@ func (pm *ProcessManager) deleteMicroservice(ms *models.Microservice) {
 }
 
 // updateMicroservice checks if a container needs updating
-func (pm *ProcessManager) updateMicroservice(container *engine.Container, ms *models.Microservice) {
+func (pm *ProcessManager) updateMicroservice(container *engine.Container, ms *models.Microservice, stats *reconcileCycleStats) {
 	pm.logger.Debug("Start update microservice")
 
 	ms.ContainerID = container.ID
@@ -989,6 +1153,13 @@ func (pm *ProcessManager) updateMicroservice(container *engine.Container, ms *mo
 		if ms.IsStuckInRestart {
 			ms.IsStuckInRestart = false
 		}
+		reason := reconcileUpdateReason(ms, status)
+		if stats != nil {
+			stats.scheduledUpdate++
+		}
+		pm.emitReconcileDecision(ms.MicroserviceUUID, "UPDATE", reason, "scheduling container update", runtimeops.LevelInfo, map[string]any{
+			"containerId": container.ID,
+		})
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateUpdating)
 		})
@@ -1139,7 +1310,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	// Delete old agent containers
 	for _, uuid := range oldAgentUUIDs {
 		pm.logger.Infof("Deleting old agent microservice: %s", uuid)
-		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(uuid, false, false); err != nil {
+		if err := pm.containerManager.RemoveContainerByMicroserviceUUID(pm.operationContext(uuid), uuid, false, false); err != nil {
 			pm.logger.Errorf("Error deleting old agent microservice %s: %v", uuid, err)
 		}
 	}
@@ -1148,7 +1319,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	// non-iofog containers that don't resolve via microservice UUID lookup.
 	for _, containerID := range unknownContainerIDs {
 		pm.logger.Infof("Deleting unknown container: %s", containerID)
-		if err := pm.containerManager.RemoveContainerByID(containerID, false, false); err != nil {
+		if err := pm.containerManager.RemoveContainerByID(pm.operationContext(containerID), containerID, false, false); err != nil {
 			pm.logger.Errorf("Error deleting unknown container %s: %v", containerID, err)
 		}
 	}
@@ -1291,7 +1462,7 @@ func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.StartContainerByMicroserviceUUID(microserviceUUID)
+	return pm.containerManager.StartContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
 }
 
 // StopMicroservice stops a runtime microservice container.
@@ -1299,7 +1470,7 @@ func (pm *ProcessManager) StopMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.StopContainerByMicroserviceUUID(microserviceUUID)
+	return pm.containerManager.StopContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
 }
 
 // KillMicroservice sends a forceful kill signal to a runtime microservice container.
@@ -1307,7 +1478,7 @@ func (pm *ProcessManager) KillMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.KillContainerByMicroserviceUUID(microserviceUUID)
+	return pm.containerManager.KillContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
 }
 
 // RestartMicroservice performs stop then start for a runtime microservice container.
@@ -1323,7 +1494,7 @@ func (pm *ProcessManager) RemoveMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.RemoveContainerByMicroserviceUUID(microserviceUUID, false, false)
+	return pm.containerManager.RemoveContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID, false, false)
 }
 
 // RemoveContainerByContainerID removes a runtime container by concrete container id.
@@ -1331,7 +1502,7 @@ func (pm *ProcessManager) RemoveContainerByContainerID(containerID string) error
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.RemoveContainerByID(containerID, false, false)
+	return pm.containerManager.RemoveContainerByID(pm.operationContext(containerID), containerID, false, false)
 }
 
 // GetMicroserviceUUIDForContainer derives a microservice selector from a container.

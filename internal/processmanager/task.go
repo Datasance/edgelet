@@ -18,6 +18,7 @@ const (
 type ContainerTask struct {
 	Action           TaskAction
 	MicroserviceUUID string
+	OperationID      string // correlation id for structured logging (set on first execute)
 	Retries          int
 	Command          []string
 	ExecID           string

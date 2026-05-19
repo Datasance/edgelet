@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"context"
 	"testing"
 
 	"github.com/eclipse-iofog/agent/internal/models"
@@ -46,10 +47,10 @@ func TestRemoveContainerByID_SetsDeletedForManagedMicroserviceUUID(t *testing.T)
 			},
 		},
 	}
-	cm := NewContainerManager(eng, nil)
+	cm := NewContainerManager(eng, nil, "docker")
 	cm.logger = logging.NewModuleLogger("test-container-manager")
 
-	if err := cm.RemoveContainerByID("container-1", false, false); err != nil {
+	if err := cm.RemoveContainerByID(context.Background(), "container-1", false, false); err != nil {
 		t.Fatalf("unexpected remove error: %v", err)
 	}
 

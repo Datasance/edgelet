@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
+	"github.com/eclipse-iofog/agent/internal/runtimeops"
 	"github.com/eclipse-iofog/agent/internal/statusreporter"
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
@@ -25,14 +27,16 @@ const (
 type ContainerManager struct {
 	engine              engine.ContainerEngine
 	microserviceManager MicroserviceManagerInterface
+	engineName          string
 	logger              *logging.ModuleLogger
 }
 
 // NewContainerManager creates a new ContainerManager
-func NewContainerManager(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) *ContainerManager {
+func NewContainerManager(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface, engineName string) *ContainerManager {
 	return &ContainerManager{
 		engine:              eng,
 		microserviceManager: microserviceManager,
+		engineName:          engineName,
 		logger:              logging.NewModuleLogger(ContainerManagerModuleName),
 	}
 }
@@ -77,9 +81,7 @@ func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string)
 // AddContainer creates and starts a container for a microservice.
 // It holds IsUpdating=true for the duration so the reconciliation loop treats this
 // microservice as "in-flight" and does not enqueue a second ADD task.
-func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
-	cm.logger.Infof("Add container for microservice: %s", ms.ImageName)
-
+func (cm *ContainerManager) AddContainer(ctx context.Context, ms *models.Microservice) error {
 	ms.SetIsUpdating(true)
 	defer ms.SetIsUpdating(false)
 
@@ -89,7 +91,7 @@ func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
 	}
 
 	if container == nil {
-		return cm.createContainer(ms)
+		return cm.createContainer(ctx, ms)
 	}
 
 	// Container already exists (created by a concurrent task) — nothing to do.
@@ -97,9 +99,7 @@ func (cm *ContainerManager) AddContainer(ms *models.Microservice) error {
 }
 
 // UpdateContainer updates a container for a microservice
-func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup bool) error {
-	cm.logger.Infof("Start update container for microservice: %s", ms.ImageName)
-
+func (cm *ContainerManager) UpdateContainer(ctx context.Context, ms *models.Microservice, withCleanup bool) error {
 	ms.SetIsUpdating(true)
 	defer ms.SetIsUpdating(false)
 
@@ -114,6 +114,14 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	pullSucceeded := false
 
 	if registry.URL != "from_cache" {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerUpdatePhase,
+			MsUUID:  ms.MicroserviceUUID,
+			Image:   pullRef,
+			Phase:   "pull",
+			Source:  runtimeops.SourceTask,
+			Message: "update pull phase",
+		})
 		opts := &engine.PullImageOptions{
 			Platform: cm.platformForPull(ms),
 			ProgressCallback: func(pct float32) {
@@ -122,11 +130,32 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 				})
 			},
 		}
+		pullStart := time.Now()
 		if err := cm.engine.PullImage(pullRef, registry, opts); err != nil {
+			cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+				Event:      runtimeops.EventContainerPullCompleted,
+				Level:      runtimeops.LevelWarn,
+				MsUUID:     ms.MicroserviceUUID,
+				Image:      pullRef,
+				Phase:      "pull",
+				Result:     runtimeops.ResultFailed,
+				ReasonCode: runtimeops.ReasonPullCacheFallback,
+				DurationMs: time.Since(pullStart).Milliseconds(),
+				Error:      err.Error(),
+				Message:    "update pull failed, using local cache",
+			})
 			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", pullRef, err)
 		} else {
 			pullSucceeded = true
-			cm.logger.Infof("Successfully pulled image \"%s\" while old container was running", pullRef)
+			cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+				Event:      runtimeops.EventContainerPullCompleted,
+				MsUUID:     ms.MicroserviceUUID,
+				Image:      pullRef,
+				Phase:      "pull",
+				Result:     runtimeops.ResultOK,
+				DurationMs: time.Since(pullStart).Milliseconds(),
+				Message:    "update pull completed",
+			})
 			statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 				status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
 			})
@@ -151,24 +180,30 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 	// Step 2: Now stop and remove old container (releases ports)
 	// Downtime starts here, but it's brief compared to pull time
 	// removeImage=withCleanup: matches Java ContainerManager behavior (image deleted on clean update)
-	if err := cm.RemoveContainerByMicroserviceUUID(ms.MicroserviceUUID, withCleanup, withCleanup); err != nil {
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:   runtimeops.EventContainerUpdatePhase,
+		MsUUID:  ms.MicroserviceUUID,
+		Image:   effectiveRunRef,
+		Phase:   "remove",
+		Source:  runtimeops.SourceTask,
+		Message: "update remove phase",
+	})
+	if err := cm.RemoveContainerByMicroserviceUUID(ctx, ms.MicroserviceUUID, withCleanup, withCleanup); err != nil {
 		cm.logger.Warnf("Error removing old container: %v", err)
 		// Continue anyway
-	} else {
-		cm.logger.Infof("recreate phase result msUUID=%s phase=remove result=ok", ms.MicroserviceUUID)
 	}
 
 	// Step 3: Create and start new container (can use same ports now)
-	// Use the resolved runtime image ref so pull/check/create use the same reference.
 	ms.ImageName = effectiveRunRef
-	if err := cm.createContainer(ms); err != nil {
-		cm.logger.Warnf("recreate phase result msUUID=%s phase=create_or_start result=failed err=%v", ms.MicroserviceUUID, err)
-		return err
-	}
-	cm.logger.Infof("recreate phase result msUUID=%s phase=create_or_start result=ok", ms.MicroserviceUUID)
-
-	cm.logger.Debugf("Finished update container for microservice: %s", ms.ImageName)
-	return nil
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:   runtimeops.EventContainerUpdatePhase,
+		MsUUID:  ms.MicroserviceUUID,
+		Image:   effectiveRunRef,
+		Phase:   "create",
+		Source:  runtimeops.SourceTask,
+		Message: "update create phase",
+	})
+	return cm.createContainer(ctx, ms)
 }
 
 // RemoveContainerByMicroserviceUUID removes a container by microservice UUID.
@@ -176,9 +211,7 @@ func (cm *ContainerManager) UpdateContainer(ms *models.Microservice, withCleanup
 // removeImage controls whether the container image is also removed after container deletion —
 // set true for normal lifecycle deletions (matching Java ContainerManager behavior),
 // false for the deprovision path (matching Java ProcessManager private method behavior).
-func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID string, withCleanup bool, removeImage bool) error {
-	cm.logger.Debugf("Start remove container by microserviceuuid: %s", microserviceUUID)
-
+func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string, withCleanup bool, removeImage bool) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
@@ -194,7 +227,13 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 	}
 
 	if container == nil {
-		// Container already gone (e.g. crashed) — still report DELETED so controller receives final state
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerRemoved,
+			MsUUID:  microserviceUUID,
+			Result:  runtimeops.ResultSkipped,
+			Source:  runtimeops.SourceTask,
+			Message: "container already removed",
+		})
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
 			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
@@ -203,59 +242,40 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(microserviceUUID s
 		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
 	} else {
 		imageRef := container.Image
-
-		// Set DELETING status before removal (matches Java ContainerManager.setMicroserviceStatus(DELETING))
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleting)
 		})
-
-		if err := cm.engine.StopContainer(container.ID); err != nil {
-			cm.logger.Warnf("Error stopping container: %v", err)
-		}
-		if err := cm.engine.RemoveContainer(container.ID, withCleanup); err != nil {
-			cm.logger.Errorf("Error removing container: %v", err)
+		if err := cm.removeRuntimeContainer(ctx, microserviceUUID, container.ID, imageRef, runtimeops.SourceTask, withCleanup, removeImage); err != nil {
 			return err
 		}
-
-		// Set DELETED status after successful removal so controller receives final state
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
 			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
-
-		// Remove image when explicitly requested (matching Java ContainerManager.removeContainer logic).
-		// Errors are logged as warnings only — image may still be in use by another container
-		// (equivalent to Java catching ConflictException).
-		if removeImage && imageRef != "" {
-			if err := cm.engine.RemoveImage(imageRef); err != nil {
-				cm.logger.Warnf("Image %s cannot be removed (may be in use): %v", imageRef, err)
-			}
-		}
-
-		// Clear container state from DB (iofog engine uses this for lookup)
 		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
 		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
 	}
 
-	// Clean up per-microservice volume mounts (matching Java: VolumeMountManager.getInstance().cleanupMicroserviceVolumes())
 	volumemount.GetInstance().CleanupMicroserviceVolumes(microserviceUUID)
-
-	cm.logger.Infof("Finished remove container by microserviceuuid: %s", microserviceUUID)
 	return nil
 }
 
 // RemoveContainerByID removes a container by concrete engine-assigned container ID.
 // This is primarily used by watchdog unknown-container cleanup where there is no
 // guaranteed iofog microservice UUID mapping.
-func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup bool, removeImage bool) error {
-	cm.logger.Debugf("Start remove container by containerID: %s", containerID)
-
+func (cm *ContainerManager) RemoveContainerByID(ctx context.Context, containerID string, withCleanup bool, removeImage bool) error {
 	container, err := cm.engine.GetContainerByID(containerID)
 	if err != nil {
 		return err
 	}
 	if container == nil {
-		cm.logger.Infof("Container already removed by containerID: %s", containerID)
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:       runtimeops.EventContainerRemoved,
+			ContainerID: containerID,
+			Result:      runtimeops.ResultSkipped,
+			Source:      runtimeops.SourceWatchdog,
+			Message:     "container already removed",
+		})
 		return nil
 	}
 
@@ -265,21 +285,10 @@ func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup 
 		msUUID = workloadmeta.MicroserviceUIDFromLabels(container.Labels)
 	}
 
-	if err := cm.engine.StopContainer(container.ID); err != nil {
-		cm.logger.Warnf("Error stopping container %s: %v", container.ID, err)
-	}
-	if err := cm.engine.RemoveContainer(container.ID, withCleanup); err != nil {
-		cm.logger.Errorf("Error removing container %s: %v", container.ID, err)
+	if err := cm.removeRuntimeContainer(ctx, msUUID, container.ID, imageRef, runtimeops.SourceWatchdog, withCleanup, removeImage); err != nil {
 		return err
 	}
 
-	if removeImage && imageRef != "" {
-		if err := cm.engine.RemoveImage(imageRef); err != nil {
-			cm.logger.Warnf("Image %s cannot be removed (may be in use): %v", imageRef, err)
-		}
-	}
-
-	// Best-effort cleanup for iofog-managed containers.
 	if msUUID != "" {
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 			s.SetMicroservicesState(msUUID, models.MicroserviceStateDeleted)
@@ -291,75 +300,197 @@ func (cm *ContainerManager) RemoveContainerByID(containerID string, withCleanup 
 		volumemount.GetInstance().CleanupMicroserviceVolumes(msUUID)
 	}
 
-	cm.logger.Infof("Finished remove container by containerID: %s", containerID)
 	return nil
 }
 
 // StopContainerByMicroserviceUUID stops a container by microservice UUID
-func (cm *ContainerManager) StopContainerByMicroserviceUUID(microserviceUUID string) error {
-	cm.logger.Debugf("Stop container by microserviceuuid: %s", microserviceUUID)
-
+func (cm *ContainerManager) StopContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
 	}
-
-	if container != nil {
-		return cm.engine.StopContainer(container.ID)
+	if container == nil {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerStopped,
+			MsUUID:  microserviceUUID,
+			Result:  runtimeops.ResultSkipped,
+			Source:  runtimeops.SourceTask,
+			Message: "stop skipped, container not found",
+		})
+		return nil
 	}
 
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStopping,
+		MsUUID:      microserviceUUID,
+		ContainerID: container.ID,
+		Image:       container.Image,
+		Source:      runtimeops.SourceTask,
+		Message:     "stopping container",
+	})
+	stopStart := time.Now()
+	stopErr := cm.engine.StopContainer(container.ID)
+	stopEvent := runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStopped,
+		MsUUID:      microserviceUUID,
+		ContainerID: container.ID,
+		Image:       container.Image,
+		Source:      runtimeops.SourceTask,
+		DurationMs:  time.Since(stopStart).Milliseconds(),
+		Message:     "container stopped",
+	}
+	if stopErr != nil {
+		stopEvent.Level = runtimeops.LevelWarn
+		stopEvent.Result = runtimeops.ResultFailed
+		stopEvent.ReasonCode = runtimeops.ReasonStopFailed
+		stopEvent.Error = stopErr.Error()
+		stopEvent.Message = "container stop failed"
+		cm.emitFromCM(ctx, stopEvent)
+		return stopErr
+	}
+	stopEvent.Result = runtimeops.ResultOK
+	cm.emitFromCM(ctx, stopEvent)
 	return nil
 }
 
 // StartContainerByMicroserviceUUID starts a container by microservice UUID.
-func (cm *ContainerManager) StartContainerByMicroserviceUUID(microserviceUUID string) error {
-	cm.logger.Debugf("Start container by microserviceuuid: %s", microserviceUUID)
+func (cm *ContainerManager) StartContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
 	}
-	if container != nil {
-		err := cm.engine.StartContainer(container.ID)
-		if err == nil {
-			return nil
-		}
-		var nr *engine.NonRestartableContainerError
-		if errors.As(err, &nr) {
-			cm.logger.Warnf(
-				"start classification: non-restartable terminal state msUUID=%s containerID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
-				microserviceUUID,
-				nr.ContainerID,
-				nr.Reason,
-				nr.ExitCode,
-				nr.Message,
-			)
-		}
-		return err
+	if container == nil {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerStarted,
+			MsUUID:  microserviceUUID,
+			Result:  runtimeops.ResultSkipped,
+			Source:  runtimeops.SourceTask,
+			Message: "start skipped, container not found",
+		})
+		return nil
 	}
-	return nil
+
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStarting,
+		MsUUID:      microserviceUUID,
+		ContainerID: container.ID,
+		Image:       container.Image,
+		Source:      runtimeops.SourceTask,
+		Message:     "starting container",
+	})
+	startAt := time.Now()
+	startErr := cm.engine.StartContainer(container.ID)
+	if startErr == nil {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:       runtimeops.EventContainerStarted,
+			MsUUID:      microserviceUUID,
+			ContainerID: container.ID,
+			Image:       container.Image,
+			Source:      runtimeops.SourceTask,
+			Result:      runtimeops.ResultOK,
+			DurationMs:  time.Since(startAt).Milliseconds(),
+			Message:     "container started",
+		})
+		return nil
+	}
+
+	var nr *engine.NonRestartableContainerError
+	if errors.As(startErr, &nr) {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:       runtimeops.EventContainerStarted,
+			Level:       runtimeops.LevelWarn,
+			MsUUID:      microserviceUUID,
+			ContainerID: nr.ContainerID,
+			Image:       container.Image,
+			Source:      runtimeops.SourceTask,
+			Result:      runtimeops.ResultFailed,
+			ReasonCode:  runtimeops.ReasonNonRestartableExit,
+			DurationMs:  time.Since(startAt).Milliseconds(),
+			Error:       nr.Message,
+			Message:     "non-restartable container start failure",
+			Fields: map[string]any{
+				"exitCode": nr.ExitCode,
+				"reason":   nr.Reason,
+			},
+		})
+	} else {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:       runtimeops.EventContainerStarted,
+			Level:       runtimeops.LevelWarn,
+			MsUUID:      microserviceUUID,
+			ContainerID: container.ID,
+			Image:       container.Image,
+			Source:      runtimeops.SourceTask,
+			Result:      runtimeops.ResultFailed,
+			ReasonCode:  runtimeops.ReasonStartFailed,
+			DurationMs:  time.Since(startAt).Milliseconds(),
+			Error:       startErr.Error(),
+			Message:     "container start failed",
+		})
+	}
+	return startErr
 }
 
 // KillContainerByMicroserviceUUID forcefully stops a container by microservice UUID.
-func (cm *ContainerManager) KillContainerByMicroserviceUUID(microserviceUUID string) error {
-	cm.logger.Debugf("Kill container by microserviceuuid: %s", microserviceUUID)
+func (cm *ContainerManager) KillContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return err
 	}
-	if container != nil {
-		return cm.engine.KillContainer(container.ID)
+	if container == nil {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerStopped,
+			MsUUID:  microserviceUUID,
+			Result:  runtimeops.ResultSkipped,
+			Source:  runtimeops.SourceTask,
+			Message: "kill skipped, container not found",
+			Fields:  map[string]any{"force": true},
+		})
+		return nil
 	}
+
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStopping,
+		MsUUID:      microserviceUUID,
+		ContainerID: container.ID,
+		Image:       container.Image,
+		Source:      runtimeops.SourceTask,
+		Message:     "force stopping container",
+		Fields:      map[string]any{"force": true},
+	})
+	killStart := time.Now()
+	killErr := cm.engine.KillContainer(container.ID)
+	killEvent := runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStopped,
+		MsUUID:      microserviceUUID,
+		ContainerID: container.ID,
+		Image:       container.Image,
+		Source:      runtimeops.SourceTask,
+		DurationMs:  time.Since(killStart).Milliseconds(),
+		Message:     "container force stopped",
+		Fields:      map[string]any{"force": true},
+	}
+	if killErr != nil {
+		killEvent.Level = runtimeops.LevelWarn
+		killEvent.Result = runtimeops.ResultFailed
+		killEvent.ReasonCode = runtimeops.ReasonStopFailed
+		killEvent.Error = killErr.Error()
+		killEvent.Message = "container force stop failed"
+		cm.emitFromCM(ctx, killEvent)
+		return killErr
+	}
+	killEvent.Result = runtimeops.ResultOK
+	cm.emitFromCM(ctx, killEvent)
 	return nil
 }
 
 // createContainer creates a container for a microservice
-func (cm *ContainerManager) createContainer(ms *models.Microservice) error {
-	return cm.createContainerWithPull(ms, true)
+func (cm *ContainerManager) createContainer(ctx context.Context, ms *models.Microservice) error {
+	return cm.createContainerWithPull(ctx, ms, true)
 }
 
 // createContainerWithPull creates a container, optionally pulling the image first
-func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pullImage bool) error {
-	// Set status to PULLING via status reporter
+func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *models.Microservice, pullImage bool) error {
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStatePulling)
 	})
@@ -373,6 +504,14 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	pullSucceeded := false
 
 	if registry.URL != "from_cache" && pullImage {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerPulling,
+			MsUUID:  ms.MicroserviceUUID,
+			Image:   pullRef,
+			Phase:   "pull",
+			Source:  runtimeops.SourceTask,
+			Message: "pulling image",
+		})
 		opts := &engine.PullImageOptions{
 			Platform: cm.platformForPull(ms),
 			ProgressCallback: func(pct float32) {
@@ -381,13 +520,45 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 				})
 			},
 		}
+		pullStart := time.Now()
 		if err := cm.engine.PullImage(pullRef, registry, opts); err != nil {
+			cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+				Event:      runtimeops.EventContainerPullCompleted,
+				Level:      runtimeops.LevelWarn,
+				MsUUID:     ms.MicroserviceUUID,
+				Image:      pullRef,
+				Phase:      "pull",
+				Result:     runtimeops.ResultFailed,
+				ReasonCode: runtimeops.ReasonPullCacheFallback,
+				DurationMs: time.Since(pullStart).Milliseconds(),
+				Error:      err.Error(),
+				Message:    "pull failed, trying local cache",
+			})
 			cm.logger.Warnf("Unable to pull \"%s\" from registry. Trying local cache: %v", pullRef, err)
-			return cm.createContainerWithPull(ms, false)
+			return cm.createContainerWithPull(ctx, ms, false)
 		}
 		pullSucceeded = true
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:      runtimeops.EventContainerPullCompleted,
+			MsUUID:     ms.MicroserviceUUID,
+			Image:      pullRef,
+			Phase:      "pull",
+			Result:     runtimeops.ResultOK,
+			DurationMs: time.Since(pullStart).Milliseconds(),
+			Message:    "pull completed",
+		})
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 			status.SetMicroservicesStatePercentage(ms.MicroserviceUUID, 100.0)
+		})
+	} else {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:   runtimeops.EventContainerPullCompleted,
+			MsUUID:  ms.MicroserviceUUID,
+			Image:   pullRef,
+			Phase:   "pull",
+			Result:  runtimeops.ResultSkipped,
+			Source:  runtimeops.SourceTask,
+			Message: "pull skipped, using local cache",
 		})
 	}
 
@@ -405,8 +576,14 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	}
 	ms.ImageName = effectiveRunRef
 
-	cm.logger.Infof("Creating container \"%s\"", ms.ImageName)
-	// Set status to STARTING via status reporter
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:   runtimeops.EventContainerCreating,
+		MsUUID:  ms.MicroserviceUUID,
+		Image:   effectiveRunRef,
+		Phase:   "create",
+		Source:  runtimeops.SourceTask,
+		Message: "creating container",
+	})
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(status *models.ProcessManagerStatus) {
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStateStarting)
 		status.SetMicroservicesStatusErrorMessage(ms.MicroserviceUUID, "")
@@ -430,16 +607,42 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	}
 	_ = cfg
 
+	createStart := time.Now()
 	containerID, err := cm.engine.CreateContainer(ms, hostIP)
 	if err != nil {
+		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+			Event:      runtimeops.EventContainerCreated,
+			Level:      runtimeops.LevelError,
+			MsUUID:     ms.MicroserviceUUID,
+			Image:      effectiveRunRef,
+			Phase:      "create",
+			Result:     runtimeops.ResultFailed,
+			ReasonCode: runtimeops.ReasonCreateFailed,
+			DurationMs: time.Since(createStart).Milliseconds(),
+			Error:      err.Error(),
+			Message:    "container create failed",
+		})
 		return err
 	}
 
 	ms.ContainerID = containerID
 
-	if sandboxID, _ := cm.engine.GetContainerSandboxID(containerID); sandboxID != "" {
+	sandboxID, _ := cm.engine.GetContainerSandboxID(containerID)
+	if sandboxID != "" {
 		_ = store.GetInstance().SaveContainerState(ms.MicroserviceUUID, containerID, sandboxID)
 	}
+
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerCreated,
+		MsUUID:      ms.MicroserviceUUID,
+		ContainerID: containerID,
+		SandboxID:   sandboxID,
+		Image:       effectiveRunRef,
+		Phase:       "create",
+		Result:      runtimeops.ResultOK,
+		DurationMs:  time.Since(createStart).Milliseconds(),
+		Message:     "container created",
+	})
 
 	ip, err := cm.engine.GetContainerIPAddress(containerID)
 	if err != nil {
@@ -448,21 +651,56 @@ func (cm *ContainerManager) createContainerWithPull(ms *models.Microservice, pul
 	}
 	ms.ContainerIPAddress = &ip
 
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStarting,
+		MsUUID:      ms.MicroserviceUUID,
+		ContainerID: containerID,
+		SandboxID:   sandboxID,
+		Image:       effectiveRunRef,
+		Phase:       "start",
+		Source:      runtimeops.SourceTask,
+		Message:     "starting container",
+	})
+	startAt := time.Now()
 	if err := cm.engine.StartContainer(containerID); err != nil {
 		var nr *engine.NonRestartableContainerError
-		if errors.As(err, &nr) {
-			cm.logger.Warnf(
-				"recreate phase result msUUID=%s phase=start result=failed reason=%s exitCode=%d criMessage=%q containerID=%s",
-				ms.MicroserviceUUID,
-				nr.Reason,
-				nr.ExitCode,
-				nr.Message,
-				nr.ContainerID,
-			)
+		startEvent := runtimeops.RuntimeEvent{
+			Event:       runtimeops.EventContainerStarted,
+			Level:       runtimeops.LevelWarn,
+			MsUUID:      ms.MicroserviceUUID,
+			ContainerID: containerID,
+			SandboxID:   sandboxID,
+			Image:       effectiveRunRef,
+			Phase:       "start",
+			Result:      runtimeops.ResultFailed,
+			DurationMs:  time.Since(startAt).Milliseconds(),
+			Message:     "container start failed",
 		}
+		if errors.As(err, &nr) {
+			startEvent.ReasonCode = runtimeops.ReasonNonRestartableExit
+			startEvent.Error = nr.Message
+			startEvent.Fields = map[string]any{
+				"exitCode": nr.ExitCode,
+				"reason":   nr.Reason,
+			}
+		} else {
+			startEvent.ReasonCode = runtimeops.ReasonStartFailed
+			startEvent.Error = err.Error()
+		}
+		cm.emitFromCM(ctx, startEvent)
 		return fmt.Errorf("failed to start container: %w", err)
 	}
-	cm.logger.Infof("recreate phase result msUUID=%s phase=start result=ok containerID=%s", ms.MicroserviceUUID, containerID)
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:       runtimeops.EventContainerStarted,
+		MsUUID:      ms.MicroserviceUUID,
+		ContainerID: containerID,
+		SandboxID:   sandboxID,
+		Image:       effectiveRunRef,
+		Phase:       "start",
+		Result:      runtimeops.ResultOK,
+		DurationMs:  time.Since(startAt).Milliseconds(),
+		Message:     "container started",
+	})
 
 	// Clear rebuild flag after successful creation (matches Java ContainerManager.setRebuild(false))
 	ms.Rebuild = false
