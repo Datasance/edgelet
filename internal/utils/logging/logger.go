@@ -137,6 +137,32 @@ func (l *LogrusLogger) Error(moduleName, msg string, err error) {
 	}
 }
 
+// LogWithFields logs a message with structured fields as top-level JSON keys (enterprise SIEM).
+// level is one of: debug, info, warn, error.
+func (l *LogrusLogger) LogWithFields(level, moduleName, msg string, fields map[string]any, err error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	entry := l.logger.WithField("module", moduleName)
+	for k, v := range fields {
+		entry = entry.WithField(k, v)
+	}
+	if err != nil {
+		entry = entry.WithError(err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		entry.Debug(msg)
+	case "warn", "warning":
+		entry.Warn(msg)
+	case "error":
+		entry.Error(msg)
+	default:
+		entry.Info(msg)
+	}
+}
+
 // SetLevel sets the log level
 // logrus expects lowercase level names (e.g., "debug", "info"), but config stores uppercase
 func (l *LogrusLogger) SetLevel(level string) {
