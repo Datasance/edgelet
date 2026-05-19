@@ -231,6 +231,7 @@ func TestHandleDeployMicroservicesApplyStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleDeployMicroservicesApplyStatus_EventuallySucceeded(t *testing.T) {
+	ensureStoreDBOpen(t)
 	handler := NewV3Handler()
 	startReq := newDeployApplyMultipartRequest(t, map[string]string{
 		"async":  "true",

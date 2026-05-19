@@ -217,7 +217,6 @@ func TestHandleDeployRegistries_GetByID_IncludesPassword(t *testing.T) {
 	if err := db.Open(t.TempDir()); err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 	if err := db.EnsureDefaultLocalRegistries(); err != nil {
 		t.Fatalf("failed to seed default registries: %v", err)
 	}
