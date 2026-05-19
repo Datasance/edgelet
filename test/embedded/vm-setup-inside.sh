@@ -114,23 +114,23 @@ echo "[vm-setup] containerd socket is ready."
 # Install matching ctr binary (v2.1.5) so test scripts can talk to our
 # embedded containerd without version-mismatch "unknown service streaming" errors.
 ###############################################################################
-CONTAINERD_VER="2.1.5"
-ARCH="$(uname -m)"
-[[ "${ARCH}" == "aarch64" ]] && CTR_ARCH="arm64" || CTR_ARCH="amd64"
-CTR_URL="https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-${CTR_ARCH}.tar.gz"
+# CONTAINERD_VER="2.1.5"
+# ARCH="$(uname -m)"
+# [[ "${ARCH}" == "aarch64" ]] && CTR_ARCH="arm64" || CTR_ARCH="amd64"
+# CTR_URL="https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-${CTR_ARCH}.tar.gz"
 
-if ctr --version 2>/dev/null | grep -q "${CONTAINERD_VER}"; then
-    echo "[vm-setup] ctr ${CONTAINERD_VER} already installed."
-else
-    echo "[vm-setup] Installing ctr ${CONTAINERD_VER} (matching embedded containerd)..."
-    TMP_CTR="$(mktemp -d)"
-    curl -fsSL "${CTR_URL}" | tar -xzf - -C "${TMP_CTR}" bin/ctr
-    mv "${TMP_CTR}/bin/ctr" /usr/local/bin/ctr-iofog
-    chmod 755 /usr/local/bin/ctr-iofog
-    rm -rf "${TMP_CTR}"
-    # Symlink as 'ctr' only if no same-version system ctr exists
-    ln -sf /usr/local/bin/ctr-iofog /usr/local/bin/ctr
-    echo "[vm-setup] ctr installed at /usr/local/bin/ctr -> ctr-iofog (${CONTAINERD_VER})"
-fi
+# if ctr --version 2>/dev/null | grep -q "${CONTAINERD_VER}"; then
+#     echo "[vm-setup] ctr ${CONTAINERD_VER} already installed."
+# else
+#     echo "[vm-setup] Installing ctr ${CONTAINERD_VER} (matching embedded containerd)..."
+#     TMP_CTR="$(mktemp -d)"
+#     curl -fsSL "${CTR_URL}" | tar -xzf - -C "${TMP_CTR}" bin/ctr
+#     mv "${TMP_CTR}/bin/ctr" /usr/local/bin/ctr-iofog
+#     chmod 755 /usr/local/bin/ctr-iofog
+#     rm -rf "${TMP_CTR}"
+#     # Symlink as 'ctr' only if no same-version system ctr exists
+#     ln -sf /usr/local/bin/ctr-iofog /usr/local/bin/ctr
+#     echo "[vm-setup] ctr installed at /usr/local/bin/ctr -> ctr-iofog (${CONTAINERD_VER})"
+# fi
 
 echo "[vm-setup] Done."
