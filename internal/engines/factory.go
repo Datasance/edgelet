@@ -33,6 +33,17 @@ func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.Cont
 	}
 }
 
+// WrapWithLoggingIfExternal wraps docker/podman engines with structured Debug API logging.
+// Call after Init() so initialization is not double-wrapped.
+func WrapWithLoggingIfExternal(eng engine.ContainerEngine, engineType string) engine.ContainerEngine {
+	switch engineType {
+	case constants.EngineDocker, constants.EnginePodman:
+		return engine.NewLoggingEngine(eng, engineType)
+	default:
+		return eng
+	}
+}
+
 // warnIfExternalRuntimePresent logs a warning when Docker or Podman sockets are
 // found on the host while the iofog embedded engine is selected.
 // This is informational only — iofog uses fully private paths and coexists

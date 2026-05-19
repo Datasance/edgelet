@@ -163,6 +163,7 @@ func (s *Supervisor) Start() error {
 		if initErr := eng.Init(engConfig); initErr != nil {
 			return fmt.Errorf("failed to init container engine %q: %w", cfg.ContainerEngine, initErr)
 		}
+		eng = engines.WrapWithLoggingIfExternal(eng, cfg.ContainerEngine)
 	}
 	if engErr != nil {
 		return engErr
@@ -316,7 +317,7 @@ func (s *Supervisor) initExternalEngineWithRetry(engineType string, cfg engine.E
 		}
 
 		logging.LogInfo(moduleName, fmt.Sprintf("%s engine initialized successfully after %d attempt(s)", engineType, attempt))
-		return eng, nil
+		return engines.WrapWithLoggingIfExternal(eng, engineType), nil
 	}
 
 	logging.LogError(moduleName, fmt.Sprintf("%s socket still unavailable after %d attempts", engineType, engineInitMaxRetries),
