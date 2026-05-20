@@ -20,8 +20,6 @@ import (
 const (
 	RuntimeHandlerCrun      = "crun"
 	RuntimeHandlerCrunLocal = "crun-local"
-	RuntimeHandlerSpin      = "spin"
-	RuntimeHandlerSpinLocal = "spin-local"
 )
 
 // linuxNamespaceOptionsFromMicroservice returns namespace options for both sandbox and
@@ -297,7 +295,7 @@ func buildCRIMounts(ms *models.Microservice, hostsFilePath string, resolvFilePat
 }
 
 // GetRuntimeHandler returns the CRI runtime handler for the microservice.
-// Privileged and host-namespace workloads use crun, not spin.
+// Privileged and host-namespace workloads use crun.
 func GetRuntimeHandler(ms *models.Microservice) string {
 	if ms == nil {
 		return RuntimeHandlerCrun
@@ -308,12 +306,6 @@ func GetRuntimeHandler(ms *models.Microservice) string {
 		(ms.IpcMode != nil && strings.TrimSpace(*ms.IpcMode) == "host")
 	if needsCrun {
 		return RuntimeHandlerCrun
-	}
-	if ms.Runtime != nil && *ms.Runtime == "spin" {
-		if local {
-			return RuntimeHandlerSpinLocal
-		}
-		return RuntimeHandlerSpin
 	}
 	if local {
 		return RuntimeHandlerCrunLocal

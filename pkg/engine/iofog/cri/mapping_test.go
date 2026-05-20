@@ -73,16 +73,11 @@ func TestGetRuntimeHandler(t *testing.T) {
 		t.Fatal("nil -> crun")
 	}
 	ms := models.NewMicroservice("u1", "img")
-	ms.Runtime = strPtr("spin")
-	if GetRuntimeHandler(ms) != RuntimeHandlerSpin {
-		t.Fatal("spin only when safe")
-	}
 	ms.IsPrivileged = true
 	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
 		t.Fatal("privileged forces crun")
 	}
 	ms.IsPrivileged = false
-	ms.Runtime = strPtr("spin")
 	ms.HostNetworkMode = true
 	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
 		t.Fatal("host network forces crun")
@@ -92,10 +87,6 @@ func TestGetRuntimeHandler(t *testing.T) {
 	ms.Runtime = nil
 	if GetRuntimeHandler(ms) != RuntimeHandlerCrunLocal {
 		t.Fatal("local non-host workload should use crun-local")
-	}
-	ms.Runtime = strPtr("spin")
-	if GetRuntimeHandler(ms) != RuntimeHandlerSpinLocal {
-		t.Fatal("local spin workload should use spin-local")
 	}
 }
 

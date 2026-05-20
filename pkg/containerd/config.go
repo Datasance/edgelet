@@ -38,13 +38,11 @@ func writeConfigFile() error {
 
 // generateConfig returns the containerd config map.
 // Uses config version 3 (containerd v2+) and registers crun handlers backed by
-// crun and, when
-// available, the spin/WASM shim. Options are aligned with kubesolo's
-// production config for maximum compatibility.
+// crun. Options are aligned with kubesolo's production config for maximum
+// compatibility.
 func generateConfig() map[string]any {
 	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
 	crunPath := filepath.Join(constants.IofogContainerdBinDir, "crun")
-	shimSpinPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-spin")
 
 	runtimes := map[string]any{
 		"crun": map[string]any{
@@ -85,39 +83,6 @@ func generateConfig() map[string]any {
 				"BinaryName": crunPath,
 			},
 		},
-	}
-
-	// Register the spin/WASM runtime when the shim is available.
-	// Not available on riscv64.
-	if spinShimAvailable() {
-		runtimes["spin"] = map[string]any{
-			"runtime_type":                    "io.containerd.spin.v2",
-			"runtime_path":                    shimSpinPath,
-			"pod_annotations":                 []string{"iofog.network"},
-			"container_annotations":           []string{},
-			"privileged_without_host_devices": false,
-			"base_runtime_spec":               "",
-			"cni_conf_dir":                    constants.IofogManagedCNIConfDir,
-			"cni_max_conf_num":                1,
-			"sandboxer":                       "podsandbox",
-			"options": map[string]any{
-				"SystemdCgroup": true,
-			},
-		}
-		runtimes["spin-local"] = map[string]any{
-			"runtime_type":                    "io.containerd.spin.v2",
-			"runtime_path":                    shimSpinPath,
-			"pod_annotations":                 []string{"iofog.network"},
-			"container_annotations":           []string{},
-			"privileged_without_host_devices": false,
-			"base_runtime_spec":               "",
-			"cni_conf_dir":                    constants.IofogLocalCNIConfDir,
-			"cni_max_conf_num":                1,
-			"sandboxer":                       "podsandbox",
-			"options": map[string]any{
-				"SystemdCgroup": true,
-			},
-		}
 	}
 
 	return map[string]any{

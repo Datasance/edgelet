@@ -12,7 +12,7 @@
 | VolumeMappings | ContainerConfig.Mounts | DONE |
 | ExtraHosts | buildHostsFile + Mount /etc/hosts | DONE |
 | IsPrivileged | LinuxContainerSecurityContext.Privileged | DONE |
-| Runtime (spin) | runtimeHandler | DONE |
+| Runtime | runtimeHandler (`crun`/`crun-local`) | DONE |
 | CapAdd | LinuxContainerSecurityContext.Capabilities.AddCapabilities | DONE |
 | CapDrop | LinuxContainerSecurityContext.Capabilities.DropCapabilities | DONE |
 | RunAsUser | LinuxContainerSecurityContext.RunAsUser / RunAsUsername | DONE |

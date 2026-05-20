@@ -36,6 +36,12 @@ func TestGenerateConfigUsesSplitCNIDirsForRuntimes(t *testing.T) {
 	if got := containerdCfg["default_runtime_name"]; got != "crun" {
 		t.Fatalf("default_runtime_name mismatch: got=%v want=crun", got)
 	}
+	if _, ok := runtimes["spin"]; ok {
+		t.Fatal("spin runtime should not be registered")
+	}
+	if _, ok := runtimes["spin-local"]; ok {
+		t.Fatal("spin-local runtime should not be registered")
+	}
 }
 
 func TestGenerateConfigAllowsMultipleCNIConfs(t *testing.T) {
