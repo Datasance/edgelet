@@ -14,7 +14,6 @@ func EnsureEmbeddedDependencies() error {
 // Stub variable declarations so non-Linux code can reference the package without errors.
 var (
 	ContainerdShimRuncBinary []byte
-	ContainerdShimSpinBinary []byte
 	CrunBinary               []byte
 	CNIPluginBridge          []byte
 	CNIPluginHostLocal       []byte

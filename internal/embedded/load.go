@@ -4,14 +4,12 @@ package embedded
 
 import (
 	"bytes"
-	"debug/elf"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
@@ -49,8 +47,8 @@ func EnsureEmbeddedDependencies() error {
 	return nil
 }
 
-// loadContainerdComponents extracts the containerd-shim-runc-v2,
-// containerd-shim-spin (when non-nil), and crun binaries to disk, then
+// loadContainerdComponents extracts the containerd-shim-runc-v2 and crun
+// binaries to disk, then
 // symlinks them into /usr/local/bin so that containerd's runtime v2 task
 // plugin can resolve the shim by name (e.g. "io.containerd.runc.v2" →
 // containerd-shim-runc-v2) without requiring the bin dir to be in PATH.
@@ -69,24 +67,7 @@ func loadContainerdComponents() error {
 		{CrunBinary, filepath.Join(constants.IofogContainerdBinDir, "crun"), "crun", true},
 	}
 
-	// containerd-shim-spin is nil on riscv64.
-	if len(ContainerdShimSpinBinary) > 0 {
-		binaries = append(binaries, struct {
-			data    []byte
-			dest    string
-			name    string
-			symlink bool
-		}{ContainerdShimSpinBinary, filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-spin"), "containerd-shim-spin", true})
-	}
-
 	for _, b := range binaries {
-		// Validate containerd-shim-spin architecture before extraction to catch cross-arch builds early
-		if b.name == "containerd-shim-spin" {
-			if err := validateBinaryArchitecture(b.data, runtime.GOARCH, b.name); err != nil {
-				return fmt.Errorf("architecture mismatch for %s: %w (build for %s, running on %s — run 'make deps ARCH=%s' before building)",
-					b.name, err, elfArchToGoArch(b.data), runtime.GOARCH, runtime.GOARCH)
-			}
-		}
 		if err := extractBinary(b.data, b.dest); err != nil {
 			return fmt.Errorf("extract %s: %w", b.name, err)
 		}
@@ -262,38 +243,3 @@ func extractBinary(data []byte, destFile string) error {
 	return nil
 }
 
-// elfArchToGoArch returns the GOARCH string for an ELF binary, or "unknown" if unreadable.
-func elfArchToGoArch(data []byte) string {
-	f, err := elf.NewFile(bytes.NewReader(data))
-	if err != nil {
-		return "unknown"
-	}
-	defer f.Close()
-	switch f.Machine {
-	case elf.EM_X86_64:
-		return "amd64"
-	case elf.EM_AARCH64:
-		return "arm64"
-	case elf.EM_386:
-		return "386"
-	case elf.EM_ARM:
-		return "arm"
-	case elf.EM_RISCV:
-		return "riscv64"
-	default:
-		return fmt.Sprintf("elf-%d", f.Machine)
-	}
-}
-
-// validateBinaryArchitecture checks that the ELF binary matches the expected GOARCH.
-// Returns an error if there is a mismatch (e.g. amd64 binary on arm64 host → exec format error).
-func validateBinaryArchitecture(data []byte, expectedGOARCH string, name string) error {
-	actual := elfArchToGoArch(data)
-	if actual == "unknown" {
-		return nil // Skip validation if we can't read the binary
-	}
-	if actual != expectedGOARCH {
-		return fmt.Errorf("binary is %s but host is %s", actual, expectedGOARCH)
-	}
-	return nil
-}

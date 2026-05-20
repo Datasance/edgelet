@@ -81,7 +81,7 @@ There are two **build flavors** (set at compile time via `-ldflags`; see `intern
 |-------|-------------|
 | `docker` | Host Docker daemon (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
 | `podman` | Host Podman (`dockerUrl` e.g. `unix:///run/podman/podman.sock`) |
-| `iofog` | Embedded containerd + crun + CNI + Spin (WebAssembly) — **full flavor only** |
+| `iofog` | Embedded containerd + crun + CNI — **full flavor only** |
 
 ```yaml
 profiles:
@@ -97,7 +97,6 @@ When `containerEngine: iofog` is selected, `iofog-agentd` starts an in-process c
 - `containerd-shim-runc-v2` — OCI runtime shim
 - `crun` — low-level OCI container runtime
 - CNI plugins: `bridge`, `host-local`, `portmap`, `loopback`
-- `containerd-shim-spin` — WebAssembly/WASI runtime (via [spinframework](https://github.com/spinframework/containerd-shim-spin))
 
 For OCI workloads, containerd continues to use `runtime_type = io.containerd.runc.v2` with `containerd-shim-runc-v2`; runtime handlers are named `crun`/`crun-local` and both point to the `crun` binary.
 
@@ -309,7 +308,7 @@ Build matrix (each arch emits **-lite** and **-full** binaries):
 | `arm64` | linux/arm64 | glibc | |
 | `arm64-musl` | linux/arm64 | musl | |
 | `arm` | linux/arm (armhf) | glibc | |
-| `riscv64` | linux/riscv64 | glibc | spin shim excluded where unsupported |
+| `riscv64` | linux/riscv64 | glibc | |
 
 ## Migration Status
 

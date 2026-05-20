@@ -111,7 +111,7 @@ The engine is initialised with `engine.Init(EngineConfig{...})` which establishe
 | Native healthcheck | Yes (`HEALTHCHECK`) | Yes (`HEALTHCHECK`) | No — exec runner in agent |
 | Exec sessions | Docker API | Docker-compatible | containerd `task.Exec()` |
 | Host networking | `--network=host` | `--network=host` | `NamespaceMode_NODE` in CRI |
-| WASM workloads | No | No | Yes (`containerd-shim-spin`) |
+| WASM workloads | No | No | Not bundled by default |
 | Linux only | No (macOS supported) | No | Yes (`//go:build linux`) |
 
 ---
@@ -179,7 +179,6 @@ Before the containerd service starts, `EnsureEmbeddedDependencies()` extracts bi
 |----------------|-------------|---------|
 | `crun` | `…/bin/crun` | OCI container runtime |
 | `containerd-shim-runc-v2` | `…/bin/` | Containerd shim for OCI runtime v2 (`io.containerd.runc.v2`) |
-| `containerd-shim-spin-v2` (optional) | `…/bin/` | WASM shim (Spin framework) |
 | CNI plugins (`bridge`, `loopback`, `portmap`, `firewall`, `host-local`) | `…/bin/cni/` | Pod network setup |
 | `pause.tar.gz` | `…/images/` | Pause image for pod sandboxes |
 
@@ -416,9 +415,9 @@ The `portmap` plugin is what makes `p.Outside → p.Inside` port forwarding work
 
 For host-network containers (`HostNetworkMode=true`), the sandbox is created with `NamespaceMode_NODE` — CNI is still invoked but the pod simply shares the host network stack. No IP is allocated and no port forwarding rules are added.
 
-### WASM / Spin Workloads
+### WASM Workloads
 
-If a microservice has `Runtime: "spin"` in its definition, `cri.GetRuntimeHandler()` returns `"io.containerd.spin.v2"` instead of the default `"io.containerd.runc.v2"`. This routes the container to the `containerd-shim-spin-v2` shim (if installed), enabling WASM-based microservices without changing any other part of the pipeline.
+WASM shims are not embedded by default. Runtime extension for external shims is handled through RuntimeClass rollout work.
 
 ### Containerd Watchdog
 

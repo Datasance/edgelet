@@ -9,7 +9,6 @@
 #
 # Outputs to: internal/embedded/bin/
 #   containerd/bin/containerd-shim-runc-v2
-#   containerd-shim-spin            (skipped on riscv64)
 #   crun
 #   cni/bridge
 #   cni/host-local
@@ -26,7 +25,6 @@ ARCH="amd64"
 CONTAINERD_VERSION="2.1.5"
 CRUN_VERSION="1.27.1"
 CNI_VERSION="v1.9.0"
-SPIN_SHIM_VERSION="v0.24.0"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -102,41 +100,6 @@ tar -xzf "${EMBED_DIR}/cni/cni-plugins.tgz" -C "${EMBED_DIR}/cni"
 rm "${EMBED_DIR}/cni/cni-plugins.tgz"
 echo "CNI plugins extracted."
 
-# ─── containerd-shim-spin (Wasm/WASI shim) ───────────────────────────────────
-# containerd-shim-spin is not available for riscv64; skip it.
-# The embedded_riscv64.go build-tag file will exclude it from the binary on that arch.
-if [ "${ARCH}" = "riscv64" ]; then
-    echo "Skipping containerd-shim-spin for riscv64 (not supported upstream)."
-else
-    # Map arch names to spinframework release asset names
-    SPIN_ARCH="${ARCH}"
-    case "${ARCH}" in
-        amd64)   SPIN_ARCH="x86_64" ;;
-        arm64)   SPIN_ARCH="aarch64" ;;
-        arm)     SPIN_ARCH="armv7" ;;
-    esac
-    SPIN_ASSET="containerd-shim-spin-v2-linux-${SPIN_ARCH}.tar.gz"
-    echo "Downloading containerd-shim-spin ${SPIN_SHIM_VERSION} for ${OS}-${ARCH} (${SPIN_ARCH})..."
-    curl -fsSL -o "${EMBED_DIR}/spin-shim.tar.gz" \
-        "https://github.com/spinframework/containerd-shim-spin/releases/download/${SPIN_SHIM_VERSION}/${SPIN_ASSET}"
-    if ! tar -tf "${EMBED_DIR}/spin-shim.tar.gz" &>/dev/null; then
-        echo "ERROR: Downloaded spin shim archive is invalid." >&2
-        exit 1
-    fi
-    # The archive contains the binary named containerd-shim-spin-v2; rename to containerd-shim-spin
-    tar -xzf "${EMBED_DIR}/spin-shim.tar.gz" -C "${EMBED_DIR}"
-    # Locate and normalise the extracted binary name
-    SPIN_BIN=$(find "${EMBED_DIR}" -maxdepth 1 -name 'containerd-shim-spin*' -type f | head -1)
-    if [ -z "${SPIN_BIN}" ]; then
-        echo "ERROR: Could not find containerd-shim-spin binary after extraction." >&2
-        exit 1
-    fi
-    mv "${SPIN_BIN}" "${EMBED_DIR}/containerd-shim-spin"
-    chmod +x "${EMBED_DIR}/containerd-shim-spin"
-    rm "${EMBED_DIR}/spin-shim.tar.gz"
-    echo "containerd-shim-spin downloaded."
-fi
-
 # ─── portainer/pause (sandbox image for CRI podsandbox) ───────────────────────
 # Lightweight, multi-arch including riscv64. Required for CRI pod sandboxes.
 echo "Checking for crane..."
@@ -182,4 +145,3 @@ echo "  ${EMBED_DIR}/containerd/bin/containerd-shim-runc-v2"
 echo "  ${EMBED_DIR}/crun"
 echo "  ${EMBED_DIR}/cni/{bridge,host-local,portmap,loopback}"
 echo "  ${EMBED_DIR}/images/pause.tar.gz"
-[ "${ARCH}" != "riscv64" ] && echo "  ${EMBED_DIR}/containerd-shim-spin"

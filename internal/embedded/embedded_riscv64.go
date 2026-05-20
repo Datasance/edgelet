@@ -1,19 +1,12 @@
 //go:build linux && riscv64
 
 // Package embedded provides the binary assets for riscv64.
-// containerd-shim-spin is excluded because the spinframework project does not
-// publish riscv64 binaries. All other assets (crun, CNI, containerd-shim-runc-v2)
-// are present and work normally.
 package embedded
 
 import _ "embed"
 
 //go:embed bin/containerd/bin/containerd-shim-runc-v2
 var ContainerdShimRuncBinary []byte
-
-// ContainerdShimSpinBinary is nil on riscv64; the spin runtime will not be
-// registered in the containerd config on this architecture.
-var ContainerdShimSpinBinary []byte
 
 //go:embed bin/crun
 var CrunBinary []byte

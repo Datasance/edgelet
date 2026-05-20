@@ -59,14 +59,6 @@ assert_ok "CNI portmap plugin extracted" \
 assert_ok "CNI loopback plugin extracted" \
     R "test -x /var/lib/iofog-agent-containerd/cni/plugins/loopback"
 
-# spin shim is optional (not available on riscv64)
-if R "test -f /var/lib/iofog-agent-containerd/bin/containerd-shim-spin" 2>/dev/null; then
-    assert_ok "containerd-shim-spin extracted (spin/WASM support)" \
-        R "test -x /var/lib/iofog-agent-containerd/bin/containerd-shim-spin"
-else
-    log_info "containerd-shim-spin not present (expected on riscv64 or before download)"
-fi
-
 ###############################################################################
 # Phase 2 — containerd socket & health
 ###############################################################################

@@ -12,12 +12,6 @@ import _ "embed"
 //go:embed bin/containerd/bin/containerd-shim-runc-v2
 var ContainerdShimRuncBinary []byte
 
-// containerd-shim-spin is the WebAssembly/WASI runtime shim for containerd,
-// provided by https://github.com/spinframework/containerd-shim-spin.
-//
-//go:embed bin/containerd-shim-spin
-var ContainerdShimSpinBinary []byte
-
 // crun is the low-level OCI container runtime binary.
 //
 //go:embed bin/crun
