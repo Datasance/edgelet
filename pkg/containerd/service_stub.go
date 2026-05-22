@@ -24,6 +24,9 @@ func (s *Service) Start() error {
 // Stop is a no-op on non-Linux platforms.
 func (s *Service) Stop() {}
 
+// SetUnexpectedExitHandler is a no-op on non-Linux platforms.
+func (s *Service) SetUnexpectedExitHandler(_ func(error)) {}
+
 // StopGraceful always returns an error on non-Linux platforms.
 func (s *Service) StopGraceful() error {
 	return fmt.Errorf("embedded containerd is only supported on Linux")
@@ -31,6 +34,11 @@ func (s *Service) StopGraceful() error {
 
 // StopForce always returns an error on non-Linux platforms.
 func (s *Service) StopForce() error {
+	return fmt.Errorf("embedded containerd is only supported on Linux")
+}
+
+// Reconfigure always returns an error on non-Linux platforms.
+func (s *Service) Reconfigure() error {
 	return fmt.Errorf("embedded containerd is only supported on Linux")
 }
 

@@ -3,13 +3,26 @@
 package iofogcontainerd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+	"text/template"
 
 	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/pelletier/go-toml"
 	"github.com/urfave/cli/v2"
+)
+
+const (
+	defaultContainerdBaseTemplate = `{{ .BaseConfig }}`
+)
+
+var (
+	containerdTemplateExtensionPath = filepath.Join(constants.IofogContainerdLibDir, "config.toml.tmpl")
+	containerdLKGSuffix             = ".lkg"
 )
 
 // writeConfigFile generates and writes the containerd config.toml to disk.
@@ -17,29 +30,153 @@ func writeConfigFile() error {
 	if err := os.MkdirAll(filepath.Dir(constants.IofogContainerdConfigFile), 0755); err != nil {
 		return fmt.Errorf("mkdir for config: %w", err)
 	}
+	content, err := renderContainerdConfig()
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomically(constants.IofogContainerdConfigFile, content, 0644); err != nil {
+		return fmt.Errorf("write TOML config atomically: %w", err)
+	}
+	// PR4 primitive: maintain a successful config snapshot for future rollback wiring.
+	if err := writeLastKnownGoodConfig(constants.IofogContainerdConfigFile, content); err != nil {
+		return fmt.Errorf("write config last-known-good snapshot: %w", err)
+	}
+	return nil
+}
 
+func renderContainerdConfig() ([]byte, error) {
+	base, err := renderContainerdBaseConfig()
+	if err != nil {
+		return nil, err
+	}
+	return renderContainerdTemplatePipeline(base)
+}
+
+func renderContainerdBaseConfig() ([]byte, error) {
 	tree, err := toml.TreeFromMap(generateConfig())
 	if err != nil {
-		return fmt.Errorf("generate TOML tree: %w", err)
+		return nil, fmt.Errorf("generate TOML tree: %w", err)
 	}
+	var buf bytes.Buffer
+	if _, err := tree.WriteTo(&buf); err != nil {
+		return nil, fmt.Errorf("render base TOML config: %w", err)
+	}
+	return buf.Bytes(), nil
+}
 
-	f, err := os.Create(constants.IofogContainerdConfigFile) // #nosec G304
+type containerdTemplateRenderData struct {
+	BaseConfig string
+}
+
+func renderContainerdTemplatePipeline(baseConfig []byte) ([]byte, error) {
+	data := containerdTemplateRenderData{BaseConfig: string(baseConfig)}
+
+	baseTpl, err := template.New("containerd-base").Parse(defaultContainerdBaseTemplate)
 	if err != nil {
-		return fmt.Errorf("create config file: %w", err)
+		return nil, fmt.Errorf("parse base containerd template: %w", err)
 	}
-	defer f.Close()
-
-	if _, err := tree.WriteTo(f); err != nil {
-		return fmt.Errorf("write TOML config: %w", err)
+	var rendered bytes.Buffer
+	if err := baseTpl.Execute(&rendered, data); err != nil {
+		return nil, fmt.Errorf("render base containerd template: %w", err)
 	}
 
+	extension, err := renderContainerdTemplateExtension(data)
+	if err != nil {
+		return nil, err
+	}
+	if len(extension) == 0 {
+		return rendered.Bytes(), nil
+	}
+	if rendered.Len() > 0 && !bytes.HasSuffix(rendered.Bytes(), []byte("\n")) {
+		rendered.WriteString("\n")
+	}
+	rendered.Write(extension)
+	if !bytes.HasSuffix(rendered.Bytes(), []byte("\n")) {
+		rendered.WriteString("\n")
+	}
+	return rendered.Bytes(), nil
+}
+
+func renderContainerdTemplateExtension(data containerdTemplateRenderData) ([]byte, error) {
+	extensionRaw, err := os.ReadFile(containerdTemplateExtensionPath) // #nosec G304 -- controlled internal extension path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read containerd template extension: %w", err)
+	}
+	trimmed := strings.TrimSpace(string(extensionRaw))
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	tpl, err := template.New("containerd-extension").Parse(string(extensionRaw))
+	if err != nil {
+		return nil, fmt.Errorf("parse containerd template extension: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("render containerd template extension: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func writeFileAtomically(path string, content []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("mkdir for atomic write: %w", err)
+	}
+
+	tempFile, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+
+	if _, err := tempFile.Write(content); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err := tempFile.Chmod(perm); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
 	return nil
+}
+
+func lkgConfigPath(configPath string) string {
+	return configPath + containerdLKGSuffix
+}
+
+func writeLastKnownGoodConfig(configPath string, content []byte) error {
+	return writeFileAtomically(lkgConfigPath(configPath), content, 0644)
+}
+
+func readLastKnownGoodConfig(configPath string) ([]byte, error) {
+	raw, err := os.ReadFile(lkgConfigPath(configPath)) // #nosec G304 -- controlled internal LKG path
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 // generateConfig returns the containerd config map.
 // Uses config version 3 (containerd v2+) and registers crun handlers backed by
-// crun. Options are aligned with kubesolo's production config for maximum
-// compatibility.
+// crun.
 func generateConfig() map[string]any {
 	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
 	crunPath := filepath.Join(constants.IofogContainerdBinDir, "crun")
@@ -53,26 +190,7 @@ func generateConfig() map[string]any {
 			"privileged_without_host_devices": false,
 			"privileged_without_host_devices_all_devices_allowed": false,
 			"base_runtime_spec": "",
-			"cni_conf_dir":      constants.IofogManagedCNIConfDir,
-			"cni_max_conf_num":  1,
-			"snapshotter":       "",
-			"sandboxer":         "podsandbox",
-			"io_type":           "",
-			"options": map[string]any{
-				// BinaryName points at our extracted crun so containerd-shim-runc-v2
-				// uses our binary rather than any system-installed runtime.
-				"BinaryName": crunPath,
-			},
-		},
-		"crun-local": map[string]any{
-			"runtime_type":                    "io.containerd.runc.v2",
-			"runtime_path":                    shimRuncPath,
-			"pod_annotations":                 []string{"iofog.network"},
-			"container_annotations":           []string{},
-			"privileged_without_host_devices": false,
-			"privileged_without_host_devices_all_devices_allowed": false,
-			"base_runtime_spec": "",
-			"cni_conf_dir":      constants.IofogLocalCNIConfDir,
+			"cni_conf_dir":      constants.IofogCNIConfDir,
 			"cni_max_conf_num":  1,
 			"snapshotter":       "",
 			"sandboxer":         "podsandbox",
@@ -84,6 +202,7 @@ func generateConfig() map[string]any {
 			},
 		},
 	}
+	appendDiscoveredRuntimes(runtimes)
 
 	return map[string]any{
 		"version":          3,
@@ -167,8 +286,8 @@ func generateConfig() map[string]any {
 				// introduced in containerd v2.1.
 				"cni": map[string]any{
 					"bin_dirs":              []string{constants.IofogCNIPluginsDir},
-					"conf_dir":              constants.DefaultSystemCNIConfDir,
-					"max_conf_num":          2,
+					"conf_dir":              constants.IofogCNIConfDir,
+					"max_conf_num":          1,
 					"setup_serially":        false,
 					"conf_template":         "",
 					"ip_pref":               "",
@@ -212,6 +331,51 @@ func generateConfig() map[string]any {
 			},
 		},
 	}
+}
+
+func appendDiscoveredRuntimes(runtimes map[string]any) {
+	catalog := BuildRuntimeCatalog()
+	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
+	sort.Slice(catalog, func(i, j int) bool {
+		return catalog[i].Handler < catalog[j].Handler
+	})
+	for _, entry := range catalog {
+		if entry.Handler == "" || entry.Path == "" {
+			continue
+		}
+		// Baseline crun runtime is statically defined above.
+		if entry.Handler == "crun" {
+			continue
+		}
+		if _, exists := runtimes[entry.Handler]; !exists {
+			runtimes[entry.Handler] = runtimeClassRuntimeConfig(entry, shimRuncPath)
+		}
+	}
+}
+
+func runtimeClassRuntimeConfig(entry RuntimeCatalogEntry, shimRuncPath string) map[string]any {
+	config := map[string]any{
+		"runtime_type":                    entry.RuntimeType,
+		"pod_annotations":                 []string{"iofog.network"},
+		"container_annotations":           []string{},
+		"privileged_without_host_devices": false,
+		"privileged_without_host_devices_all_devices_allowed": false,
+		"base_runtime_spec": "",
+		"cni_conf_dir":      constants.IofogCNIConfDir,
+		"cni_max_conf_num":  1,
+		"snapshotter":       "",
+		"sandboxer":         "podsandbox",
+		"io_type":           "",
+	}
+	if entry.Family == RuntimeFamilyRunc {
+		config["runtime_path"] = shimRuncPath
+		config["options"] = map[string]any{
+			"BinaryName": entry.Path,
+		}
+		return config
+	}
+	config["runtime_path"] = entry.Path
+	return config
 }
 
 // buildFlags provides the minimal CLI flag set required to boot containerd.

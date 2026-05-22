@@ -35,6 +35,21 @@ const (
 	shutdownRuntimeDrainTimeout = 45 * time.Second
 )
 
+var requestDaemonRestart = func(reason string, cause error) {
+	logging.LogError(moduleName, reason, cause)
+	if err := signalSelfForSupervisor(syscall.SIGTERM); err != nil {
+		logging.LogError(moduleName, "Failed to signal daemon for restart", err)
+	}
+}
+
+var setContainerdUnexpectedExitHandler = func(svc *iofogcontainerd.Service, handler func(error)) {
+	svc.SetUnexpectedExitHandler(handler)
+}
+
+var signalSelfForSupervisor = func(sig syscall.Signal) error {
+	return syscall.Kill(os.Getpid(), sig)
+}
+
 // Supervisor orchestrates all ioFog modules
 type Supervisor struct {
 	config *config.Config
@@ -139,6 +154,7 @@ func (s *Supervisor) Start() error {
 			return fmt.Errorf("embedded containerd must be prestarted before Supervisor when containerEngine=%q", constants.EngineIofog)
 		}
 		logging.LogInfo(moduleName, "Using embedded containerd started before Supervisor")
+		s.configureContainerdFailFastHandler()
 
 		// Watchdog for embedded containerd socket liveness.
 		s.wg.Add(1)
@@ -255,6 +271,15 @@ func (s *Supervisor) Start() error {
 
 	logging.LogDebug(moduleName, "Started Supervisor")
 	return nil
+}
+
+func (s *Supervisor) configureContainerdFailFastHandler() {
+	if s.containerdSvc == nil {
+		return
+	}
+	setContainerdUnexpectedExitHandler(s.containerdSvc, func(err error) {
+		requestDaemonRestart("Embedded containerd exited unexpectedly after readiness; requesting immediate daemon restart", err)
+	})
 }
 
 // startModule starts a module and updates its status
@@ -512,14 +537,10 @@ func (s *Supervisor) containerdWatchdog() {
 					consecutiveFailures, failureThreshold,
 				))
 				if consecutiveFailures >= failureThreshold {
-					logging.LogError(
-						moduleName,
+					requestDaemonRestart(
 						"Embedded containerd is persistently unhealthy; requesting daemon restart via SIGTERM",
 						fmt.Errorf("containerd watchdog reached failure threshold"),
 					)
-					if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-						logging.LogError(moduleName, "Failed to signal daemon for restart", err)
-					}
 					return
 				}
 				continue

@@ -3,8 +3,10 @@
 package iofogcontainerd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -236,5 +238,191 @@ func TestReapManagedShimsTimesOut(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "still running") {
 		t.Fatalf("expected still-running error, got: %v", err)
+	}
+}
+
+func TestReconfigureRestartsService(t *testing.T) {
+	svc := NewService()
+	svc.ctx, svc.cancel = context.WithCancel(context.Background())
+	svc.done = make(chan struct{})
+	close(svc.done) // emulate already stopped process for StopGraceful path
+
+	prevWriteConfig := writeConfigForService
+	prevFinder := findManagedShimPIDs
+	prevReadLKG := readLKGForService
+	prevWriteAtomic := writeAtomicForService
+	prevSignalSelf := signalSelfForService
+	prevRetryDelay := containerdReconfigureRetryDelay
+	prevMaxAttempts := containerdReconfigureMaxAttempts
+	prevStabilityWindow := containerdReconfigureStabilityWindow
+	t.Cleanup(func() {
+		writeConfigForService = prevWriteConfig
+		findManagedShimPIDs = prevFinder
+		readLKGForService = prevReadLKG
+		writeAtomicForService = prevWriteAtomic
+		signalSelfForService = prevSignalSelf
+		containerdReconfigureRetryDelay = prevRetryDelay
+		containerdReconfigureMaxAttempts = prevMaxAttempts
+		containerdReconfigureStabilityWindow = prevStabilityWindow
+	})
+	writeConfigForService = func() error { return nil }
+	findManagedShimPIDs = func(_ string) ([]int, error) { return nil, nil }
+	readLKGForService = func(_ string) ([]byte, error) { return nil, errors.New("missing lkg") }
+	writeAtomicForService = func(_ string, _ []byte, _ os.FileMode) error { return nil }
+	signalSelfForService = func(_ syscall.Signal) error { return nil }
+	containerdReconfigureRetryDelay = 1 * time.Millisecond
+	containerdReconfigureMaxAttempts = 1
+	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+
+	svc.runFn = func() error {
+		svc.readyOnce.Do(func() { close(svc.ready) })
+		close(svc.done)
+		return nil
+	}
+
+	if err := svc.Reconfigure(); err != nil {
+		t.Fatalf("expected reconfigure success, got: %v", err)
+	}
+}
+
+func TestReconfigureReturnsDeterministicRestartError(t *testing.T) {
+	svc := NewService()
+	svc.ctx, svc.cancel = context.WithCancel(context.Background())
+	svc.done = make(chan struct{})
+	close(svc.done) // emulate already stopped process for StopGraceful path
+
+	prevWriteConfig := writeConfigForService
+	prevFinder := findManagedShimPIDs
+	prevReadLKG := readLKGForService
+	prevWriteAtomic := writeAtomicForService
+	prevSignalSelf := signalSelfForService
+	prevRetryDelay := containerdReconfigureRetryDelay
+	prevMaxAttempts := containerdReconfigureMaxAttempts
+	prevStabilityWindow := containerdReconfigureStabilityWindow
+	t.Cleanup(func() {
+		writeConfigForService = prevWriteConfig
+		findManagedShimPIDs = prevFinder
+		readLKGForService = prevReadLKG
+		writeAtomicForService = prevWriteAtomic
+		signalSelfForService = prevSignalSelf
+		containerdReconfigureRetryDelay = prevRetryDelay
+		containerdReconfigureMaxAttempts = prevMaxAttempts
+		containerdReconfigureStabilityWindow = prevStabilityWindow
+	})
+	writeConfigForService = func() error { return nil }
+	findManagedShimPIDs = func(_ string) ([]int, error) { return nil, nil }
+	readLKGForService = func(_ string) ([]byte, error) { return nil, errors.New("missing lkg") }
+	writeAtomicForService = func(_ string, _ []byte, _ os.FileMode) error { return nil }
+	signaled := false
+	signalSelfForService = func(_ syscall.Signal) error {
+		signaled = true
+		return nil
+	}
+	containerdReconfigureRetryDelay = 1 * time.Millisecond
+	containerdReconfigureMaxAttempts = 1
+	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+
+	svc.runFn = func() error {
+		return errors.New("synthetic restart failure")
+	}
+
+	err := svc.Reconfigure()
+	if err == nil {
+		t.Fatal("expected reconfigure error")
+	}
+	if !errors.Is(err, ErrContainerdReconfigure) {
+		t.Fatalf("expected ErrContainerdReconfigure, got: %v", err)
+	}
+	if !signaled {
+		t.Fatal("expected daemon restart escalation signal on persistent failure")
+	}
+}
+
+func TestReconfigureRollbackPathWritesLKGAndSkipsEscalationOnRecoveredRuntime(t *testing.T) {
+	svc := NewService()
+	svc.ctx, svc.cancel = context.WithCancel(context.Background())
+	svc.done = make(chan struct{})
+	close(svc.done)
+
+	prevWriteConfig := writeConfigForService
+	prevFinder := findManagedShimPIDs
+	prevReadLKG := readLKGForService
+	prevWriteAtomic := writeAtomicForService
+	prevSignalSelf := signalSelfForService
+	prevRetryDelay := containerdReconfigureRetryDelay
+	prevMaxAttempts := containerdReconfigureMaxAttempts
+	prevStabilityWindow := containerdReconfigureStabilityWindow
+	t.Cleanup(func() {
+		writeConfigForService = prevWriteConfig
+		findManagedShimPIDs = prevFinder
+		readLKGForService = prevReadLKG
+		writeAtomicForService = prevWriteAtomic
+		signalSelfForService = prevSignalSelf
+		containerdReconfigureRetryDelay = prevRetryDelay
+		containerdReconfigureMaxAttempts = prevMaxAttempts
+		containerdReconfigureStabilityWindow = prevStabilityWindow
+	})
+
+	writeConfigForService = func() error { return nil }
+	findManagedShimPIDs = func(_ string) ([]int, error) { return nil, nil }
+	readLKGForService = func(_ string) ([]byte, error) { return []byte("version = 3\n"), nil }
+	wroteRollback := false
+	writeAtomicForService = func(path string, content []byte, _ os.FileMode) error {
+		if strings.HasSuffix(path, "/config.toml") && bytes.Equal(content, []byte("version = 3\n")) {
+			wroteRollback = true
+		}
+		return nil
+	}
+	signaled := false
+	signalSelfForService = func(_ syscall.Signal) error {
+		signaled = true
+		return nil
+	}
+	containerdReconfigureRetryDelay = 1 * time.Millisecond
+	containerdReconfigureMaxAttempts = 1
+	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+
+	firstStart := true
+	svc.runFn = func() error {
+		if firstStart {
+			firstStart = false
+			return errors.New("synthetic start failure")
+		}
+		svc.readyOnce.Do(func() { close(svc.ready) })
+		close(svc.done)
+		return nil
+	}
+
+	err := svc.Reconfigure()
+	if err == nil {
+		t.Fatal("expected reconfigure to report failure even after rollback recovery")
+	}
+	if !errors.Is(err, ErrContainerdReconfigure) {
+		t.Fatalf("expected ErrContainerdReconfigure, got: %v", err)
+	}
+	if !wroteRollback {
+		t.Fatal("expected rollback to write LKG config")
+	}
+	if signaled {
+		t.Fatal("did not expect escalation signal when rollback restored runtime")
+	}
+}
+
+func TestNotifyUnexpectedExitInvokesHandler(t *testing.T) {
+	svc := NewService()
+	called := make(chan error, 1)
+	svc.SetUnexpectedExitHandler(func(err error) {
+		called <- err
+	})
+
+	svc.notifyUnexpectedExit(errors.New("synthetic unexpected exit"))
+
+	select {
+	case err := <-called:
+		if err == nil || !strings.Contains(err.Error(), "synthetic unexpected exit") {
+			t.Fatalf("unexpected callback error payload: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected unexpected-exit handler callback")
 	}
 }

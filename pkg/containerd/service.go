@@ -29,13 +29,32 @@ const (
 	containerdChildArg            = "--iofog-containerd-child"
 )
 
+const (
+	reconfigureStageWriteConfig     = "write_config"
+	reconfigureStageStopRuntime     = "stop_runtime"
+	reconfigureStageStartRuntime    = "start_runtime"
+	reconfigureStageWaitCRIReady    = "wait_cri_ready"
+	reconfigureStageVerifyStability = "verify_stability"
+	reconfigureStageRollbackConfig  = "rollback_config"
+	reconfigureStageEscalateRestart = "escalate_restart"
+	reconfigureStageDone            = "done"
+)
+
 var containerdShutdownWaitTimeout = 15 * time.Second
 var containerdShimReapGraceTimeout = 5 * time.Second
 var containerdShimReapForceTimeout = 5 * time.Second
 var containerdShimReapPollInterval = 100 * time.Millisecond
+var containerdReconfigureStabilityWindow = 3 * time.Second
+var containerdReconfigureRetryDelay = 500 * time.Millisecond
+var containerdReconfigureMaxAttempts = 2
 
 var findManagedShimPIDs = findManagedShimPIDsFromProc
 var signalPID = syscall.Kill
+var writeConfigForService = writeConfigFile
+var readLKGForService = readLastKnownGoodConfig
+var writeAtomicForService = writeFileAtomically
+var signalSelfForService = func(sig syscall.Signal) error { return syscall.Kill(os.Getpid(), sig) }
+var sleepForReconfigure = time.Sleep
 
 var (
 	ErrContainerdSpawnFailure   = errors.New("containerd spawn failure")
@@ -43,6 +62,7 @@ var (
 	ErrContainerdExitedEarly    = errors.New("containerd exited before ready")
 	ErrContainerdStopTimeout    = errors.New("containerd stop timeout")
 	ErrContainerdUnexpectedExit = errors.New("containerd unexpected exit")
+	ErrContainerdReconfigure    = errors.New("containerd reconfigure failure")
 )
 
 var logger = logging.NewModuleLogger("Containerd")
@@ -62,6 +82,42 @@ type Service struct {
 	done      chan struct{}
 
 	runFn func() error
+
+	unexpectedExitHandler func(error)
+}
+
+type ErrContainerdReconfigureOperation struct {
+	Stage   string
+	Attempt int
+	Err     error
+}
+
+func (e *ErrContainerdReconfigureOperation) Error() string {
+	if e == nil || e.Err == nil {
+		return "containerd reconfigure operation failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *ErrContainerdReconfigureOperation) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func (e *ErrContainerdReconfigureOperation) Details() map[string]interface{} {
+	stage := strings.TrimSpace(strings.ToLower(e.Stage))
+	if stage == "" {
+		return nil
+	}
+	details := map[string]interface{}{
+		"stage": stage,
+	}
+	if e.Attempt > 0 {
+		details["attempt"] = e.Attempt
+	}
+	return details
 }
 
 // NewService creates an uninitialized containerd service.
@@ -104,7 +160,7 @@ func (s *Service) Run() error {
 		return fmt.Errorf("%w: prepare runtime directories: %v", ErrContainerdSpawnFailure, err)
 	}
 
-	if err := writeConfigFile(); err != nil {
+	if err := writeConfigForService(); err != nil {
 		return fmt.Errorf("%w: write config: %v", ErrContainerdSpawnFailure, err)
 	}
 
@@ -159,8 +215,10 @@ func (s *Service) Run() error {
 				return nil
 			}
 			if err != nil {
+				s.notifyUnexpectedExit(fmt.Errorf("%w: %v", ErrContainerdUnexpectedExit, err))
 				return fmt.Errorf("%w: %v", ErrContainerdUnexpectedExit, err)
 			}
+			s.notifyUnexpectedExit(ErrContainerdUnexpectedExit)
 			return ErrContainerdUnexpectedExit
 		case <-s.ctx.Done():
 			logger.Info("Containerd service stopping.")
@@ -197,6 +255,47 @@ func (s *Service) Run() error {
 			}
 		}
 	}
+}
+
+// Reconfigure rewrites containerd config and performs a controlled restart.
+func (s *Service) Reconfigure() error {
+	previousLKG, lkgErr := readLKGForService(constants.IofogContainerdConfigFile)
+	hasLKG := lkgErr == nil && len(previousLKG) > 0
+
+	if err := writeConfigForService(); err != nil {
+		return fmt.Errorf("%w: %w", ErrContainerdReconfigure, wrapReconfigureError(reconfigureStageWriteConfig, 0, fmt.Errorf("write config: %w", err)))
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= containerdReconfigureMaxAttempts; attempt++ {
+		if err := s.reconfigureAttempt(attempt); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			logger.Warnf("Embedded containerd reconfigure attempt %d/%d failed: %v", attempt, containerdReconfigureMaxAttempts, err)
+		}
+		if attempt < containerdReconfigureMaxAttempts {
+			sleepForReconfigure(containerdReconfigureRetryDelay)
+		}
+	}
+
+	rollbackErr := s.rollbackToLKG(previousLKG, hasLKG)
+	if rollbackErr == nil {
+		return fmt.Errorf(
+			"%w: %w",
+			ErrContainerdReconfigure,
+			wrapReconfigureError(
+				reconfigureStageRollbackConfig,
+				0,
+				fmt.Errorf("reconfigure failed and rollback to last-known-good config succeeded: %v", lastErr),
+			),
+		)
+	}
+	lastErr = fmt.Errorf("%v; rollback failed: %w", lastErr, rollbackErr)
+	if err := s.escalateRestart(lastErr); err != nil {
+		return fmt.Errorf("%w: %w", ErrContainerdReconfigure, err)
+	}
+	return fmt.Errorf("%w: %w", ErrContainerdReconfigure, wrapReconfigureError(reconfigureStageEscalateRestart, 0, lastErr))
 }
 
 // Ready returns a channel that closes when containerd is ready to accept requests.
@@ -269,6 +368,20 @@ func (s *Service) StopForce() error {
 	return nil
 }
 
+func (s *Service) resetForRestart() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.cmd = nil
+	s.waitErr = nil
+	s.ready = make(chan struct{})
+	s.readyOnce = sync.Once{}
+	s.done = make(chan struct{})
+	if s.runFn == nil {
+		s.runFn = s.Run
+	}
+}
+
 // Reap waits for the service goroutine to finish.
 func (s *Service) Reap() error {
 	if !waitForDone(s.done, containerdShutdownWaitTimeout) {
@@ -287,6 +400,12 @@ func (s *Service) Stop() {
 	if err := s.StopForce(); err != nil {
 		logger.Warnf("Forced containerd stop failed: %v", err)
 	}
+}
+
+func (s *Service) SetUnexpectedExitHandler(handler func(error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unexpectedExitHandler = handler
 }
 
 // IsHealthy returns true if the containerd socket is reachable.
@@ -350,6 +469,88 @@ func (s *Service) signalProcess(sig syscall.Signal) error {
 		return fmt.Errorf("signal process group %d with %s: %w", pid, sig, err)
 	}
 	return nil
+}
+
+func (s *Service) notifyUnexpectedExit(err error) {
+	s.mu.Lock()
+	handler := s.unexpectedExitHandler
+	s.mu.Unlock()
+	if handler == nil {
+		return
+	}
+	go handler(err)
+}
+
+func wrapReconfigureError(stage string, attempt int, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &ErrContainerdReconfigureOperation{
+		Stage:   stage,
+		Attempt: attempt,
+		Err:     err,
+	}
+}
+
+func (s *Service) reconfigureAttempt(attempt int) error {
+	if err := s.StopGraceful(); err != nil {
+		logger.Warnf("Graceful stop during reconfigure attempt %d failed: %v", attempt, err)
+		if forceErr := s.StopForce(); forceErr != nil {
+			return wrapReconfigureError(reconfigureStageStopRuntime, attempt, fmt.Errorf("stop for reconfigure failed (graceful: %v, force: %v)", err, forceErr))
+		}
+	}
+	s.resetForRestart()
+	if err := s.Start(); err != nil {
+		return wrapReconfigureError(reconfigureStageStartRuntime, attempt, fmt.Errorf("restart failed: %w", err))
+	}
+	if err := s.WaitReady(containerdStartupTimeout); err != nil {
+		return wrapReconfigureError(reconfigureStageWaitCRIReady, attempt, err)
+	}
+	if err := s.verifyStabilityWindow(containerdReconfigureStabilityWindow); err != nil {
+		return wrapReconfigureError(reconfigureStageVerifyStability, attempt, err)
+	}
+	return nil
+}
+
+func (s *Service) verifyStabilityWindow(window time.Duration) error {
+	deadline := time.Now().Add(window)
+	for {
+		select {
+		case <-s.done:
+			s.mu.Lock()
+			waitErr := s.waitErr
+			s.mu.Unlock()
+			if waitErr != nil {
+				return fmt.Errorf("containerd exited during stability window: %w", waitErr)
+			}
+			return fmt.Errorf("containerd exited during stability window")
+		default:
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		sleepForReconfigure(200 * time.Millisecond)
+	}
+}
+
+func (s *Service) rollbackToLKG(previousLKG []byte, hasLKG bool) error {
+	if !hasLKG {
+		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("last-known-good config is unavailable"))
+	}
+	if err := writeAtomicForService(constants.IofogContainerdConfigFile, previousLKG, 0644); err != nil {
+		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("restore last-known-good config: %w", err))
+	}
+	if err := s.reconfigureAttempt(0); err != nil {
+		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("restart after rollback failed: %w", err))
+	}
+	return nil
+}
+
+func (s *Service) escalateRestart(cause error) error {
+	if err := signalSelfForService(syscall.SIGTERM); err != nil {
+		return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("failed to signal daemon for restart (cause: %v): %w", cause, err))
+	}
+	return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("requested daemon restart after persistent reconfigure failure: %v", cause))
 }
 
 // prepare ensures required directories exist and removes any stale socket
