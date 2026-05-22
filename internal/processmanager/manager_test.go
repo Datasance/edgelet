@@ -1,10 +1,12 @@
 package processmanager
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/utils/logging"
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 	"github.com/eclipse-iofog/agent/pkg/engine"
 )
@@ -132,5 +134,22 @@ func TestCleanupDecisionForContainer_DoesNotRemoveLocalScopeAsManagedStale(t *te
 	)
 	if removeManagedByUUID || removeUnknownByID {
 		t.Fatalf("expected local scope workload to be preserved by managed stale cleanup")
+	}
+}
+
+func TestAddMicroservice_QueuesTaskAndMarksUpdating(t *testing.T) {
+	pm := &ProcessManager{
+		ctx:       context.Background(),
+		taskQueue: NewTaskQueue(10),
+		logger:    logging.NewModuleLogger(ProcessManagerModuleName),
+	}
+	ms := models.NewMicroservice("ms-maint", "busybox:latest")
+
+	pm.addMicroservice(ms)
+	if pm.taskQueue.Size() != 1 {
+		t.Fatalf("expected one queued task after add, got %d", pm.taskQueue.Size())
+	}
+	if !ms.GetIsUpdating() {
+		t.Fatal("expected microservice marked updating after enqueue")
 	}
 }

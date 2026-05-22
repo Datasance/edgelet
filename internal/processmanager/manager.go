@@ -26,11 +26,14 @@ import (
 )
 
 const (
-	ProcessManagerModuleName    = "Process Manager"
-	defaultShutdownDrainTimeout = 45 * time.Second
-	shutdownDrainPollInterval   = 1 * time.Second
-	localReconcileMaxFailures   = 5
-	maxTaskRetries              = 5
+	ProcessManagerModuleName  = "Process Manager"
+	shutdownDrainBaseTimeout  = 30 * time.Second
+	shutdownDrainPerContainer = 10 * time.Second
+	shutdownDrainMaxTimeout   = 180 * time.Second
+	shutdownDrainMaxWorkers   = 8
+	shutdownDrainPollInterval = 1 * time.Second
+	localReconcileMaxFailures = 5
+	maxTaskRetries            = 5
 )
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
@@ -122,73 +125,186 @@ func (pm *ProcessManager) DrainRuntimeForShutdown(timeout time.Duration) error {
 	if pm.engine == nil {
 		return nil
 	}
+	startedAt := time.Now()
+	initialRuntimeIDs, err := pm.runtimeWorkloadContainerIDs()
+	if err != nil {
+		return fmt.Errorf("list running containers during shutdown drain: %w", err)
+	}
+	targetSet := make(map[string]struct{}, len(initialRuntimeIDs))
+	for _, id := range initialRuntimeIDs {
+		targetSet[id] = struct{}{}
+	}
 	if timeout <= 0 {
-		timeout = defaultShutdownDrainTimeout
+		timeout = adaptiveShutdownDrainTimeout(len(initialRuntimeIDs))
+	}
+	deadline := startedAt.Add(timeout)
+
+	if len(initialRuntimeIDs) == 0 {
+		pm.emitShutdownDrain("shutdown runtime drain complete: no running workload containers", runtimeops.LevelInfo, "", map[string]any{
+			"result":         runtimeops.ResultOK,
+			"targetCount":    0,
+			"stoppedCount":   0,
+			"remainingCount": 0,
+			"elapsedMs":      0,
+		})
+		return nil
 	}
 
-	deadline := time.Now().Add(timeout)
 	for {
-		running, err := pm.engine.GetRunningContainers()
+		runtimeIDs, err := pm.runtimeWorkloadContainerIDs()
 		if err != nil {
 			return fmt.Errorf("list running containers during shutdown drain: %w", err)
 		}
 
-		runtimeIDs := make([]string, 0, len(running))
-		for _, container := range running {
-			if msUUID := pm.engine.GetContainerMicroserviceUUID(container); msUUID != "" {
-				runtimeIDs = append(runtimeIDs, container.ID)
-			}
-		}
+		stoppedCount := countStoppedTargets(targetSet, runtimeIDs)
+		elapsedMs := time.Since(startedAt).Milliseconds()
 		if len(runtimeIDs) == 0 {
 			pm.emitShutdownDrain("shutdown runtime drain complete: no running workload containers", runtimeops.LevelInfo, "", map[string]any{
-				"result": runtimeops.ResultOK,
+				"result":         runtimeops.ResultOK,
+				"targetCount":    len(targetSet),
+				"stoppedCount":   stoppedCount,
+				"remainingCount": 0,
+				"elapsedMs":      elapsedMs,
 			})
 			return nil
 		}
 
-		for _, containerID := range runtimeIDs {
-			msUUID := ""
-			if c, err := pm.engine.GetContainerByID(containerID); err == nil && c != nil {
-				msUUID = pm.engine.GetContainerMicroserviceUUID(*c)
-			}
-			stopStart := time.Now()
-			if err := pm.engine.StopContainer(containerID); err != nil {
-				pm.emitShutdownDrain("shutdown drain: graceful stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
-					"containerId": containerID,
-					"msUUID":      msUUID,
-					"error":       err.Error(),
-					"durationMs":  time.Since(stopStart).Milliseconds(),
-				})
-				if killErr := pm.engine.KillContainer(containerID); killErr != nil {
-					pm.emitShutdownDrain("shutdown drain: force stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
-						"containerId": containerID,
-						"msUUID":      msUUID,
-						"error":       killErr.Error(),
-					})
-				}
-			} else {
-				pm.emitShutdownDrain("shutdown drain: container stopped", runtimeops.LevelInfo, "", map[string]any{
-					"containerId": containerID,
-					"msUUID":      msUUID,
-					"result":      runtimeops.ResultOK,
-					"durationMs":  time.Since(stopStart).Milliseconds(),
-				})
-			}
-		}
-
 		if time.Now().After(deadline) {
+			remaining := strings.Join(runtimeIDs, ",")
 			pm.emitShutdownDrain("shutdown runtime drain timed out", runtimeops.LevelError, runtimeops.ReasonShutdownDrainTimeout, map[string]any{
-				"remainingContainerIds": strings.Join(runtimeIDs, ","),
+				"remainingContainerIds": remaining,
 				"result":                runtimeops.ResultFailed,
+				"targetCount":           len(targetSet),
+				"stoppedCount":          stoppedCount,
+				"remainingCount":        len(runtimeIDs),
+				"elapsedMs":             elapsedMs,
 			})
 			return fmt.Errorf(
 				"timed out draining runtime containers after %s; remaining container IDs: %s",
 				timeout,
-				strings.Join(runtimeIDs, ","),
+				remaining,
 			)
 		}
+
+		pm.stopRuntimeContainersConcurrently(runtimeIDs)
 		time.Sleep(shutdownDrainPollInterval)
 	}
+}
+
+func adaptiveShutdownDrainTimeout(containerCount int) time.Duration {
+	if containerCount < 0 {
+		containerCount = 0
+	}
+	timeout := shutdownDrainBaseTimeout + (time.Duration(containerCount) * shutdownDrainPerContainer)
+	if timeout > shutdownDrainMaxTimeout {
+		return shutdownDrainMaxTimeout
+	}
+	return timeout
+}
+
+func shutdownDrainWorkerCount(containerCount int) int {
+	if containerCount <= 0 {
+		return 1
+	}
+	if containerCount < shutdownDrainMaxWorkers {
+		return containerCount
+	}
+	return shutdownDrainMaxWorkers
+}
+
+func (pm *ProcessManager) runtimeWorkloadContainerIDs() ([]string, error) {
+	running, err := pm.engine.GetRunningContainers()
+	if err != nil {
+		return nil, err
+	}
+	idsSet := make(map[string]struct{}, len(running))
+	for _, container := range running {
+		if msUUID := pm.engine.GetContainerMicroserviceUUID(container); msUUID != "" {
+			if strings.TrimSpace(container.ID) == "" {
+				continue
+			}
+			idsSet[container.ID] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(idsSet))
+	for id := range idsSet {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+func countStoppedTargets(targetSet map[string]struct{}, remaining []string) int {
+	if len(targetSet) == 0 {
+		return 0
+	}
+	remainingSet := make(map[string]struct{}, len(remaining))
+	for _, id := range remaining {
+		remainingSet[id] = struct{}{}
+	}
+	stopped := 0
+	for id := range targetSet {
+		if _, ok := remainingSet[id]; !ok {
+			stopped++
+		}
+	}
+	return stopped
+}
+
+func (pm *ProcessManager) stopRuntimeContainersConcurrently(containerIDs []string) {
+	if len(containerIDs) == 0 {
+		return
+	}
+	workerCount := shutdownDrainWorkerCount(len(containerIDs))
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+
+	worker := func() {
+		defer wg.Done()
+		for containerID := range jobs {
+			pm.stopOneRuntimeContainerForDrain(containerID)
+		}
+	}
+
+	wg.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go worker()
+	}
+	for _, id := range containerIDs {
+		jobs <- id
+	}
+	close(jobs)
+	wg.Wait()
+}
+
+func (pm *ProcessManager) stopOneRuntimeContainerForDrain(containerID string) {
+	msUUID := ""
+	if c, err := pm.engine.GetContainerByID(containerID); err == nil && c != nil {
+		msUUID = pm.engine.GetContainerMicroserviceUUID(*c)
+	}
+	stopStart := time.Now()
+	if err := pm.engine.StopContainer(containerID); err != nil {
+		pm.emitShutdownDrain("shutdown drain: graceful stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
+			"containerId": containerID,
+			"msUUID":      msUUID,
+			"error":       err.Error(),
+			"durationMs":  time.Since(stopStart).Milliseconds(),
+		})
+		if killErr := pm.engine.KillContainer(containerID); killErr != nil {
+			pm.emitShutdownDrain("shutdown drain: force stop failed", runtimeops.LevelWarn, runtimeops.ReasonStopFailed, map[string]any{
+				"containerId": containerID,
+				"msUUID":      msUUID,
+				"error":       killErr.Error(),
+			})
+		}
+		return
+	}
+	pm.emitShutdownDrain("shutdown drain: container stopped", runtimeops.LevelInfo, "", map[string]any{
+		"containerId": containerID,
+		"msUUID":      msUUID,
+		"result":      runtimeops.ResultOK,
+		"durationMs":  time.Since(stopStart).Milliseconds(),
+	})
 }
 
 // StopRunningMicroservices stops all running microservices matching the iofogUuid.
