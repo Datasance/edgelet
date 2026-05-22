@@ -407,7 +407,7 @@ If you're still experiencing issues:
    
    # Agent info
    sudo iofog-agent version
-   sudo iofog-agent status
+   sudo iofog-agent system status
    
    # Logs
    sudo journalctl -u iofog-agent --since "1 hour ago" > agent-logs.txt

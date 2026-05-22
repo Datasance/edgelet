@@ -248,6 +248,22 @@ install_binaries() {
     info "Binaries installed to /usr/local/bin/"
 }
 
+install_cli_completion() {
+    if ! command -v iofog-agent >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ -d /etc/bash_completion.d ]; then
+        if iofog-agent completion bash >/etc/bash_completion.d/iofog-agent 2>/dev/null; then
+            chmod 644 /etc/bash_completion.d/iofog-agent
+            info "Bash completion installed to /etc/bash_completion.d/iofog-agent"
+            return 0
+        fi
+    fi
+    if [ -f packaging/iofog-agent/etc/bash_completion.d/iofog-agent ]; then
+        install -m 644 packaging/iofog-agent/etc/bash_completion.d/iofog-agent /etc/bash_completion.d/iofog-agent 2>/dev/null || true
+    fi
+}
+
 default_docker_url_for_engine() {
     case "$1" in
         docker) echo "unix:///var/run/docker.sock" ;;
@@ -684,6 +700,7 @@ write_install_receipt "$IOFOG_VERSION" "$IOFOG_FLAVOR" "$_src"
 _is_full="false"
 [ "$IOFOG_FLAVOR" = "full" ] && _is_full="true"
 install_service_for_init "$_is_full"
+install_cli_completion
 
 info ""
 info "iofog-agent ${IOFOG_VERSION} (${IOFOG_FLAVOR}) installed successfully."
@@ -691,6 +708,7 @@ info "  CLI    : /usr/local/bin/iofog-agent"
 info "  Daemon : /usr/local/bin/iofog-agentd"
 info "  Config : /etc/iofog-agent/config.yaml"
 info ""
-info "To check status: iofog-agent status"
+info "To check status: iofog-agent system status"
 info "To provision:    iofog-agent provision <provisioning-key>"
+info "Shell completion: source /etc/bash_completion.d/iofog-agent (bash)"
 info ""

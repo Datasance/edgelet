@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - CLI redesign (breaking)
+
+The `iofog-agent` CLI was rebuilt on Cobra with layered packages (`internal/cli/cmd`, `domain`, `client`, `ui`, `output`). **There are no legacy aliases.** See [docs/cli/migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md) for operator migration steps.
+
+| Legacy | Replacement |
+|--------|-------------|
+| `iofog-agent status` | `iofog-agent system status` |
+| `iofog-agent info` | `iofog-agent system info` |
+| `iofog-agent version` | `iofog-agent --version` or `iofog-agent system version` |
+| `iofog-agent stop` | `iofog-agent system stop` |
+| `iofog-agent prune` | `iofog-agent system prune` |
+| `iofog-agent start` | **Removed** — use `iofog-agentd` / `systemctl start iofog-agentd` |
+| `iofog-agent cert` | `iofog-agent config cert` |
+| `iofog-agent switch` | `iofog-agent config switch` |
+| `iofog-agent ms ps` | `iofog-agent ms ls` |
+| `iofog-agent deploy apply -f` | `iofog-agent deploy -f` |
+| `iofog-agent deploy validate -f` | `iofog-agent deploy -f --dry-run` |
+| `iofog-agent deploy registry\|runtimeclass -f` | `iofog-agent deploy -f` (auto kind-detect) |
+| `iofog-agent config set KEY VALUE` | `iofog-agent config KEY VALUE` |
+
+Other breaking behavior:
+
+- Daemon unreachable → exit code **10** (`DAEMON_UNAVAILABLE`), not silent success
+- `ms logs --follow` and `ms exec` are human/raw only (`-o json|yaml` rejected)
+- Monolithic `internal/cli/commands.go` and `HandleCommand()` removed
+- Build metadata injected via `-ldflags` into `internal/cli/cmd` (`Version`, `BuildTime`, `GitCommit`)
+
+### Added - CLI redesign
+
+- Global flags: `-o human|json|yaml`, `--quiet`, `--verbose`, `--debug`, `--socket`, `--timeout`, `--no-color`
+- Structured output for data commands; progress/spinners on stderr with `\r\x1b[K` (fixes `(pulling)ng)` corruption)
+- Shared async poller for deploy apply, runtimeclass apply, and image pull
+- WebSocket transport refactor for `ms logs` / `ms exec` (`internal/cli/client/transport.go`)
+- Shell completion: `iofog-agent completion bash|zsh|fish` (hidden)
+- Doc generation: `iofog-agent documentation generate md|man` (hidden); `make cli-docs`, `make cli-completion`
+- Exit code mapping via typed `CLIError` / `ExitCoder` (including remote exec exit codes)
+
+### Added - CLI documentation and CI (Phase 5)
+
+- `docs/cli/README.md` — flags, exit codes, examples
+- `docs/cli/output-schemas.md` — JSON shapes aligned with golden fixtures
+- `docs/cli/generated/` — Cobra-generated command reference (`make cli-docs`)
+- `make cli-docs-check` — CI drift gate for generated docs
+- CLI smoke tests: jq-friendly JSON, exit 10, legacy command rejection suite
+- Updated `docs/localapi-v3-qa-gates.md` Gate 5 with automated CLI checks
+
 ### Added - Agent 11: Integration, Testing & Finalization
 - Integration test suite (Docker, Controller, E2E tests)
 - Performance profiling script

@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci
+.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-completion
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -21,7 +21,7 @@ FLAVOR ?= full
 
 # Build flags
 # CLI is flavor-agnostic; daemon carries flavor metadata.
-LDFLAGS_CLI := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) -s -w
+LDFLAGS_CLI := -X github.com/eclipse-iofog/agent/internal/cli/cmd.Version=$(VERSION) -X github.com/eclipse-iofog/agent/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/eclipse-iofog/agent/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
 LDFLAGS_DAEMON := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
 	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=$(FLAVOR) -s -w
 BUILD_FLAGS_CLI := -trimpath -ldflags "$(LDFLAGS_CLI)"
@@ -53,6 +53,20 @@ build-cli: ## Build CLI binary (flavor-agnostic)
 	@mkdir -p build
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS_CLI) -o $(CLI_BINARY) ./cmd/iofog-agent
 	@echo "Built: $(CLI_BINARY)"
+
+cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
+	@mkdir -p docs/cli/generated
+	@$(CLI_BINARY) documentation generate md --output docs/cli/generated
+	@echo "Generated docs/cli/generated/"
+
+cli-docs-check: cli-docs ## Fail if docs/cli/ differs from committed generated output
+	@git diff --exit-code docs/cli/ || (echo "ERROR: docs/cli drift — run 'make cli-docs' and commit" && exit 1)
+	@echo "docs/cli/ is up to date"
+
+cli-completion: build-cli ## Regenerate bash completion for packaging
+	@mkdir -p packaging/iofog-agent/etc/bash_completion.d
+	@$(CLI_BINARY) completion bash > packaging/iofog-agent/etc/bash_completion.d/iofog-agent
+	@echo "Updated packaging/iofog-agent/etc/bash_completion.d/iofog-agent"
 
 build-daemon: build-daemon-$(FLAVOR) ## Build daemon for current FLAVOR (default full)
 
@@ -333,8 +347,8 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 	@echo "   source ~/.zshrc"
 	@echo ""
 	@echo "   Then you can use CLI commands directly:"
-	@echo "   iofog-agent status"
-	@echo "   iofog-agent info"
+	@echo "   iofog-agent system status"
+	@echo "   iofog-agent system info"
 	@echo ""
 
 start-dev: install-dev ## Start the agent daemon in development mode
@@ -365,7 +379,7 @@ start-dev: install-dev ## Start the agent daemon in development mode
 		echo ""; \
 		echo "💡 Export SNAP_COMMON to use CLI commands directly:"; \
 		echo "   export SNAP_COMMON=$(DEV_DIR)"; \
-		echo "   iofog-agent status"; \
+		echo "   iofog-agent system status"; \
 	else \
 		echo "❌ Failed to start agent daemon"; \
 		echo "   Check logs: $(DEV_VAR_LOG)/daemon-startup.log"; \
@@ -424,8 +438,8 @@ setup-dev-env: install-dev ## Setup development environment and export SNAP_COMM
 	@echo "  source ~/.zshrc"
 	@echo ""
 	@echo "After exporting, you can use CLI commands directly:"
-	@echo "  iofog-agent status"
-	@echo "  iofog-agent info"
+	@echo "  iofog-agent system status"
+	@echo "  iofog-agent system info"
 	@echo "  iofog-agent version"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

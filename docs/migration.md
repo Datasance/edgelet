@@ -93,7 +93,7 @@ sudo systemctl start iofog-agent
 
 ```bash
 # Check status
-sudo iofog-agent status
+sudo iofog-agent system status
 
 # Check logs
 sudo journalctl -u iofog-agent -f
@@ -157,7 +157,7 @@ If performance is not as expected:
 
 1. Check resource usage:
    ```bash
-   sudo iofog-agent status
+   sudo iofog-agent system status
    ```
 
 2. Review logs:

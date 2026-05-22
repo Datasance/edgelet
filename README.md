@@ -9,7 +9,7 @@ Go implementation of the ioFog Agent, migrated from Java. The agent provides edg
 ```
 agent-go/
 ├── cmd/
-│   ├── iofog-agent/         # CLI entry point  (iofog-agent status / info / …)
+│   ├── iofog-agent/         # CLI entry point  (iofog-agent system status / …)
 │   └── iofog-agentd/        # Daemon entry point (embeds containerd when iofog engine)
 ├── internal/                # Internal packages
 │   ├── auth/                # TLS / JWT / certificate management
@@ -187,7 +187,7 @@ make benchmark        # Run benchmarks
 
 Status output includes `availableRuntimes`:
 
-- local status/CLI (`iofog-agent status`) shows runtime availability for the active engine mode.
+- local status/CLI (`iofog-agent system status`) shows runtime availability for the active engine mode.
 - controller status payload also includes `availableRuntimes`; for `iofog` engine this list is canonical only.
 
 ## Code Quality
@@ -221,9 +221,11 @@ development directory tree under `dev/`, and starts the daemon.
 
 ```bash
 export SNAP_COMMON=$(pwd)/dev
-iofog-agent status
-iofog-agent info
+iofog-agent system status
+iofog-agent system info
 ```
+
+CLI reference and migration guide: [docs/cli/README.md](docs/cli/README.md) ([output schemas](docs/cli/output-schemas.md), [migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md)).
 
 ### Logs
 

@@ -230,7 +230,7 @@ kubectl apply -f k8s-deployment.yaml
 
 ```bash
 # CLI status
-sudo iofog-agent status
+sudo iofog-agent system status
 
 # API status
 curl http://localhost:54321/api/v3/status
