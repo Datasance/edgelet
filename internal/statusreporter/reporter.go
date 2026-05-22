@@ -2,6 +2,7 @@ package statusreporter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -9,8 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/client"
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
@@ -47,6 +52,50 @@ var (
 	instance *StatusReporter
 	once     sync.Once
 )
+
+var listRuntimeClassesForStatus = func() ([]*models.LocalRuntimeClass, error) {
+	db := store.GetInstance()
+	if db == nil || db.Conn() == nil {
+		return nil, nil
+	}
+	return db.ListLocalRuntimeClasses()
+}
+
+var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
+	cfg := config.GetInstance()
+	if cfg == nil {
+		return nil, errors.New("config is not initialized")
+	}
+
+	opts := []client.Opt{
+		client.WithHost(strings.TrimSpace(cfg.DockerURL)),
+		client.WithAPIVersionNegotiation(),
+	}
+	if strings.TrimSpace(cfg.DockerAPIVersion) != "" {
+		opts = append(opts, client.WithVersion(strings.TrimSpace(cfg.DockerAPIVersion)))
+	}
+	cli, err := client.NewClientWithOpts(opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer cli.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	info, err := cli.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runtimes := make([]string, 0, len(info.Runtimes))
+	for runtimeName := range info.Runtimes {
+		runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))
+		if runtimeName == "" {
+			continue
+		}
+		runtimes = append(runtimes, runtimeName)
+	}
+	return sortedUniqueStrings(runtimes), nil
+}
 
 // GetInstance returns the singleton StatusReporter instance
 func GetInstance() *StatusReporter {
@@ -205,9 +254,90 @@ func (sr *StatusReporter) GetStatusReport() string {
 		availableInterfacesLine = strings.Join(availableInterfaces, ", ")
 	}
 	result += fmt.Sprintf("Available Network Interfaces : %s\n", availableInterfacesLine)
+	availableRuntimesLine := strings.Join(GetAvailableRuntimes(), ", ")
+	result += fmt.Sprintf("Available Runtimes          : %s\n", availableRuntimesLine)
 
 	logging.LogDebug(moduleName, "Finished Getting Status Report")
 	return result
+}
+
+// GetAvailableRuntimes returns deterministic runtime names exposed by current engine mode.
+func GetAvailableRuntimes() []string {
+	cfg := config.GetInstance()
+	if cfg == nil {
+		return []string{constants.EngineDocker}
+	}
+	return getAvailableRuntimesForEngine(strings.ToLower(strings.TrimSpace(cfg.ContainerEngine)), buildmeta.IsFull())
+}
+
+func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string {
+	switch engineName {
+	case constants.EnginePodman:
+		if external, err := listExternalRuntimesForStatus(constants.EnginePodman); err == nil && len(external) > 0 {
+			return sortedUniqueStrings(external)
+		}
+		return []string{constants.EnginePodman}
+	case constants.EngineIofog:
+		baseline := []string{"crun"}
+		if !fullFlavor {
+			return baseline
+		}
+
+		extrasMap := map[string]struct{}{}
+		items, err := listRuntimeClassesForStatus()
+		if err == nil {
+			for _, rc := range items {
+				if rc == nil {
+					continue
+				}
+				rc.Normalize()
+				if rc.RuntimeName != "" {
+					extrasMap[rc.RuntimeName] = struct{}{}
+				}
+			}
+		}
+
+		extras := make([]string, 0, len(extrasMap))
+		for runtimeName := range extrasMap {
+			if runtimeName == "crun" {
+				continue
+			}
+			extras = append(extras, runtimeName)
+		}
+		sort.Strings(extras)
+
+		runtimes := make([]string, 0, len(baseline)+len(extras))
+		runtimes = append(runtimes, baseline...)
+		runtimes = append(runtimes, extras...)
+		return runtimes
+	case constants.EngineDocker:
+		if external, err := listExternalRuntimesForStatus(constants.EngineDocker); err == nil && len(external) > 0 {
+			return sortedUniqueStrings(external)
+		}
+		return []string{constants.EngineDocker}
+	default:
+		return []string{constants.EngineDocker}
+	}
+}
+
+func sortedUniqueStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		set[item] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for item := range set {
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Status getters (thread-safe)

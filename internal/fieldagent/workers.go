@@ -3,6 +3,7 @@ package fieldagent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -275,6 +276,10 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	if warningMessage == "" {
 		warningMessage = ""
 	}
+	controllerRuntimes := runtimeNamesForController(
+		fa.config.ContainerEngine,
+		statusreporter.GetAvailableRuntimes(),
+	)
 
 	status := map[string]interface{}{
 		"daemonStatus":              daemonStatusStr,
@@ -306,9 +311,27 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 		"activeVolumeMounts":        volumeMountStatus.ActiveMounts,
 		"volumeMountLastUpdate":     volumeMountStatus.LastUpdate,
 		"gpsStatus":                 string(gps.GetInstance().GetStatus().GetHealthStatus()), // Get from GpsManager
+		"availableRuntimes":         controllerRuntimes,
 	}
 
 	return status
+}
+
+func runtimeNamesForController(_ string, available []string) []string {
+	filteredSet := make(map[string]struct{}, len(available))
+	for _, runtimeName := range available {
+		name := strings.TrimSpace(runtimeName)
+		if name == "" {
+			continue
+		}
+		filteredSet[name] = struct{}{}
+	}
+	filtered := make([]string, 0, len(filteredSet))
+	for name := range filteredSet {
+		filtered = append(filtered, name)
+	}
+	sort.Strings(filtered)
+	return filtered
 }
 
 // isUnauthorizedError checks if an error is an unauthorized error
