@@ -26,6 +26,7 @@ type BuildInput struct {
 }
 
 func BuildLabels(in BuildInput) map[string]string {
+	scope := ResolveScope(in.ApplicationName, in.HostNetwork)
 	labels := map[string]string{
 		LabelAppName:         strings.TrimSpace(in.MicroserviceName),
 		LabelAppInstance:     strings.TrimSpace(in.MicroserviceUUID),
@@ -33,7 +34,7 @@ func BuildLabels(in BuildInput) map[string]string {
 		LabelAppManagedBy:    ManagedByValue,
 		LabelMicroserviceUID: strings.TrimSpace(in.MicroserviceUUID),
 		LabelNodeUID:         strings.TrimSpace(in.NodeUUID),
-		LabelScope:           ScopeFromMicroservice(in.ApplicationName, in.HostNetwork),
+		LabelScope:           scope,
 		LabelRuntimeEngine:   normalizeRuntimeEngine(in.RuntimeEngine),
 		LabelRole:            RoleFromMicroservice(in.IsRouter, in.IsNats),
 		LabelSystem:          boolLabel(in.IsSystem),
@@ -48,12 +49,13 @@ func BuildLabels(in BuildInput) map[string]string {
 }
 
 func BuildEnv(in BuildInput) []string {
+	scope := ResolveScope(in.ApplicationName, in.HostNetwork)
 	canonical := map[string]string{
 		EnvMicroserviceUID:  strings.TrimSpace(in.MicroserviceUUID),
 		EnvMicroserviceName: strings.TrimSpace(in.MicroserviceName),
 		EnvApplicationName:  strings.TrimSpace(in.ApplicationName),
 		EnvNodeUID:          strings.TrimSpace(in.NodeUUID),
-		EnvScope:            ScopeFromMicroservice(in.ApplicationName, in.HostNetwork),
+		EnvScope:            scope,
 		EnvRuntimeEngine:    normalizeRuntimeEngine(in.RuntimeEngine),
 		EnvRole:             RoleFromMicroservice(in.IsRouter, in.IsNats),
 	}

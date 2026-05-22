@@ -1,13 +1,17 @@
 package models
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+)
 
 // BuildMicroserviceFromLocalManifest converts a local deploy manifest into
 // a runtime microservice model used by the container engine.
 func BuildMicroserviceFromLocalManifest(doc *LocalDeployManifest, deploymentID, image string) *Microservice {
 	ms := NewMicroservice(deploymentID, image)
 	ms.MicroserviceName = doc.Metadata.Name
-	ms.ApplicationName = "local"
+	ms.ApplicationName = workloadmeta.LocalApplicationName
 	ms.Labels = cloneManifestLabels(doc.Metadata.Labels)
 	ms.RegistryID = 2
 	ms.HostNetworkMode = doc.Spec.Container.HostNetworkMode

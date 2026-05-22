@@ -24,6 +24,10 @@ const (
 )
 
 const (
+	LocalApplicationName = "local"
+)
+
+const (
 	LabelAppName      = "app.kubernetes.io/name"
 	LabelAppInstance  = "app.kubernetes.io/instance"
 	LabelAppPartOf    = "app.kubernetes.io/part-of"
@@ -134,9 +138,25 @@ func RoleFromMicroservice(isRouter, isNats bool) string {
 	return RoleWorkload
 }
 
-func ScopeFromMicroservice(application string, hostNetwork bool) string {
-	if strings.EqualFold(strings.TrimSpace(application), "local") && !hostNetwork {
+func IsLocalApplication(application string) bool {
+	return strings.EqualFold(strings.TrimSpace(application), LocalApplicationName)
+}
+
+func ResolveScope(application string, hostNetwork bool) string {
+	// Host-network workloads always bypass scoped bridge networking.
+	if hostNetwork {
+		return ScopeManaged
+	}
+	if IsLocalApplication(application) {
 		return ScopeLocal
 	}
 	return ScopeManaged
+}
+
+func IsLocalScope(scope string) bool {
+	return strings.EqualFold(strings.TrimSpace(scope), ScopeLocal)
+}
+
+func ScopeFromMicroservice(application string, hostNetwork bool) string {
+	return ResolveScope(application, hostNetwork)
 }

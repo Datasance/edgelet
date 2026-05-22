@@ -35,6 +35,41 @@ func TestScopeFromMicroservice(t *testing.T) {
 	}
 }
 
+func TestResolveScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		application string
+		hostNetwork bool
+		want        string
+	}{
+		{name: "local deploy scope", application: LocalApplicationName, hostNetwork: false, want: ScopeLocal},
+		{name: "local host network bypass", application: LocalApplicationName, hostNetwork: true, want: ScopeManaged},
+		{name: "controller managed", application: "edge-app", hostNetwork: false, want: ScopeManaged},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveScope(tt.application, tt.hostNetwork); got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestIsLocalApplicationAndScope(t *testing.T) {
+	if !IsLocalApplication(" LOCAL ") {
+		t.Fatal("expected local application to be detected")
+	}
+	if IsLocalApplication("managed") {
+		t.Fatal("expected non-local application")
+	}
+	if !IsLocalScope("LOCAL") {
+		t.Fatal("expected local scope to be detected")
+	}
+	if IsLocalScope("managed") {
+		t.Fatal("expected managed scope not to be local")
+	}
+}
+
 func TestMicroserviceUIDFromLabels(t *testing.T) {
 	labels := map[string]string{
 		LabelMicroserviceUID: "  ms-123  ",
