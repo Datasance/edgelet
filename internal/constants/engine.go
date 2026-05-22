@@ -31,13 +31,9 @@ const (
 	IofogContainerdBinDir     = "/var/lib/iofog-agent-containerd/bin"
 	IofogCNIPluginsDir        = "/var/lib/iofog-agent-containerd/cni/plugins"
 	IofogCNIConfDir           = "/var/lib/iofog-agent-containerd/cni/conf"
-	IofogManagedCNIConfDir    = "/var/lib/iofog-agent-containerd/cni/conf/managed"
-	IofogLocalCNIConfDir      = "/var/lib/iofog-agent-containerd/cni/conf/local"
 	IofogContainerdImagesDir  = "/var/lib/iofog-agent-containerd/images"
 	IofogManagedCNIConfigName = "10-iofog.conflist"
-	IofogLocalCNIConfigName   = "11-iofog-local.conflist"
-	IofogCNIConfigFile        = "/var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
-	IofogLocalCNIConfigFile   = "/var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+	IofogCNIConfigFile        = "/var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 	IofogContainerdConfigFile = "/var/lib/iofog-agent-containerd/config.toml"
 
 	// Ephemeral runtime directory — lives on tmpfs on systemd hosts, cleared on reboot.
@@ -53,11 +49,6 @@ const (
 	IofogBridgeName  = "iofog0"
 	IofogBridgeCIDR  = "172.18.0.0/16"
 	IofogNetworkName = "iofog"
-
-	// Dedicated local-workload network.
-	IofogLocalBridgeName  = "iofog-local0"
-	IofogLocalBridgeCIDR  = "172.19.0.0/16"
-	IofogLocalNetworkName = "iofog-local"
 
 	// Containerd namespace used for all iofog-managed containers.
 	IofogContainerdNamespace = "k8s.io"

@@ -53,6 +53,7 @@ func (e *Engine) GetRunningContainers() ([]engine.Container, error) {
 }
 func (e *Engine) GetAllContainers() ([]engine.Container, error) { return e.inner.GetAllContainers() }
 func (e *Engine) CreateContainer(ms *models.Microservice, h string) (string, error) {
+	// Podman reuses Docker engine create path, including shared scope resolver policy.
 	return e.inner.CreateContainer(ms, h)
 }
 func (e *Engine) StartContainer(id string) error          { return e.inner.StartContainer(id) }

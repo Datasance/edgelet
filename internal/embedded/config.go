@@ -50,7 +50,3 @@ func generateCNIConfig(networkName, bridgeName, bridgeCIDR string) map[string]an
 func generateManagedCNIConfig() map[string]any {
 	return generateCNIConfig(constants.IofogNetworkName, constants.IofogBridgeName, constants.IofogBridgeCIDR)
 }
-
-func generateLocalCNIConfig() map[string]any {
-	return generateCNIConfig(constants.IofogLocalNetworkName, constants.IofogLocalBridgeName, constants.IofogLocalBridgeCIDR)
-}

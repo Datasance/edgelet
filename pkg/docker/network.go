@@ -11,9 +11,16 @@ import (
 )
 
 const (
-	iofogNetworkName      = "iofog"
-	iofogLocalNetworkName = "iofog-local"
+	iofogNetworkName = "iofog"
 )
+
+// resolveIofogBridgeNetworkName centralizes the scope->network mapping policy
+// for docker-compatible engines (Docker + Podman wrapper).
+func resolveIofogBridgeNetworkName(applicationName string, hostNetwork bool) string {
+	_ = applicationName // Application scope is metadata-only in single-bridge mode.
+	_ = hostNetwork
+	return iofogNetworkName
+}
 
 // ensureIoFogNetworkExists ensures the fixed "iofog" bridge network exists.
 // Must NOT be called while c.mu is held — use ensureNetworkLockFree instead.
@@ -29,10 +36,7 @@ func (c *Client) ensureIoFogNetworkExists() error {
 // ensureNetworkLockFree is the mutex-free implementation; used when the caller
 // already holds c.mu (e.g. inside initDockerClient).
 func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Context) error {
-	if err := c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName); err != nil {
-		return err
-	}
-	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogLocalNetworkName)
+	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName)
 }
 
 func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.Context, networkName string) error {

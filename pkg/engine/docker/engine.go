@@ -75,6 +75,7 @@ func (e *Engine) GetAllContainers() ([]engine.Container, error) {
 }
 
 func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (string, error) {
+	// Scope/network policy is centralized in pkg/docker via shared workloadmeta resolver.
 	return e.client.CreateContainer(ms, hostname)
 }
 

@@ -22,18 +22,3 @@ func TestGenerateManagedCNIConfigUsesManagedConstants(t *testing.T) {
 		t.Fatalf("managed bridge mismatch: got=%v want=%s", got, constants.IofogBridgeName)
 	}
 }
-
-func TestGenerateLocalCNIConfigUsesLocalConstants(t *testing.T) {
-	cfg := generateLocalCNIConfig()
-	if got := cfg["name"]; got != constants.IofogLocalNetworkName {
-		t.Fatalf("local network name mismatch: got=%v want=%s", got, constants.IofogLocalNetworkName)
-	}
-	plugins, ok := cfg["plugins"].([]map[string]any)
-	if !ok || len(plugins) == 0 {
-		t.Fatalf("plugins missing from local config")
-	}
-	bridge := plugins[0]
-	if got := bridge["bridge"]; got != constants.IofogLocalBridgeName {
-		t.Fatalf("local bridge mismatch: got=%v want=%s", got, constants.IofogLocalBridgeName)
-	}
-}

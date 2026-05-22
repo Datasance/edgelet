@@ -94,7 +94,7 @@ func symlinkShimToPath(src, name string) {
 	}
 }
 
-// loadCNIPlugins extracts the four CNI plugin binaries.
+// loadCNIPlugins extracts the CNI plugin binaries used by embedded networking.
 func loadCNIPlugins() error {
 	if err := os.MkdirAll(constants.IofogCNIPluginsDir, 0755); err != nil {
 		return fmt.Errorf("create CNI plugins dir: %w", err)
@@ -119,35 +119,25 @@ func loadCNIPlugins() error {
 	return nil
 }
 
-// loadCNIConfig writes managed/local CNI conflists and symlinks them into the
-// standard system CNI config directory so containerd's CRI plugin finds both.
+// loadCNIConfig writes the canonical CNI conflist and symlinks it into
+// the standard system CNI config directory.
 func loadCNIConfig() error {
 	for _, dir := range []string{
 		constants.IofogCNIConfDir,
-		constants.IofogManagedCNIConfDir,
-		constants.IofogLocalCNIConfDir,
 		constants.DefaultSystemCNIConfDir,
 	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create CNI conf dir %s: %w", dir, err)
 		}
 	}
-
 	if err := writeAndSymlinkCNIConfig(
 		generateManagedCNIConfig(),
 		constants.IofogCNIConfigFile,
-		filepath.Join(constants.DefaultSystemCNIConfDir, constants.IofogManagedCNIConfigName),
+		filepath.Join(constants.DefaultSystemCNIConfDir, constants.DefaultCNIConfigName),
 	); err != nil {
 		return err
 	}
-	if err := writeAndSymlinkCNIConfig(
-		generateLocalCNIConfig(),
-		constants.IofogLocalCNIConfigFile,
-		filepath.Join(constants.DefaultSystemCNIConfDir, constants.IofogLocalCNIConfigName),
-	); err != nil {
-		return err
-	}
-	loadLogger.Infof("Managed/local CNI bridge configs written and symlinked")
+	loadLogger.Infof("Single-bridge CNI config written")
 	return nil
 }
 
@@ -159,9 +149,11 @@ func writeAndSymlinkCNIConfig(cfg map[string]any, targetPath, systemLink string)
 	if err := os.WriteFile(targetPath, cniConfig, 0644); err != nil {
 		return fmt.Errorf("write CNI config file: %w", err)
 	}
-	_ = os.Remove(systemLink)
-	if err := os.Symlink(targetPath, systemLink); err != nil && !os.IsExist(err) {
-		return fmt.Errorf("symlink CNI config %s: %w", systemLink, err)
+	if systemLink != "" {
+		_ = os.Remove(systemLink)
+		if err := os.Symlink(targetPath, systemLink); err != nil && !os.IsExist(err) {
+			return fmt.Errorf("symlink CNI config %s: %w", systemLink, err)
+		}
 	}
 	return nil
 }
@@ -242,4 +234,3 @@ func extractBinary(data []byte, destFile string) error {
 	}
 	return nil
 }
-
