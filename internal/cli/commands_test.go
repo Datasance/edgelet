@@ -89,6 +89,23 @@ func TestParseRegistryInspectArgs_RejectsUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestHandleRuntimeClassV3_UsageValidation(t *testing.T) {
+	client := &Client{}
+	if got := handleRuntimeClassV3(client, []string{"inspect"}); !strings.Contains(got, "Usage: iofog-agent runtimeclass inspect") {
+		t.Fatalf("expected inspect usage, got: %s", got)
+	}
+	if got := handleRuntimeClassV3(client, []string{"rm"}); !strings.Contains(got, "Usage: iofog-agent runtimeclass rm") {
+		t.Fatalf("expected rm usage, got: %s", got)
+	}
+}
+
+func TestShowDeployHelpV3_IncludesRuntimeClassFlow(t *testing.T) {
+	help := showDeployHelpV3()
+	if !strings.Contains(help, "deploy runtimeclass apply") || !strings.Contains(help, "deploy runtimeclass validate") {
+		t.Fatalf("expected runtimeclass deploy flow in help, got: %s", help)
+	}
+}
+
 func TestWriteStreamLogLine_PreservesIncomingNewline(t *testing.T) {
 	var b bytes.Buffer
 	writeStreamLogLine(&b, "", "line1\n\nline3\n", false)

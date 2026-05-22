@@ -141,6 +141,26 @@ func TestFormatFlatMapWithOrder_StatusIncludesAvailableNetworkInterfacesAfterTot
 	}
 }
 
+func TestFormatFlatMapWithOrder_StatusIncludesAvailableRuntimesNearInterfaces(t *testing.T) {
+	out := formatFlatMapWithOrder(map[string]interface{}{
+		"systemTotalCpu":             "3200%",
+		"availableNetworkInterfaces": "eth0, wlan0",
+		"availableRuntimes":          "crun, edgelet",
+		"connectionToController":     "ok",
+	}, statusOutputOrder)
+
+	interfacesLine := "availableNetworkInterfaces: eth0, wlan0"
+	runtimesLine := "availableRuntimes: crun, edgelet"
+	interfacesIdx := strings.Index(out, interfacesLine)
+	runtimesIdx := strings.Index(out, runtimesLine)
+	if interfacesIdx == -1 || runtimesIdx == -1 {
+		t.Fatalf("expected available interface/runtime lines in output, got: %s", out)
+	}
+	if runtimesIdx < interfacesIdx {
+		t.Fatalf("expected availableRuntimes after availableNetworkInterfaces, got: %s", out)
+	}
+}
+
 func TestFormatInfoWithAliasOrder_UsesAliasesAndOrder(t *testing.T) {
 	out := formatInfoWithAliasOrder(map[string]interface{}{
 		"iofogUuid":                   "abc",
@@ -368,6 +388,18 @@ func TestFormatDeployApplyResult_KindSpecific(t *testing.T) {
 	if !strings.Contains(regOut, "registry manifest applied successfully") || !strings.Contains(regOut, "id=7") {
 		t.Fatalf("expected registry apply output, got: %s", regOut)
 	}
+
+	rcOut := formatDeployApplyResult(map[string]interface{}{
+		"accepted": true,
+		"kind":     "RuntimeClass",
+		"runtimeClass": map[string]interface{}{
+			"name":    "edgelet",
+			"handler": "edgelet",
+		},
+	})
+	if !strings.Contains(rcOut, "runtimeclass manifest applied successfully") || !strings.Contains(rcOut, "name=edgelet") {
+		t.Fatalf("expected runtimeclass apply output, got: %s", rcOut)
+	}
 }
 
 func TestFormatDeployApplyResult_AsyncSucceeded(t *testing.T) {
@@ -377,6 +409,20 @@ func TestFormatDeployApplyResult_AsyncSucceeded(t *testing.T) {
 	})
 	if !strings.Contains(out, "microservice manifest applied successfully") || !strings.Contains(out, "dep-42") {
 		t.Fatalf("expected async deploy success output, got: %s", out)
+	}
+}
+
+func TestFormatDeployApplyResult_RuntimeClassOperationRunning(t *testing.T) {
+	out := formatDeployApplyResult(map[string]interface{}{
+		"status":      "running",
+		"kind":        "RuntimeClass",
+		"operationId": "op-123",
+		"stage":       "reconfiguring",
+	})
+	if !strings.Contains(out, "runtimeclass apply is still in progress") ||
+		!strings.Contains(out, "operationId=op-123") ||
+		!strings.Contains(out, "/v3/deploy/runtimeclasses:apply/op-123") {
+		t.Fatalf("expected runtimeclass operation in-progress output, got: %s", out)
 	}
 }
 
@@ -402,6 +448,125 @@ func TestFormatDeployApplyError(t *testing.T) {
 	code, message = formatDeployApplyError(map[string]interface{}{})
 	if code != "INTERNAL" || message != "deploy apply failed" {
 		t.Fatalf("unexpected fallback error mapping: code=%s message=%s", code, message)
+	}
+}
+
+func TestHandleRuntimeClassApplyWithProgress_PollSucceeded(t *testing.T) {
+	prevStart := runtimeClassApplyStartRequest
+	prevStatus := runtimeClassApplyStatusRequest
+	prevTimeout := runtimeClassApplyPollTimeout
+	prevInterval := runtimeClassApplyPollInterval
+	t.Cleanup(func() {
+		runtimeClassApplyStartRequest = prevStart
+		runtimeClassApplyStatusRequest = prevStatus
+		runtimeClassApplyPollTimeout = prevTimeout
+		runtimeClassApplyPollInterval = prevInterval
+	})
+
+	runtimeClassApplyPollTimeout = 2 * time.Second
+	runtimeClassApplyPollInterval = 1 * time.Millisecond
+	runtimeClassApplyStartRequest = func(_ *Client, _ string, _ map[string]string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"status":      "running",
+			"kind":        "RuntimeClass",
+			"operationId": "op-1",
+			"stage":       "persisting",
+		}, nil
+	}
+	polls := 0
+	runtimeClassApplyStatusRequest = func(_ *Client, _ string) (map[string]interface{}, error) {
+		polls++
+		if polls < 2 {
+			return map[string]interface{}{"status": "running", "stage": "reconfiguring"}, nil
+		}
+		return map[string]interface{}{
+			"status": "succeeded",
+			"runtimeClass": map[string]interface{}{
+				"name":    "edgelet",
+				"handler": "edgelet-wasm",
+			},
+		}, nil
+	}
+
+	out := handleRuntimeClassApplyWithProgress(&Client{}, "/tmp/runtimeclass.yaml", map[string]string{"async": "true"})
+	if !strings.Contains(out, "runtimeclass manifest applied successfully") || !strings.Contains(out, "name=edgelet") {
+		t.Fatalf("expected runtimeclass apply success output, got: %s", out)
+	}
+}
+
+func TestHandleRuntimeClassApplyWithProgress_PollFailed(t *testing.T) {
+	prevStart := runtimeClassApplyStartRequest
+	prevStatus := runtimeClassApplyStatusRequest
+	prevTimeout := runtimeClassApplyPollTimeout
+	prevInterval := runtimeClassApplyPollInterval
+	t.Cleanup(func() {
+		runtimeClassApplyStartRequest = prevStart
+		runtimeClassApplyStatusRequest = prevStatus
+		runtimeClassApplyPollTimeout = prevTimeout
+		runtimeClassApplyPollInterval = prevInterval
+	})
+
+	runtimeClassApplyPollTimeout = 2 * time.Second
+	runtimeClassApplyPollInterval = 1 * time.Millisecond
+	runtimeClassApplyStartRequest = func(_ *Client, _ string, _ map[string]string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"status":      "running",
+			"kind":        "RuntimeClass",
+			"operationId": "op-2",
+			"stage":       "persisting",
+		}, nil
+	}
+	runtimeClassApplyStatusRequest = func(_ *Client, _ string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"status": "failed",
+			"error": map[string]interface{}{
+				"code":    "INVALID_ARGUMENT",
+				"message": "invalid runtimeclass manifest",
+			},
+		}, nil
+	}
+
+	out := handleRuntimeClassApplyWithProgress(&Client{}, "/tmp/runtimeclass.yaml", map[string]string{"async": "true"})
+	expected := "Error[INVALID_ARGUMENT]: invalid runtimeclass manifest"
+	if out != expected {
+		t.Fatalf("expected %q, got %q", expected, out)
+	}
+}
+
+func TestHandleRuntimeClassApplyWithProgress_TimeoutFallback(t *testing.T) {
+	prevStart := runtimeClassApplyStartRequest
+	prevStatus := runtimeClassApplyStatusRequest
+	prevTimeout := runtimeClassApplyPollTimeout
+	prevInterval := runtimeClassApplyPollInterval
+	t.Cleanup(func() {
+		runtimeClassApplyStartRequest = prevStart
+		runtimeClassApplyStatusRequest = prevStatus
+		runtimeClassApplyPollTimeout = prevTimeout
+		runtimeClassApplyPollInterval = prevInterval
+	})
+
+	runtimeClassApplyPollTimeout = 5 * time.Millisecond
+	runtimeClassApplyPollInterval = 1 * time.Millisecond
+	runtimeClassApplyStartRequest = func(_ *Client, _ string, _ map[string]string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"status":      "running",
+			"kind":        "RuntimeClass",
+			"operationId": "op-3",
+			"stage":       "persisting",
+		}, nil
+	}
+	runtimeClassApplyStatusRequest = func(_ *Client, _ string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"status": "running",
+			"stage":  "reconfiguring",
+		}, nil
+	}
+
+	out := handleRuntimeClassApplyWithProgress(&Client{}, "/tmp/runtimeclass.yaml", map[string]string{"async": "true"})
+	if !strings.Contains(out, "runtimeclass apply is still in progress") ||
+		!strings.Contains(out, "operationId=op-3") ||
+		!strings.Contains(out, "/v3/deploy/runtimeclasses:apply/op-3") {
+		t.Fatalf("expected timeout fallback output with operation details, got: %s", out)
 	}
 }
 
@@ -461,5 +626,52 @@ func TestFormatV3Output_ImageRemoveMessage(t *testing.T) {
 	})
 	if !strings.Contains(out, "image removed successfully") || !strings.Contains(out, "sha256:abc123") {
 		t.Fatalf("unexpected image remove output: %s", out)
+	}
+}
+
+func TestFormatV3Output_RuntimeClassListAndInspect(t *testing.T) {
+	listOut := formatV3Output("/v3/deploy/runtimeclasses", map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"name":        "edgelet",
+				"handler":     "edgelet",
+				"runtimeName": "edgelet",
+			},
+		},
+	})
+	if !strings.Contains(listOut, "NAME") || !strings.Contains(listOut, "edgelet") {
+		t.Fatalf("expected runtimeclass list table, got: %s", listOut)
+	}
+
+	inspectOut := formatV3Output("/v3/deploy/runtimeclasses/edgelet", map[string]interface{}{
+		"name":        "edgelet",
+		"handler":     "edgelet",
+		"runtimeName": "edgelet",
+	})
+	if !strings.Contains(inspectOut, "NAME: edgelet") || !strings.Contains(inspectOut, "RUNTIME: edgelet") {
+		t.Fatalf("expected runtimeclass inspect output, got: %s", inspectOut)
+	}
+}
+
+func TestFormatV3Output_RuntimeClassRemoveMessage(t *testing.T) {
+	out := formatV3Output("/v3/deploy/runtimeclasses/edgelet", map[string]interface{}{
+		"status": "ok",
+		"name":   "edgelet",
+	})
+	if !strings.Contains(out, "runtimeclass removed successfully") || !strings.Contains(out, "name=edgelet") {
+		t.Fatalf("unexpected runtimeclass remove output: %s", out)
+	}
+}
+
+func TestFormatV3RequestError_RuntimeClassUnsupportedMessage(t *testing.T) {
+	err := &V3APIError{
+		StatusCode: 400,
+		Code:       "INVALID_ARGUMENT",
+		Message:    "runtimeclass is supported only when containerEngine=iofog on full flavor builds",
+	}
+	out := formatV3RequestError(err)
+	expected := "Error[INVALID_ARGUMENT]: runtimeclass is supported only when containerEngine=iofog on full flavor builds"
+	if out != expected {
+		t.Fatalf("unexpected formatted error: got=%q want=%q", out, expected)
 	}
 }

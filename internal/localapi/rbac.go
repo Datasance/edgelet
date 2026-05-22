@@ -79,10 +79,15 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 	case strings.HasPrefix(path, "/v3/deploy/registries/"):
 		id := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/registries/"))
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb, ResourceName: id}, true
+	case strings.HasPrefix(path, "/v3/deploy/runtimeclasses/"):
+		name := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/runtimeclasses/"))
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/runtimeclasses", Verb: verb, ResourceName: name}, true
 	case strings.HasPrefix(path, "/v3/deploy/microservices"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices", Verb: verb}, true
 	case strings.HasPrefix(path, "/v3/deploy/registries"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb}, true
+	case strings.HasPrefix(path, "/v3/deploy/runtimeclasses"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/runtimeclasses", Verb: verb}, true
 	case path == "/v3/auth/whoami":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "auth/whoami", Verb: verb}, true
 	case path == "/v3/auth/tokens" || path == "/v3/auth/tokens/revoke":

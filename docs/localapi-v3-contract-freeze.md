@@ -7,6 +7,7 @@ This document freezes the LocalAPI v3 baseline used for implementation in this r
 - Canonical route namespace: `/v3/...`
 - Baseline OpenAPI contract: `docs/localapi-v3-openapi.yaml`
 - CLI must remain a thin transport client and should not implement daemon runtime logic.
+- RuntimeClass surface is part of v3 contract (`/v3/deploy/runtimeclasses*`) with full+iofog gating.
 
 ## Locked Decisions
 

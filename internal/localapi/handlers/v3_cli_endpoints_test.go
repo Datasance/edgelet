@@ -6,10 +6,13 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,11 +22,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/runtimeapi"
 	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 )
+
+type runtimeClassDetailedTestError struct {
+	msg     string
+	details map[string]interface{}
+}
+
+func (e *runtimeClassDetailedTestError) Error() string {
+	return e.msg
+}
+
+func (e *runtimeClassDetailedTestError) Details() map[string]interface{} {
+	return e.details
+}
 
 func TestHandleSystemControllerCert_DecodesBase64WritesPathEnablesSecureMode(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
@@ -251,6 +269,647 @@ func TestHandleDeployRegistries_GetByID_IncludesPassword(t *testing.T) {
 	if envelope.Data.Password != "s3cr3t" {
 		t.Fatalf("expected password in data payload, got %q", envelope.Data.Password)
 	}
+}
+
+func TestHandleDeployRuntimeClassesValidate_RejectsUnsupportedEngineOrFlavor(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "docker"
+
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorLite
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	handler := NewV3Handler()
+	req := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:validate", `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+`, nil)
+	rec := httptest.NewRecorder()
+
+	handler.HandleDeployRuntimeClassesValidate(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if envelope.Success {
+		t.Fatalf("expected success=false body=%s", rec.Body.String())
+	}
+	if envelope.Error.Code != ErrCodeInvalidArgument {
+		t.Fatalf("expected error code %s, got %s", ErrCodeInvalidArgument, envelope.Error.Code)
+	}
+	expected := "runtimeclass is supported only when containerEngine=iofog on full flavor builds"
+	if envelope.Error.Message != expected {
+		t.Fatalf("unexpected gate error message: got=%q want=%q", envelope.Error.Message, expected)
+	}
+}
+
+func TestHandleDeployRuntimeClassesCRUD_SucceedsWhenFullAndIofog(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	db := store.GetInstance()
+	_ = db.Close()
+	if err := db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	manifest := `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+`
+
+	handler := NewV3Handler()
+
+	validateReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:validate", manifest, nil)
+	validateRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesValidate(validateRec, validateReq)
+	if validateRec.Code != http.StatusOK {
+		t.Fatalf("expected validate 200, got %d body=%s", validateRec.Code, validateRec.Body.String())
+	}
+
+	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"dryRun": "false"})
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("expected apply 200, got %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses", nil)
+	listRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+	var listEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []map[string]interface{} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listEnvelope); err != nil {
+		t.Fatalf("failed to decode runtimeclass list response: %v body=%s", err, listRec.Body.String())
+	}
+	if !listEnvelope.Success {
+		t.Fatalf("expected list success=true body=%s", listRec.Body.String())
+	}
+	if len(listEnvelope.Data.Items) != 1 {
+		t.Fatalf("expected exactly one runtimeclass item, got=%d body=%s", len(listEnvelope.Data.Items), listRec.Body.String())
+	}
+	item := listEnvelope.Data.Items[0]
+	if got := strings.TrimSpace(fmt.Sprintf("%v", item["name"])); got != "edgelet" {
+		t.Fatalf("expected runtimeclass list camelCase key name=edgelet, got=%q body=%s", got, listRec.Body.String())
+	}
+	if got := strings.TrimSpace(fmt.Sprintf("%v", item["runtimeName"])); got != "edgelet" {
+		t.Fatalf("expected runtimeclass list camelCase key runtimeName=edgelet, got=%q body=%s", got, listRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses/edgelet", nil)
+	getRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected get 200, got %d body=%s", getRec.Code, getRec.Body.String())
+	}
+	var getEnvelope struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getEnvelope); err != nil {
+		t.Fatalf("failed to decode runtimeclass get response: %v body=%s", err, getRec.Body.String())
+	}
+	if !getEnvelope.Success {
+		t.Fatalf("expected get success=true body=%s", getRec.Body.String())
+	}
+	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["name"])); got != "edgelet" {
+		t.Fatalf("expected runtimeclass inspect camelCase key name=edgelet, got=%q body=%s", got, getRec.Body.String())
+	}
+	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["runtimeName"])); got != "edgelet" {
+		t.Fatalf("expected runtimeclass inspect camelCase key runtimeName=edgelet, got=%q body=%s", got, getRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/edgelet", nil)
+	deleteRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected delete 200, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesApply_AsyncAcceptedAndPollSucceeded(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	manifest := `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+`
+
+	originalRunner := runtimeClassApplyRunner
+	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
+		time.Sleep(20 * time.Millisecond)
+		return &models.LocalRuntimeClass{
+			Name:        "spin",
+			Handler:     "spin",
+			RuntimeName: "spin",
+		}, nil
+	}
+	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
+
+	handler := NewV3Handler()
+	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("expected async apply 202, got %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+	var applyEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			OperationID string `json:"operationId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(applyRec.Body.Bytes(), &applyEnvelope); err != nil {
+		t.Fatalf("failed to parse async apply response: %v body=%s", err, applyRec.Body.String())
+	}
+	if strings.TrimSpace(applyEnvelope.Data.OperationID) == "" {
+		t.Fatalf("expected operationId in async apply response body=%s", applyRec.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
+		statusRec := httptest.NewRecorder()
+		handler.HandleDeployRuntimeClassesApplyStatus(statusRec, statusReq)
+		if statusRec.Code != http.StatusOK {
+			t.Fatalf("expected status poll 200, got %d body=%s", statusRec.Code, statusRec.Body.String())
+		}
+		var statusEnvelope struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Status string `json:"status"`
+				Stage  string `json:"stage"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(statusRec.Body.Bytes(), &statusEnvelope); err != nil {
+			t.Fatalf("failed to parse poll response: %v body=%s", err, statusRec.Body.String())
+		}
+		if statusEnvelope.Data.Status == "succeeded" {
+			if statusEnvelope.Data.Stage != runtimeapi.RuntimeClassStageDone {
+				t.Fatalf("expected succeeded stage %s, got=%s body=%s", runtimeapi.RuntimeClassStageDone, statusEnvelope.Data.Stage, statusRec.Body.String())
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation did not reach succeeded state in time, last body=%s", statusRec.Body.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestHandleDeployRuntimeClassesApply_SyncTimeoutReturnsAccepted(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	manifest := `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+`
+
+	originalRunner := runtimeClassApplyRunner
+	originalTimeout := runtimeClassApplySyncWaitTimeout
+	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
+		time.Sleep(80 * time.Millisecond)
+		return &models.LocalRuntimeClass{
+			Name:        "spin",
+			Handler:     "spin",
+			RuntimeName: "spin",
+		}, nil
+	}
+	runtimeClassApplySyncWaitTimeout = 5 * time.Millisecond
+	t.Cleanup(func() {
+		runtimeClassApplyRunner = originalRunner
+		runtimeClassApplySyncWaitTimeout = originalTimeout
+	})
+
+	handler := NewV3Handler()
+	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, nil)
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("expected sync timeout fallback 202, got %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesApply_PollFailureReturns200WithFailedData(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	manifest := `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+`
+
+	originalRunner := runtimeClassApplyRunner
+	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
+		return nil, &runtimeClassDetailedTestError{
+			msg: "failed to apply runtimeclass change through controlled containerd restart: runtime drain before containerd reconfigure failed: timed out draining runtime containers after 45s; remaining container IDs: c1,c2",
+			details: map[string]interface{}{
+				"stage":                 runtimeapi.RuntimeClassStageStopRuntime,
+				"remainingContainerIds": []string{"c1", "c2"},
+			},
+		}
+	}
+	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
+
+	handler := NewV3Handler()
+	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("expected async apply 202, got %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+
+	var applyEnvelope struct {
+		Data struct {
+			OperationID string `json:"operationId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(applyRec.Body.Bytes(), &applyEnvelope); err != nil {
+		t.Fatalf("failed to parse apply response: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
+		statusRec := httptest.NewRecorder()
+		handler.HandleDeployRuntimeClassesApplyStatus(statusRec, statusReq)
+		if statusRec.Code != http.StatusOK {
+			t.Fatalf("expected poll 200, got %d body=%s", statusRec.Code, statusRec.Body.String())
+		}
+
+		var statusEnvelope struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Status string `json:"status"`
+				Stage  string `json:"stage"`
+				Error  struct {
+					Code    string                 `json:"code"`
+					Message string                 `json:"message"`
+					Details map[string]interface{} `json:"details"`
+				} `json:"error"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(statusRec.Body.Bytes(), &statusEnvelope); err != nil {
+			t.Fatalf("failed to parse poll response: %v body=%s", err, statusRec.Body.String())
+		}
+		if !statusEnvelope.Success {
+			t.Fatalf("expected poll envelope success=true, body=%s", statusRec.Body.String())
+		}
+		if statusEnvelope.Data.Status == "failed" {
+			if statusEnvelope.Data.Error.Code != ErrCodeInternal {
+				t.Fatalf("expected internal error code, got=%s body=%s", statusEnvelope.Data.Error.Code, statusRec.Body.String())
+			}
+			if statusEnvelope.Data.Stage != runtimeapi.RuntimeClassStageStopRuntime {
+				t.Fatalf("expected failed stage %s, got=%s body=%s", runtimeapi.RuntimeClassStageStopRuntime, statusEnvelope.Data.Stage, statusRec.Body.String())
+			}
+			if !strings.Contains(statusEnvelope.Data.Error.Message, "timed out draining runtime containers") {
+				t.Fatalf("expected actionable reconfigure error message, got=%q body=%s", statusEnvelope.Data.Error.Message, statusRec.Body.String())
+			}
+			if statusEnvelope.Data.Error.Details == nil {
+				t.Fatalf("expected structured error details in poll payload, body=%s", statusRec.Body.String())
+			}
+			if stage, ok := statusEnvelope.Data.Error.Details["stage"].(string); !ok || strings.TrimSpace(stage) != runtimeapi.RuntimeClassStageStopRuntime {
+				t.Fatalf("expected error.details.stage=%s, got=%v body=%s", runtimeapi.RuntimeClassStageStopRuntime, statusEnvelope.Data.Error.Details["stage"], statusRec.Body.String())
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation did not reach failed state in time, last body=%s", statusRec.Body.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestHandleDeployRuntimeClassesApply_SyncFailureIncludesStageDetails(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	manifest := `
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+`
+
+	originalRunner := runtimeClassApplyRunner
+	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
+		return nil, &runtimeClassDetailedTestError{
+			msg: "forced reconfigure failure",
+			details: map[string]interface{}{
+				"stage": runtimeapi.RuntimeClassStageStopRuntime,
+			},
+		}
+	}
+	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
+
+	handler := NewV3Handler()
+	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, nil)
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected sync apply failure 500, got %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string                 `json:"code"`
+			Message string                 `json:"message"`
+			Details map[string]interface{} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(applyRec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse sync apply failure response: %v body=%s", err, applyRec.Body.String())
+	}
+	if envelope.Success {
+		t.Fatalf("expected success=false body=%s", applyRec.Body.String())
+	}
+	if envelope.Error.Code != ErrCodeInternal {
+		t.Fatalf("expected internal code, got=%s body=%s", envelope.Error.Code, applyRec.Body.String())
+	}
+	if stage, ok := envelope.Error.Details["stage"].(string); !ok || strings.TrimSpace(stage) != runtimeapi.RuntimeClassStageStopRuntime {
+		t.Fatalf("expected error.details.stage=%s, got=%v body=%s", runtimeapi.RuntimeClassStageStopRuntime, envelope.Error.Details["stage"], applyRec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesApplyStatus_NotFound(t *testing.T) {
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/not-found", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesApplyStatus(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	target := &models.LocalRuntimeClass{
+		Name:        "spin",
+		Handler:     "spin",
+		RuntimeName: "spin",
+	}
+	originalPreflight := runtimeClassDeletePreflightRunner
+	originalRunner := runtimeClassDeleteRunner
+	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, name string) (*models.LocalRuntimeClass, error) {
+		if strings.TrimSpace(name) != "spin" {
+			return nil, sql.ErrNoRows
+		}
+		return target, nil
+	}
+	runtimeClassDeleteRunner = func(_ *runtimeapi.Facade, _ string) error {
+		time.Sleep(20 * time.Millisecond)
+		return nil
+	}
+	t.Cleanup(func() {
+		runtimeClassDeletePreflightRunner = originalPreflight
+		runtimeClassDeleteRunner = originalRunner
+	})
+
+	handler := NewV3Handler()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin?async=true", nil)
+	deleteRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusAccepted {
+		t.Fatalf("expected async delete 202, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	var deleteEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			OperationID string `json:"operationId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(deleteRec.Body.Bytes(), &deleteEnvelope); err != nil {
+		t.Fatalf("failed to parse async delete response: %v body=%s", err, deleteRec.Body.String())
+	}
+	if strings.TrimSpace(deleteEnvelope.Data.OperationID) == "" {
+		t.Fatalf("expected operationId in async delete response body=%s", deleteRec.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:delete/"+deleteEnvelope.Data.OperationID, nil)
+		statusRec := httptest.NewRecorder()
+		handler.HandleDeployRuntimeClassesDeleteStatus(statusRec, statusReq)
+		if statusRec.Code != http.StatusOK {
+			t.Fatalf("expected delete poll 200, got %d body=%s", statusRec.Code, statusRec.Body.String())
+		}
+		var statusEnvelope struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Status string `json:"status"`
+				Stage  string `json:"stage"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(statusRec.Body.Bytes(), &statusEnvelope); err != nil {
+			t.Fatalf("failed to parse delete poll response: %v body=%s", err, statusRec.Body.String())
+		}
+		if statusEnvelope.Data.Status == "succeeded" {
+			if statusEnvelope.Data.Stage != runtimeapi.RuntimeClassStageDone {
+				t.Fatalf("expected delete succeeded stage %s, got=%s body=%s", runtimeapi.RuntimeClassStageDone, statusEnvelope.Data.Stage, statusRec.Body.String())
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("delete operation did not reach succeeded state in time, last body=%s", statusRec.Body.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	target := &models.LocalRuntimeClass{
+		Name:        "spin",
+		Handler:     "spin",
+		RuntimeName: "spin",
+	}
+	originalPreflight := runtimeClassDeletePreflightRunner
+	originalRunner := runtimeClassDeleteRunner
+	originalTimeout := runtimeClassDeleteSyncWaitTimeout
+	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, _ string) (*models.LocalRuntimeClass, error) {
+		return target, nil
+	}
+	runtimeClassDeleteRunner = func(_ *runtimeapi.Facade, _ string) error {
+		time.Sleep(80 * time.Millisecond)
+		return nil
+	}
+	runtimeClassDeleteSyncWaitTimeout = 5 * time.Millisecond
+	t.Cleanup(func() {
+		runtimeClassDeletePreflightRunner = originalPreflight
+		runtimeClassDeleteRunner = originalRunner
+		runtimeClassDeleteSyncWaitTimeout = originalTimeout
+	})
+
+	handler := NewV3Handler()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin", nil)
+	deleteRec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusAccepted {
+		t.Fatalf("expected sync delete timeout fallback 202, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	originalPreflight := runtimeClassDeletePreflightRunner
+	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, _ string) (*models.LocalRuntimeClass, error) {
+		return nil, &runtimeapi.ErrReservedRuntimeClassDelete{Name: "crun"}
+	}
+	t.Cleanup(func() { runtimeClassDeletePreflightRunner = originalPreflight })
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/crun", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *testing.T) {
+	cfg := setupConfigForGPSTests(t)
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	originalPreflight := runtimeClassDeletePreflightRunner
+	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, _ string) (*models.LocalRuntimeClass, error) {
+		return nil, &runtimeapi.ErrRuntimeClassInUse{
+			Name:                      "spin",
+			RuntimeNames:              []string{"spin"},
+			BlockingMicroserviceUuids: []string{"4b501939-43b5-4523-a417-577518409df0"},
+		}
+	}
+	t.Cleanup(func() { runtimeClassDeletePreflightRunner = originalPreflight })
+
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClasses(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string                 `json:"code"`
+			Details map[string]interface{} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse response: %v body=%s", err, rec.Body.String())
+	}
+	if envelope.Success {
+		t.Fatalf("expected success=false body=%s", rec.Body.String())
+	}
+	if envelope.Error.Code != ErrCodeInvalidArgument {
+		t.Fatalf("expected invalid argument, got=%s body=%s", envelope.Error.Code, rec.Body.String())
+	}
+	rawUUIDs, ok := envelope.Error.Details["blockingMicroserviceUuids"].([]interface{})
+	if !ok || len(rawUUIDs) == 0 {
+		t.Fatalf("expected blockingMicroserviceUuids details, got=%v", envelope.Error.Details)
+	}
+}
+
+func TestHandleDeployRuntimeClassesDeleteStatus_NotFound(t *testing.T) {
+	handler := NewV3Handler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:delete/not-found", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleDeployRuntimeClassesDeleteStatus(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func newManifestMultipartRequest(t *testing.T, targetPath, manifest string, fields map[string]string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	filePart, err := writer.CreateFormFile("manifest", "runtime.yaml")
+	if err != nil {
+		t.Fatalf("failed to create multipart manifest part: %v", err)
+	}
+	if _, err := filePart.Write([]byte(strings.TrimSpace(manifest))); err != nil {
+		t.Fatalf("failed to write multipart manifest: %v", err)
+	}
+	for k, v := range fields {
+		if err := writer.WriteField(k, v); err != nil {
+			t.Fatalf("failed to write multipart field %s: %v", k, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, targetPath, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
 
 func generateTestCertPEM(t *testing.T) string {

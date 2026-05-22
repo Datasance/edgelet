@@ -216,6 +216,34 @@ Evaluator alias policy is canonical + alias tolerant:
   - Resource: `deploy/registries`
   - Verb: `delete`
 
+- Endpoint: `POST /v3/deploy/runtimeclasses:apply`
+  - Resource: `deploy/runtimeclasses`
+  - Verb: `create`
+
+- Endpoint: `GET /v3/deploy/runtimeclasses:apply/{operationId}`
+  - Resource: `deploy/runtimeclasses/apply/status`
+  - Verb: `get`
+
+- Endpoint: `POST /v3/deploy/runtimeclasses:validate`
+  - Resource: `deploy/runtimeclasses`
+  - Verb: `create`
+
+- Endpoint: `GET /v3/deploy/runtimeclasses`
+  - Resource: `deploy/runtimeclasses`
+  - Verb: `get`
+
+- Endpoint: `GET /v3/deploy/runtimeclasses/{name}`
+  - Resource: `deploy/runtimeclasses`
+  - Verb: `get`
+
+- Endpoint: `DELETE /v3/deploy/runtimeclasses/{name}`
+  - Resource: `deploy/runtimeclasses`
+  - Verb: `delete`
+
+- Endpoint: `GET /v3/deploy/runtimeclasses:delete/{operationId}`
+  - Resource: `deploy/runtimeclasses/delete/status`
+  - Verb: `get`
+
 - Endpoint: `GET /v3/auth/whoami`
   - Resource: `auth/whoami`
   - Verb: `get`

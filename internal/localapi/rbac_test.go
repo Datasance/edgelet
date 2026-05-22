@@ -82,6 +82,11 @@ func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 		{method: http.MethodPost, path: "/v3/images:prune", resource: "images/prune", verb: "create"},
 		{method: http.MethodPost, path: "/v3/images:remove", resource: "images/remove", verb: "create"},
 		{method: http.MethodGet, path: "/v3/deploy/microservices:apply/op-123", resource: "deploy/microservices/apply/status", verb: "get"},
+		{method: http.MethodPost, path: "/v3/deploy/runtimeclasses:apply", resource: "deploy/runtimeclasses", verb: "create"},
+		{method: http.MethodPost, path: "/v3/deploy/runtimeclasses:validate", resource: "deploy/runtimeclasses", verb: "create"},
+		{method: http.MethodGet, path: "/v3/deploy/runtimeclasses", resource: "deploy/runtimeclasses", verb: "get"},
+		{method: http.MethodGet, path: "/v3/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "get"},
+		{method: http.MethodDelete, path: "/v3/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "delete"},
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(tt.method, tt.path, nil)

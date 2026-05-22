@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func openStoreForLocalAPIV3Tests(t *testing.T) *DB {
 func TestMigration004CreatesTables(t *testing.T) {
 	db := openStoreForLocalAPIV3Tests(t)
 
-	requiredTables := []string{"service_account_tokens", "local_deployed_microservices"}
+	requiredTables := []string{"service_account_tokens", "local_deployed_microservices", "local_runtime_classes"}
 	for _, table := range requiredTables {
 		table := table
 		t.Run(table, func(t *testing.T) {
@@ -31,6 +32,82 @@ func TestMigration004CreatesTables(t *testing.T) {
 				t.Fatalf("expected table %s to exist, got error: %v", table, err)
 			}
 		})
+	}
+}
+
+func TestMigration010CreatesLocalRuntimeClassesSchema(t *testing.T) {
+	db := openStoreForLocalAPIV3Tests(t)
+
+	requiredColumns := []string{
+		"name",
+		"handler",
+		"created_at",
+		"updated_at",
+	}
+	removedColumns := []string{
+		"binary_path",
+		"runtime_name",
+		"runtime_local_name",
+	}
+
+	rows, err := db.Conn().Query(`PRAGMA table_info(local_runtime_classes)`)
+	if err != nil {
+		t.Fatalf("failed to inspect local_runtime_classes schema: %v", err)
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue interface{}
+			pk        int
+		)
+		if scanErr := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); scanErr != nil {
+			t.Fatalf("failed to scan pragma row: %v", scanErr)
+		}
+		seen[name] = true
+	}
+	for _, col := range requiredColumns {
+		if !seen[col] {
+			t.Fatalf("expected column %q to exist after migration 010", col)
+		}
+	}
+	for _, col := range removedColumns {
+		if seen[col] {
+			t.Fatalf("expected column %q to be removed in migration 010", col)
+		}
+	}
+}
+
+func TestMigration010IsDeterministicAcrossReopen(t *testing.T) {
+	dbDir := t.TempDir()
+	db := GetInstance()
+	if err := db.Open(dbDir); err != nil {
+		t.Fatalf("failed first open: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("failed first close: %v", err)
+	}
+	if err := db.Open(dbDir); err != nil {
+		t.Fatalf("failed second open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var name string
+	if err := db.Conn().QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, "local_runtime_classes").Scan(&name); err != nil {
+		t.Fatalf("expected local_runtime_classes table after reopen migration: %v", err)
+	}
+	if name != "local_runtime_classes" {
+		t.Fatalf("unexpected table name after reopen: %q", name)
+	}
+
+	dbPath := filepath.Join(dbDir, dbFileName)
+	if dbPath == "" {
+		t.Fatal("expected sqlite db path to be set")
 	}
 }
 
@@ -272,5 +349,45 @@ func TestLocalDeployedMicroserviceUniqueByAppName(t *testing.T) {
 	}
 	if err := db.UpsertLocalDeployedMicroservice(second); err == nil {
 		t.Fatalf("expected unique constraint violation for duplicate local app/name")
+	}
+}
+
+func TestLocalRuntimeClassCRUD(t *testing.T) {
+	db := openStoreForLocalAPIV3Tests(t)
+
+	rc := &models.LocalRuntimeClass{
+		Name:        "edgelet",
+		Handler:     "edgelet",
+		RuntimeName: "edgelet",
+	}
+	if err := db.UpsertLocalRuntimeClass(rc); err != nil {
+		t.Fatalf("failed to upsert local runtime class: %v", err)
+	}
+
+	items, err := db.ListLocalRuntimeClasses()
+	if err != nil {
+		t.Fatalf("failed to list local runtime classes: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 runtime class row, got %d", len(items))
+	}
+	if items[0].RuntimeName != "edgelet" {
+		t.Fatalf("unexpected runtime name: %+v", items[0])
+	}
+
+	got, err := db.GetLocalRuntimeClass("edgelet")
+	if err != nil {
+		t.Fatalf("failed to get runtime class: %v", err)
+	}
+	if got.Handler != "edgelet" {
+		t.Fatalf("unexpected handler: %q", got.Handler)
+	}
+
+	if err := db.DeleteLocalRuntimeClass("edgelet"); err != nil {
+		t.Fatalf("failed to delete runtime class: %v", err)
+	}
+	_, err = db.GetLocalRuntimeClass("edgelet")
+	if err != sql.ErrNoRows {
+		t.Fatalf("unexpected error after runtime class deletion: %v", err)
 	}
 }

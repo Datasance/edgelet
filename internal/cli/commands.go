@@ -30,6 +30,17 @@ var (
 	gitCommit = "unknown"
 )
 
+var (
+	runtimeClassApplyPollTimeout  = 90 * time.Second
+	runtimeClassApplyPollInterval = 1 * time.Second
+	runtimeClassApplyStartRequest = func(client *Client, manifestPath string, fields map[string]string) (map[string]interface{}, error) {
+		return client.RequestV3MultipartFile("POST", "/v3/deploy/runtimeclasses:apply", "manifest", manifestPath, fields)
+	}
+	runtimeClassApplyStatusRequest = func(client *Client, operationID string) (map[string]interface{}, error) {
+		return client.RequestV3("GET", "/v3/deploy/runtimeclasses:apply/"+operationID, nil)
+	}
+)
+
 // HandleCommand handles a CLI command
 func HandleCommand(args []string) string {
 	if len(args) == 0 {
@@ -45,21 +56,22 @@ func HandleCommand(args []string) string {
 
 	// Check if daemon is running for commands that need it
 	needsDaemon := map[string]bool{
-		"stop":        true,
-		"status":      true,
-		"info":        true,
-		"provision":   true,
-		"deprovision": true,
-		"config":      true,
-		"prune":       true,
-		"cert":        true,
-		"switch":      true,
-		"ms":          true,
-		"deploy":      true,
-		"registry":    true,
-		"system":      true,
-		"auth":        true,
-		"image":       true,
+		"stop":         true,
+		"status":       true,
+		"info":         true,
+		"provision":    true,
+		"deprovision":  true,
+		"config":       true,
+		"prune":        true,
+		"cert":         true,
+		"switch":       true,
+		"ms":           true,
+		"deploy":       true,
+		"registry":     true,
+		"runtimeclass": true,
+		"system":       true,
+		"auth":         true,
+		"image":        true,
 	}
 
 	if needsDaemon[command] && !client.IsDaemonRunning() {
@@ -97,6 +109,8 @@ func HandleCommand(args []string) string {
 		return handleDeployV3(client, args[1:])
 	case "registry":
 		return handleRegistryV3(client, args[1:])
+	case "runtimeclass":
+		return handleRuntimeClassV3(client, args[1:])
 	case "system":
 		return handleSystemV3(client, args[1:])
 	case "auth":
@@ -253,6 +267,7 @@ func showHelp() string {
 		"  ms start|stop|restart|kill|rm <id>\n" +
 		"  deploy -f <manifest.yaml>\n" +
 		"  registry ls | inspect <id> | rm <id>\n" +
+		"  runtimeclass ls | inspect <name> | rm <name>\n" +
 		"  image ls | pull <image> | load -f <path> | prune | rm <selector>\n" +
 		"  auth whoami | auth tokens\n\n" +
 		"Use 'iofog-agent <command> --help' for detailed usage.\n\n" +
@@ -489,6 +504,9 @@ func handleDeployV3(client *Client, args []string) string {
 	if len(args) > 0 && (args[0] == "registry" || args[0] == "registries") {
 		target = "registries"
 		args = args[1:]
+	} else if len(args) > 0 && (args[0] == "runtimeclass" || args[0] == "runtimeclasses") {
+		target = "runtimeclasses"
+		args = args[1:]
 	}
 	mode := "apply"
 	fileArgOffset := 0
@@ -500,9 +518,14 @@ func handleDeployV3(client *Client, args []string) string {
 		return showDeployHelpV3()
 	}
 	manifestPath := args[fileArgOffset+1]
-	if target == "microservices" && len(args) > 0 && args[0] != "registry" && args[0] != "registries" {
-		if kind, err := detectManifestKind(manifestPath); err == nil && strings.EqualFold(kind, "Registry") {
-			target = "registries"
+	if target == "microservices" && len(args) > 0 && args[0] != "registry" && args[0] != "registries" && args[0] != "runtimeclass" && args[0] != "runtimeclasses" {
+		if kind, err := detectManifestKind(manifestPath); err == nil {
+			switch {
+			case strings.EqualFold(kind, "Registry"):
+				target = "registries"
+			case strings.EqualFold(kind, "RuntimeClass"):
+				target = "runtimeclasses"
+			}
 		}
 	}
 	fields := map[string]string{}
@@ -529,11 +552,40 @@ func handleDeployV3(client *Client, args []string) string {
 		fields["async"] = "true"
 		return handleDeployApplyWithProgress(client, manifestPath, fields)
 	}
+	if target == "runtimeclasses" {
+		fields["async"] = "true"
+		return handleRuntimeClassApplyWithProgress(client, manifestPath, fields)
+	}
 	result, err := client.RequestV3MultipartFile("POST", "/v3/deploy/"+target+":apply", "manifest", manifestPath, fields)
 	if err != nil {
 		return formatV3RequestError(err)
 	}
 	return formatV3Output("/v3/deploy/"+target+":apply", result)
+}
+
+func handleRuntimeClassV3(client *Client, args []string) string {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		return showRuntimeClassHelpV3()
+	}
+	if len(args) == 0 {
+		return requestV3(client, "GET", "/v3/deploy/runtimeclasses", nil)
+	}
+	switch args[0] {
+	case "ls":
+		return requestV3(client, "GET", "/v3/deploy/runtimeclasses", nil)
+	case "inspect":
+		if len(args) < 2 {
+			return "Usage: iofog-agent runtimeclass inspect <name>"
+		}
+		return requestV3(client, "GET", "/v3/deploy/runtimeclasses/"+args[1], nil)
+	case "rm":
+		if len(args) < 2 {
+			return "Usage: iofog-agent runtimeclass rm <name>"
+		}
+		return requestV3(client, "DELETE", "/v3/deploy/runtimeclasses/"+args[1], nil)
+	default:
+		return showRuntimeClassHelpV3()
+	}
 }
 
 func handleRegistryV3(client *Client, args []string) string {
@@ -785,6 +837,58 @@ func handleDeployApplyWithProgress(client *Client, manifestPath string, fields m
 	}
 }
 
+func handleRuntimeClassApplyWithProgress(client *Client, manifestPath string, fields map[string]string) string {
+	startResult, err := runtimeClassApplyStartRequest(client, manifestPath, fields)
+	if err != nil {
+		return formatV3RequestError(err)
+	}
+	startStatus := normalizeOperationStatus(mapValueAsString(startResult, "status"))
+	if startStatus == "succeeded" {
+		return formatDeployApplyResult(startResult)
+	}
+	if startStatus == "failed" {
+		code, message := formatDeployApplyError(startResult)
+		return fmt.Sprintf("Error[%s]: %s", code, message)
+	}
+
+	operationID := strings.TrimSpace(mapValueAsString(startResult, "operationId"))
+	if operationID == "" || operationID == "<unknown>" {
+		return formatDeployApplyResult(startResult)
+	}
+
+	deadline := time.Now().Add(runtimeClassApplyPollTimeout)
+	lastLine := ""
+	for {
+		statusResult, err := runtimeClassApplyStatusRequest(client, operationID)
+		if err != nil {
+			return formatV3RequestError(err)
+		}
+		status := normalizeOperationStatus(mapValueAsString(statusResult, "status"))
+		stage := normalizeOperationStage(mapValueAsString(statusResult, "stage"))
+
+		switch status {
+		case "succeeded":
+			fmt.Print("\r")
+			return formatDeployApplyResult(statusResult)
+		case "failed":
+			fmt.Print("\r")
+			code, message := formatDeployApplyError(statusResult)
+			return fmt.Sprintf("Error[%s]: %s", code, message)
+		default:
+			line := formatRuntimeClassApplyProgressLine(stage)
+			if line != lastLine {
+				fmt.Printf("\r%s", line)
+				lastLine = line
+			}
+			if time.Now().After(deadline) {
+				fmt.Print("\r")
+				return formatRuntimeClassApplyInProgress(operationID, status, stage)
+			}
+			time.Sleep(runtimeClassApplyPollInterval)
+		}
+	}
+}
+
 func formatDeployApplyProgressLine(stage string) string {
 	stage = strings.TrimSpace(stage)
 	if stage == "" || stage == "<unknown>" {
@@ -869,9 +973,11 @@ func formatV3Output(path string, result map[string]interface{}) string {
 		return formatImageRemoveResult(result)
 	case "/v3/deploy/registries":
 		return formatRegistryList(result)
-	case "/v3/deploy/microservices:validate", "/v3/deploy/registries:validate":
+	case "/v3/deploy/runtimeclasses":
+		return formatRuntimeClassList(result)
+	case "/v3/deploy/microservices:validate", "/v3/deploy/registries:validate", "/v3/deploy/runtimeclasses:validate":
 		return formatDeployValidateResult(result)
-	case "/v3/deploy/microservices:apply", "/v3/deploy/registries:apply":
+	case "/v3/deploy/microservices:apply", "/v3/deploy/registries:apply", "/v3/deploy/runtimeclasses:apply":
 		return formatDeployApplyResult(result)
 	default:
 		if strings.HasPrefix(routePath, "/v3/ms/") {
@@ -891,6 +997,12 @@ func formatV3Output(path string, result map[string]interface{}) string {
 				return formatRegistryRemoveResult(result)
 			}
 		}
+		if strings.HasPrefix(routePath, "/v3/deploy/runtimeclasses/") {
+			if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
+				return formatRuntimeClassRemoveResult(result)
+			}
+			return formatRuntimeClassInspect(result)
+		}
 		return ""
 	}
 }
@@ -903,12 +1015,9 @@ func formatDeployValidateResult(result map[string]interface{}) string {
 }
 
 func formatDeployApplyResult(result map[string]interface{}) string {
-	if strings.EqualFold(strings.TrimSpace(mapValueAsString(result, "status")), "succeeded") {
-		if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
-			return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
-		}
-		return "microservice manifest applied successfully"
-	}
+	status := normalizeOperationStatus(mapValueAsString(result, "status"))
+	kind := strings.ToLower(strings.TrimSpace(mapValueAsString(result, "kind")))
+	operationID := strings.TrimSpace(mapValueAsString(result, "operationId"))
 	if accepted, ok := result["accepted"].(bool); ok && accepted {
 		kind := strings.ToLower(strings.TrimSpace(mapValueAsString(result, "kind")))
 		switch kind {
@@ -922,6 +1031,15 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 				return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
 			}
 			return "microservice manifest applied successfully"
+		case "runtimeclass":
+			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+				return fmt.Sprintf(
+					"runtimeclass manifest applied successfully (name=%s handler=%s)",
+					valueOrDefault(mapValueAsString(item, "name"), "<unknown>"),
+					valueOrDefault(mapValueAsString(item, "handler"), "<unknown>"),
+				)
+			}
+			return "runtimeclass manifest applied successfully"
 		default:
 			if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
 				return fmt.Sprintf("manifest applied successfully (deploymentId=%s)", id)
@@ -929,7 +1047,83 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 			return "manifest applied successfully"
 		}
 	}
+	if kind == "runtimeclass" || result["runtimeClass"] != nil {
+		switch status {
+		case "succeeded":
+			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+				return fmt.Sprintf(
+					"runtimeclass manifest applied successfully (name=%s handler=%s)",
+					valueOrDefault(mapValueAsString(item, "name"), "<unknown>"),
+					valueOrDefault(mapValueAsString(item, "handler"), "<unknown>"),
+				)
+			}
+			return "runtimeclass manifest applied successfully"
+		case "failed":
+			code, message := formatDeployApplyError(result)
+			return fmt.Sprintf("Error[%s]: %s", code, message)
+		case "queued", "running":
+			if operationID != "" && operationID != "<unknown>" {
+				return formatRuntimeClassApplyInProgress(operationID, status, normalizeOperationStage(mapValueAsString(result, "stage")))
+			}
+			return "runtimeclass apply is in progress"
+		}
+	}
+
+	if status == "succeeded" {
+		if id := mapValueAsString(result, "deploymentId"); id != "<unknown>" {
+			return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
+		}
+		return "microservice manifest applied successfully"
+	}
 	return "manifest apply result unavailable"
+}
+
+func normalizeOperationStatus(raw string) string {
+	status := strings.TrimSpace(strings.ToLower(raw))
+	if status == "" || status == "<unknown>" {
+		return "running"
+	}
+	return status
+}
+
+func normalizeOperationStage(raw string) string {
+	stage := strings.TrimSpace(strings.ToLower(raw))
+	if stage == "" || stage == "<unknown>" {
+		return ""
+	}
+	return stage
+}
+
+func formatRuntimeClassApplyProgressLine(stage string) string {
+	stage = normalizeOperationStage(stage)
+	if stage == "" {
+		return "applying runtimeclass manifest..."
+	}
+	return fmt.Sprintf("applying runtimeclass manifest... (%s)", stage)
+}
+
+func formatRuntimeClassApplyInProgress(operationID, status, stage string) string {
+	operationID = strings.TrimSpace(operationID)
+	if operationID == "" {
+		operationID = "<unknown>"
+	}
+	status = normalizeOperationStatus(status)
+	stage = normalizeOperationStage(stage)
+	if stage != "" {
+		return fmt.Sprintf(
+			"runtimeclass apply is still in progress (operationId=%s status=%s stage=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+			operationID,
+			status,
+			stage,
+			operationID,
+		)
+	}
+	return fmt.Sprintf(
+		"runtimeclass apply is still in progress (operationId=%s status=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+		operationID,
+		status,
+		operationID,
+	)
 }
 
 func formatMSList(result map[string]interface{}) string {
@@ -977,6 +1171,28 @@ func formatRegistryList(result map[string]interface{}) string {
 			mapValueAsString(item, "isPublic"),
 			mapValueAsString(item, "userName"),
 			mapValueAsString(item, "userEmail"),
+		})
+	}
+	return formatAlignedTable(rows)
+}
+
+func formatRuntimeClassList(result map[string]interface{}) string {
+	rawItems, ok := result["items"].([]interface{})
+	if !ok || len(rawItems) == 0 {
+		return "No runtime classes found."
+	}
+	rows := [][]string{
+		{"NAME", "HANDLER", "RUNTIME"},
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			mapValueAsString(item, "name"),
+			mapValueAsString(item, "handler"),
+			mapValueAsString(item, "runtimeName"),
 		})
 	}
 	return formatAlignedTable(rows)
@@ -1114,6 +1330,25 @@ func formatRegistryRemoveResult(result map[string]interface{}) string {
 	return "registry removed successfully"
 }
 
+func formatRuntimeClassInspect(result map[string]interface{}) string {
+	if len(result) == 0 {
+		return "Error[NOT_FOUND]: runtimeclass not found"
+	}
+	lines := []string{
+		fmt.Sprintf("NAME: %s", mapValueAsString(result, "name")),
+		fmt.Sprintf("HANDLER: %s", mapValueAsString(result, "handler")),
+		fmt.Sprintf("RUNTIME: %s", mapValueAsString(result, "runtimeName")),
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatRuntimeClassRemoveResult(result map[string]interface{}) string {
+	if name := mapValueAsString(result, "name"); name != "<unknown>" {
+		return fmt.Sprintf("runtimeclass removed successfully (name=%s)", name)
+	}
+	return "runtimeclass removed successfully"
+}
+
 func formatMSLifecycleResult(path string, result map[string]interface{}) string {
 	operation := "operation"
 	switch {
@@ -1204,6 +1439,7 @@ var statusOutputOrder = []string{
 	"systemTime",
 	"systemTotalCpu",
 	"availableNetworkInterfaces",
+	"availableRuntimes",
 }
 
 var infoOutputOrder = []string{
@@ -1689,7 +1925,9 @@ func showDeployHelpV3() string {
 		"  optional fields: --sourceName <name> --dry-run\n\n" +
 		"  iofog-agent deploy registry apply -f <registry.yaml>\n" +
 		"  iofog-agent deploy registry validate -f <registry.yaml>\n\n" +
-		"Deploys or validates local microservice/registry manifests via LocalAPI v3."
+		"  iofog-agent deploy runtimeclass apply -f <runtimeclass.yaml>\n" +
+		"  iofog-agent deploy runtimeclass validate -f <runtimeclass.yaml>\n\n" +
+		"Deploys or validates local microservice/registry/runtimeclass manifests via LocalAPI v3."
 }
 
 func showRegistryHelpV3() string {
@@ -1697,6 +1935,13 @@ func showRegistryHelpV3() string {
 		"  iofog-agent registry ls\n" +
 		"  iofog-agent registry inspect <id> [--password-plain]\n" +
 		"  iofog-agent registry rm <id>"
+}
+
+func showRuntimeClassHelpV3() string {
+	return "Usage:\n" +
+		"  iofog-agent runtimeclass ls\n" +
+		"  iofog-agent runtimeclass inspect <name>\n" +
+		"  iofog-agent runtimeclass rm <name>"
 }
 
 func showAuthHelpV3() string {

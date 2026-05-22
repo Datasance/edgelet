@@ -43,6 +43,21 @@ This document defines execution gates for a strict v3-only LocalAPI surface.
 - `test/embedded/vm-test.sh` must not install or invoke `ctr`.
 - Runtime checks must execute via `iofog-agent` CLI only.
 
+## Gate 7: RuntimeClass dual-shim VM coverage (aarch64)
+
+- Embedded VM suite must validate RuntimeClass activation for both external shims:
+  - Spin (`containerd-shim-spin`)
+  - Edgelet (`containerd-shim-edgelet-wasm-v2`)
+- Required checks:
+  - shim download/install on VM
+  - RuntimeClass validate/apply success (sync success OR async accepted + poll to terminal success)
+  - controlled containerd restart convergence after apply
+  - `availableRuntimes` reflects synthesized handlers
+  - runtime-pinned workloads start for both RuntimeClasses
+  - RuntimeClass delete guard rejects while runtime is in use (error includes blocking UUID)
+  - after removing runtime-dependent workloads, RuntimeClass delete succeeds (sync success OR async accepted + poll to terminal success)
+  - deleted RuntimeClass runtime entries are removed from effective runtime map after convergence
+
 ## Rollout Controls
 
 - LocalAPI surface is v3-only; no route-level fallback to v2.

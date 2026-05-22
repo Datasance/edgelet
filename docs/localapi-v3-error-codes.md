@@ -21,3 +21,46 @@ Stable LocalAPI v3 error taxonomy for CLI and API consumers.
 - `CONFLICT` -> exit code `5`
 - `NOT_IMPLEMENTED` -> exit code `6`
 - all others -> exit code `1`
+
+## RuntimeClass-specific deterministic reject
+
+When RuntimeClass endpoints are called outside supported mode (`full` + `containerEngine=iofog`), response is:
+
+- HTTP: `400`
+- code: `INVALID_ARGUMENT`
+- message: `runtimeclass is supported only when containerEngine=iofog on full flavor builds`
+
+## RuntimeClass delete deterministic rejects
+
+- Reserved runtime class delete (for example `crun`):
+  - HTTP: `400`
+  - code: `INVALID_ARGUMENT`
+  - message: `runtimeclass delete is not allowed for reserved runtime name: <name>`
+  - details include `runtimeClassName`
+
+- Runtime class in use by running microservice(s):
+  - HTTP: `400`
+  - code: `INVALID_ARGUMENT`
+  - message includes blocking microservice UUID and runtime name
+  - details include:
+    - `runtimeClassName`
+    - `runtimeNames`
+    - `blockingMicroserviceUuids`
+
+## RuntimeClass operation polling semantics
+
+- `GET /v3/deploy/runtimeclasses:apply/{operationId}`
+- `GET /v3/deploy/runtimeclasses:delete/{operationId}`
+
+For known operations, polling always returns HTTP `200` with `success=true`.
+Terminal operation failure is represented as:
+
+- `data.status=failed`
+- `data.error.code`
+- `data.error.message`
+- optional `data.error.details`
+
+Unknown operation IDs return:
+
+- HTTP: `404`
+- code: `NOT_FOUND`

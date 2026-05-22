@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/auth"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/eclipse-iofog/agent/internal/models"
 	"github.com/eclipse-iofog/agent/internal/network"
 	"github.com/eclipse-iofog/agent/internal/processmanager"
 	"github.com/eclipse-iofog/agent/internal/runtimeapi"
@@ -35,25 +37,31 @@ const (
 
 // V3Handler handles v3 endpoint groups.
 type V3Handler struct {
-	facade               *runtimeapi.Facade
-	execSessions         map[string]*localExecSession
-	execMu               sync.RWMutex
-	pullOps              map[string]*imagePullOperation
-	pullMu               sync.RWMutex
-	deployOps            map[string]*deployApplyOperation
-	deployMu             sync.RWMutex
-	resolveMicroservice  func(selector string) (string, error)
-	streamMicroservicLog func(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error
+	facade                *runtimeapi.Facade
+	execSessions          map[string]*localExecSession
+	execMu                sync.RWMutex
+	pullOps               map[string]*imagePullOperation
+	pullMu                sync.RWMutex
+	deployOps             map[string]*deployApplyOperation
+	deployMu              sync.RWMutex
+	runtimeClassApplyOps  map[string]*runtimeClassApplyOperation
+	runtimeClassApplyMu   sync.RWMutex
+	runtimeClassDeleteOps map[string]*runtimeClassDeleteOperation
+	runtimeClassDeleteMu  sync.RWMutex
+	resolveMicroservice   func(selector string) (string, error)
+	streamMicroservicLog  func(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error
 }
 
 // NewV3Handler creates a new v3 handler.
 func NewV3Handler() *V3Handler {
 	facade := runtimeapi.NewFacade()
 	return &V3Handler{
-		facade:       facade,
-		execSessions: make(map[string]*localExecSession),
-		pullOps:      make(map[string]*imagePullOperation),
-		deployOps:    make(map[string]*deployApplyOperation),
+		facade:                facade,
+		execSessions:          make(map[string]*localExecSession),
+		pullOps:               make(map[string]*imagePullOperation),
+		deployOps:             make(map[string]*deployApplyOperation),
+		runtimeClassApplyOps:  make(map[string]*runtimeClassApplyOperation),
+		runtimeClassDeleteOps: make(map[string]*runtimeClassDeleteOperation),
 		resolveMicroservice: func(selector string) (string, error) {
 			return facade.ResolveMicroserviceID(selector)
 		},
@@ -115,6 +123,47 @@ type deployApplyOperation struct {
 	ErrorMessage string
 	StartedAt    time.Time
 	EndedAt      *time.Time
+}
+
+type runtimeClassApplyOperation struct {
+	OperationID  string
+	Status       string
+	Stage        string
+	Kind         string
+	Name         string
+	DryRun       bool
+	StartedAt    time.Time
+	EndedAt      *time.Time
+	RuntimeClass *models.LocalRuntimeClass
+	ErrorCode    string
+	ErrorMessage string
+	ErrorDetails map[string]interface{}
+}
+
+type runtimeClassDeleteOperation struct {
+	OperationID  string
+	Status       string
+	Stage        string
+	Kind         string
+	Name         string
+	StartedAt    time.Time
+	EndedAt      *time.Time
+	RuntimeClass *models.LocalRuntimeClass
+	ErrorCode    string
+	ErrorMessage string
+	ErrorDetails map[string]interface{}
+}
+
+var runtimeClassApplySyncWaitTimeout = 8 * time.Second
+var runtimeClassApplyRunner = func(facade *runtimeapi.Facade, manifest string, dryRun bool) (*models.LocalRuntimeClass, error) {
+	return facade.ApplyLocalRuntimeClassManifest(manifest, dryRun)
+}
+var runtimeClassDeleteSyncWaitTimeout = 8 * time.Second
+var runtimeClassDeletePreflightRunner = func(facade *runtimeapi.Facade, name string) (*models.LocalRuntimeClass, error) {
+	return facade.ValidateRuntimeClassDelete(name)
+}
+var runtimeClassDeleteRunner = func(facade *runtimeapi.Facade, name string) error {
+	return facade.DeleteRuntimeClass(name)
 }
 
 func newLocalExecCallback() *localExecCallback {
@@ -1373,6 +1422,395 @@ func (h *V3Handler) HandleDeployRegistries(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (h *V3Handler) HandleDeployRuntimeClassesApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	manifest, _, dryRun, err := parseManifestMultipartRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	async, err := parseBooleanFormValue(r.FormValue("async"), "async")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+
+	doc, err := h.facade.ParseAndValidateLocalRuntimeClassManifest(manifest)
+	if err != nil {
+		if errors.Is(err, runtimeapi.ErrRuntimeClassUnsupported) {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+
+	op := &runtimeClassApplyOperation{
+		OperationID: uuid.NewString(),
+		Status:      "queued",
+		Stage:       runtimeapi.RuntimeClassStageWriteConfig,
+		Kind:        strings.TrimSpace(doc.Kind),
+		Name:        strings.TrimSpace(doc.Metadata.Name),
+		DryRun:      dryRun,
+		StartedAt:   time.Now().UTC(),
+	}
+	h.runtimeClassApplyMu.Lock()
+	h.runtimeClassApplyOps[op.OperationID] = op
+	h.runtimeClassApplyMu.Unlock()
+
+	done := make(chan struct{})
+	go func(operationID string, manifestText string, applyDryRun bool) {
+		h.runtimeClassApplyMu.Lock()
+		current, ok := h.runtimeClassApplyOps[operationID]
+		if ok {
+			current.Status = "running"
+			current.Stage = runtimeapi.RuntimeClassStageWriteConfig
+		}
+		h.runtimeClassApplyMu.Unlock()
+
+		item, applyErr := runtimeClassApplyRunner(h.facade, manifestText, applyDryRun)
+
+		h.runtimeClassApplyMu.Lock()
+		defer h.runtimeClassApplyMu.Unlock()
+		current, ok = h.runtimeClassApplyOps[operationID]
+		if !ok {
+			close(done)
+			return
+		}
+		now := time.Now().UTC()
+		current.EndedAt = &now
+		if applyErr != nil {
+			current.Status = "failed"
+			current.Stage = runtimeClassErrorStage(applyErr, runtimeapi.RuntimeClassStageWriteConfig)
+			current.ErrorCode = ErrCodeInternal
+			if errors.Is(applyErr, runtimeapi.ErrRuntimeClassUnsupported) {
+				current.ErrorCode = ErrCodeInvalidArgument
+			}
+			current.ErrorMessage = applyErr.Error()
+			current.ErrorDetails = runtimeClassErrorDetails(applyErr)
+			close(done)
+			return
+		}
+		current.RuntimeClass = item
+		current.Status = "succeeded"
+		current.Stage = runtimeapi.RuntimeClassStageDone
+		close(done)
+	}(op.OperationID, manifest, dryRun)
+
+	if async {
+		writeSuccess(w, http.StatusAccepted, runtimeClassApplyOperationResponse(op))
+		return
+	}
+
+	select {
+	case <-done:
+		h.runtimeClassApplyMu.RLock()
+		current, ok := h.runtimeClassApplyOps[op.OperationID]
+		h.runtimeClassApplyMu.RUnlock()
+		if !ok {
+			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, "runtimeclass apply operation missing", nil)
+			return
+		}
+		if strings.TrimSpace(current.ErrorMessage) != "" {
+			statusCode := http.StatusInternalServerError
+			if current.ErrorCode == ErrCodeInvalidArgument {
+				statusCode = http.StatusBadRequest
+			}
+			details := current.ErrorDetails
+			if details == nil {
+				details = map[string]interface{}{}
+			}
+			if _, hasStage := details["stage"]; !hasStage {
+				details["stage"] = current.Stage
+			}
+			details["operationId"] = current.OperationID
+			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, map[string]interface{}{
+				"operationId": current.OperationID,
+				"stage":       current.Stage,
+				"error": map[string]interface{}{
+					"code":    current.ErrorCode,
+					"message": current.ErrorMessage,
+					"details": details,
+				},
+			})
+			return
+		}
+		writeSuccess(w, http.StatusOK, runtimeClassApplyOperationResponse(current))
+	case <-time.After(runtimeClassApplySyncWaitTimeout):
+		writeSuccess(w, http.StatusAccepted, runtimeClassApplyOperationResponse(op))
+	}
+}
+
+func (h *V3Handler) HandleDeployRuntimeClassesApplyStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses:apply/"))
+	if operationID == "" {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
+		return
+	}
+	h.runtimeClassApplyMu.RLock()
+	op, ok := h.runtimeClassApplyOps[operationID]
+	h.runtimeClassApplyMu.RUnlock()
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "runtimeclass apply operation not found", nil)
+		return
+	}
+	writeSuccess(w, http.StatusOK, runtimeClassApplyOperationResponse(op))
+}
+
+func (h *V3Handler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	manifest, _, _, err := parseManifestMultipartRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	doc, err := h.facade.ParseAndValidateLocalRuntimeClassManifest(manifest)
+	if err != nil {
+		if errors.Is(err, runtimeapi.ErrRuntimeClassUnsupported) {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	writeSuccess(w, http.StatusOK, map[string]interface{}{
+		"valid":       true,
+		"apiVersion":  doc.APIVersion,
+		"kind":        doc.Kind,
+		"name":        doc.Metadata.Name,
+		"handler":     doc.Handler,
+		"runtimeName": doc.Metadata.Name,
+	})
+}
+
+func (h *V3Handler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v3/deploy/runtimeclasses" {
+		if r.Method != http.MethodGet {
+			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+			return
+		}
+		items, err := h.facade.ListRuntimeClasses()
+		if err != nil {
+			if errors.Is(err, runtimeapi.ErrRuntimeClassUnsupported) {
+				writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+				return
+			}
+			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
+			return
+		}
+		writeSuccess(w, http.StatusOK, map[string]interface{}{"items": items})
+		return
+	}
+
+	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses/"))
+	if name == "" {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing runtime class name", nil)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		item, err := h.facade.GetRuntimeClass(name)
+		if err != nil {
+			if errors.Is(err, runtimeapi.ErrRuntimeClassUnsupported) {
+				writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+				return
+			}
+			if err == sql.ErrNoRows {
+				writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
+				return
+			}
+			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
+			return
+		}
+		writeSuccess(w, http.StatusOK, item)
+	case http.MethodDelete:
+		h.handleDeployRuntimeClassDelete(w, r, name)
+	default:
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+	}
+}
+
+func (h *V3Handler) HandleDeployRuntimeClassesDeleteStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses:delete/"))
+	if operationID == "" {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
+		return
+	}
+	h.runtimeClassDeleteMu.RLock()
+	op, ok := h.runtimeClassDeleteOps[operationID]
+	h.runtimeClassDeleteMu.RUnlock()
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "runtimeclass delete operation not found", nil)
+		return
+	}
+	writeSuccess(w, http.StatusOK, runtimeClassDeleteOperationResponse(op))
+}
+
+func (h *V3Handler) handleDeployRuntimeClassDelete(w http.ResponseWriter, r *http.Request, name string) {
+	async, err := parseBooleanFormValue(r.URL.Query().Get("async"), "async")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+
+	target, err := runtimeClassDeletePreflightRunner(h.facade, name)
+	if err != nil {
+		statusCode, code := runtimeClassDeleteStatusAndCode(err)
+		writeAPIError(w, statusCode, code, err.Error(), runtimeClassErrorDetails(err))
+		return
+	}
+
+	op := &runtimeClassDeleteOperation{
+		OperationID:  uuid.NewString(),
+		Status:       "queued",
+		Stage:        runtimeapi.RuntimeClassStageWriteConfig,
+		Kind:         "RuntimeClassDelete",
+		Name:         strings.TrimSpace(strings.ToLower(name)),
+		StartedAt:    time.Now().UTC(),
+		RuntimeClass: target,
+	}
+	h.runtimeClassDeleteMu.Lock()
+	h.runtimeClassDeleteOps[op.OperationID] = op
+	h.runtimeClassDeleteMu.Unlock()
+
+	done := make(chan struct{})
+	go func(operationID, runtimeClassName string) {
+		h.runtimeClassDeleteMu.Lock()
+		current, ok := h.runtimeClassDeleteOps[operationID]
+		if ok {
+			current.Status = "running"
+			current.Stage = runtimeapi.RuntimeClassStageWriteConfig
+		}
+		h.runtimeClassDeleteMu.Unlock()
+
+		deleteErr := runtimeClassDeleteRunner(h.facade, runtimeClassName)
+
+		h.runtimeClassDeleteMu.Lock()
+		defer h.runtimeClassDeleteMu.Unlock()
+		current, ok = h.runtimeClassDeleteOps[operationID]
+		if !ok {
+			close(done)
+			return
+		}
+		now := time.Now().UTC()
+		current.EndedAt = &now
+		if deleteErr != nil {
+			current.Status = "failed"
+			current.Stage = runtimeClassErrorStage(deleteErr, runtimeapi.RuntimeClassStageWriteConfig)
+			_, current.ErrorCode = runtimeClassDeleteStatusAndCode(deleteErr)
+			current.ErrorMessage = deleteErr.Error()
+			current.ErrorDetails = runtimeClassErrorDetails(deleteErr)
+			close(done)
+			return
+		}
+		current.Status = "succeeded"
+		current.Stage = runtimeapi.RuntimeClassStageDone
+		close(done)
+	}(op.OperationID, name)
+
+	if async {
+		writeSuccess(w, http.StatusAccepted, runtimeClassDeleteOperationResponse(op))
+		return
+	}
+
+	select {
+	case <-done:
+		h.runtimeClassDeleteMu.RLock()
+		current, ok := h.runtimeClassDeleteOps[op.OperationID]
+		h.runtimeClassDeleteMu.RUnlock()
+		if !ok {
+			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, "runtimeclass delete operation missing", nil)
+			return
+		}
+		if strings.TrimSpace(current.ErrorMessage) != "" {
+			statusCode := http.StatusInternalServerError
+			if current.ErrorCode == ErrCodeInvalidArgument {
+				statusCode = http.StatusBadRequest
+			} else if current.ErrorCode == ErrCodeNotFound {
+				statusCode = http.StatusNotFound
+			}
+			details := current.ErrorDetails
+			if details == nil {
+				details = map[string]interface{}{}
+			}
+			if _, hasStage := details["stage"]; !hasStage {
+				details["stage"] = current.Stage
+			}
+			details["operationId"] = current.OperationID
+			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, details)
+			return
+		}
+		writeSuccess(w, http.StatusOK, runtimeClassDeleteOperationResponse(current))
+	case <-time.After(runtimeClassDeleteSyncWaitTimeout):
+		writeSuccess(w, http.StatusAccepted, runtimeClassDeleteOperationResponse(op))
+	}
+}
+
+func runtimeClassDeleteStatusAndCode(err error) (int, string) {
+	switch {
+	case errors.Is(err, runtimeapi.ErrRuntimeClassUnsupported):
+		return http.StatusBadRequest, ErrCodeInvalidArgument
+	case errors.Is(err, sql.ErrNoRows):
+		return http.StatusNotFound, ErrCodeNotFound
+	default:
+		var reservedErr *runtimeapi.ErrReservedRuntimeClassDelete
+		if errors.As(err, &reservedErr) {
+			return http.StatusBadRequest, ErrCodeInvalidArgument
+		}
+		var inUseErr *runtimeapi.ErrRuntimeClassInUse
+		if errors.As(err, &inUseErr) {
+			return http.StatusBadRequest, ErrCodeInvalidArgument
+		}
+		return http.StatusInternalServerError, ErrCodeInternal
+	}
+}
+
+func runtimeClassErrorDetails(err error) map[string]interface{} {
+	type detailsProvider interface {
+		Details() map[string]interface{}
+	}
+	var provider detailsProvider
+	if errors.As(err, &provider) {
+		return provider.Details()
+	}
+	return nil
+}
+
+func runtimeClassErrorStage(err error, fallback string) string {
+	fallback = runtimeapi.NormalizeRuntimeClassOperationStage(fallback)
+	if fallback == "" {
+		fallback = runtimeapi.RuntimeClassStageWriteConfig
+	}
+	details := runtimeClassErrorDetails(err)
+	if len(details) == 0 {
+		return fallback
+	}
+	raw, ok := details["stage"]
+	if !ok {
+		return fallback
+	}
+	stage := runtimeapi.NormalizeRuntimeClassOperationStage(fmt.Sprintf("%v", raw))
+	if stage == "" {
+		return fallback
+	}
+	return stage
+}
+
 func parseManifestMultipartRequest(r *http.Request) (manifest, sourceName string, dryRun bool, err error) {
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		return "", "", false, fmt.Errorf("invalid multipart form body")
@@ -1401,6 +1839,86 @@ func parseManifestMultipartRequest(r *http.Request) (manifest, sourceName string
 		return "", "", false, fmt.Errorf("dryRun must be a boolean")
 	}
 	return manifest, sourceName, dryRun, nil
+}
+
+func parseBooleanFormValue(raw string, fieldName string) (bool, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "false", "0", "no":
+		return false, nil
+	case "true", "1", "yes":
+		return true, nil
+	default:
+		return false, fmt.Errorf("%s must be a boolean", fieldName)
+	}
+}
+
+func runtimeClassApplyOperationResponse(op *runtimeClassApplyOperation) map[string]interface{} {
+	response := map[string]interface{}{
+		"operationId": op.OperationID,
+		"status":      op.Status,
+		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
+		"kind":        op.Kind,
+		"name":        op.Name,
+		"dryRun":      op.DryRun,
+	}
+	if strings.TrimSpace(op.Stage) != "" {
+		response["stage"] = op.Stage
+	}
+	if op.EndedAt != nil {
+		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
+	}
+	if op.RuntimeClass != nil {
+		response["runtimeClass"] = op.RuntimeClass
+	}
+	if strings.TrimSpace(op.ErrorMessage) != "" {
+		code := strings.TrimSpace(op.ErrorCode)
+		if code == "" {
+			code = ErrCodeInternal
+		}
+		errorPayload := map[string]interface{}{
+			"code":    code,
+			"message": op.ErrorMessage,
+		}
+		if len(op.ErrorDetails) > 0 {
+			errorPayload["details"] = op.ErrorDetails
+		}
+		response["error"] = errorPayload
+	}
+	return response
+}
+
+func runtimeClassDeleteOperationResponse(op *runtimeClassDeleteOperation) map[string]interface{} {
+	response := map[string]interface{}{
+		"operationId": op.OperationID,
+		"status":      op.Status,
+		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
+		"kind":        op.Kind,
+		"name":        op.Name,
+	}
+	if strings.TrimSpace(op.Stage) != "" {
+		response["stage"] = op.Stage
+	}
+	if op.EndedAt != nil {
+		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
+	}
+	if op.RuntimeClass != nil {
+		response["runtimeClass"] = op.RuntimeClass
+	}
+	if strings.TrimSpace(op.ErrorMessage) != "" {
+		code := strings.TrimSpace(op.ErrorCode)
+		if code == "" {
+			code = ErrCodeInternal
+		}
+		errorPayload := map[string]interface{}{
+			"code":    code,
+			"message": op.ErrorMessage,
+		}
+		if len(op.ErrorDetails) > 0 {
+			errorPayload["details"] = op.ErrorDetails
+		}
+		response["error"] = errorPayload
+	}
+	return response
 }
 
 func facadePlatformArch() string {

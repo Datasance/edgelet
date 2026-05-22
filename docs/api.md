@@ -4,6 +4,8 @@
 
 The ioFog Agent exposes a Local API for managing the agent and its microservices.
 
+> Note: current implementation is LocalAPI **v3** (`/v3/...`). Legacy path examples in this file are historical and should be treated as non-authoritative.
+
 ### Base URL
 
 By default, the Local API is available at:
@@ -16,10 +18,316 @@ The Local API uses JWT tokens for authentication. Tokens can be obtained through
 
 ### Endpoints
 
+#### RuntimeClass endpoints (v3)
+
+- `POST /v3/deploy/runtimeclasses:validate`
+- `POST /v3/deploy/runtimeclasses:apply`
+- `GET /v3/deploy/runtimeclasses:apply/{operationId}`
+- `GET /v3/deploy/runtimeclasses`
+- `GET /v3/deploy/runtimeclasses/{name}`
+- `DELETE /v3/deploy/runtimeclasses/{name}`
+- `GET /v3/deploy/runtimeclasses:delete/{operationId}`
+
+RuntimeClass support is gated to `full` flavor with `containerEngine=iofog`.
+Unsupported modes return:
+`400 INVALID_ARGUMENT` + `runtimeclass is supported only when containerEngine=iofog on full flavor builds`.
+
+##### RuntimeClass apply contract
+
+Request transport is `multipart/form-data` with fields:
+- `manifest` (required)
+- `dryRun` (optional boolean, default `false`)
+- `async` (optional boolean, default `false`)
+
+Semantics:
+- `dryRun=true`: synchronous validation only (`200`), no persistence.
+- `dryRun=false, async=true`: returns `202` with `operationId`; execution continues in background.
+- `dryRun=false, async=false`: bounded synchronous wait:
+  - completes in-window -> `200`
+  - still running -> `202` with `operationId`
+- Poll endpoint (`GET ...:apply/{operationId}`):
+  - known operation -> `200` with `data.status` and optional `data.error`
+  - unknown operation -> `404 NOT_FOUND`
+
+##### RuntimeClass delete contract
+
+Request transport:
+- `DELETE /v3/deploy/runtimeclasses/{name}`
+- optional query: `async=true|false` (default `false`)
+
+Semantics:
+- `async=true`: returns `202` with `operationId`.
+- `async=false`: bounded synchronous wait (`200` on completion, `202` fallback).
+- Poll endpoint (`GET ...:delete/{operationId}`):
+  - known operation -> `200` with `data.status` and optional `data.error`
+  - unknown operation -> `404 NOT_FOUND`
+
+Guards:
+- reserved runtime names (for example `crun`) -> `400 INVALID_ARGUMENT`
+- in-use runtime class (microservice currently using canonical `name`) -> `400 INVALID_ARGUMENT` with blocking UUID details
+
+##### RuntimeClass examples
+
+Logical request (docs clarity):
+```json
+{
+  "manifest": "apiVersion: iofog.org/v3\nkind: RuntimeClass\nmetadata:\n  name: spin\nhandler: spin\n",
+  "dryRun": false,
+  "async": true
+}
+```
+
+Actual multipart form:
+```json
+{
+  "contentType": "multipart/form-data",
+  "fields": {
+    "manifest": "<runtimeclass yaml>",
+    "dryRun": "false",
+    "async": "true"
+  }
+}
+```
+
+Apply dry-run success (`200`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "5e8a0f53-c036-4f79-8f5f-4a8d14978258",
+    "status": "succeeded",
+    "stage": "done",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": true,
+    "startedAt": "2026-05-21T12:40:01.123456Z",
+    "endedAt": "2026-05-21T12:40:01.127000Z",
+    "runtimeClass": {
+      "name": "spin",
+      "handler": "spin",
+      "runtimeName": "spin"
+    }
+  }
+}
+```
+
+Apply async accepted (`202`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "91efc3cf-63f0-4587-a646-0a6f336d92e3",
+    "status": "queued",
+    "stage": "write_config",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:40:01.123456Z"
+  }
+}
+```
+
+Apply sync immediate success (`200`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "2a9a1e69-35d7-4f16-985c-f1ac7d588f15",
+    "status": "succeeded",
+    "stage": "done",
+    "kind": "RuntimeClass",
+    "name": "edgelet",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:41:10.001Z",
+    "endedAt": "2026-05-21T12:41:11.438Z",
+    "runtimeClass": {
+      "name": "edgelet",
+      "handler": "edgelet-wasm",
+      "runtimeName": "edgelet"
+    }
+  }
+}
+```
+
+Apply sync timeout fallback (`202`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "e522f786-9fd3-4d2a-b2d0-3ddc12f2d2d4",
+    "status": "running",
+    "stage": "write_config",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:42:05.882Z"
+  }
+}
+```
+
+Apply poll running (`200`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "e522f786-9fd3-4d2a-b2d0-3ddc12f2d2d4",
+    "status": "running",
+    "stage": "write_config",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:42:05.882Z"
+  }
+}
+```
+
+Apply poll succeeded (`200`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "e522f786-9fd3-4d2a-b2d0-3ddc12f2d2d4",
+    "status": "succeeded",
+    "stage": "done",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:42:05.882Z",
+    "endedAt": "2026-05-21T12:42:09.217Z",
+    "runtimeClass": {
+      "name": "spin",
+      "handler": "spin",
+      "runtimeName": "spin"
+    }
+  }
+}
+```
+
+Apply poll failed (`200`, operation resource style):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "e522f786-9fd3-4d2a-b2d0-3ddc12f2d2d4",
+    "status": "failed",
+    "stage": "write_config",
+    "kind": "RuntimeClass",
+    "name": "spin",
+    "dryRun": false,
+    "startedAt": "2026-05-21T12:42:05.882Z",
+    "endedAt": "2026-05-21T12:42:50.901Z",
+    "error": {
+      "code": "INTERNAL",
+      "message": "failed to upsert local runtimeclass: database is locked"
+    }
+  }
+}
+```
+
+Malformed manifest (`400 INVALID_ARGUMENT`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "invalid runtimeclass manifest YAML: yaml: unmarshal errors: field handlr not found in type models.LocalRuntimeClassManifest"
+  }
+}
+```
+
+Unsupported mode (`400 INVALID_ARGUMENT`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "runtimeclass is supported only when containerEngine=iofog on full flavor builds"
+  }
+}
+```
+
+Unknown apply operation (`404 NOT_FOUND`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "runtimeclass apply operation not found"
+  }
+}
+```
+
+Delete async accepted (`202`):
+```json
+{
+  "success": true,
+  "data": {
+    "operationId": "7f8fd1dd-2ac6-4c5d-a4fb-e3f6fbb5ec74",
+    "status": "queued",
+    "stage": "write_config",
+    "kind": "RuntimeClassDelete",
+    "name": "spin",
+    "startedAt": "2026-05-21T12:45:03.100Z",
+    "runtimeClass": {
+      "name": "spin",
+      "handler": "spin",
+      "runtimeName": "spin"
+    }
+  }
+}
+```
+
+Delete reserved runtime (`400 INVALID_ARGUMENT`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "runtimeclass delete is not allowed for reserved runtime name: crun",
+    "details": {
+      "runtimeClassName": "crun"
+    }
+  }
+}
+```
+
+Delete in-use runtime (`400 INVALID_ARGUMENT`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ARGUMENT",
+    "message": "cannot delete runtimeclass 'spin': microservice uuid=4b501939-43b5-4523-a417-577518409df0 is still using runtime 'spin'; delete dependent microservices first",
+    "details": {
+      "runtimeClassName": "spin",
+      "runtimeNames": [
+        "spin"
+      ],
+      "blockingMicroserviceUuids": [
+        "4b501939-43b5-4523-a417-577518409df0"
+      ]
+    }
+  }
+}
+```
+
+Unknown delete operation (`404 NOT_FOUND`):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "runtimeclass delete operation not found"
+  }
+}
+```
+
 #### Status Endpoints
 
 ##### GET /status
 Get agent status information.
+
+For v3 (`GET /v3/system/status`), response includes `availableRuntimes`.
 
 **Response:**
 ```json
@@ -122,8 +430,12 @@ All endpoints return standard HTTP status codes:
 Error response format:
 ```json
 {
-  "error": "Error message",
-  "code": "ERROR_CODE"
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Error message",
+    "details": {}
+  }
 }
 ```
 
