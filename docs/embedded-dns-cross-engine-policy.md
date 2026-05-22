@@ -9,8 +9,7 @@ Define one shared policy contract for `iofog` (full flavor), Docker, and Podman 
 Given workload attributes, network selection **MUST** be deterministic and shared:
 
 - `hostNetwork=true` -> host network semantics.
-- `hostNetwork=false` and local workload classification -> `iofog-local`.
-- `hostNetwork=false` and managed workload classification -> `iofog`.
+- `hostNetwork=false` -> canonical bridge network `iofog` for both local and managed workloads.
 
 The same function **MUST** be used by:
 
@@ -50,14 +49,14 @@ At minimum, drift evaluation **MUST** include:
 
 The following are mandatory:
 
-- Do not hardcode non-host workloads to `iofog` in parity logic.
-- For local workloads, endpoint aliasing **MUST** target `iofog-local`.
-- Drift checks **MUST** treat `iofog-local` as valid expected network when local policy selects it.
+- Do not diverge per-engine network selection behavior for non-host workloads.
+- Keep local/managed as metadata-policy concept (labels/env), not distinct bridge identity.
+- Drift checks **MUST** treat canonical `iofog` as expected non-host network across engines.
 
 ## Parity acceptance checks
 
-1. Local workload created under Docker appears on `iofog-local` with expected aliases.
-2. Managed workload created under Docker appears on `iofog` with expected aliases.
+1. Local workload created under Docker appears on canonical `iofog` with expected aliases.
+2. Managed workload created under Docker appears on canonical `iofog` with expected aliases.
 3. Drift check does not falsely flag correctly networked local workloads.
 4. Full flavor and Docker/Podman generate equivalent alias sets for equivalent inputs.
 5. Compatibility aliases are emitted only when explicit policy enables them.

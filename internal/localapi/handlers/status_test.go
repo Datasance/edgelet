@@ -25,8 +25,6 @@ func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {
 		"dnsMaxQNameBytes",
 		"dnsScopeManagedListening",
 		"dnsScopeManagedAddress",
-		"dnsScopeLocalListening",
-		"dnsScopeLocalAddress",
 		"dnsQueriesTotal",
 		"dnsSuccessTotal",
 		"dnsNXDomainTotal",
@@ -124,5 +122,30 @@ func TestHandleStatus_IncludesAvailableNetworkInterfaces(t *testing.T) {
 	}
 	if _, ok := payload["availableNetworkInterfaces"]; !ok {
 		t.Fatalf("expected availableNetworkInterfaces key in status payload, payload=%v", payload)
+	}
+}
+
+func TestHandleStatus_IncludesAvailableRuntimes(t *testing.T) {
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorLite
+	defer func() {
+		buildmeta.Flavor = originalFlavor
+	}()
+
+	handler := &StatusHandler{}
+	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode status payload: %v", err)
+	}
+	if _, ok := payload["availableRuntimes"]; !ok {
+		t.Fatalf("expected availableRuntimes key in status payload, payload=%v", payload)
 	}
 }

@@ -8,7 +8,7 @@ Operational procedures for full-flavor embedded DNS service discovery.
 
 1. Verify resolver readiness has been reached post-startup recovery.
 2. Verify reconcile loop is active and not in persistent failure.
-3. Verify active record counts by scope (`iofog`, `iofog-local`) are plausible.
+3. Verify active record counts by metadata scope (`iofog`, `iofog-local`) are plausible while listener remains on canonical `iofog` bridge gateway.
 
 ## Key telemetry to inspect
 

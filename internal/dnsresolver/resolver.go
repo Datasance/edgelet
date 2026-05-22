@@ -346,6 +346,7 @@ func (r *Resolver) tryBindMissingServers() {
 		}
 		addr, err := scopeBindAddr(scope)
 		if err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("DNS bind skipped for scope %s: failed to resolve bind address: %v", scope, err))
 			continue
 		}
 		startFn := r.startScopeServerFn
@@ -353,7 +354,7 @@ func (r *Resolver) tryBindMissingServers() {
 			startFn = r.startScopeServer
 		}
 		if err := startFn(scope, addr); err != nil {
-			logging.LogDebug(moduleName, fmt.Sprintf("DNS bind retry for scope %s failed: %v", scope, err))
+			logging.LogWarn(moduleName, fmt.Sprintf("DNS bind retry failed for scope %s addr=%s enabled=%t: %v", scope, addr, enabled, err))
 		}
 	}
 }
@@ -381,7 +382,7 @@ func (r *Resolver) updateScopePolicy(records []WorkloadRecord) {
 	managedCount := 0
 	localCount := 0
 	for _, rec := range records {
-		if !rec.Active || rec.HostNetwork {
+		if rec.HostNetwork {
 			continue
 		}
 		switch normalizeScope(rec.Scope) {
@@ -391,8 +392,11 @@ func (r *Resolver) updateScopePolicy(records []WorkloadRecord) {
 			managedCount++
 		}
 	}
-	localEnabled := localCount > 0 && !config.GetInstance().WatchdogEnabled
-	managedEnabled := managedCount > 0
+	// Single-bridge mode: local/managed remain metadata scopes, but listener binds
+	// only once on the canonical managed bridge gateway.
+	_ = config.GetInstance().WatchdogEnabled
+	localEnabled := false
+	managedEnabled := (managedCount + localCount) > 0
 
 	r.mu.Lock()
 	if r.scopeEnabled == nil {
@@ -581,6 +585,11 @@ func (r *Resolver) resolveInternal(scope Scope, name string, qtype uint16) (bool
 	defer r.mu.RUnlock()
 
 	ids := r.index[scope][name]
+	// Single-listener mode: when only managed listener is active, allow managed
+	// queries to resolve local-scoped records (metadata-only local/managed split).
+	if len(ids) == 0 && scope == ScopeManaged && !r.scopeEnabled[ScopeLocal] {
+		ids = r.index[ScopeLocal][name]
+	}
 	if len(ids) == 0 {
 		otherScope := ScopeManaged
 		if scope == ScopeManaged {
@@ -879,10 +888,8 @@ func (r *Resolver) hostAdvertiseIP() string {
 }
 
 func GatewayIPForScope(scope Scope) (string, error) {
+	_ = scope
 	cidr := constants.IofogBridgeCIDR
-	if scope == ScopeLocal {
-		cidr = constants.IofogLocalBridgeCIDR
-	}
 	pfx, err := netip.ParsePrefix(cidr)
 	if err != nil {
 		return "", err

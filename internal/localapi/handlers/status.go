@@ -93,8 +93,6 @@ func augmentWithDNSStatus(status map[string]string) {
 	status["dnsMaxQNameBytes"] = strconv.Itoa(s.MaxQNameBytes)
 	status["dnsScopeManagedListening"] = strconv.FormatBool(s.ScopeManaged.Listening)
 	status["dnsScopeManagedAddress"] = s.ScopeManaged.Address
-	status["dnsScopeLocalListening"] = strconv.FormatBool(s.ScopeLocal.Listening)
-	status["dnsScopeLocalAddress"] = s.ScopeLocal.Address
 	status["dnsQueriesTotal"] = strconv.FormatUint(s.QueriesTotal, 10)
 	status["dnsSuccessTotal"] = strconv.FormatUint(s.SuccessTotal, 10)
 	status["dnsNXDomainTotal"] = strconv.FormatUint(s.NXDomainTotal, 10)
@@ -118,7 +116,7 @@ func deriveDNSHealth(s dnsresolver.StatsSnapshot) string {
 	if !s.Started {
 		return "stopped"
 	}
-	if !s.ScopeManaged.Listening && !s.ScopeLocal.Listening {
+	if !s.ScopeManaged.Listening {
 		return "degraded"
 	}
 	if s.ForwardingDegraded {

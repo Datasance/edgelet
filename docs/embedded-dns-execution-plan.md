@@ -86,8 +86,8 @@
 
 ### Cross-engine parity tests
 
-- Docker local/managed network and alias parity.
-- Drift behavior consistency for `iofog` vs `iofog-local` expected networks.
+- Docker local/managed metadata and alias parity.
+- Drift behavior consistency for canonical non-host network (`iofog`) across workload scopes.
 
 ## Phase 4 - Hardening gates
 

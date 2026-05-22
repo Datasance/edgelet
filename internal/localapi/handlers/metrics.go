@@ -137,14 +137,6 @@ func MetricsHandler(w http.ResponseWriter, _ *http.Request) {
 	b = append(b, strconv.Itoa(managedListening)...)
 	b = append(b, "\n"...)
 
-	localListening := 0
-	if dnsSnapshot.ScopeLocal.Listening {
-		localListening = 1
-	}
-	b = append(b, "iofog_dns_scope_listening{scope=\"iofog-local\"} "...)
-	b = append(b, strconv.Itoa(localListening)...)
-	b = append(b, "\n"...)
-
 	rateLimitEnabled := 0
 	if dnsSnapshot.RateLimitEnabled {
 		rateLimitEnabled = 1

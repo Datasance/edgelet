@@ -7,7 +7,7 @@ ioFog full flavor needs Docker-like service discovery without introducing Kubern
 - Option A (embedded DNS) is selected as the primary architecture for full flavor.
 - Runtime truth comes from embedded containerd + CRI lifecycle state.
 - Discovery supports `appName.microserviceName`, `iofog_<microservice-uuid>`, and reserved core names.
-- DNS is scoped by network domain (`iofog`, `iofog-local`) to avoid cross-scope leakage by default.
+- DNS keeps local/managed as metadata scopes while networking uses a single canonical bridge (`iofog`) for non-host workloads.
 - Records become query-visible only when targets are running and routable.
 - Reconcile loop + startup recovery ensure correctness after restart/crash.
 - JSON snapshot improves warm-start convergence without introducing DB schema coupling.
@@ -98,7 +98,7 @@ ioFog full flavor needs Docker-like service discovery without introducing Kubern
 
 ### D2. Zone and network scoping
 
-- Resolver **MUST** enforce separate scopes for `iofog` and `iofog-local`.
+- Resolver **MUST** enforce separate metadata scopes for local and managed workloads.
 - Resolver **MUST NOT** return cross-scope answers by default.
 - Any cross-scope behavior **MUST** require explicit opt-in policy.
 
@@ -193,7 +193,7 @@ ioFog full flavor needs Docker-like service discovery without introducing Kubern
   - alias generation rules,
   - drift-comparison semantics.
 - Docker local-network inconsistency remediation:
-  - non-host workloads **MUST** validate expected target network (`iofog` vs `iofog-local`) by shared policy, not hardcoded assumptions;
+  - non-host workloads **MUST** validate expected target network (`iofog`) by shared policy, not hardcoded assumptions;
   - alias endpoint assignment **MUST** match selected network;
   - drift checks **MUST** validate against same contract used at create time.
 - Compatibility mode **SHOULD** support controlled staged adoption.

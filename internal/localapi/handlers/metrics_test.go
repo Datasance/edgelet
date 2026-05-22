@@ -27,7 +27,6 @@ func TestMetricsHandlerIncludesDNSMetrics(t *testing.T) {
 		"iofog_dns_rejected_total",
 		"iofog_dns_started",
 		"iofog_dns_scope_listening{scope=\"iofog\"}",
-		"iofog_dns_scope_listening{scope=\"iofog-local\"}",
 		"iofog_dns_rate_limit_enabled",
 		"iofog_dns_rate_limit_rps",
 		"iofog_dns_rate_limit_burst",

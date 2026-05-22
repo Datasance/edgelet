@@ -114,6 +114,7 @@ func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
 		IP:          "10.3.3.3",
 		Active:      true,
 	})
+	r.scopeEnabled[ScopeLocal] = true
 
 	known, _, denied := r.resolveInternal(ScopeManaged, "local.svc", 1)
 	if known {
@@ -121,6 +122,31 @@ func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
 	}
 	if !denied {
 		t.Fatalf("expected policy denied indication for other-scope name")
+	}
+}
+
+func TestSingleListenerManagedQueryResolvesLocalScopeRecord(t *testing.T) {
+	r := newTestResolver()
+	r.scopeEnabled[ScopeManaged] = true
+	r.scopeEnabled[ScopeLocal] = false
+	r.UpsertWorkload(WorkloadRecord{
+		UUID:        "local-ms",
+		Application: "local",
+		Name:        "svc",
+		Scope:       ScopeLocal,
+		IP:          "10.3.3.3",
+		Active:      true,
+	})
+
+	known, answers, denied := r.resolveInternal(ScopeManaged, "local.svc", dns.TypeA)
+	if !known {
+		t.Fatalf("expected managed query to resolve local-scope record in single-listener mode")
+	}
+	if denied {
+		t.Fatalf("did not expect policy denied for local record in single-listener mode")
+	}
+	if len(answers) == 0 {
+		t.Fatalf("expected at least one answer")
 	}
 }
 
@@ -234,6 +260,30 @@ func TestUpdateScopePolicy_ManagedEnabledOnRunningBridgeWorkload(t *testing.T) {
 	}
 }
 
+func TestUpdateScopePolicy_LocalEligibleWorkloadEnablesManagedListenerInSingleBridgeMode(t *testing.T) {
+	r := newTestResolver()
+	cfg := config.GetInstance()
+	origWatchdog := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = false
+	t.Cleanup(func() { cfg.WatchdogEnabled = origWatchdog })
+
+	r.updateScopePolicy([]WorkloadRecord{
+		{
+			UUID:        "local-eligible",
+			Scope:       ScopeLocal,
+			HostNetwork: false,
+			Active:      false, // eligible by scope/network presence, not runtime active state
+		},
+	})
+
+	if r.isScopeEnabled(ScopeLocal) {
+		t.Fatalf("expected local listener scope disabled in single-bridge mode")
+	}
+	if !r.isScopeEnabled(ScopeManaged) {
+		t.Fatalf("expected managed listener scope enabled when eligible local workload exists")
+	}
+}
+
 func TestUpdateScopePolicy_LocalDisabledWhenWatchdogEnabled(t *testing.T) {
 	r := newTestResolver()
 	cfg := config.GetInstance()
@@ -252,6 +302,30 @@ func TestUpdateScopePolicy_LocalDisabledWhenWatchdogEnabled(t *testing.T) {
 
 	if r.isScopeEnabled(ScopeLocal) {
 		t.Fatalf("expected local scope disabled when watchdog is enabled")
+	}
+	if !r.isScopeEnabled(ScopeManaged) {
+		t.Fatalf("expected managed scope enabled for local workload in single-bridge mode")
+	}
+}
+
+func TestUpdateScopePolicy_ManagedUnaffectedByWatchdog(t *testing.T) {
+	r := newTestResolver()
+	cfg := config.GetInstance()
+	origWatchdog := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = true
+	t.Cleanup(func() { cfg.WatchdogEnabled = origWatchdog })
+
+	r.updateScopePolicy([]WorkloadRecord{
+		{
+			UUID:        "managed-eligible",
+			Scope:       ScopeManaged,
+			HostNetwork: false,
+			Active:      false,
+		},
+	})
+
+	if !r.isScopeEnabled(ScopeManaged) {
+		t.Fatalf("expected managed scope enabled regardless of watchdog setting")
 	}
 }
 
