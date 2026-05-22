@@ -1,0 +1,86 @@
+package image
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/eclipse-iofog/agent/internal/cli/client"
+	"github.com/eclipse-iofog/agent/internal/cli/output"
+	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/eclipse-iofog/agent/internal/cli/ui"
+)
+
+// PullRequest carries image pull options.
+type PullRequest struct {
+	Image      string
+	RegistryID int
+	Platform   string
+}
+
+// PullResult is the image pull command outcome.
+type PullResult struct {
+	Data  map[string]interface{}
+	Human string
+}
+
+// Pull executes async image pull with shared polling progress.
+func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequest) (*PullResult, error) {
+	if api == nil {
+		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+	}
+	imageRef := strings.TrimSpace(req.Image)
+	if imageRef == "" {
+		return nil, run.NewCLIError(run.CodeInvalidArgument, "image is required", nil)
+	}
+
+	payload := map[string]interface{}{
+		"image": imageRef,
+		"async": true,
+	}
+	if req.RegistryID > 0 {
+		payload["registryId"] = req.RegistryID
+	}
+	if req.Platform != "" {
+		payload["platform"] = req.Platform
+	}
+
+	startResult, err := api.RequestV3("POST", "/v3/images:pull", payload)
+	if err != nil {
+		return nil, run.MapAPIError(err)
+	}
+	operationID := client.OperationIDFromStart(startResult)
+	if operationID == "" || operationID == "<unknown>" {
+		return nil, run.NewCLIError(run.CodeInternal, "missing image pull operationId in response", nil)
+	}
+
+	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
+		return api.RequestV3("GET", "/v3/images:pull/"+operationID, nil)
+	}, client.PollProgress{
+		UI:           uiProgress,
+		PercentLabel: "pulling image",
+	})
+	if err != nil {
+		return nil, run.MapAPIError(err)
+	}
+
+	status := strings.ToLower(strings.TrimSpace(output.MapValueAsString(final, "status")))
+	if status == "failed" {
+		errMsg := strings.TrimSpace(output.MapValueAsString(final, "error"))
+		if errMsg == "" || errMsg == "<unknown>" {
+			errMsg = "image pull failed"
+		}
+		return nil, run.NewCLIError(run.CodeInternal, errMsg, nil)
+	}
+
+	return &PullResult{Data: final, Human: formatPullHuman(final)}, nil
+}
+
+func formatPullHuman(result map[string]interface{}) string {
+	return fmt.Sprintf(
+		"image pulled successfully: %s (engine=%s, platform=%s)",
+		output.MapValueAsString(result, "resolvedImage"),
+		output.ValueOrDefault(output.MapValueAsString(result, "engine"), "<unknown>"),
+		output.ValueOrDefault(output.MapValueAsString(result, "platform"), "<none>"),
+	)
+}
