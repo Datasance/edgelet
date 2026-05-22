@@ -4,12 +4,15 @@ package cri
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/eclipse-iofog/agent/internal/constants"
 	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/eclipse-iofog/agent/internal/store"
 	"github.com/eclipse-iofog/agent/internal/utils"
 	"github.com/eclipse-iofog/agent/internal/volumemount"
 	"github.com/eclipse-iofog/agent/internal/workloadmeta"
@@ -18,9 +21,52 @@ import (
 
 // Runtime handler names — must match containerd config.
 const (
-	RuntimeHandlerCrun      = "crun"
-	RuntimeHandlerCrunLocal = "crun-local"
+	RuntimeHandlerCrun = "crun"
 )
+
+const (
+	AnnotationIofogNetwork = "iofog.network"
+)
+
+type CNINetworkSelection struct {
+	Scope       string
+	NetworkName string
+	HostNetwork bool
+}
+
+var ErrUnknownRuntimeClass = errors.New("unknown runtime class")
+
+var listRuntimeClassesForHandler = func() ([]*models.LocalRuntimeClass, error) {
+	db := store.GetInstance()
+	if db == nil || db.Conn() == nil {
+		return nil, nil
+	}
+	return db.ListLocalRuntimeClasses()
+}
+
+func ResolveCNINetwork(scope string, hostNetwork bool) string {
+	if hostNetwork {
+		return constants.IofogNetworkName
+	}
+	_ = scope // Scope remains metadata-only in single-bridge mode.
+	return constants.IofogNetworkName
+}
+
+func SelectCNINetworkForMicroservice(ms *models.Microservice) CNINetworkSelection {
+	selection := CNINetworkSelection{
+		Scope:       workloadmeta.ScopeManaged,
+		NetworkName: constants.IofogNetworkName,
+	}
+	if ms == nil {
+		return selection
+	}
+	scope := workloadmeta.ResolveScope(ms.ApplicationName, ms.HostNetworkMode)
+	return CNINetworkSelection{
+		Scope:       scope,
+		NetworkName: ResolveCNINetwork(scope, ms.HostNetworkMode),
+		HostNetwork: ms.HostNetworkMode,
+	}
+}
 
 // linuxNamespaceOptionsFromMicroservice returns namespace options for both sandbox and
 // container from the same Microservice fields (single source of truth).
@@ -84,11 +130,9 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir,
 		IsSystem:         false,
 		UserLabels:       ms.Labels,
 	})
+	networkSelection := SelectCNINetworkForMicroservice(ms)
 	annotations := map[string]string{
-		"iofog.network": constants.IofogNetworkName,
-	}
-	if isLocalWorkload(ms) && !ms.HostNetworkMode {
-		annotations["iofog.network"] = constants.IofogLocalNetworkName
+		AnnotationIofogNetwork: networkSelection.NetworkName,
 	}
 
 	// Hostname: must be empty when using host network (NODE) — CRI spec and OCI runtimes
@@ -294,30 +338,49 @@ func buildCRIMounts(ms *models.Microservice, hostsFilePath string, resolvFilePat
 	return mounts, nil
 }
 
-// GetRuntimeHandler returns the CRI runtime handler for the microservice.
-// Privileged and host-namespace workloads use crun.
-func GetRuntimeHandler(ms *models.Microservice) string {
+// ResolveRuntimeHandler resolves runtime handler using deterministic fallback
+// and optional RuntimeClass mappings.
+func ResolveRuntimeHandler(ms *models.Microservice, runtimeClasses []*models.LocalRuntimeClass) (string, error) {
 	if ms == nil {
-		return RuntimeHandlerCrun
+		return RuntimeHandlerCrun, nil
 	}
-	local := isLocalWorkload(ms) && !ms.HostNetworkMode
 	needsCrun := ms.IsPrivileged || ms.HostNetworkMode ||
 		(ms.PidMode != nil && strings.TrimSpace(*ms.PidMode) == "host") ||
 		(ms.IpcMode != nil && strings.TrimSpace(*ms.IpcMode) == "host")
 	if needsCrun {
-		return RuntimeHandlerCrun
+		return RuntimeHandlerCrun, nil
 	}
-	if local {
-		return RuntimeHandlerCrunLocal
+
+	requested := ""
+	if ms.Runtime != nil {
+		requested = strings.TrimSpace(strings.ToLower(*ms.Runtime))
 	}
-	return RuntimeHandlerCrun
+	if requested == RuntimeHandlerCrun {
+		return RuntimeHandlerCrun, nil
+	}
+	if requested != "" {
+		for _, rc := range runtimeClasses {
+			if rc == nil {
+				continue
+			}
+			rc.Normalize()
+			if requested != rc.Name && requested != rc.RuntimeName {
+				continue
+			}
+			return rc.Name, nil
+		}
+		return "", fmt.Errorf("%w: %s", ErrUnknownRuntimeClass, requested)
+	}
+	return RuntimeHandlerCrun, nil
 }
 
-func isLocalWorkload(ms *models.Microservice) bool {
-	if ms == nil {
-		return false
+// GetRuntimeHandler returns the CRI runtime handler for the microservice.
+func GetRuntimeHandler(ms *models.Microservice) (string, error) {
+	runtimeClasses, err := listRuntimeClassesForHandler()
+	if err != nil {
+		return "", fmt.Errorf("list runtime classes: %w", err)
 	}
-	return strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local")
+	return ResolveRuntimeHandler(ms, runtimeClasses)
 }
 
 // LogPathsForCRI returns the log directory and log path for the container.

@@ -353,6 +353,12 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	ctx := e.ctx()
 	cfg := config.GetInstance()
 	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+	networkSelection := cri.SelectCNINetworkForMicroservice(ms)
+
+	runtimeHandler, err := cri.GetRuntimeHandler(ms)
+	if err != nil {
+		return "", fmt.Errorf("resolve runtime handler for %s: %w", containerName, err)
+	}
 
 	// Ensure image exists.
 	if _, err := e.client.GetImage(ctx, ms.ImageName); err != nil {
@@ -366,8 +372,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	resolvFilePath := ""
 	if !ms.HostNetworkMode {
 		hostsFilePath = filepath.Join(hostsDir, containerName)
-		scope := dnsScopeFromMicroservice(ms)
-		gatewayIP, gwErr := dnsresolver.GatewayIPForScope(scope)
+		gatewayIP, gwErr := dnsresolver.GatewayIPForScope(dnsresolver.ScopeManaged)
 		if gwErr == nil && gatewayIP != "" {
 			resolvFilePath = filepath.Join(resolvDir, containerName+".conf")
 			if err := buildResolvConfFile(resolvFilePath, gatewayIP); err != nil {
@@ -383,7 +388,6 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 
 	logDirectory, logPath := cri.LogPathsForCRI(e.logDir, ms.MicroserviceUUID)
 	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory, cfg.IOFogUUID)
-	runtimeHandler := cri.GetRuntimeHandler(ms)
 
 	sandboxStart := time.Now()
 	sandboxID, err := e.criClient.RunPodSandbox(ctx, podConfig, runtimeHandler)
@@ -392,7 +396,11 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		return "", fmt.Errorf("RunPodSandbox for %s: %w", containerName, err)
 	}
 	e.emitEngineInfo(runtimeops.EventEngineCRISandboxCreated, "", sandboxID, ms.ImageName, "pod sandbox created", sandboxStart, map[string]any{
-		"msUUID": ms.MicroserviceUUID,
+		"msUUID":         ms.MicroserviceUUID,
+		"runtimeHandler": runtimeHandler,
+		"scope":          networkSelection.Scope,
+		"cniNetwork":     networkSelection.NetworkName,
+		"hostNetwork":    networkSelection.HostNetwork,
 	})
 	e.emitCRISubstep(runtimeops.EventEngineCRISandboxCreated, "criRunPodSandbox", "", sandboxID, ms.ImageName, runtimeops.ReasonCreateFailed, sandboxStart, nil)
 
@@ -449,9 +457,13 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		Active:      false,
 	})
 	e.emitEngineSuccess(runtimeops.EventEngineCRIContainerCreated, containerID, sandboxID, ms.ImageName, "CRI create complete", createStart, map[string]any{
-		"step":   "criCreateComplete",
-		"msUUID": ms.MicroserviceUUID,
-		"ip":     ipAddr,
+		"step":           "criCreateComplete",
+		"msUUID":         ms.MicroserviceUUID,
+		"ip":             ipAddr,
+		"runtimeHandler": runtimeHandler,
+		"scope":          networkSelection.Scope,
+		"cniNetwork":     networkSelection.NetworkName,
+		"hostNetwork":    networkSelection.HostNetwork,
 	})
 	return containerID, nil
 }
@@ -650,7 +662,15 @@ func (e *Engine) ensureDNSResolver() {
 }
 
 func dnsScopeFromMicroservice(ms *models.Microservice) dnsresolver.Scope {
-	if ms != nil && strings.EqualFold(strings.TrimSpace(ms.ApplicationName), "local") && !ms.HostNetworkMode {
+	if ms == nil {
+		return dnsresolver.ScopeManaged
+	}
+	scope := workloadmeta.ResolveScope(ms.ApplicationName, ms.HostNetworkMode)
+	return dnsScopeFromWorkloadScope(scope)
+}
+
+func dnsScopeFromWorkloadScope(scope string) dnsresolver.Scope {
+	if workloadmeta.IsLocalScope(scope) {
 		return dnsresolver.ScopeLocal
 	}
 	return dnsresolver.ScopeManaged
@@ -667,11 +687,7 @@ func dnsRecordFromLabels(labels map[string]string, ip string) dnsresolver.Worklo
 		IsRouter:    role == workloadmeta.RoleRouter,
 		IsNats:      role == workloadmeta.RoleNats,
 	}
-	if strings.EqualFold(strings.TrimSpace(rec.Application), "local") && !rec.HostNetwork {
-		rec.Scope = dnsresolver.ScopeLocal
-	} else {
-		rec.Scope = dnsresolver.ScopeManaged
-	}
+	rec.Scope = dnsScopeFromWorkloadScope(workloadmeta.ResolveScope(rec.Application, rec.HostNetwork))
 	return rec
 }
 

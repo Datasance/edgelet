@@ -3,6 +3,7 @@
 package cri
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -69,24 +70,85 @@ func TestPodSandboxNeedsLinuxBlock(t *testing.T) {
 }
 
 func TestGetRuntimeHandler(t *testing.T) {
-	if GetRuntimeHandler(nil) != RuntimeHandlerCrun {
+	handler, err := ResolveRuntimeHandler(nil, nil)
+	if err != nil {
+		t.Fatalf("nil runtime handler resolve error: %v", err)
+	}
+	if handler != RuntimeHandlerCrun {
 		t.Fatal("nil -> crun")
 	}
 	ms := models.NewMicroservice("u1", "img")
 	ms.IsPrivileged = true
-	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
+	handler, err = ResolveRuntimeHandler(ms, nil)
+	if err != nil {
+		t.Fatalf("privileged runtime handler resolve error: %v", err)
+	}
+	if handler != RuntimeHandlerCrun {
 		t.Fatal("privileged forces crun")
 	}
 	ms.IsPrivileged = false
 	ms.HostNetworkMode = true
-	if GetRuntimeHandler(ms) != RuntimeHandlerCrun {
+	handler, err = ResolveRuntimeHandler(ms, nil)
+	if err != nil {
+		t.Fatalf("host net runtime handler resolve error: %v", err)
+	}
+	if handler != RuntimeHandlerCrun {
 		t.Fatal("host network forces crun")
 	}
 	ms.HostNetworkMode = false
 	ms.ApplicationName = "local"
 	ms.Runtime = nil
-	if GetRuntimeHandler(ms) != RuntimeHandlerCrunLocal {
-		t.Fatal("local non-host workload should use crun-local")
+	handler, err = ResolveRuntimeHandler(ms, nil)
+	if err != nil {
+		t.Fatalf("local runtime handler resolve error: %v", err)
+	}
+	if handler != RuntimeHandlerCrun {
+		t.Fatal("local non-host workload should use canonical crun")
+	}
+}
+
+func TestResolveRuntimeHandler_UsesCanonicalRuntimeNames(t *testing.T) {
+	runtimeClasses := []*models.LocalRuntimeClass{
+		{
+			Name:        "edgelet",
+			Handler:     "edgelet",
+			RuntimeName: "edgelet",
+		},
+	}
+
+	managed := models.NewMicroservice("u1", "img")
+	runtime := "edgelet"
+	managed.Runtime = &runtime
+	handler, err := ResolveRuntimeHandler(managed, runtimeClasses)
+	if err != nil {
+		t.Fatalf("managed runtime resolve error: %v", err)
+	}
+	if handler != "edgelet" {
+		t.Fatalf("expected edgelet runtime handler, got %q", handler)
+	}
+
+	local := models.NewMicroservice("u2", "img")
+	local.ApplicationName = "local"
+	local.Runtime = &runtime
+	handler, err = ResolveRuntimeHandler(local, runtimeClasses)
+	if err != nil {
+		t.Fatalf("local runtime resolve error: %v", err)
+	}
+	if handler != "edgelet" {
+		t.Fatalf("expected edgelet runtime handler for local workload, got %q", handler)
+	}
+}
+
+func TestResolveRuntimeHandler_RejectsUnknownRuntimeClass(t *testing.T) {
+	ms := models.NewMicroservice("u1", "img")
+	runtime := "unknown-runtime"
+	ms.Runtime = &runtime
+	_, err := ResolveRuntimeHandler(ms, nil)
+	if err == nil {
+		t.Fatal("expected unknown runtime class error")
+	}
+	if !errors.Is(err, ErrUnknownRuntimeClass) {
+		t.Fatalf("expected ErrUnknownRuntimeClass, got %v", err)
 	}
 }
 
@@ -94,13 +156,43 @@ func TestPodSandboxConfigFromMicroserviceSetsNetworkAnnotation(t *testing.T) {
 	ms := models.NewMicroservice("u1", "img")
 	ms.ApplicationName = "local"
 	cfg := PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
-	if cfg.Annotations["iofog.network"] != "iofog-local" {
-		t.Fatalf("expected local annotation iofog-local, got %q", cfg.Annotations["iofog.network"])
+	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+		t.Fatalf("expected local annotation iofog in single-bridge mode, got %q", cfg.Annotations[AnnotationIofogNetwork])
 	}
+	ms.HostNetworkMode = true
+	cfg = PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
+	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+		t.Fatalf("expected host-network local workload to bypass local annotation, got %q", cfg.Annotations[AnnotationIofogNetwork])
+	}
+	ms.HostNetworkMode = false
 	ms.ApplicationName = "managed"
 	cfg = PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
-	if cfg.Annotations["iofog.network"] != "iofog" {
-		t.Fatalf("expected managed annotation iofog, got %q", cfg.Annotations["iofog.network"])
+	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+		t.Fatalf("expected managed annotation iofog, got %q", cfg.Annotations[AnnotationIofogNetwork])
+	}
+}
+
+func TestSelectCNINetworkForMicroservice_RuntimeIndependent(t *testing.T) {
+	ms := models.NewMicroservice("u3", "img")
+	ms.ApplicationName = "local"
+	requestedRuntime := "edgelet"
+	ms.Runtime = &requestedRuntime
+
+	selection := SelectCNINetworkForMicroservice(ms)
+	if selection.Scope != workloadmeta.ScopeLocal {
+		t.Fatalf("expected local scope, got %q", selection.Scope)
+	}
+	if selection.NetworkName != "iofog" {
+		t.Fatalf("expected canonical iofog network in single-bridge mode, got %q", selection.NetworkName)
+	}
+
+	ms.HostNetworkMode = true
+	selection = SelectCNINetworkForMicroservice(ms)
+	if selection.Scope != workloadmeta.ScopeManaged {
+		t.Fatalf("expected managed scope on host network, got %q", selection.Scope)
+	}
+	if selection.NetworkName != "iofog" {
+		t.Fatalf("expected managed network on host network bypass, got %q", selection.NetworkName)
 	}
 }
 
