@@ -1,10 +1,14 @@
 package runtimeapi
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
+	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/models"
 )
 
@@ -631,5 +635,164 @@ func TestFacadePrune_AllModeReturnsPartialOnStepFailures(t *testing.T) {
 	}
 	if len(rawErrors) == 0 {
 		t.Fatalf("expected partial error details, got none")
+	}
+}
+
+func TestApplyRuntimeClassManifest_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *testing.T) {
+	f := NewFacade()
+	cfg := config.GetInstance()
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	item, err := f.ApplyLocalRuntimeClassManifest(`
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+`, false)
+	if err != nil {
+		t.Fatalf("expected apply success for metadata-only runtimeclass path, got: %v", err)
+	}
+	if item == nil || strings.TrimSpace(item.Name) != "edgelet" {
+		t.Fatalf("expected applied runtimeclass edgelet, got: %#v", item)
+	}
+	if _, getErr := f.db.GetLocalRuntimeClass("edgelet"); getErr != nil {
+		t.Fatalf("expected runtimeclass persisted, got: %v", getErr)
+	}
+}
+
+func TestDeleteRuntimeClass_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *testing.T) {
+	f := NewFacade()
+	cfg := config.GetInstance()
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	if _, err := f.ApplyLocalRuntimeClassManifest(`
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+`, false); err != nil {
+		t.Fatalf("failed to seed runtimeclass: %v", err)
+	}
+
+	err := f.DeleteRuntimeClass("edgelet")
+	if err != nil {
+		t.Fatalf("expected delete success for metadata-only runtimeclass path, got: %v", err)
+	}
+	if _, getErr := f.db.GetLocalRuntimeClass("edgelet"); !errors.Is(getErr, sql.ErrNoRows) {
+		t.Fatalf("expected runtimeclass deleted, got: %v", getErr)
+	}
+}
+
+func TestDeleteRuntimeClass_RejectsReservedName(t *testing.T) {
+	f := NewFacade()
+	cfg := config.GetInstance()
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	err := f.DeleteRuntimeClass("crun")
+	if err == nil {
+		t.Fatal("expected reserved runtime delete rejection")
+	}
+	var reservedErr *ErrReservedRuntimeClassDelete
+	if !errors.As(err, &reservedErr) {
+		t.Fatalf("expected reserved delete error type, got: %T %v", err, err)
+	}
+}
+
+func TestDeleteRuntimeClass_RejectsWhenRuntimeInUse(t *testing.T) {
+	f := NewFacade()
+	cfg := config.GetInstance()
+	cfg.ContainerEngine = "iofog"
+	originalFlavor := buildmeta.Flavor
+	buildmeta.Flavor = buildmeta.FlavorFull
+	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	if _, err := f.ApplyLocalRuntimeClassManifest(`
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+`, false); err != nil {
+		t.Fatalf("failed to seed runtimeclass: %v", err)
+	}
+
+	ms := &models.LocalDeployedMicroservice{
+		LocalUUID:        "11111111-1111-1111-1111-111111111111",
+		ApplicationName:  "local",
+		MicroserviceName: "runtime-edgelet-ms",
+		SourceName:       "local-cli",
+		ManifestYAML: `apiVersion: iofog.org/v3
+kind: Microservice
+metadata:
+  name: runtime-edgelet-ms
+spec:
+  container:
+    runtime: edgelet
+`,
+		ImageName:    "ghcr.io/containerd/runwasi/wasi-demo-app:latest",
+		State:        "running",
+		RuntimeState: "running",
+		DesiredState: "running",
+	}
+	if err := f.db.UpsertLocalDeployedMicroservice(ms); err != nil {
+		t.Fatalf("failed to seed local deployed microservice: %v", err)
+	}
+
+	err := f.DeleteRuntimeClass("edgelet")
+	if err == nil {
+		t.Fatal("expected runtime-in-use delete rejection")
+	}
+	var inUseErr *ErrRuntimeClassInUse
+	if !errors.As(err, &inUseErr) {
+		t.Fatalf("expected runtime-in-use error type, got: %T %v", err, err)
+	}
+	if len(inUseErr.BlockingMicroserviceUuids) == 0 || inUseErr.BlockingMicroserviceUuids[0] != ms.LocalUUID {
+		t.Fatalf("expected blocking uuid in error, got=%v", inUseErr.BlockingMicroserviceUuids)
+	}
+}
+
+func TestNormalizeRuntimeClassOperationStage(t *testing.T) {
+	tests := map[string]string{
+		"write_config":  RuntimeClassStageWriteConfig,
+		"persisting":    RuntimeClassStageWriteConfig,
+		"reconfiguring": RuntimeClassStageStopRuntime,
+		"done":          RuntimeClassStageDone,
+		"unknown":       "",
+	}
+	for input, expected := range tests {
+		if got := NormalizeRuntimeClassOperationStage(input); got != expected {
+			t.Fatalf("NormalizeRuntimeClassOperationStage(%q) = %q, expected %q", input, got, expected)
+		}
 	}
 }

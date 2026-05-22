@@ -2,6 +2,8 @@ package runtimeapi
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-iofog/agent/internal/buildmeta"
 	"github.com/eclipse-iofog/agent/internal/config"
 	"github.com/eclipse-iofog/agent/internal/fieldagent"
 	"github.com/eclipse-iofog/agent/internal/models"
@@ -27,6 +30,124 @@ import (
 )
 
 const runtimeAPIModuleName = "Runtime API Facade"
+
+var ErrRuntimeClassUnsupported = errors.New("runtimeclass is supported only when containerEngine=iofog on full flavor builds")
+
+const (
+	RuntimeClassStageWriteConfig     = "write_config"
+	RuntimeClassStageStopRuntime     = "stop_runtime"
+	RuntimeClassStageStartRuntime    = "start_runtime"
+	RuntimeClassStageWaitCRIReady    = "wait_cri_ready"
+	RuntimeClassStageVerifyStability = "verify_stability"
+	RuntimeClassStageRollbackConfig  = "rollback_config"
+	RuntimeClassStageEscalateRestart = "escalate_restart"
+	RuntimeClassStageDone            = "done"
+)
+
+func NormalizeRuntimeClassOperationStage(stage string) string {
+	normalized := strings.TrimSpace(strings.ToLower(stage))
+	switch normalized {
+	case RuntimeClassStageWriteConfig,
+		RuntimeClassStageStopRuntime,
+		RuntimeClassStageStartRuntime,
+		RuntimeClassStageWaitCRIReady,
+		RuntimeClassStageVerifyStability,
+		RuntimeClassStageRollbackConfig,
+		RuntimeClassStageEscalateRestart,
+		RuntimeClassStageDone:
+		return normalized
+	case "persisting":
+		return RuntimeClassStageWriteConfig
+	case "reconfiguring":
+		return RuntimeClassStageStopRuntime
+	default:
+		return ""
+	}
+}
+
+type ErrReservedRuntimeClassDelete struct {
+	Name string
+}
+
+func (e *ErrReservedRuntimeClassDelete) Error() string {
+	return fmt.Sprintf("runtimeclass delete is not allowed for reserved runtime name: %s", strings.TrimSpace(strings.ToLower(e.Name)))
+}
+
+func (e *ErrReservedRuntimeClassDelete) Details() map[string]interface{} {
+	return map[string]interface{}{
+		"runtimeClassName": strings.TrimSpace(strings.ToLower(e.Name)),
+	}
+}
+
+type ErrRuntimeClassInUse struct {
+	Name                      string
+	RuntimeNames              []string
+	BlockingMicroserviceUuids []string
+}
+
+func (e *ErrRuntimeClassInUse) Error() string {
+	name := strings.TrimSpace(strings.ToLower(e.Name))
+	runtimeUsed := ""
+	if len(e.RuntimeNames) > 0 {
+		runtimeUsed = strings.TrimSpace(e.RuntimeNames[0])
+	}
+	firstUUID := ""
+	if len(e.BlockingMicroserviceUuids) > 0 {
+		firstUUID = strings.TrimSpace(e.BlockingMicroserviceUuids[0])
+	}
+	return fmt.Sprintf("cannot delete runtimeclass '%s': microservice uuid=%s is still using runtime '%s'; delete dependent microservices first", name, firstUUID, runtimeUsed)
+}
+
+func (e *ErrRuntimeClassInUse) Details() map[string]interface{} {
+	return map[string]interface{}{
+		"runtimeClassName":          strings.TrimSpace(strings.ToLower(e.Name)),
+		"runtimeNames":              append([]string{}, e.RuntimeNames...),
+		"blockingMicroserviceUuids": append([]string{}, e.BlockingMicroserviceUuids...),
+	}
+}
+
+type ErrRuntimeClassOperation struct {
+	Stage string
+	Err   error
+}
+
+func (e *ErrRuntimeClassOperation) Error() string {
+	if e == nil || e.Err == nil {
+		return "runtimeclass operation failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *ErrRuntimeClassOperation) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func (e *ErrRuntimeClassOperation) Details() map[string]interface{} {
+	stage := NormalizeRuntimeClassOperationStage(e.Stage)
+	if stage == "" {
+		return nil
+	}
+	return map[string]interface{}{
+		"stage": stage,
+	}
+}
+
+func wrapRuntimeClassOperationError(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	normalizedStage := NormalizeRuntimeClassOperationStage(stage)
+	if normalizedStage == "" {
+		normalizedStage = RuntimeClassStageWriteConfig
+	}
+	return &ErrRuntimeClassOperation{
+		Stage: normalizedStage,
+		Err:   err,
+	}
+}
 
 const (
 	PruneModeDangling   = "dangling"
@@ -900,6 +1021,200 @@ func (f *Facade) GetLocalDeployment(id string) (*models.LocalDeployedMicroservic
 // DeleteLocalDeployment removes local deployment by id.
 func (f *Facade) DeleteLocalDeployment(id string) error {
 	return f.db.DeleteLocalDeployedMicroservice(id)
+}
+
+func (f *Facade) ensureRuntimeClassSupported() error {
+	if !buildmeta.IsFull() || !strings.EqualFold(strings.TrimSpace(f.cfg.ContainerEngine), "iofog") {
+		return ErrRuntimeClassUnsupported
+	}
+	return nil
+}
+
+// ParseAndValidateLocalRuntimeClassManifest validates a RuntimeClass manifest.
+func (f *Facade) ParseAndValidateLocalRuntimeClassManifest(manifest string) (*models.LocalRuntimeClassManifest, error) {
+	if err := f.ensureRuntimeClassSupported(); err != nil {
+		return nil, err
+	}
+	doc := &models.LocalRuntimeClassManifest{}
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(manifest)))
+	dec.KnownFields(true)
+	if err := dec.Decode(doc); err != nil {
+		return nil, fmt.Errorf("invalid runtimeclass manifest YAML: %w", err)
+	}
+	if err := doc.Validate(); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// ApplyLocalRuntimeClassManifest validates and stores a RuntimeClass manifest.
+func (f *Facade) ApplyLocalRuntimeClassManifest(manifest string, dryRun bool) (*models.LocalRuntimeClass, error) {
+	doc, err := f.ParseAndValidateLocalRuntimeClassManifest(manifest)
+	if err != nil {
+		return nil, err
+	}
+	item := &models.LocalRuntimeClass{
+		Name:    doc.Metadata.Name,
+		Handler: doc.Handler,
+	}
+	if dryRun {
+		item.Normalize()
+		return item, nil
+	}
+	if _, getErr := f.db.GetLocalRuntimeClass(item.Name); getErr != nil && !errors.Is(getErr, sql.ErrNoRows) {
+		return nil, wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, fmt.Errorf("failed to read existing runtimeclass %s: %w", item.Name, getErr))
+	}
+	if err := f.db.UpsertLocalRuntimeClass(item); err != nil {
+		return nil, wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
+	}
+	item.Normalize()
+	return item, nil
+}
+
+// ListRuntimeClasses returns persisted RuntimeClass entries.
+func (f *Facade) ListRuntimeClasses() ([]*models.LocalRuntimeClass, error) {
+	if err := f.ensureRuntimeClassSupported(); err != nil {
+		return nil, err
+	}
+	return f.db.ListLocalRuntimeClasses()
+}
+
+// GetRuntimeClass returns one RuntimeClass entry by name.
+func (f *Facade) GetRuntimeClass(name string) (*models.LocalRuntimeClass, error) {
+	if err := f.ensureRuntimeClassSupported(); err != nil {
+		return nil, err
+	}
+	return f.db.GetLocalRuntimeClass(name)
+}
+
+// ValidateRuntimeClassDelete validates whether one RuntimeClass can be deleted.
+func (f *Facade) ValidateRuntimeClassDelete(name string) (*models.LocalRuntimeClass, error) {
+	if err := f.ensureRuntimeClassSupported(); err != nil {
+		return nil, err
+	}
+	normalizedName := strings.TrimSpace(strings.ToLower(name))
+	if isReservedRuntimeName(normalizedName) {
+		return nil, &ErrReservedRuntimeClassDelete{Name: normalizedName}
+	}
+	existing, err := f.db.GetLocalRuntimeClass(normalizedName)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.ensureRuntimeClassNotInUse(existing); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+// DeleteRuntimeClass removes one RuntimeClass entry by name.
+func (f *Facade) DeleteRuntimeClass(name string) error {
+	_, err := f.ValidateRuntimeClassDelete(name)
+	if err != nil {
+		return err
+	}
+	if err := f.db.DeleteLocalRuntimeClass(name); err != nil {
+		return wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
+	}
+	return nil
+}
+
+func isReservedRuntimeName(name string) bool {
+	switch strings.TrimSpace(strings.ToLower(name)) {
+	case "crun":
+		return true
+	default:
+		return false
+	}
+}
+
+func (f *Facade) ensureRuntimeClassNotInUse(item *models.LocalRuntimeClass) error {
+	if item == nil {
+		return nil
+	}
+	items, err := f.db.ListLocalDeployedMicroservices()
+	if err != nil {
+		return fmt.Errorf("failed to list local deployments while checking runtimeclass delete: %w", err)
+	}
+	runtimeNames := []string{strings.TrimSpace(item.RuntimeName)}
+	runtimeSet := make(map[string]struct{}, len(runtimeNames))
+	for _, name := range runtimeNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		runtimeSet[name] = struct{}{}
+	}
+	if len(runtimeSet) == 0 {
+		return nil
+	}
+
+	blockingSet := make(map[string]struct{})
+	for _, local := range items {
+		if local == nil || local.DeletedAt != nil {
+			continue
+		}
+		state := strings.TrimSpace(strings.ToLower(local.RuntimeState))
+		if state == "" {
+			state = strings.TrimSpace(strings.ToLower(local.State))
+		}
+		if state != "running" {
+			continue
+		}
+		runtime := runtimeFromManifestYAML(local.ManifestYAML)
+		if runtime == "" {
+			continue
+		}
+		if _, used := runtimeSet[runtime]; !used {
+			continue
+		}
+		if uuid := strings.TrimSpace(local.LocalUUID); uuid != "" {
+			blockingSet[uuid] = struct{}{}
+		}
+	}
+	if len(blockingSet) == 0 {
+		return nil
+	}
+	blockingUUIDs := make([]string, 0, len(blockingSet))
+	for uuid := range blockingSet {
+		blockingUUIDs = append(blockingUUIDs, uuid)
+	}
+	sort.Strings(blockingUUIDs)
+	return &ErrRuntimeClassInUse{
+		Name:                      item.Name,
+		RuntimeNames:              sortedUniqueNonEmpty(runtimeNames),
+		BlockingMicroserviceUuids: blockingUUIDs,
+	}
+}
+
+func runtimeFromManifestYAML(manifest string) string {
+	doc := struct {
+		Spec struct {
+			Container struct {
+				Runtime string `yaml:"runtime"`
+			} `yaml:"container"`
+		} `yaml:"spec"`
+	}{}
+	if err := yaml.Unmarshal([]byte(strings.TrimSpace(manifest)), &doc); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.ToLower(doc.Spec.Container.Runtime))
+}
+
+func sortedUniqueNonEmpty(items []string) []string {
+	set := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		set[item] = struct{}{}
+	}
+	result := make([]string, 0, len(set))
+	for item := range set {
+		result = append(result, item)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // ParseAndValidateLocalManifest validates a local deploy manifest.
