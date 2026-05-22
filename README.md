@@ -98,7 +98,31 @@ When `containerEngine: iofog` is selected, `iofog-agentd` starts an in-process c
 - `crun` — low-level OCI container runtime
 - CNI plugins: `bridge`, `host-local`, `portmap`, `loopback`
 
-For OCI workloads, containerd continues to use `runtime_type = io.containerd.runc.v2` with `containerd-shim-runc-v2`; runtime handlers are named `crun`/`crun-local` and both point to the `crun` binary.
+For OCI workloads, containerd continues to use `runtime_type = io.containerd.runc.v2` with `containerd-shim-runc-v2`; the baseline runtime handler is `crun`, which points to the `crun` binary.
+
+### RuntimeClass (full + iofog only)
+
+Runtime extension is provided through LocalAPI v3 `RuntimeClass` manifests:
+
+- `apiVersion: iofog.org/v3` (also accepts `datasance.com/v3`)
+- `kind: RuntimeClass`
+- top-level fields:
+  - `metadata.name`
+  - `handler`
+
+For each `metadata.name = x`, the agent registers one canonical runtime handler:
+
+- `x`
+
+Network scope (`managed` vs `local`) is selected independently via workload scope/CNI selection logic, not by synthesizing runtime handler variants.
+
+RuntimeClass API and CLI flows are available only when:
+
+- build flavor is `full`, and
+- `containerEngine=iofog`.
+
+For `docker`, `podman`, or `lite`, RuntimeClass endpoints reject with:
+`Error[INVALID_ARGUMENT]: runtimeclass is supported only when containerEngine=iofog on full flavor builds`.
 
 **Path layout** (isolated from any host Docker/Podman installation):
 
@@ -160,6 +184,11 @@ make test-unit        # Run unit tests only (go test -short)
 make test-coverage    # Run tests with HTML coverage report → build/coverage.html
 make benchmark        # Run benchmarks
 ```
+
+Status output includes `availableRuntimes`:
+
+- local status/CLI (`iofog-agent status`) shows runtime availability for the active engine mode.
+- controller status payload also includes `availableRuntimes`; for `iofog` engine this list is canonical only.
 
 ## Code Quality
 

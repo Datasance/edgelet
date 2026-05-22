@@ -72,6 +72,28 @@ Installed automatically by `setup.sh`:
 | 4 | LocalAPI v3 and CLI checks (`ms ps` table output, `auth whoami`, local deploy apply) |
 | 5 | Container run, IP forwarding, crun version |
 | 6 | CLI: `version`, `info` shows engine=iofog, `config -ce` switching, invalid engine rejected |
+| 7 | Chaos gates (restart storm + child crash recovery) |
+| 8 | RuntimeClass dual-shim flow (Spin + Edgelet), restart convergence, availableRuntimes, runtime-pinned workloads |
+
+## RuntimeClass dual-shim coverage (Lima arm64)
+
+`vm-test.sh` validates external shim activation through RuntimeClass using these artifacts:
+
+- Spin shim:
+  - `https://github.com/spinframework/containerd-shim-spin/releases/download/v0.24.0/containerd-shim-spin-v2-linux-aarch64.tar.gz`
+- Edgelet shim:
+  - `https://github.com/Datasance/containerd-shim-edgelet/releases/download/v0.1.0/containerd-shim-edgelet-wasm-v2-aarch64-linux-gnu.tar.gz`
+
+Coverage includes:
+
+- shim binary install into embedded runtime bin directory
+- RuntimeClass validate/apply via CLI/API (sync success or async accepted + poll to terminal)
+- controlled containerd restart convergence after apply
+- `availableRuntimes` visibility for class and class-local entries
+- runtime-pinned local workloads running for each RuntimeClass
+- RuntimeClass delete guard rejection while runtime-pinned workload exists
+- RuntimeClass delete success after removing dependent workloads (sync success or async accepted + poll to terminal)
+- runtime entries removed from effective runtime map after delete convergence
 
 ## Individual Scripts
 

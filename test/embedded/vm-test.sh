@@ -2,7 +2,7 @@
 # test/embedded/vm-test.sh
 #
 # Runs the full embedded-containerd integration test suite inside the Lima VM.
-# Tests are grouped into 5 phases:
+# Tests are grouped into 8 phases:
 #
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
@@ -10,6 +10,8 @@
 #   Phase 4 — LocalAPI v3 + CLI microservice operations
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
+#   Phase 7 — Chaos gates
+#   Phase 8 — RuntimeClass dual-shim activation
 #
 # Usage:
 #   ./test/embedded/vm-test.sh [--vm-name=iofog-test]
@@ -84,35 +86,43 @@ assert_contains "iofog-agent status endpoint is reachable" "iofogDaemon" \
 ###############################################################################
 log_step "Phase 3: CNI network configuration"
 
-assert_ok "Managed CNI conflist written" \
-    R "test -f /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
+assert_ok "Canonical CNI conflist written at conf_dir root" \
+    R "test -f /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 
-assert_ok "Managed CNI conflist has iofog network name" \
-    R "jq -e '.name == \"iofog\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has iofog network name" \
+    R "jq -e '.name == \"iofog\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 
-assert_ok "Managed CNI conflist has bridge plugin" \
-    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has bridge plugin" \
+    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 
-assert_ok "Managed CNI conflist has bridge name iofog0" \
-    R "jq -e '.plugins[0].bridge == \"iofog0\"' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has bridge name iofog0" \
+    R "jq -e '.plugins[0].bridge == \"iofog0\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 
-assert_ok "Managed CNI conflist has portmap plugin" \
-    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/iofog-agent-containerd/cni/conf/managed/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has portmap plugin" \
+    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
 
-assert_ok "Local CNI conflist written" \
-    R "test -f /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+assert_ok "Local CNI conflist not active in single-bridge mode" \
+    R "test ! -f /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
 
-assert_ok "Local CNI conflist has iofog-local network name" \
-    R "jq -e '.name == \"iofog-local\"' /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+assert_ok "Scope selector CNI conflist not active in single-bridge mode" \
+    R "test ! -f /var/lib/iofog-agent-containerd/cni/conf/00-iofog-scope.conflist"
 
-assert_ok "Local CNI conflist has bridge name iofog-local0" \
-    R "jq -e '.plugins[0].bridge == \"iofog-local0\"' /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
-
-assert_ok "Managed CNI system symlink created" \
+assert_ok "Managed CNI symlink created in system CNI dir" \
     R "test -L /etc/cni/net.d/10-iofog.conflist"
 
-assert_ok "Local CNI system symlink created" \
-    R "test -L /etc/cni/net.d/11-iofog-local.conflist"
+assert_ok "Scope selector symlink removed in system CNI dir" \
+    R "test ! -L /etc/cni/net.d/00-iofog-scope.conflist"
+
+assert_ok "Legacy local CNI symlink removed" \
+    R "test ! -L /etc/cni/net.d/11-iofog-local.conflist"
+
+assert_ok "containerd config keeps canonical crun runtime only" \
+    R "set -e
+grep -q 'runtimes.crun]' /var/lib/iofog-agent-containerd/config.toml
+! grep -q 'runtimes.crun-local]' /var/lib/iofog-agent-containerd/config.toml"
+
+assert_ok "containerd config accepts iofog.network pod annotation" \
+    R "grep -q 'pod_annotations = \\[\"iofog.network\"\\]' /var/lib/iofog-agent-containerd/config.toml"
 
 ###############################################################################
 # Phase 4 — LocalAPI v3 + CLI microservice operations
@@ -219,6 +229,14 @@ EOF
 done
 exit 1"
 
+assert_ok "local workloads are attached to canonical single-bridge CIDR (172.18.x.x)" \
+    R "set -e
+source /tmp/pr6-dns-uuids.env
+inspect_a=\$(iofog-agent ms inspect \"\${DNS_A_UUID}\")
+inspect_b=\$(iofog-agent ms inspect \"\${DNS_B_UUID}\")
+echo \"\${inspect_a}\" | grep -Eq '\"iofog-ip\": \"172\\.18\\.'
+echo \"\${inspect_b}\" | grep -Eq '\"iofog-ip\": \"172\\.18\\.'"
+
 assert_ok "local DNS probe resolves peer from inside container" \
     R "set -e
 source /tmp/pr6-dns-uuids.env
@@ -239,7 +257,7 @@ assert_ok "status exposes DNS operability fields" \
     R "set -e
 out=\$(iofog-agent system status)
 echo \"\${out}\" | grep -q 'dnsHealth'
-echo \"\${out}\" | grep -q 'dnsScopeLocalListening'
+echo \"\${out}\" | grep -q 'dnsScopeManagedListening'
 echo \"\${out}\" | grep -q 'dnsRateLimitEnabled'"
 
 assert_ok "metrics endpoint exposes DNS series" \
@@ -374,6 +392,430 @@ done
 status=\$(iofog-agent system status)
 echo \"\${status}\" | grep -q 'dnsHealth: ready\\|dnsHealth: degraded'
 echo \"\${status}\" | grep -q 'dnsForwardErrTotal'"
+
+###############################################################################
+# Summary
+###############################################################################
+###############################################################################
+# Phase 8 — RuntimeClass dual-shim activation (Spin + Edgelet)
+###############################################################################
+log_step "Phase 8: RuntimeClass dual-shim activation"
+
+assert_ok "download and install Spin + Edgelet shim binaries (aarch64)" \
+    R "set -e
+shim_dir=/tmp/runtimeclass-shims
+rm -rf \"\${shim_dir}\"
+mkdir -p \"\${shim_dir}\"
+
+spin_url='https://github.com/spinframework/containerd-shim-spin/releases/download/v0.24.0/containerd-shim-spin-v2-linux-aarch64.tar.gz'
+edgelet_url='https://github.com/Datasance/containerd-shim-edgelet/releases/download/v0.1.0/containerd-shim-edgelet-wasm-v2-aarch64-linux-gnu.tar.gz'
+
+curl -fsSL \"\${spin_url}\" -o \"\${shim_dir}/spin.tar.gz\"
+curl -fsSL \"\${edgelet_url}\" -o \"\${shim_dir}/edgelet.tar.gz\"
+
+mkdir -p \"\${shim_dir}/spin\" \"\${shim_dir}/edgelet\"
+tar -xzf \"\${shim_dir}/spin.tar.gz\" -C \"\${shim_dir}/spin\"
+tar -xzf \"\${shim_dir}/edgelet.tar.gz\" -C \"\${shim_dir}/edgelet\"
+
+spin_bin=\$(find \"\${shim_dir}/spin\" -type f -name 'containerd-shim-spin*' | head -n1)
+edgelet_bin=\$(find \"\${shim_dir}/edgelet\" -type f -name 'containerd-shim-edgelet-wasm-v2*' | head -n1)
+test -n \"\${spin_bin}\"
+test -n \"\${edgelet_bin}\"
+
+install -m 0755 \"\${spin_bin}\" /usr/local/bin/containerd-shim-spin-v2
+install -m 0755 \"\${edgelet_bin}\" /usr/local/bin/containerd-shim-edgelet-v2
+test -x /usr/local/bin/containerd-shim-spin-v2
+test -x /usr/local/bin/containerd-shim-edgelet-v2"
+
+assert_ok "restart daemon once so startup runtime discovery picks up new shims" \
+    R "set -e
+before_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
+systemctl restart iofog-agentd
+ok=0
+for i in \$(seq 1 90); do
+  if systemctl is-active --quiet iofog-agentd &&
+     test -S /run/iofog-agent/containerd.sock &&
+     iofog-agent system status >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+test \"\${ok}\" -eq 1
+after_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
+test -n \"\${after_child}\"
+if [ -n \"\${before_child}\" ]; then
+  test \"\${before_child}\" != \"\${after_child}\"
+fi
+grep -q 'runtimes.spin]' /var/lib/iofog-agent-containerd/config.toml
+grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-spin-v2\"' /var/lib/iofog-agent-containerd/config.toml
+grep -q 'runtimes.edgelet]' /var/lib/iofog-agent-containerd/config.toml
+grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-edgelet-v2\"' /var/lib/iofog-agent-containerd/config.toml"
+
+assert_ok "create RuntimeClass manifest for spin" \
+    R "cat >/tmp/runtimeclass-spin.yaml <<'EOF'
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+EOF"
+
+assert_ok "create RuntimeClass manifest for edgelet" \
+    R "cat >/tmp/runtimeclass-edgelet.yaml <<'EOF'
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: edgelet
+handler: edgelet
+EOF"
+
+assert_contains "validate RuntimeClass spin manifest" "manifest is valid" \
+    R "iofog-agent deploy runtimeclass validate -f /tmp/runtimeclass-spin.yaml"
+
+assert_contains "validate RuntimeClass edgelet manifest" "manifest is valid" \
+    R "iofog-agent deploy runtimeclass validate -f /tmp/runtimeclass-edgelet.yaml"
+
+assert_ok "create RuntimeClass apply/delete operation helper" \
+    R "cat >/tmp/runtimeclass-ops.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtimeclass_token_file() {
+  for p in \
+    /etc/iofog-agent/local-api \
+    /var/lib/iofog-agent/local-api \
+    /var/lib/iofog-agent/.iofog-agent/local-api \
+    /root/.iofog-agent/local-api
+  do
+    if [ -f \"\${p}\" ]; then
+      echo \"\${p}\"
+      return 0
+    fi
+  done
+  return 1
+}
+
+runtimeclass_api() {
+  local method=\"\${1}\"
+  local path=\"\${2}\"
+  shift 2
+  local token_file
+  token_file=\$(runtimeclass_token_file)
+  local token
+  token=\$(tr -d '\\n' <\"\${token_file}\")
+  if [ \"\${method}\" = \"GET\" ]; then
+    local attempt
+    for attempt in \$(seq 1 5); do
+      if curl -ksS -X \"\${method}\" \
+        -H \"Authorization: Bearer \${token}\" \
+        \"\$@\" \
+        \"https://127.0.0.1:54321\${path}\"; then
+        return 0
+      fi
+      sleep 1
+    done
+    return 1
+  fi
+  curl -ksS -X \"\${method}\" \
+    -H \"Authorization: Bearer \${token}\" \
+    \"\$@\" \
+    \"https://127.0.0.1:54321\${path}\"
+}
+
+runtimeclass_wait_operation() {
+  local kind=\"\${1}\"
+  local operation_id=\"\${2}\"
+  local endpoint=\"/v3/deploy/runtimeclasses:\${kind}/\${operation_id}\"
+  for i in \$(seq 1 120); do
+    body=\$(runtimeclass_api GET \"\${endpoint}\")
+    echo \"\${body}\" | jq -e '.success == true' >/dev/null
+    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    if [ \"\${status}\" = \"succeeded\" ]; then
+      return 0
+    fi
+    if [ \"\${status}\" = \"failed\" ]; then
+      echo \"\${body}\" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+runtimeclass_apply_wait() {
+  local manifest_path=\"\${1}\"
+  local response_file
+  response_file=\$(mktemp)
+  local http_code
+  http_code=\$(runtimeclass_api POST /v3/deploy/runtimeclasses:apply \
+    -F \"manifest=@\${manifest_path}\" \
+    -w '%{http_code}' \
+    -o \"\${response_file}\")
+  local body
+  body=\$(cat \"\${response_file}\")
+  rm -f \"\${response_file}\"
+  echo \"\${body}\" | jq -e '.success == true' >/dev/null
+  if [ \"\${http_code}\" = \"200\" ]; then
+    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    if [ \"\${status}\" = \"succeeded\" ]; then
+      return 0
+    fi
+  fi
+  if [ \"\${http_code}\" = \"202\" ] || [ \"\${http_code}\" = \"200\" ]; then
+    operation_id=\$(echo \"\${body}\" | jq -r '.data.operationId // \"\"')
+    test -n \"\${operation_id}\"
+    runtimeclass_wait_operation apply \"\${operation_id}\"
+    return 0
+  fi
+  echo \"\${body}\" >&2
+  return 1
+}
+
+runtimeclass_delete_wait() {
+  local runtime_name=\"\${1}\"
+  local response_file
+  response_file=\$(mktemp)
+  local http_code
+  http_code=\$(runtimeclass_api DELETE \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+    -w '%{http_code}' \
+    -o \"\${response_file}\")
+  local body
+  body=\$(cat \"\${response_file}\")
+  rm -f \"\${response_file}\"
+  echo \"\${body}\" | jq -e '.success == true' >/dev/null
+  if [ \"\${http_code}\" = \"200\" ]; then
+    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    if [ \"\${status}\" = \"succeeded\" ]; then
+      return 0
+    fi
+  fi
+  if [ \"\${http_code}\" = \"202\" ] || [ \"\${http_code}\" = \"200\" ]; then
+    operation_id=\$(echo \"\${body}\" | jq -r '.data.operationId // \"\"')
+    test -n \"\${operation_id}\"
+    runtimeclass_wait_operation delete \"\${operation_id}\"
+    return 0
+  fi
+  echo \"\${body}\" >&2
+  return 1
+}
+
+runtimeclass_delete_expect_in_use() {
+  local runtime_name=\"\${1}\"
+  local blocking_uuid=\"\${2}\"
+  local response_file
+  response_file=\$(mktemp)
+  local http_code
+  http_code=\$(runtimeclass_api DELETE \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+    -w '%{http_code}' \
+    -o \"\${response_file}\")
+  local body
+  body=\$(cat \"\${response_file}\")
+  rm -f \"\${response_file}\"
+  test \"\${http_code}\" = \"400\"
+  echo \"\${body}\" | jq -e '.success == false' >/dev/null
+  echo \"\${body}\" | jq -e '.error.code == \"INVALID_ARGUMENT\"' >/dev/null
+  echo \"\${body}\" | jq -e --arg uuid \"\${blocking_uuid}\" '.error.details.blockingMicroserviceUuids[] == \$uuid' >/dev/null
+}
+
+runtimeclass_expect_missing() {
+  local runtime_name=\"\${1}\"
+  local response_file
+  response_file=\$(mktemp)
+  local http_code
+  http_code=\$(runtimeclass_api GET \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+    -w '%{http_code}' \
+    -o \"\${response_file}\")
+  local body
+  body=\$(cat \"\${response_file}\")
+  rm -f \"\${response_file}\"
+  test \"\${http_code}\" = \"404\"
+  echo \"\${body}\" | jq -e '.success == false' >/dev/null
+  echo \"\${body}\" | jq -e '.error.code == \"NOT_FOUND\"' >/dev/null
+}
+EOF
+chmod +x /tmp/runtimeclass-ops.sh"
+
+assert_ok "apply RuntimeClass spin succeeds without controlled containerd reconfigure" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
+runtimeclass_apply_wait /tmp/runtimeclass-spin.yaml
+systemctl is-active --quiet iofog-agentd
+iofog-agent system status >/dev/null 2>&1
+! journalctl -u iofog-agentd --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
+
+assert_ok "apply RuntimeClass edgelet succeeds without controlled containerd reconfigure" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
+runtimeclass_apply_wait /tmp/runtimeclass-edgelet.yaml
+systemctl is-active --quiet iofog-agentd
+iofog-agent system status >/dev/null 2>&1
+! journalctl -u iofog-agentd --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
+
+assert_ok "availableRuntimes includes RuntimeClass canonical entries" \
+    R "set -e
+ok=0
+for i in \$(seq 1 60); do
+  status=\$(iofog-agent system status || true)
+  if echo \"\${status}\" | grep -q 'availableRuntimes' &&
+     echo \"\${status}\" | grep -q 'spin' &&
+     echo \"\${status}\" | grep -q 'edgelet' &&
+     ! echo \"\${status}\" | grep -q 'spin-local' &&
+     ! echo \"\${status}\" | grep -q 'edgelet-local'; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+test \"\${ok}\" -eq 1"
+
+assert_ok "create runtime-pinned Spin workload manifest" \
+    R "cat >/tmp/runtimeclass-ms-spin.yaml <<'EOF'
+apiVersion: iofog.org/v3
+kind: Microservice
+metadata:
+  name: runtime-spin-ms
+spec:
+  images:
+    registry: 1
+    x86: ghcr.io/spinframework/containerd-shim-spin/examples/spin-rust-hello:v0.22.0
+    arm: ghcr.io/spinframework/containerd-shim-spin/examples/spin-rust-hello:v0.22.0
+  container:
+    hostNetworkMode: false
+    isPrivileged: false
+    platform: wasi/wasm
+    runtime: spin
+    ports:
+      - internal: 80
+        external: 8080
+        protocol: tcp
+    commands:
+      - "/"
+  schedule: 50
+EOF"
+
+assert_ok "create runtime-pinned Edgelet workload manifest" \
+    R "cat >/tmp/runtimeclass-ms-edgelet.yaml <<'EOF'
+apiVersion: iofog.org/v3
+kind: Microservice
+metadata:
+  name: runtime-edgelet-ms
+spec:
+  images:
+    registry: 1
+    x86: ghcr.io/containerd/runwasi/wasi-demo-app:latest
+    arm: ghcr.io/containerd/runwasi/wasi-demo-app:latest
+  container:
+    hostNetworkMode: false
+    isPrivileged: false
+    platform: wasi/wasm
+    runtime: edgelet
+  schedule: 50
+EOF"
+
+assert_contains "deploy runtime-pinned Spin workload" "microservice manifest applied successfully" \
+    R "iofog-agent deploy -f /tmp/runtimeclass-ms-spin.yaml"
+
+assert_contains "deploy runtime-pinned Edgelet workload" "microservice manifest applied successfully" \
+    R "iofog-agent deploy -f /tmp/runtimeclass-ms-edgelet.yaml"
+
+assert_ok "runtime-pinned Spin workload reaches running state" \
+    R "set -e
+for i in \$(seq 1 60); do
+  out=\$(iofog-agent ms ps || true)
+  if echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
+    exit 0
+  fi
+  sleep 2
+done
+exit 1"
+
+assert_ok "runtime-pinned Edgelet workload reaches running state" \
+    R "set -e
+for i in \$(seq 1 60); do
+  out=\$(iofog-agent ms ps || true)
+  if echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
+    exit 0
+  fi
+  sleep 2
+done
+exit 1"
+
+assert_ok "Spin hostport sanity check succeeds on localhost:8080" \
+    R "set -e
+ok=0
+for i in \$(seq 1 40); do
+  if curl -fsS --max-time 3 http://127.0.0.1:8080/hello >/tmp/runtimeclass-spin-hostport.out 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+test \"\${ok}\" -eq 1"
+
+assert_ok "DNS sanity after RuntimeClass apply exposes expected listener health fields" \
+    R "set -e
+status=\$(iofog-agent system status)
+echo \"\${status}\" | grep -q 'dnsHealth:'
+echo \"\${status}\" | grep -q 'dnsScopeManagedListening'"
+
+assert_ok "capture runtime-pinned workload UUIDs" \
+    R "set -e
+spin_uuid=''
+edgelet_uuid=''
+for i in \$(seq 1 60); do
+  out=\$(iofog-agent ms ps || true)
+  spin_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" {print \$1}' | head -n1)
+  edgelet_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" {print \$1}' | head -n1)
+  if [ -n \"\${spin_uuid}\" ] && [ -n \"\${edgelet_uuid}\" ]; then
+    break
+  fi
+  sleep 1
+done
+test -n \"\${spin_uuid}\"
+test -n \"\${edgelet_uuid}\"
+printf 'RUNTIME_SPIN_UUID=%s\nRUNTIME_EDGELET_UUID=%s\n' \"\${spin_uuid}\" \"\${edgelet_uuid}\" >/tmp/runtimeclass-ms-uuids.env"
+
+assert_ok "runtimeclass delete is rejected while dependent workload exists" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+source /tmp/runtimeclass-ms-uuids.env
+runtimeclass_delete_expect_in_use spin \"\${RUNTIME_SPIN_UUID}\""
+
+assert_ok "remove runtime-pinned workloads before runtimeclass delete" \
+    R "set -e
+source /tmp/runtimeclass-ms-uuids.env
+iofog-agent ms rm \"\${RUNTIME_SPIN_UUID}\" >/dev/null
+iofog-agent ms rm \"\${RUNTIME_EDGELET_UUID}\" >/dev/null
+ok=0
+for i in \$(seq 1 60); do
+  out=\$(iofog-agent ms ps || true)
+  if ! echo \"\${out}\" | grep -q 'runtime-spin-ms' &&
+     ! echo \"\${out}\" | grep -q 'runtime-edgelet-ms'; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+test \"\${ok}\" -eq 1"
+
+assert_ok "delete RuntimeClass spin converges (sync or async path)" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+runtimeclass_delete_wait spin"
+
+assert_ok "delete RuntimeClass edgelet converges (sync or async path)" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+runtimeclass_delete_wait edgelet"
+
+assert_ok "deleted RuntimeClass entries are no longer retrievable via API" \
+    R "set -e
+source /tmp/runtimeclass-ops.sh
+runtimeclass_expect_missing spin
+runtimeclass_expect_missing edgelet"
 
 ###############################################################################
 # Summary

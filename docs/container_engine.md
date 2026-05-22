@@ -182,7 +182,7 @@ Before the containerd service starts, `EnsureEmbeddedDependencies()` extracts bi
 | CNI plugins (`bridge`, `loopback`, `portmap`, `firewall`, `host-local`) | `…/bin/cni/` | Pod network setup |
 | `pause.tar.gz` | `…/images/` | Pause image for pod sandboxes |
 
-For OCI workloads, the runtime executable is `crun`; handler names are `crun`/`crun-local`,
+For OCI workloads, the runtime executable is `crun`; the baseline handler name is `crun`,
 while containerd runtime wiring remains `runtime_type = "io.containerd.runc.v2"` with
 `containerd-shim-runc-v2`.
 
@@ -418,6 +418,42 @@ For host-network containers (`HostNetworkMode=true`), the sandbox is created wit
 ### WASM Workloads
 
 WASM shims are not embedded by default. Runtime extension for external shims is handled through RuntimeClass rollout work.
+
+## RuntimeClass-driven runtime extension
+
+RuntimeClass allows registering additional containerd runtime handlers without embedding shim binaries into the agent.
+
+### Manifest shape (v1)
+
+```yaml
+apiVersion: iofog.org/v3
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin
+```
+
+`RuntimeClass` uses top-level fields:
+
+- `metadata.name`
+- `handler`
+
+### Gating
+
+RuntimeClass endpoints are supported only when:
+
+- build flavor is `full`
+- `containerEngine=iofog`
+
+For other modes (`docker`, `podman`, `lite`) LocalAPI returns:
+`400 INVALID_ARGUMENT` with message:
+`runtimeclass is supported only when containerEngine=iofog on full flavor builds`.
+
+### availableRuntimes reporting
+
+- Docker/Podman: discovered from daemon `/info` `Runtimes` map, deduped and sorted (fallback to `[docker]` / `[podman]` on error or empty info).
+- iofog local status: includes baseline/runtimeclass canonical handlers only (for example `crun`, `spin`).
+- iofog controller payload: uses the same canonical runtime inventory.
 
 ### Containerd Watchdog
 
