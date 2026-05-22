@@ -31,12 +31,38 @@ This document defines execution gates for a strict v3-only LocalAPI surface.
 
 ## Gate 5: CLI v3 Migration
 
-- `go test ./internal/cli ./cmd/iofog-agent`
-- Manual smoke:
-  - `iofog-agent ms ps`
-  - `iofog-agent ms inspect <id>`
-  - `iofog-agent deploy -f <manifest.yaml>`
-  - `iofog-agent auth whoami`
+Automated:
+
+- `go test ./internal/cli/... ./cmd/iofog-agent`
+- `make cli-docs-check` — generated docs under `docs/cli/` must match committed output
+- CLI smoke tests (in `internal/cli/cmd/smoke_test.go`):
+  - `-o json` stdout is valid JSON (`system status`, `ms ls`)
+  - daemon down → exit **10**
+  - legacy commands fail (`status`, `ms ps`, `deploy apply`, `config set`, …)
+- Golden JSON fixtures match `docs/cli/output-schemas.md` (`internal/cli/output/schemas_test.go`)
+
+Manual smoke (daemon running):
+
+```bash
+iofog-agent system status
+iofog-agent system status -o json | jq .
+iofog-agent ms ls -o json | jq '.items'
+iofog-agent ms inspect <id>
+iofog-agent deploy -f <manifest.yaml>
+iofog-agent deploy -f <manifest.yaml> --dry-run
+iofog-agent auth whoami -o json | jq .
+```
+
+Legacy must fail (exit non-zero):
+
+```bash
+iofog-agent status
+iofog-agent ms ps
+iofog-agent deploy apply -f <manifest.yaml>
+iofog-agent config set foo bar
+```
+
+CLI reference: [docs/cli/README.md](cli/README.md)
 
 ## Gate 6: Embedded Validation Without ctr
 

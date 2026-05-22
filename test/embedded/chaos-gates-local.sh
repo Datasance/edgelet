@@ -126,7 +126,7 @@ run_dns_chaos_probe_burst() {
 discover_dns_probe_uuids() {
   local deadline=$((SECONDS + 60))
   while (( SECONDS < deadline )); do
-    ps_out="$(./build/iofog-agent ms ps || true)"
+    ps_out="$(./build/iofog-agent ms ls || true)"
     dns_a_uuid="$(echo "${ps_out}" | awk '$3=="local-chaos-dns-a"{print $1; exit}')"
     dns_b_uuid="$(echo "${ps_out}" | awk '$3=="local-chaos-dns-b"{print $1; exit}')"
     if [[ -n "${dns_a_uuid}" && -n "${dns_b_uuid}" ]]; then

@@ -78,7 +78,7 @@ assert_ok "containerd socket exists" \
 assert_ok "iofog-agentd service is active" \
     R "systemctl is-active iofog-agentd"
 
-assert_contains "iofog-agent status endpoint is reachable" "iofogDaemon" \
+assert_contains "system status endpoint is reachable" "iofogDaemon" \
     R "iofog-agent system status"
 
 ###############################################################################
@@ -129,9 +129,9 @@ assert_ok "containerd config accepts iofog.network pod annotation" \
 ###############################################################################
 log_step "Phase 4: LocalAPI v3 and CLI operations"
 
-assert_ok "ms ps is reachable (table or empty state)" \
+assert_ok "ms ls is reachable (table or empty state)" \
     R "set -e
-out=\$(iofog-agent ms ps || true)
+out=\$(iofog-agent ms ls || true)
 echo \"\${out}\" | grep -Eq 'MICROSERVICENAME|No microservices found.'"
 
 assert_contains "auth whoami returns claims payload" "\"claims\"" \
@@ -215,7 +215,7 @@ assert_contains "deploy DNS probe workload B" "microservice manifest applied suc
 assert_ok "discover DNS probe UUID selectors" \
     R "set -e
 for i in \$(seq 1 30); do
-  ps_out=\$(iofog-agent ms ps || true)
+  ps_out=\$(iofog-agent ms ls || true)
   dns_a_uuid=\$(echo \"\${ps_out}\" | awk '\$3==\"local-dns-a\"{print \$1; exit}')
   dns_b_uuid=\$(echo \"\${ps_out}\" | awk '\$3==\"local-dns-b\"{print \$1; exit}')
   if [ -n \"\${dns_a_uuid}\" ] && [ -n \"\${dns_b_uuid}\" ]; then
@@ -325,14 +325,14 @@ assert_ok "iofog-agent binary is executable" \
 # assert_contains "iofog-agent version returns version string" "ioFog" \
 #     R "iofog-agent version"
 
-assert_contains "iofog-agent info shows containerEngine=iofog" "iofog" \
-    R "iofog-agent info 2>/dev/null || iofog-agent info"
+assert_contains "system info shows containerEngine=iofog" "iofog" \
+    R "iofog-agent system info 2>/dev/null || iofog-agent system info"
 
-# assert_ok "iofog-agent config set containerEngine iofog accepted" \
+# assert_ok "iofog-agent config containerEngine iofog accepted" \
 #     R "iofog-agent config -ce iofog"
 
-# assert_contains "iofog-agent info shows containerEngine=iofog" "iofog" \
-#     R "iofog-agent info 2>/dev/null || iofog-agent info"
+# assert_contains "system info shows containerEngine=iofog" "iofog" \
+#     R "iofog-agent system info 2>/dev/null || iofog-agent system info"
 
 ###############################################################################
 # Phase 7 — Chaos gates (restart storm + crash injection)
@@ -724,7 +724,7 @@ assert_contains "deploy runtime-pinned Edgelet workload" "microservice manifest 
 assert_ok "runtime-pinned Spin workload reaches running state" \
     R "set -e
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ps || true)
+  out=\$(iofog-agent ms ls || true)
   if echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
     exit 0
   fi
@@ -735,7 +735,7 @@ exit 1"
 assert_ok "runtime-pinned Edgelet workload reaches running state" \
     R "set -e
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ps || true)
+  out=\$(iofog-agent ms ls || true)
   if echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
     exit 0
   fi
@@ -766,7 +766,7 @@ assert_ok "capture runtime-pinned workload UUIDs" \
 spin_uuid=''
 edgelet_uuid=''
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ps || true)
+  out=\$(iofog-agent ms ls || true)
   spin_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" {print \$1}' | head -n1)
   edgelet_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" {print \$1}' | head -n1)
   if [ -n \"\${spin_uuid}\" ] && [ -n \"\${edgelet_uuid}\" ]; then
@@ -791,7 +791,7 @@ iofog-agent ms rm \"\${RUNTIME_SPIN_UUID}\" >/dev/null
 iofog-agent ms rm \"\${RUNTIME_EDGELET_UUID}\" >/dev/null
 ok=0
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ps || true)
+  out=\$(iofog-agent ms ls || true)
   if ! echo \"\${out}\" | grep -q 'runtime-spin-ms' &&
      ! echo \"\${out}\" | grep -q 'runtime-edgelet-ms'; then
     ok=1

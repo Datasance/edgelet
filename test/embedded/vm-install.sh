@@ -87,4 +87,4 @@ cat "${SETUP_SCRIPT}" | \
 log_success "Installation complete in VM '${VM_NAME}'"
 echo ""
 echo "  Daemon logs:  limactl shell ${VM_NAME}  (then: sudo journalctl -fu iofog-agentd)"
-echo "  CLI status:   limactl shell ${VM_NAME}  (then: sudo iofog-agent status)"
+echo "  CLI status:   limactl shell ${VM_NAME}  (then: sudo iofog-agent system status)"

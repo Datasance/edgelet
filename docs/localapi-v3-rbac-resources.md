@@ -48,7 +48,7 @@ Evaluator alias policy is canonical + alias tolerant:
 - Endpoint: `POST /v3/system/prune`
   - Resource: `system/prune`
   - Verb: `create`
-  - Compatibility note: `iofog-agent prune` aliases `POST /v3/images:prune`; this route remains supported.
+  - Compatibility note: top-level `iofog-agent prune` is removed; use `iofog-agent system prune` or `iofog-agent image prune`.
 
 - Endpoint: `GET /v3/images`
   - Resource: `images`

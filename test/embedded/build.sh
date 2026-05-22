@@ -88,7 +88,8 @@ select_cc() {
 VERSION="$(cd "${REPO_ROOT}" && git describe --tags --always --dirty 2>/dev/null || echo dev)"
 BUILD_TIME="$(date -u '+%Y-%m-%d_%H:%M:%S')"
 GIT_COMMIT="$(cd "${REPO_ROOT}" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-LDFLAGS_FULL="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT} \
+LDFLAGS_CLI="-s -w -X github.com/eclipse-iofog/agent/internal/cli/cmd.Version=${VERSION} -X github.com/eclipse-iofog/agent/internal/cli/cmd.BuildTime=${BUILD_TIME} -X github.com/eclipse-iofog/agent/internal/cli/cmd.GitCommit=${GIT_COMMIT}"
+LDFLAGS_DAEMON="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT} \
 -X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=full"
 
 ###############################################################################
@@ -100,7 +101,7 @@ mkdir -p "${REPO_ROOT}/build"
 CGO_ENABLED=0 GOOS=linux GOARCH="${TARGET_ARCH}" \
     go build \
     -trimpath \
-    -ldflags "${LDFLAGS_FULL}" \
+    -ldflags "${LDFLAGS_CLI}" \
     -o "${REPO_ROOT}/build/iofog-agent-linux-${TARGET_ARCH}-full" \
     "${REPO_ROOT}/cmd/iofog-agent"
 
@@ -128,7 +129,7 @@ log_info "Using C compiler: ${CC}"
 CGO_ENABLED=1 GOOS=linux GOARCH="${TARGET_ARCH}" CC="${CC}" \
     go build \
     -trimpath \
-    -ldflags "${LDFLAGS_FULL} -extldflags '-static'" \
+    -ldflags "${LDFLAGS_DAEMON} -extldflags '-static'" \
     -tags "cgo osusergo netgo" \
     -o "${REPO_ROOT}/build/iofog-agentd-linux-${TARGET_ARCH}-full" \
     "${REPO_ROOT}/cmd/iofog-agentd"

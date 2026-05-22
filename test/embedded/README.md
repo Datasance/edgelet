@@ -69,7 +69,7 @@ Installed automatically by `setup.sh`:
 | 1 | Extracted embedded binaries (shims, crun, CNI plugins) |
 | 2 | containerd socket, health check, `k8s.io` namespace |
 | 3 | Managed + local CNI conflists written, network names, bridge names, system symlinks |
-| 4 | LocalAPI v3 and CLI checks (`ms ps` table output, `auth whoami`, local deploy apply) |
+| 4 | LocalAPI v3 and CLI checks (`ms ls` table output, `auth whoami`, local `deploy -f`) |
 | 5 | Container run, IP forwarding, crun version |
 | 6 | CLI: `version`, `info` shows engine=iofog, `config -ce` switching, invalid engine rejected |
 | 7 | Chaos gates (restart storm + child crash recovery) |
