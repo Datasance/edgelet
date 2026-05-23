@@ -46,7 +46,9 @@ Environment variables respected by progress UX:
 | `CI=true` | Non-interactive progress even on a TTY |
 | `TERM=dumb` | Non-interactive output |
 
-Human-mode `deploy -f` shows a spinner on stderr while async apply runs, then prints a green `✔` success line on stderr. Structured `-o json` / `-o yaml` output remains on stdout only.
+Human-mode `deploy -f` and `config` show a spinner on stderr while the operation runs, then print a green `✔` success line on stderr (red `✘` when config keys are partially rejected). Structured `-o json` / `-o yaml` output remains on stdout only.
+
+Partial config rejection (some keys accepted, some rejected) exits **2** with full accepted/rejected detail on stderr.
 
 ## Exit codes
 
@@ -71,7 +73,7 @@ Remote command exit codes from `ms exec` propagate directly (e.g. container exit
 |-------|----------|
 | `system` | `status`, `info`, `version`, `reload`, `stop`, `logs`, `prune` |
 | `provision` / `deprovision` | top-level |
-| `config` | `KEY VALUE …`, `config cert`, `config switch` |
+| `config` | `--long-flag` / `--alias` flags (`--disk-limit-gib`, `--memory-limit-mib`, …), `config cert`, `config switch` |
 | `ms` | `ls`, `inspect`, `logs`, `exec`, `start`, `stop`, `restart`, `kill`, `rm` |
 | `deploy` | `-f FILE [--dry-run] [--sourceName]` |
 | `registry` / `runtimeclass` / `image` | `ls`, `inspect`, `rm` (+ image `pull`, `load`, `prune`) |
@@ -82,7 +84,11 @@ Remote command exit codes from `ms exec` propagate directly (e.g. container exit
 ```bash
 # Config read vs write
 iofog-agent system info                    # read configuration
-iofog-agent config networkInterface eth0   # write key/value
+iofog-agent config --network-interface eth0
+iofog-agent config --n eth0 --cf 10        # short alias flags
+iofog-agent config cert <base64-encoded-cert-string>
+iofog-agent config switch prod
+iofog-agent -o json config --cf 10       # structured output on stdout
 
 # Microservice lifecycle
 iofog-agent ms ls -o json

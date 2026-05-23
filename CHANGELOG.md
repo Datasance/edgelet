@@ -25,7 +25,7 @@ The `iofog-agent` CLI was rebuilt on Cobra with layered packages (`internal/cli/
 | `iofog-agent deploy apply -f` | `iofog-agent deploy -f` |
 | `iofog-agent deploy validate -f` | `iofog-agent deploy -f --dry-run` |
 | `iofog-agent deploy registry\|runtimeclass -f` | `iofog-agent deploy -f` (auto kind-detect) |
-| `iofog-agent config set KEY VALUE` | `iofog-agent config KEY VALUE` |
+| `iofog-agent config set KEY VALUE` | `iofog-agent config --key value` (long or `--alias` flags) |
 
 Other breaking behavior:
 

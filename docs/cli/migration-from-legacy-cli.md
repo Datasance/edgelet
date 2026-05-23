@@ -21,7 +21,9 @@ For Java-to-Go agent migration, see [migration.md](../migration.md).
 | `iofog-agent deploy validate -f FILE` | `iofog-agent deploy -f FILE --dry-run` | Validate without apply |
 | `iofog-agent deploy registry -f FILE` | `iofog-agent deploy -f FILE` | Auto kind-detect from manifest |
 | `iofog-agent deploy runtimeclass -f FILE` | `iofog-agent deploy -f FILE` | Auto kind-detect from manifest |
-| `iofog-agent config set KEY VALUE` | `iofog-agent config KEY VALUE` | `set` subcommand removed |
+| `iofog-agent config set KEY VALUE` | `iofog-agent config --key value` | Use long `--kebab-case` or short `--alias` flags |
+| `iofog-agent config KEY VALUE` (positional) | `iofog-agent config --key value` | Positional and single-dash keys removed |
+| `iofog-agent config -cf 10` | `iofog-agent config --cf 10` | Use double-dash alias flags only |
 | `iofog-agent config get KEY` | `iofog-agent system info` | No per-key get |
 
 ## Global flags (new)
