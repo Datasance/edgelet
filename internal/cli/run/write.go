@@ -118,6 +118,43 @@ func WriteHumanSuccess(ctx *CLIContext, message string) error {
 	return nil
 }
 
+// WriteHumanConfigResult writes human config mutation output to stderr.
+// The summary line gets a colored marker; accepted/rejected detail stays plain.
+// Returns exit code 2 when hasRejections is true.
+func WriteHumanConfigResult(ctx *CLIContext, human string, hasRejections bool) error {
+	if ctx == nil {
+		return NewCLIError(CodeInternal, "cli context is nil", nil)
+	}
+	if ctx.UI == nil {
+		return NewCLIError(CodeInternal, "cli ui is nil", nil)
+	}
+	human = strings.TrimRight(human, "\n")
+	if human == "" {
+		return nil
+	}
+	summary, body := splitSummaryBody(human)
+	if hasRejections {
+		ctx.UI.WriteError(summary)
+	} else {
+		ctx.UI.WriteSuccess(summary)
+	}
+	if body != "" {
+		ctx.UI.WritePlain(body)
+	}
+	if hasRejections {
+		return NewDisplayedCLIError(CodeInvalidArgument, summary)
+	}
+	return nil
+}
+
+func splitSummaryBody(human string) (summary, body string) {
+	idx := strings.Index(human, "\n")
+	if idx < 0 {
+		return human, ""
+	}
+	return human[:idx], human[idx+1:]
+}
+
 // WriteHuman writes a preformatted human string to stdout.
 func WriteHuman(ctx *CLIContext, text string) error {
 	if ctx == nil {

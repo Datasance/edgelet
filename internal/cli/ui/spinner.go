@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -122,6 +123,19 @@ func (u *UI) WriteSuccess(message string) {
 		_, _ = fmt.Fprintf(u.ErrOut, "✔ %s\n", message)
 	}
 	u.lastStageLine = ""
+}
+
+// WritePlain writes unstyled text to stderr.
+func (u *UI) WritePlain(text string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	_, _ = io.WriteString(u.ErrOut, text)
 }
 
 // WriteError prints an error marker on stderr and stops any spinner.

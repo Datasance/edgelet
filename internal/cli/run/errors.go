@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// ErrHumanOutputWritten marks failures whose human-mode message was already printed to stderr.
+var ErrHumanOutputWritten = errors.New("cli: human output already written")
+
 // Error codes aligned with LocalAPI v3 and CLI exit mapping.
 const (
 	CodeInvalidArgument    = "INVALID_ARGUMENT"
@@ -61,6 +64,11 @@ func (e *CLIError) ExitCode() int {
 func NewCLIError(code, message string, err error) *CLIError {
 	code = normalizeCode(code)
 	return &CLIError{Code: code, Message: message, Err: err}
+}
+
+// NewDisplayedCLIError builds a CLIError whose message was already written to stderr.
+func NewDisplayedCLIError(code, message string) *CLIError {
+	return NewCLIError(code, message, ErrHumanOutputWritten)
 }
 
 func normalizeCode(code string) string {

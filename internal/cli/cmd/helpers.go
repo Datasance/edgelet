@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,6 +49,9 @@ func shouldPrintBanner(c *cobra.Command, args []string) bool {
 
 func writeCommandError(err error) {
 	if err == nil {
+		return
+	}
+	if errors.Is(err, run.ErrHumanOutputWritten) {
 		return
 	}
 	msg := err.Error()
