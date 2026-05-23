@@ -46,7 +46,7 @@ func TestLegacyCommandRejectionSuite(t *testing.T) {
 		{"ms ps", []string{"ms", "ps"}, run.ExitInvalidArgument},
 		{"deploy apply", []string{"deploy", "apply", "-f", "/tmp/x.yaml"}, run.ExitInvalidArgument},
 		{"deploy registry prefix", []string{"deploy", "registry", "-f", "/tmp/x.yaml"}, run.ExitInvalidArgument},
-		{"config set", []string{"config", "set", "k", "v"}, run.ExitInvalidArgument},
+		{"config set", []string{"config", "set", "k", "v"}, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

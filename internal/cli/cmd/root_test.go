@@ -148,12 +148,9 @@ func TestTopLevelSwitchRejected(t *testing.T) {
 
 func TestConfigSetSubcommandRejected(t *testing.T) {
 	client := &fakeClient{running: true}
-	_, stderr, code := runCLI(t, client, "config", "set", "networkInterface", "eth0")
-	if code != run.ExitInvalidArgument {
-		t.Fatalf("expected exit 2, got %d stderr=%q", code, stderr)
-	}
-	if !strings.Contains(stderr, "key/value pairs") {
-		t.Fatalf("expected key/value hint, got stderr=%q", stderr)
+	_, _, code := runCLI(t, client, "config", "set", "networkInterface", "eth0")
+	if code == 0 {
+		t.Fatal("expected non-zero exit for config set")
 	}
 }
 

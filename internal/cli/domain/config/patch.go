@@ -1,8 +1,6 @@
 package config
 
 import (
-	"strings"
-
 	"github.com/eclipse-iofog/agent/internal/cli/output"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
 )
@@ -27,17 +25,19 @@ func Patch(client run.V3Client, setMap map[string]interface{}) (human string, da
 	return output.FormatConfigMutationOutput(setMap, before, after), after, nil
 }
 
-// Apply parses config args, rejects the legacy "set" subcommand, and patches config.
-func Apply(client run.V3Client, args []string) (*Result, error) {
-	if len(args) == 0 {
-		return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent config <key> <value> [<key> <value> ...]", nil)
+// HasRejections reports whether a config PATCH response includes rejected keys.
+func HasRejections(data map[string]interface{}) bool {
+	if len(data) == 0 {
+		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(args[0]), "set") {
-		return nil, run.NewCLIError(run.CodeInvalidArgument, "config set subcommand is not supported; use key/value pairs directly", nil)
-	}
-	setMap, parseErr := ParseSetArgs(args)
-	if parseErr != nil {
-		return nil, run.NewCLIError(run.CodeInvalidArgument, parseErr.Error(), parseErr)
+	errorMap, _ := data["errorMap"].(map[string]interface{})
+	return len(errorMap) > 0
+}
+
+// ApplySetMap validates and PATCHes the provided config keys.
+func ApplySetMap(client run.V3Client, setMap map[string]interface{}) (*Result, error) {
+	if len(setMap) == 0 {
+		return nil, run.NewCLIError(run.CodeInvalidArgument, "at least one config flag is required (see iofog-agent config --help)", nil)
 	}
 	human, data, err := Patch(client, setMap)
 	if err != nil {

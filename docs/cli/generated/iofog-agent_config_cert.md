@@ -1,6 +1,13 @@
 ## iofog-agent config cert
 
-Install controller certificate
+Install controller CA certificate
+
+### Synopsis
+
+Install the controller CA certificate from a base64-encoded PEM string.
+
+The argument must be the certificate contents encoded as base64 (not a file path).
+Use config --controller-cert for setting a local PEM file path instead.
 
 ```
 iofog-agent config cert <base64-encoded-certificate> [flags]
