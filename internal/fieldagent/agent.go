@@ -548,13 +548,9 @@ func (fa *FieldAgent) Provision(key string) error {
 		fa.apiClient = apiClient
 	}
 
-	// Get architecture code from config
-	// Java sends integer code: 1 for INTEL_AMD, 2 for ARM, 0 for UNDEFINED
-	cfg := config.GetInstance()
-	archCode := getArchitectureCode(cfg.Arch)
-	body := map[string]interface{}{
-		"key":  key,
-		"type": archCode,
+	body, err := buildProvisionRequestBody(key)
+	if err != nil {
+		return err
 	}
 
 	result, err := fa.apiClient.Request(ctx, "provision", POST, nil, body)
@@ -564,6 +560,7 @@ func (fa *FieldAgent) Provision(key string) error {
 
 	// Extract UUID, private key, and namespace from result and save to config
 	// Matching Java: Configuration.setIofogUuid(), setPrivateKey(), setNamespace(), saveConfigUpdates()
+	cfg := config.GetInstance()
 	updated := false
 
 	if uuid, ok := result["uuid"].(string); ok && uuid != "" {

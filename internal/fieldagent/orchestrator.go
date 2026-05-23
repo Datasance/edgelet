@@ -66,12 +66,10 @@ func (o *Orchestrator) Ping(ctx context.Context) (bool, error) {
 func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]interface{}, error) {
 	logging.LogDebug(orchestratorModuleName, "Inside provision")
 
-	cfg := config.GetInstance()
-	// Get architecture code (integer, not string)
-	archCode := getArchitectureCode(cfg.Arch)
-	body := map[string]interface{}{
-		"key":  key,
-		"type": archCode,
+	body, err := buildProvisionRequestBody(key)
+	if err != nil {
+		logging.LogError(orchestratorModuleName, "Error while building provision request", err)
+		return nil, err
 	}
 
 	result, err := o.apiClient.Request(ctx, "provision", POST, nil, body)

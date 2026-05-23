@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Provision payload:** Controller provision requests now include `engine` (configured `containerEngine`) and `flavor` (daemon build metadata: `lite` or `full`) alongside the existing `key` and architecture `type` fields. Invalid engine/flavor combinations are rejected before the controller call.
+
 ### Changed - CLI operator UX
 
 Consolidated improvements to the Cobra-based `iofog-agent` CLI (help, flags, progress, and mutation output). See [docs/cli/README.md](docs/cli/README.md) and [docs/cli/migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md).
