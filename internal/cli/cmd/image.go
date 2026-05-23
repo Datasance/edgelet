@@ -42,6 +42,7 @@ func newImageCommand() *cobra.Command {
 				RunE: runImagePrune,
 			}
 			pruneCmd.Flags().StringVarP(&imagePruneMode, "mode", "m", "", "Prune mode (only: dangling)")
+			registerImagePruneModeCompletion(pruneCmd)
 			return pruneCmd
 		}(),
 		&cobra.Command{
@@ -68,7 +69,12 @@ func newImageLoadCommand() *cobra.Command {
 			if err := run.RequireDaemon(appCtx.Client); err != nil {
 				return err
 			}
-			result, err := image.Load(appCtx.Client, image.LoadRequest{Path: filePath})
+			var result *image.LoadResult
+			err := run.WithSpinner(appCtx, "Loading image archive...", func() error {
+				var err error
+				result, err = image.Load(appCtx.Client, image.LoadRequest{Path: filePath})
+				return err
+			})
 			if err != nil {
 				return err
 			}
@@ -125,7 +131,13 @@ func runImageRemove(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	result, err := image.Remove(appCtx.Client, args[0])
+	selector := args[0]
+	var result *image.RemoveResult
+	err := run.WithSpinner(appCtx, "Removing image "+selector+"...", func() error {
+		var err error
+		result, err = image.Remove(appCtx.Client, selector)
+		return err
+	})
 	if err != nil {
 		return err
 	}

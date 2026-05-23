@@ -72,6 +72,11 @@ func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Reque
 		fields["async"] = "true"
 		return applyAsync(ctx, api, uiProgress, target, req.ManifestPath, fields)
 	default:
+		var spin *ui.Spinner
+		if uiProgress != nil {
+			spin = uiProgress.StartSpinner("Applying registry manifest...")
+			defer spin.Stop()
+		}
 		data, err := api.RequestV3MultipartFile("POST", target.applyPath(), "manifest", req.ManifestPath, fields)
 		if err != nil {
 			return nil, run.MapAPIError(err)

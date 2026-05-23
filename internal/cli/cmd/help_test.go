@@ -203,3 +203,134 @@ func TestHelp_ImagePullShowsImageRefAndShorthands(t *testing.T) {
 		}
 	}
 }
+
+func TestHelp_RootListsCompletion(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "completion") {
+		t.Fatalf("expected completion in root help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_CompletionShowsLongAndExamples(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "completion", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	for _, want := range []string{
+		"Generate shell completion scripts",
+		"/etc/bash_completion.d/iofog-agent",
+		"Examples:",
+		"completion bash",
+		"completion fish",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in completion help, got stdout=%q", want, stdout)
+		}
+	}
+}
+
+func TestHelp_CompletionBashShowsInstallExample(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "completion", "bash", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "bash_completion.d/iofog-agent") {
+		t.Fatalf("expected bash install example in help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_AuthShowsIntroAndExamples(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "auth", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "Subcommands: whoami, tokens, revoke") || !strings.Contains(stdout, "Examples:") {
+		t.Fatalf("expected auth group help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_RegistryShowsIntroAndExamples(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "registry", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "Subcommands: ls, inspect, rm") || !strings.Contains(stdout, "--password-plain") {
+		t.Fatalf("expected registry group help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_RuntimeClassShowsIntro(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "runtimeclass", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "Subcommands: ls, inspect, rm") {
+		t.Fatalf("expected runtimeclass group help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_SystemLogsShowsFlags(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "system", "logs", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	for _, want := range []string{"--follow", "--tail", "--since"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in system logs help, got stdout=%q", want, stdout)
+		}
+	}
+}
+
+func TestHelp_RegistryInspectShowsPasswordPlainFlag(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "registry", "inspect", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "--password-plain") {
+		t.Fatalf("expected --password-plain in registry inspect help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_MSInspectShowsSummaryFlag(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "ms", "inspect", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "--summary") {
+		t.Fatalf("expected --summary in ms inspect help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_AuthRevokeShowsJTISyntax(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "auth", "revoke", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "revoke <jti>") {
+		t.Fatalf("expected revoke jti syntax in help, got stdout=%q", stdout)
+	}
+}
+
+func TestHelp_SystemPruneShowsModeFlag(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, _, code := runCLI(t, client, "system", "prune", "--help")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q", code, stdout)
+	}
+	if !strings.Contains(stdout, "--mode") {
+		t.Fatalf("expected --mode in system prune help, got stdout=%q", stdout)
+	}
+}

@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-completion
+.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -62,6 +62,10 @@ cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
 cli-docs-check: cli-docs ## Fail if docs/cli/ differs from committed generated output
 	@git diff --exit-code docs/cli/ || (echo "ERROR: docs/cli drift — run 'make cli-docs' and commit" && exit 1)
 	@echo "docs/cli/ is up to date"
+
+cli-help-check: ## Fail if CLI help regression tests fail
+	@go test ./internal/cli/cmd/ -run '^TestHelp_' -count=1
+	@echo "CLI help regression tests passed"
 
 cli-completion: build-cli ## Regenerate bash completion for packaging
 	@mkdir -p packaging/iofog-agent/etc/bash_completion.d

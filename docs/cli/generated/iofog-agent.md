@@ -29,6 +29,7 @@ iofog-agent [flags]
 ### SEE ALSO
 
 * [iofog-agent auth](iofog-agent_auth.md)	 - Authentication operations
+* [iofog-agent completion](iofog-agent_completion.md)	 - Generate shell completion scripts
 * [iofog-agent config](iofog-agent_config.md)	 - Update agent configuration
 * [iofog-agent deploy](iofog-agent_deploy.md)	 - Deploy a local manifest
 * [iofog-agent deprovision](iofog-agent_deprovision.md)	 - Deprovision the agent

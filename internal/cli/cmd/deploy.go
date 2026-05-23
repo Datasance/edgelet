@@ -7,6 +7,7 @@ import (
 	"github.com/eclipse-iofog/agent/internal/cli/domain/deploy"
 	"github.com/eclipse-iofog/agent/internal/cli/domain/image"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/eclipse-iofog/agent/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +42,11 @@ func newDeployCommand() *cobra.Command {
 				return err
 			}
 			api := appCtx.Client
-			result, err := deploy.Execute(context.Background(), api, appCtx.UI, deploy.Request{
+			var uiProgress *ui.UI
+			if !appCtx.Format.IsStructured() {
+				uiProgress = appCtx.UI
+			}
+			result, err := deploy.Execute(context.Background(), api, uiProgress, deploy.Request{
 				ManifestPath: manifestPath,
 				SourceName:   sourceName,
 				DryRun:       dryRun,
@@ -85,8 +90,12 @@ func runImagePull(cmd *cobra.Command, args []string) error {
 	}
 	registryID, _ := cmd.Flags().GetInt("registry-id")
 	platform, _ := cmd.Flags().GetString("platform")
+	var uiProgress *ui.UI
+	if !appCtx.Format.IsStructured() {
+		uiProgress = appCtx.UI
+	}
 	api := appCtx.Client
-	result, err := image.Pull(context.Background(), api, appCtx.UI, image.PullRequest{
+	result, err := image.Pull(context.Background(), api, uiProgress, image.PullRequest{
 		Image:      strings.TrimSpace(args[0]),
 		RegistryID: registryID,
 		Platform:   strings.TrimSpace(platform),
@@ -97,5 +106,5 @@ func runImagePull(cmd *cobra.Command, args []string) error {
 	if appCtx.Format.IsStructured() {
 		return run.WriteValue(appCtx, result.Data)
 	}
-	return run.WriteValue(appCtx, result.Human)
+	return run.WriteHumanSuccess(appCtx, result.Human)
 }

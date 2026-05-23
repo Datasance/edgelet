@@ -56,7 +56,14 @@ func newRegistryInspectCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&passwordPlain, "password-plain", false, "Show registry password in plain text")
+	registerRegistryInspectCompletions(cmd)
 	return cmd
+}
+
+func registerRegistryInspectCompletions(cmd *cobra.Command) {
+	_ = cmd.RegisterFlagCompletionFunc("password-plain", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{"true", "false"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func runRegistryRemove(cmd *cobra.Command, args []string) error {
@@ -67,9 +74,14 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v3/deploy/registries/" + args[0]
-	data, err := appCtx.Client.RequestV3("DELETE", path, nil)
+	var data map[string]interface{}
+	err := run.WithSpinner(appCtx, "Removing registry "+args[0]+"...", func() error {
+		var reqErr error
+		data, reqErr = appCtx.Client.RequestV3("DELETE", path, nil)
+		return run.MapAPIError(reqErr)
+	})
 	if err != nil {
-		return run.MapAPIError(err)
+		return err
 	}
 	return run.WriteRouteData(appCtx, path, data)
 }

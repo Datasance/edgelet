@@ -107,19 +107,22 @@ iofog-agent auth whoami -o json
 
 ## Shell completion
 
-Hidden command: `iofog-agent completion bash|zsh|fish`
+Generate and install tab completion for your shell:
 
 ```bash
 iofog-agent completion bash | sudo tee /etc/bash_completion.d/iofog-agent
+iofog-agent completion zsh > "${fpath[1]}/_iofog-agent"
+iofog-agent completion fish > ~/.config/fish/completions/iofog-agent.fish
 ```
 
-Regenerate packaging script: `make cli-completion`
+See `iofog-agent completion --help` for details. Regenerate the packaged bash script with `make cli-completion`.
 
 ## Documentation maintenance
 
 ```bash
 make cli-docs              # regenerate docs/cli/generated/
 make cli-docs-check        # fail if generated docs drift from git
+make cli-help-check        # fail if CLI help regression tests fail
 ```
 
 Hidden generator: `iofog-agent documentation generate md|man --output DIR`

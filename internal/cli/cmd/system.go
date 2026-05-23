@@ -40,7 +40,7 @@ func newSystemCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "reload",
 			Short: "Reload daemon configuration",
-			RunE:  runPOST("/v3/system/reload", nil),
+			RunE:  runSystemReload,
 		},
 		&cobra.Command{
 			Use:   "stop",
@@ -64,6 +64,7 @@ func newSystemCommand() *cobra.Command {
 				RunE: runSystemPrune,
 			}
 			pruneCmd.Flags().StringVarP(&systemPruneMode, "mode", "m", "", "Prune mode: dangling|containers|volumes|all")
+			registerSystemPruneModeCompletion(pruneCmd)
 			return pruneCmd
 		}(),
 		newSystemLogsCommand(),
@@ -103,11 +104,36 @@ func runSystemStop(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	result, err := system.Stop(appCtx.Client)
+	var result *system.StopResult
+	err := run.WithSpinner(appCtx, "Stopping daemon...", func() error {
+		var err error
+		result, err = system.Stop(appCtx.Client)
+		return err
+	})
 	if err != nil {
 		return err
 	}
 	return writeHumanOrRoute(appCtx, "/v3/system/stop", result.Human, result.Data)
+}
+
+func runSystemReload(cmd *cobra.Command, args []string) error {
+	if appCtx == nil {
+		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+	}
+	if err := run.RequireDaemon(appCtx.Client); err != nil {
+		return err
+	}
+	path := "/v3/system/reload"
+	var data map[string]interface{}
+	err := run.WithSpinner(appCtx, "Reloading configuration...", func() error {
+		var reqErr error
+		data, reqErr = appCtx.Client.RequestV3("POST", path, nil)
+		return run.MapAPIError(reqErr)
+	})
+	if err != nil {
+		return err
+	}
+	return run.WriteRouteData(appCtx, path, data)
 }
 
 func runSystemPrune(cmd *cobra.Command, args []string) error {

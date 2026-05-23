@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - CLI operator UX
+
+Consolidated improvements to the Cobra-based `iofog-agent` CLI (help, flags, progress, and mutation output). See [docs/cli/README.md](docs/cli/README.md) and [docs/cli/migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md).
+
+- **Help:** Custom inherited `HelpTemplate` renders `Long`, `Examples`, and Cobra-native flags in terminal `--help` (fixes truncated help from bare `Usage()`). Rich help text for `deploy`, `provision`/`deprovision`, command groups (`system`, `ms`, `image`, `registry`, `runtimeclass`, `auth`), and dangerous-command warnings (`deprovision`, `system stop`, `ms kill`, `ms rm`). Regenerated `docs/cli/generated/` via `make cli-docs`.
+- **Flags:** Migrated manual parsers to Cobra flags — `system logs` / `ms logs` (`--follow`, `--tail`, `--since`, `--until`, `--timestamps`), `image load -f`, `deprovision --scope` / `--keep-local`, `ms ls --source`, `ms inspect --summary`, `registry inspect --password-plain`. Fixed `Use` strings on leaf commands; `image pull` adds `-r`/`-p` shorthands.
+- **Spinners:** Human-mode mutations show a stderr spinner during long operations (`provision`, `deprovision`, `system stop`/`reload`, `ms` lifecycle, `image load`/`rm`/`pull`, `registry rm`, `runtimeclass rm`, deploy registry apply). Structured `-o json|yaml` skips stderr progress UX.
+- **Hybrid mutation output:** `ms start`/`stop`/`restart`/`kill`/`rm`, `provision`, and `deprovision` use a hybrid success pattern — `✔` one-line summary on stderr, multi-line detail on stdout when present (single-line success leaves stdout empty). Mirrors the existing `config` stderr UX contract.
+
 ### Fixed
 
 - **Full flavor (CRI/iofog engine):** `ms restart`, `ms start` after stop, and `stop` + `start` now succeed synchronously via remove+create+start instead of failing with `CONTAINER_EXITED` / non-restartable errors. Docker/Podman in-place restart behavior is unchanged. Local reconcile also recreates on `exiting` + `CONTAINER_EXITED`.

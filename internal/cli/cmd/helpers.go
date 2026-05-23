@@ -115,3 +115,29 @@ func writeHumanOrRoute(ctx *run.CLIContext, routePath, human string, data map[st
 	}
 	return run.WriteRouteData(ctx, routePath, data)
 }
+
+func writeHumanMutationOrData(ctx *run.CLIContext, human string, data map[string]interface{}) error {
+	if ctx == nil {
+		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+	}
+	if ctx.Format.IsStructured() {
+		return run.WriteValue(ctx, data)
+	}
+	if human != "" {
+		return run.WriteHumanMutationResult(ctx, human)
+	}
+	return run.WriteValue(ctx, data)
+}
+
+func writeHumanMutationOrRoute(ctx *run.CLIContext, routePath, human string, data map[string]interface{}) error {
+	if ctx == nil {
+		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+	}
+	if ctx.Format.IsStructured() {
+		return run.WriteValue(ctx, data)
+	}
+	if human != "" {
+		return run.WriteHumanMutationResult(ctx, human)
+	}
+	return run.WriteRouteData(ctx, routePath, data)
+}

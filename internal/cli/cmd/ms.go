@@ -52,6 +52,7 @@ func newMSListCommand() *cobra.Command {
 		RunE:  runMSList,
 	}
 	cmd.Flags().String("source", "all", "Filter list: managed, local, or all")
+	registerSourceFlagCompletion(cmd)
 	return cmd
 }
 
@@ -63,7 +64,14 @@ func newMSInspectCommand() *cobra.Command {
 		RunE:  runMSInspect,
 	}
 	cmd.Flags().Bool("summary", false, "Show summary output")
+	registerMSInspectCompletions(cmd)
 	return cmd
+}
+
+func registerMSInspectCompletions(cmd *cobra.Command) {
+	_ = cmd.RegisterFlagCompletionFunc("summary", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{"true", "false"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func newMSLogsCommand() *cobra.Command {
@@ -93,6 +101,23 @@ func newMSLogsCommand() *cobra.Command {
 
 type msLifecycleFn func(run.V3Client, string) (*microservice.LifecycleResult, error)
 
+func msLifecycleSpinnerMessage(name, id string) string {
+	switch name {
+	case "start":
+		return "Starting microservice " + id + "..."
+	case "stop":
+		return "Stopping microservice " + id + "..."
+	case "restart":
+		return "Restarting microservice " + id + "..."
+	case "kill":
+		return "Killing microservice " + id + "..."
+	case "rm":
+		return "Removing microservice " + id + "..."
+	default:
+		return "Updating microservice " + id + "..."
+	}
+}
+
 func newMSLifecycleCommand(name, short, long string, fn msLifecycleFn) *cobra.Command {
 	return &cobra.Command{
 		Use:   name + " <id>",
@@ -106,11 +131,17 @@ func newMSLifecycleCommand(name, short, long string, fn msLifecycleFn) *cobra.Co
 			if err := run.RequireDaemon(appCtx.Client); err != nil {
 				return err
 			}
-			result, err := fn(appCtx.Client, args[0])
+			id := args[0]
+			var result *microservice.LifecycleResult
+			err := run.WithSpinner(appCtx, msLifecycleSpinnerMessage(name, id), func() error {
+				var err error
+				result, err = fn(appCtx.Client, id)
+				return err
+			})
 			if err != nil {
 				return err
 			}
-			return writeHumanOrRoute(appCtx, result.Path, result.Human, result.Data)
+			return writeHumanMutationOrRoute(appCtx, result.Path, result.Human, result.Data)
 		},
 	}
 }

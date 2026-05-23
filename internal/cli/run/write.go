@@ -118,6 +118,27 @@ func WriteHumanSuccess(ctx *CLIContext, message string) error {
 	return nil
 }
 
+// WriteHumanMutationResult writes hybrid mutation output for human mode.
+// The first line is a success summary on stderr; any remaining lines go to stdout.
+func WriteHumanMutationResult(ctx *CLIContext, human string) error {
+	if ctx == nil {
+		return NewCLIError(CodeInternal, "cli context is nil", nil)
+	}
+	if ctx.UI == nil {
+		return NewCLIError(CodeInternal, "cli ui is nil", nil)
+	}
+	human = strings.TrimRight(human, "\n")
+	if human == "" {
+		return nil
+	}
+	summary, body := splitSummaryBody(human)
+	ctx.UI.WriteSuccess(summary)
+	if body != "" {
+		return WriteHuman(ctx, body)
+	}
+	return nil
+}
+
 // WriteHumanConfigResult writes human config mutation output to stderr.
 // The summary line gets a colored marker; accepted/rejected detail stays plain.
 // Returns exit code 2 when hasRejections is true.

@@ -92,6 +92,7 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&timeout, "timeout", "", "Request timeout")
 	cmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color and interactive UX")
 	cmd.Flags().BoolVar(&showVersion, "version", false, "Print CLI and daemon version")
+	registerOutputFlagCompletion(cmd)
 	cmd.SetHelpTemplate(cliHelpTemplate)
 	cmd.SetHelpFunc(printCommandHelp)
 

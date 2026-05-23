@@ -54,12 +54,19 @@ func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequ
 		return nil, run.NewCLIError(run.CodeInternal, "missing image pull operationId in response", nil)
 	}
 
-	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/v3/images:pull/"+operationID, nil)
-	}, client.PollProgress{
+	progress := client.PollProgress{
 		UI:           uiProgress,
 		PercentLabel: "pulling image",
-	})
+	}
+	if uiProgress != nil {
+		spin := uiProgress.StartSpinner("Pulling image...")
+		defer spin.Stop()
+		progress.Spinner = spin
+	}
+
+	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
+		return api.RequestV3("GET", "/v3/images:pull/"+operationID, nil)
+	}, progress)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}

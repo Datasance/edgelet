@@ -38,15 +38,21 @@ func newDeprovisionCommand() *cobra.Command {
 			if keepLocal {
 				scopeVal = "local"
 			}
-			result, err := provision.Deprovision(appCtx.Client, provision.DeprovisionRequest{Scope: scopeVal})
+			var result *provision.DeprovisionResult
+			err := run.WithSpinner(appCtx, "Deprovisioning agent...", func() error {
+				var err error
+				result, err = provision.Deprovision(appCtx.Client, provision.DeprovisionRequest{Scope: scopeVal})
+				return err
+			})
 			if err != nil {
 				return err
 			}
-			return writeHumanOrData(appCtx, result.Human, result.Data)
+			return writeHumanMutationOrData(appCtx, result.Human, result.Data)
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", "all", "Deprovision scope: all or local")
 	cmd.Flags().BoolVar(&keepLocal, "keep-local", false, "Preserve local microservices (sets scope to local)")
+	registerDeprovisionScopeCompletion(cmd)
 	return cmd
 }
 
@@ -57,9 +63,14 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	result, err := provision.Provision(appCtx.Client, args[0])
+	var result *provision.Result
+	err := run.WithSpinner(appCtx, "Provisioning agent...", func() error {
+		var err error
+		result, err = provision.Provision(appCtx.Client, args[0])
+		return err
+	})
 	if err != nil {
 		return err
 	}
-	return writeHumanOrData(appCtx, result.Human, result.Data)
+	return writeHumanMutationOrData(appCtx, result.Human, result.Data)
 }
