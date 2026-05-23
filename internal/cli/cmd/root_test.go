@@ -45,11 +45,11 @@ func (f *fakeClient) RequestV3(method, path string, _ interface{}) (map[string]i
 	}
 	if method == "GET" && strings.HasPrefix(path, "/v3/images:pull/") {
 		return map[string]interface{}{
-			"status":         "succeeded",
-			"resolvedImage":  "docker.io/library/alpine:3.19",
-			"engine":         "iofog",
-			"platform":       "linux/amd64",
-			"operationId":    "pull-1",
+			"status":        "succeeded",
+			"resolvedImage": "docker.io/library/alpine:3.19",
+			"engine":        "iofog",
+			"platform":      "linux/amd64",
+			"operationId":   "pull-1",
 		}, nil
 	}
 	return map[string]interface{}{}, nil
