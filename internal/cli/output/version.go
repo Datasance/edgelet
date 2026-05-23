@@ -6,8 +6,8 @@ import (
 
 // VersionPayload is the combined CLI + daemon version object for structured output.
 type VersionPayload struct {
-	CLI    VersionCLI               `json:"cli"`
-	Daemon map[string]interface{}   `json:"daemon,omitempty"`
+	CLI    VersionCLI             `json:"cli"`
+	Daemon map[string]interface{} `json:"daemon,omitempty"`
 }
 
 // VersionCLI holds CLI build metadata.

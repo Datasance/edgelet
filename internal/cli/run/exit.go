@@ -3,14 +3,14 @@ package run
 import "strings"
 
 const (
-	ExitSuccess            = 0
-	ExitInternal           = 1
-	ExitInvalidArgument    = 2
-	ExitUnauthorized       = 3
-	ExitNotFound           = 4
-	ExitConflict           = 5
-	ExitNotImplemented     = 6
-	ExitDaemonUnavailable  = 10
+	ExitSuccess           = 0
+	ExitInternal          = 1
+	ExitInvalidArgument   = 2
+	ExitUnauthorized      = 3
+	ExitNotFound          = 4
+	ExitConflict          = 5
+	ExitNotImplemented    = 6
+	ExitDaemonUnavailable = 10
 )
 
 // ExitCodeForCode maps API/CLI error codes to process exit codes.

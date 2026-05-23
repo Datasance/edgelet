@@ -42,11 +42,11 @@ func NewCLIContext(opts ui.Options, format output.Format) *CLIContext {
 func NewCLIContextWithWriters(out, errOut io.Writer, opts ui.Options, format output.Format) *CLIContext {
 	u := ui.NewWithWriters(out, errOut, opts)
 	return &CLIContext{
-		UI:     u,
-		Out:    out,
-		ErrOut: errOut,
-		Format: format,
+		UI:      u,
+		Out:     out,
+		ErrOut:  errOut,
+		Format:  format,
 		NoColor: opts.NoColor,
-		Quiet:  opts.Quiet,
+		Quiet:   opts.Quiet,
 	}
 }

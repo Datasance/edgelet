@@ -11,9 +11,9 @@ import (
 )
 
 type fakeClient struct {
-	running bool
-	gets    map[string]map[string]interface{}
-	errs    map[string]error
+	running   bool
+	gets      map[string]map[string]interface{}
+	errs      map[string]error
 	applyPoll int
 }
 
@@ -74,10 +74,10 @@ func TestVersionMatchesSystemVersionHuman(t *testing.T) {
 		running: true,
 		gets: map[string]map[string]interface{}{
 			"GET /v3/system/version": {
-				"version":    "1.2.3",
-				"buildTime":  "2026-01-01",
-				"gitCommit":  "deadbeef",
-				"flavor":     "full",
+				"version":                "1.2.3",
+				"buildTime":              "2026-01-01",
+				"gitCommit":              "deadbeef",
+				"flavor":                 "full",
 				"allowedContainerEngine": "iofog",
 			},
 		},

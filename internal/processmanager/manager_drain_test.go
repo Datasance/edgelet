@@ -22,11 +22,11 @@ type drainTestEngine struct {
 	stopRemoves bool
 	stopDelay   time.Duration
 
-	stopCalls      int64
-	activeStops    int64
-	maxConcurrent  int64
-	stopErrByID    map[string]error
-	killErrByID    map[string]error
+	stopCalls     int64
+	activeStops   int64
+	maxConcurrent int64
+	stopErrByID   map[string]error
+	killErrByID   map[string]error
 }
 
 func newDrainTestEngine(ids ...string) *drainTestEngine {
@@ -40,10 +40,10 @@ func newDrainTestEngine(ids ...string) *drainTestEngine {
 		}
 	}
 	return &drainTestEngine{
-		running:      running,
-		stopRemoves:  true,
-		stopErrByID:  make(map[string]error),
-		killErrByID:  make(map[string]error),
+		running:     running,
+		stopRemoves: true,
+		stopErrByID: make(map[string]error),
+		killErrByID: make(map[string]error),
 	}
 }
 

@@ -3,9 +3,9 @@ package cmd
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
 	"github.com/eclipse-iofog/agent/internal/cli/domain/prune"
 	"github.com/eclipse-iofog/agent/internal/cli/domain/system"
+	"github.com/eclipse-iofog/agent/internal/cli/output"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
 	"github.com/spf13/cobra"
 )

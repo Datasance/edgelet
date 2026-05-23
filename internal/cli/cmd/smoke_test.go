@@ -33,9 +33,9 @@ func TestExitCodeMatrix(t *testing.T) {
 func TestLegacyCommandRejectionSuite(t *testing.T) {
 	client := &fakeClient{running: true}
 	cases := []struct {
-		name          string
-		args          []string
-		want          int // 0 means any non-zero
+		name string
+		args []string
+		want int // 0 means any non-zero
 	}{
 		{"top-level status", []string{"status"}, 0},
 		{"top-level info", []string{"info"}, 0},

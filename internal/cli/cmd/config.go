@@ -22,11 +22,11 @@ func newConfigCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		&cobra.Command{
-			Use:     "cert <base64-encoded-certificate>",
-			Short:   "Install controller CA certificate",
-			Long:    config.CertCommandLong(),
-			Args:    cobra.ExactArgs(1),
-			RunE:    runConfigCert,
+			Use:   "cert <base64-encoded-certificate>",
+			Short: "Install controller CA certificate",
+			Long:  config.CertCommandLong(),
+			Args:  cobra.ExactArgs(1),
+			RunE:  runConfigCert,
 		},
 		&cobra.Command{
 			Use:   "switch <dev|prod|def>",

@@ -10,14 +10,14 @@ var ErrHumanOutputWritten = errors.New("cli: human output already written")
 
 // Error codes aligned with LocalAPI v3 and CLI exit mapping.
 const (
-	CodeInvalidArgument    = "INVALID_ARGUMENT"
-	CodeUnauthorized       = "UNAUTHORIZED"
-	CodeForbidden          = "FORBIDDEN"
-	CodeNotFound           = "NOT_FOUND"
-	CodeConflict           = "CONFLICT"
-	CodeNotImplemented     = "NOT_IMPLEMENTED"
-	CodeDaemonUnavailable  = "DAEMON_UNAVAILABLE"
-	CodeInternal           = "INTERNAL"
+	CodeInvalidArgument   = "INVALID_ARGUMENT"
+	CodeUnauthorized      = "UNAUTHORIZED"
+	CodeForbidden         = "FORBIDDEN"
+	CodeNotFound          = "NOT_FOUND"
+	CodeConflict          = "CONFLICT"
+	CodeNotImplemented    = "NOT_IMPLEMENTED"
+	CodeDaemonUnavailable = "DAEMON_UNAVAILABLE"
+	CodeInternal          = "INTERNAL"
 )
 
 // ExitCoder allows errors to specify a process exit code.

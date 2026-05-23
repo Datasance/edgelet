@@ -52,9 +52,9 @@ func newRootCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "iofog-agent",
-		Short: "Local CLI for the ioFog Agent daemon",
-		Long:  rootLongHelp(),
+		Use:           "iofog-agent",
+		Short:         "Local CLI for the ioFog Agent daemon",
+		Long:          rootLongHelp(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
