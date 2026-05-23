@@ -6,8 +6,20 @@ Deploy a local manifest
 
 Apply or validate a local microservice, registry, or runtimeclass manifest via LocalAPI v3.
 
+Manifest kind is auto-detected from the YAML file.
+
 ```
 iofog-agent deploy [flags]
+```
+
+### Examples
+
+```
+iofog-agent deploy -f microservice.yaml
+  iofog-agent deploy -f microservice.yaml --dry-run
+  iofog-agent deploy -f microservice.yaml --sourceName my-app
+  iofog-agent deploy -f registry.yaml
+  iofog-agent -o json deploy -f microservice.yaml --dry-run
 ```
 
 ### Options

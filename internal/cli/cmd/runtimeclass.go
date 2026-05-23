@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"github.com/eclipse-iofog/agent/internal/cli/domain/runtimeclass"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
 func newRuntimeClassCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "runtimeclass",
-		Short: "Runtime class operations",
+		Use:     "runtimeclass",
+		Short:   "Runtime class operations",
+		Long:    runtimeclass.CommandLong(),
+		Example: runtimeclass.CommandExamples(),
 	}
 
 	cmd.AddCommand(
@@ -18,13 +21,13 @@ func newRuntimeClassCommand() *cobra.Command {
 			RunE:  runGET("/v3/deploy/runtimeclasses"),
 		},
 		&cobra.Command{
-			Use:   "inspect",
+			Use:   "inspect <name>",
 			Short: "Inspect a runtime class",
 			Args:  cobra.ExactArgs(1),
 			RunE:  runRuntimeClassInspect,
 		},
 		&cobra.Command{
-			Use:   "rm",
+			Use:   "rm <name>",
 			Short: "Remove a runtime class",
 			Args:  cobra.ExactArgs(1),
 			RunE:  runRuntimeClassRemove,

@@ -8,8 +8,10 @@ import (
 
 func newRegistryCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "registry",
-		Short: "Registry operations",
+		Use:     "registry",
+		Short:   "Registry operations",
+		Long:    registry.CommandLong(),
+		Example: registry.CommandExamples(),
 	}
 
 	cmd.AddCommand(
@@ -18,13 +20,9 @@ func newRegistryCommand() *cobra.Command {
 			Short: "List registries",
 			RunE:  runGET("/v3/deploy/registries"),
 		},
+		newRegistryInspectCommand(),
 		&cobra.Command{
-			Use:   "inspect",
-			Short: "Inspect a registry",
-			RunE:  runRegistryInspect,
-		},
-		&cobra.Command{
-			Use:   "rm",
+			Use:   "rm <id>",
 			Short: "Remove a registry",
 			Args:  cobra.ExactArgs(1),
 			RunE:  runRegistryRemove,
@@ -34,25 +32,31 @@ func newRegistryCommand() *cobra.Command {
 	return cmd
 }
 
-func runRegistryInspect(cmd *cobra.Command, args []string) error {
-	if appCtx == nil {
-		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+func newRegistryInspectCommand() *cobra.Command {
+	var passwordPlain bool
+	cmd := &cobra.Command{
+		Use:   "inspect <id>",
+		Short: "Inspect a registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appCtx == nil {
+				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+			}
+			if err := run.RequireDaemon(appCtx.Client); err != nil {
+				return err
+			}
+			result, err := registry.Inspect(appCtx.Client, args[0], passwordPlain)
+			if err != nil {
+				return err
+			}
+			if appCtx.Format.IsStructured() {
+				return run.WriteValue(appCtx, result.Data)
+			}
+			return run.WriteHuman(appCtx, result.Human)
+		},
 	}
-	if err := run.RequireDaemon(appCtx.Client); err != nil {
-		return err
-	}
-	parsed, err := registry.ParseInspectArgs(args)
-	if err != nil {
-		return err
-	}
-	result, err := registry.Inspect(appCtx.Client, parsed.ID, parsed.PasswordPlain)
-	if err != nil {
-		return err
-	}
-	if appCtx.Format.IsStructured() {
-		return run.WriteValue(appCtx, result.Data)
-	}
-	return run.WriteHuman(appCtx, result.Human)
+	cmd.Flags().BoolVar(&passwordPlain, "password-plain", false, "Show registry password in plain text")
+	return cmd
 }
 
 func runRegistryRemove(cmd *cobra.Command, args []string) error {

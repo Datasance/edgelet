@@ -3,15 +3,15 @@
 Pull an image
 
 ```
-iofog-agent image pull [flags]
+iofog-agent image pull <image-ref> [flags]
 ```
 
 ### Options
 
 ```
   -h, --help              help for pull
-      --platform string   Platform os/arch[/variant]
-      --registry-id int   Registry ID
+  -p, --platform string   Platform os/arch[/variant]
+  -r, --registry-id int   Registry ID
 ```
 
 ### Options inherited from parent commands

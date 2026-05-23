@@ -9,7 +9,8 @@ iofog-agent ms ls [flags]
 ### Options
 
 ```
-  -h, --help   help for ls
+  -h, --help            help for ls
+      --source string   Filter list: managed, local, or all (default "all")
 ```
 
 ### Options inherited from parent commands

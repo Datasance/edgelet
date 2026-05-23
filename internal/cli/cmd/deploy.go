@@ -18,9 +18,10 @@ func newDeployCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "deploy",
-		Short: "Deploy a local manifest",
-		Long:  "Apply or validate a local microservice, registry, or runtimeclass manifest via LocalAPI v3.",
+		Use:     "deploy",
+		Short:   "Deploy a local manifest",
+		Long:    deploy.CommandLong(),
+		Example: deploy.CommandExamples(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				switch args[0] {
@@ -65,19 +66,17 @@ func newDeployCommand() *cobra.Command {
 
 func newImagePullCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "pull",
+		Use:   "pull <image-ref>",
 		Short: "Pull an image",
+		Args:  cobra.ExactArgs(1),
 		RunE:  runImagePull,
 	}
-	cmd.Flags().Int("registry-id", 0, "Registry ID")
-	cmd.Flags().String("platform", "", "Platform os/arch[/variant]")
+	cmd.Flags().IntP("registry-id", "r", 0, "Registry ID")
+	cmd.Flags().StringP("platform", "p", "", "Platform os/arch[/variant]")
 	return cmd
 }
 
 func runImagePull(cmd *cobra.Command, args []string) error {
-	if len(args) < 1 {
-		return run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent image pull <image> [-r|--registry-id <id>] [-p|--platform <platform>]", nil)
-	}
 	if appCtx == nil {
 		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
 	}

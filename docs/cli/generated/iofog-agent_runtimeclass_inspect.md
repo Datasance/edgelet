@@ -3,7 +3,7 @@
 Inspect a runtime class
 
 ```
-iofog-agent runtimeclass inspect [flags]
+iofog-agent runtimeclass inspect <name> [flags]
 ```
 
 ### Options

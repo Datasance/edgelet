@@ -3,13 +3,18 @@
 Stream microservice logs
 
 ```
-iofog-agent ms logs [flags]
+iofog-agent ms logs <id> [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for logs
+  -f, --follow         Follow log output
+  -h, --help           help for logs
+      --since string   Show logs since ISO8601 timestamp
+      --tail string    Number of lines to show from the end (default "100")
+      --timestamps     Show log timestamps
+      --until string   Show logs until ISO8601 timestamp
 ```
 
 ### Options inherited from parent commands

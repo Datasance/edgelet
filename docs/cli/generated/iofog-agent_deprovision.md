@@ -2,14 +2,31 @@
 
 Deprovision the agent
 
+### Synopsis
+
+Remove agent provisioning and begin cleanup of managed resources.
+
+WARNING: Deprovisioning stops controller management and may remove managed microservices.
+Use --keep-local or --scope local to preserve locally deployed microservices.
+
 ```
 iofog-agent deprovision [flags]
+```
+
+### Examples
+
+```
+iofog-agent deprovision
+  iofog-agent deprovision --scope local
+  iofog-agent deprovision --keep-local
 ```
 
 ### Options
 
 ```
-  -h, --help   help for deprovision
+  -h, --help           help for deprovision
+      --keep-local     Preserve local microservices (sets scope to local)
+      --scope string   Deprovision scope: all or local (default "all")
 ```
 
 ### Options inherited from parent commands

@@ -2,6 +2,12 @@
 
 System operations
 
+### Synopsis
+
+Agent runtime and daemon operations.
+
+Subcommands: status, info, version, reload, stop, logs, prune.
+
 ### Options
 
 ```

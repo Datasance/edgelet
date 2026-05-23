@@ -2,6 +2,21 @@
 
 Registry operations
 
+### Synopsis
+
+Manage local registry credentials used for image pulls and deploy manifests.
+
+Subcommands: ls, inspect, rm.
+
+### Examples
+
+```
+iofog-agent registry ls -o json
+  iofog-agent registry inspect <id>
+  iofog-agent registry inspect <id> --password-plain
+  iofog-agent registry rm <id>
+```
+
 ### Options
 
 ```

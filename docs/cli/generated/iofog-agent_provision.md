@@ -2,8 +2,21 @@
 
 Provision the agent
 
+### Synopsis
+
+Register this agent with an ioFog Controller using a provisioning key.
+
+The key is issued by the Controller when creating or enrolling an agent.
+
 ```
 iofog-agent provision <provisioning-key> [flags]
+```
+
+### Examples
+
+```
+iofog-agent provision <provisioning-key>
+  iofog-agent -o json provision <provisioning-key>
 ```
 
 ### Options

@@ -2,6 +2,13 @@
 
 Gracefully stop the daemon
 
+### Synopsis
+
+Gracefully stop the ioFog Agent daemon (iofog-agentd).
+
+WARNING: Stopping the daemon disables LocalAPI until the daemon is started again
+(iofog-agentd or systemctl start iofog-agentd).
+
 ```
 iofog-agent system stop [flags]
 ```

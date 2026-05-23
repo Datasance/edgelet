@@ -2,6 +2,12 @@
 
 Remove a microservice
 
+### Synopsis
+
+Remove a microservice and its local deployment state.
+
+WARNING: This deletes the microservice record and associated container resources.
+
 ```
 iofog-agent ms rm <id> [flags]
 ```

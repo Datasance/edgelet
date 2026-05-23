@@ -2,6 +2,20 @@
 
 Authentication operations
 
+### Synopsis
+
+Inspect and manage LocalAPI authentication tokens.
+
+Subcommands: whoami, tokens, revoke.
+
+### Examples
+
+```
+iofog-agent auth whoami -o json
+  iofog-agent auth tokens -o json
+  iofog-agent auth revoke <jti>
+```
+
 ### Options
 
 ```

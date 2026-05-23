@@ -9,7 +9,8 @@ iofog-agent image load [flags]
 ### Options
 
 ```
-  -h, --help   help for load
+  -f, --file string   Path to image tar archive
+  -h, --help          help for load
 ```
 
 ### Options inherited from parent commands

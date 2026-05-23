@@ -2,6 +2,20 @@
 
 Runtime class operations
 
+### Synopsis
+
+Manage runtime class definitions for local microservice deploy manifests.
+
+Subcommands: ls, inspect, rm.
+
+### Examples
+
+```
+iofog-agent runtimeclass ls -o json
+  iofog-agent runtimeclass inspect <name>
+  iofog-agent runtimeclass rm <name>
+```
+
 ### Options
 
 ```

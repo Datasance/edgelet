@@ -3,7 +3,7 @@
 Revoke an auth token
 
 ```
-iofog-agent auth revoke [flags]
+iofog-agent auth revoke <jti> [flags]
 ```
 
 ### Options

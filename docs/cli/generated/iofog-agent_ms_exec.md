@@ -3,7 +3,7 @@
 Execute a command in a microservice
 
 ```
-iofog-agent ms exec [flags]
+iofog-agent ms exec <id> [-- command...] [flags]
 ```
 
 ### Options

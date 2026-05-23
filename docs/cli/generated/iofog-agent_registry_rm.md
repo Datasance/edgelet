@@ -3,7 +3,7 @@
 Remove a registry
 
 ```
-iofog-agent registry rm [flags]
+iofog-agent registry rm <id> [flags]
 ```
 
 ### Options

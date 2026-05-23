@@ -11,16 +11,14 @@ import (
 
 func newMSCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ms",
-		Short: "Microservice operations",
+		Use:     "ms",
+		Short:   "Microservice operations",
+		Long:    microservice.CommandLong(),
+		Example: microservice.CommandExamples(),
 	}
 
 	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "ls",
-			Short: "List microservices",
-			RunE:  runMSList,
-		},
+		newMSListCommand(),
 		&cobra.Command{
 			Use:    "ps",
 			Hidden: true,
@@ -28,37 +26,78 @@ func newMSCommand() *cobra.Command {
 				return run.NewCLIError(run.CodeInvalidArgument, "unknown ms subcommand \"ps\"; use \"iofog-agent ms ls\"", nil)
 			},
 		},
+		newMSInspectCommand(),
+		newMSLogsCommand(),
 		&cobra.Command{
-			Use:   "inspect",
-			Short: "Inspect a microservice",
-			RunE:  runMSInspect,
-		},
-		&cobra.Command{
-			Use:   "logs",
-			Short: "Stream microservice logs",
-			RunE:  runMSLogs,
-		},
-		&cobra.Command{
-			Use:   "exec",
+			Use:   "exec <id> [-- command...]",
 			Short: "Execute a command in a microservice",
+			Args:  cobra.MinimumNArgs(1),
 			RunE:  runMSExec,
 		},
-		newMSLifecycleCommand("start", "Start a microservice", microservice.Start),
-		newMSLifecycleCommand("stop", "Stop a microservice", microservice.Stop),
-		newMSLifecycleCommand("restart", "Restart a microservice", microservice.Restart),
-		newMSLifecycleCommand("kill", "Kill a microservice", microservice.Kill),
-		newMSLifecycleCommand("rm", "Remove a microservice", microservice.Remove),
+		newMSLifecycleCommand("start", "Start a microservice", "", microservice.Start),
+		newMSLifecycleCommand("stop", "Stop a microservice", "", microservice.Stop),
+		newMSLifecycleCommand("restart", "Restart a microservice", "", microservice.Restart),
+		newMSLifecycleCommand("kill", "Kill a microservice", microservice.KillCommandLong(), microservice.Kill),
+		newMSLifecycleCommand("rm", "Remove a microservice", microservice.RemoveCommandLong(), microservice.Remove),
 	)
 
 	return cmd
 }
 
+func newMSListCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "ls",
+		Short: "List microservices",
+		Args:  cobra.NoArgs,
+		RunE:  runMSList,
+	}
+	cmd.Flags().String("source", "all", "Filter list: managed, local, or all")
+	return cmd
+}
+
+func newMSInspectCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "inspect <id>",
+		Short: "Inspect a microservice",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runMSInspect,
+	}
+	cmd.Flags().Bool("summary", false, "Show summary output")
+	return cmd
+}
+
+func newMSLogsCommand() *cobra.Command {
+	var flags logsFlagValues
+	cmd := &cobra.Command{
+		Use:   "logs <id>",
+		Short: "Stream microservice logs",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appCtx == nil {
+				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+			}
+			if err := run.RequireDaemon(appCtx.Client); err != nil {
+				return err
+			}
+			opts := flags.options()
+			id := args[0]
+			if opts.Follow {
+				return microservice.StreamLogs(appCtx, concreteClient(appCtx), id, opts)
+			}
+			return microservice.FetchLogs(appCtx, appCtx.Client, id, opts)
+		},
+	}
+	registerLogsFlags(cmd, &flags)
+	return cmd
+}
+
 type msLifecycleFn func(run.V3Client, string) (*microservice.LifecycleResult, error)
 
-func newMSLifecycleCommand(name, short string, fn msLifecycleFn) *cobra.Command {
+func newMSLifecycleCommand(name, short, long string, fn msLifecycleFn) *cobra.Command {
 	return &cobra.Command{
 		Use:   name + " <id>",
 		Short: short,
+		Long:  long,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if appCtx == nil {
@@ -83,18 +122,13 @@ func runMSList(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	source := "all"
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--source":
-			if i+1 >= len(args) {
-				return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|all", nil)
-			}
-			source = strings.ToLower(strings.TrimSpace(args[i+1]))
-			i++
-		default:
-			return run.NewCLIError(run.CodeInvalidArgument, "unknown flag "+args[i], nil)
-		}
+	source, err := cmd.Flags().GetString("source")
+	if err != nil {
+		return run.NewCLIError(run.CodeInternal, err.Error(), err)
+	}
+	source = strings.ToLower(strings.TrimSpace(source))
+	if source == "" {
+		source = "all"
 	}
 	if source != "managed" && source != "local" && source != "all" {
 		return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|all", nil)
@@ -114,16 +148,9 @@ func runMSInspect(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	if len(args) < 1 {
-		return run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent ms inspect <id> [--summary]", nil)
-	}
-	summary := false
-	for i := 1; i < len(args); i++ {
-		if args[i] == "--summary" {
-			summary = true
-			continue
-		}
-		return run.NewCLIError(run.CodeInvalidArgument, "unknown flag "+args[i], nil)
+	summary, err := cmd.Flags().GetBool("summary")
+	if err != nil {
+		return run.NewCLIError(run.CodeInternal, err.Error(), err)
 	}
 	path := "/v3/ms/" + args[0]
 	if summary {
@@ -134,27 +161,6 @@ func runMSInspect(cmd *cobra.Command, args []string) error {
 		return run.MapAPIError(err)
 	}
 	return run.WriteRouteData(appCtx, path, data)
-}
-
-func runMSLogs(cmd *cobra.Command, args []string) error {
-	if appCtx == nil {
-		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
-	}
-	if err := run.RequireDaemon(appCtx.Client); err != nil {
-		return err
-	}
-	if len(args) < 1 {
-		return run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent ms logs <id> [--follow] [--tail N] [--since ISO8601] [--until ISO8601] [--timestamps]", nil)
-	}
-	id := args[0]
-	opts, err := microservice.ParseLogsOptions(args[1:])
-	if err != nil {
-		return err
-	}
-	if opts.Follow {
-		return microservice.StreamLogs(appCtx, concreteClient(appCtx), id, *opts)
-	}
-	return microservice.FetchLogs(appCtx, appCtx.Client, id, *opts)
 }
 
 func runMSExec(cmd *cobra.Command, args []string) error {

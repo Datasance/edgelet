@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/eclipse-iofog/agent/internal/cli/output"
@@ -93,12 +92,8 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&timeout, "timeout", "", "Request timeout")
 	cmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color and interactive UX")
 	cmd.Flags().BoolVar(&showVersion, "version", false, "Print CLI and daemon version")
-	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if shouldPrintBanner(c, args) {
-			printBannerTo(c.ErrOrStderr())
-		}
-		_ = c.Usage()
-	})
+	cmd.SetHelpTemplate(cliHelpTemplate)
+	cmd.SetHelpFunc(printCommandHelp)
 
 	cmd.AddCommand(newDeployCommand())
 	cmd.AddCommand(newSystemCommand())
@@ -123,7 +118,7 @@ func newRootCommand() *cobra.Command {
 }
 
 func rootLongHelp() string {
-	return strings.TrimSpace(fmt.Sprintf(`Local CLI for the ioFog Agent daemon (v%s).
+	return strings.TrimSpace(`Local CLI for the ioFog Agent daemon.
 
-Use "iofog-agent <command> --help" for command-specific usage.`, Version))
+Use "iofog-agent <command> --help" for command-specific usage.`)
 }

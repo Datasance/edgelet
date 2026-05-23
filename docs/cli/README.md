@@ -99,6 +99,7 @@ iofog-agent ms exec <uuid> -- /bin/sh
 # Registry / image
 iofog-agent registry ls -o json
 iofog-agent image pull docker.io/library/alpine:3.19
+iofog-agent image load -f /path/to/image.tar
 
 # Auth
 iofog-agent auth whoami -o json

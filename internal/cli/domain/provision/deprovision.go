@@ -1,7 +1,6 @@
 package provision
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/eclipse-iofog/agent/internal/cli/run"
@@ -13,27 +12,19 @@ type DeprovisionResult struct {
 	Data  map[string]interface{}
 }
 
+// DeprovisionRequest carries deprovision options.
+type DeprovisionRequest struct {
+	Scope string
+}
+
 // Deprovision removes agent provisioning and optionally preserves local microservices.
-func Deprovision(client run.V3Client, args []string) (*DeprovisionResult, error) {
+func Deprovision(client run.V3Client, req DeprovisionRequest) (*DeprovisionResult, error) {
 	if client == nil {
 		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
 	}
-	scope := "all"
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--scope":
-			if i+1 >= len(args) {
-				return nil, run.NewCLIError(run.CodeInvalidArgument, "--scope requires all|local", nil)
-			}
-			scope = strings.ToLower(strings.TrimSpace(args[i+1]))
-			i++
-		case "--keep-local":
-			scope = "local"
-		case "-h", "--help", "-?":
-			return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent deprovision [--scope all|local] [--keep-local]", nil)
-		default:
-			return nil, run.NewCLIError(run.CodeInvalidArgument, fmt.Sprintf("unknown flag %s", args[i]), nil)
-		}
+	scope := strings.ToLower(strings.TrimSpace(req.Scope))
+	if scope == "" {
+		scope = "all"
 	}
 	if scope != "all" && scope != "local" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "--scope requires all|local", nil)

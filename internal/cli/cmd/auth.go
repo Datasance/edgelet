@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"github.com/eclipse-iofog/agent/internal/cli/domain/auth"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
 func newAuthCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "auth",
-		Short: "Authentication operations",
+		Use:     "auth",
+		Short:   "Authentication operations",
+		Long:    auth.CommandLong(),
+		Example: auth.CommandExamples(),
 	}
 
 	cmd.AddCommand(
@@ -23,7 +26,7 @@ func newAuthCommand() *cobra.Command {
 			RunE:  runGET("/v3/auth/tokens"),
 		},
 		&cobra.Command{
-			Use:   "revoke",
+			Use:   "revoke <jti>",
 			Short: "Revoke an auth token",
 			Args:  cobra.ExactArgs(1),
 			RunE:  runAuthRevoke,

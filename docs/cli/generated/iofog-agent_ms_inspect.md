@@ -3,13 +3,14 @@
 Inspect a microservice
 
 ```
-iofog-agent ms inspect [flags]
+iofog-agent ms inspect <id> [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for inspect
+  -h, --help      help for inspect
+      --summary   Show summary output
 ```
 
 ### Options inherited from parent commands

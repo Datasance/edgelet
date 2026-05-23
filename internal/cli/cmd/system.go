@@ -14,6 +14,7 @@ func newSystemCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "system",
 		Short: "System operations",
+		Long:  system.CommandLong(),
 	}
 
 	var systemPruneMode string
@@ -44,6 +45,7 @@ func newSystemCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "stop",
 			Short: "Gracefully stop the daemon",
+			Long:  system.StopCommandLong(),
 			RunE:  runSystemStop,
 		},
 		func() *cobra.Command {
@@ -64,13 +66,33 @@ func newSystemCommand() *cobra.Command {
 			pruneCmd.Flags().StringVarP(&systemPruneMode, "mode", "m", "", "Prune mode: dangling|containers|volumes|all")
 			return pruneCmd
 		}(),
-		&cobra.Command{
-			Use:   "logs",
-			Short: "Stream daemon logs",
-			RunE:  runSystemLogs,
-		},
+		newSystemLogsCommand(),
 	)
 
+	return cmd
+}
+
+func newSystemLogsCommand() *cobra.Command {
+	var flags logsFlagValues
+	cmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Stream daemon logs",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appCtx == nil {
+				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+			}
+			if err := run.RequireDaemon(appCtx.Client); err != nil {
+				return err
+			}
+			opts := flags.options()
+			if opts.Follow {
+				return system.StreamLogs(appCtx, concreteClient(appCtx), opts)
+			}
+			return system.FetchLogs(appCtx, appCtx.Client, opts)
+		},
+	}
+	registerLogsFlags(cmd, &flags)
 	return cmd
 }
 
@@ -127,23 +149,6 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 		return run.WriteRouteData(appCtx, path, data)
 	}
 	return run.WriteHumanSuccess(appCtx, human)
-}
-
-func runSystemLogs(cmd *cobra.Command, args []string) error {
-	if appCtx == nil {
-		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
-	}
-	if err := run.RequireDaemon(appCtx.Client); err != nil {
-		return err
-	}
-	opts, err := system.ParseLogsOptions(args)
-	if err != nil {
-		return err
-	}
-	if opts.Follow {
-		return system.StreamLogs(appCtx, concreteClient(appCtx), *opts)
-	}
-	return system.FetchLogs(appCtx, appCtx.Client, *opts)
 }
 
 func runGET(path string) func(*cobra.Command, []string) error {

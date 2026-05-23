@@ -2,6 +2,12 @@
 
 Kill a microservice
 
+### Synopsis
+
+Forcefully terminate a microservice container.
+
+WARNING: kill sends SIGKILL-equivalent termination; in-flight work may be lost.
+
 ```
 iofog-agent ms kill <id> [flags]
 ```

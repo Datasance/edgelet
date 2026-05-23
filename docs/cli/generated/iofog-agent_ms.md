@@ -2,6 +2,22 @@
 
 Microservice operations
 
+### Synopsis
+
+Microservice lifecycle and observability on this agent.
+
+Subcommands: ls, inspect, logs, exec, start, stop, restart, kill, rm.
+
+### Examples
+
+```
+iofog-agent ms ls -o json
+  iofog-agent ms ls --source local
+  iofog-agent ms inspect <uuid>
+  iofog-agent ms logs <uuid> --follow
+  iofog-agent ms exec <uuid> -- /bin/sh
+```
+
 ### Options
 
 ```

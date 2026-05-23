@@ -3,7 +3,7 @@
 Remove an image
 
 ```
-iofog-agent image rm [flags]
+iofog-agent image rm <selector> [flags]
 ```
 
 ### Options

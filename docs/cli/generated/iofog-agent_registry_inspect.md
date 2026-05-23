@@ -3,13 +3,14 @@
 Inspect a registry
 
 ```
-iofog-agent registry inspect [flags]
+iofog-agent registry inspect <id> [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for inspect
+  -h, --help             help for inspect
+      --password-plain   Show registry password in plain text
 ```
 
 ### Options inherited from parent commands

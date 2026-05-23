@@ -3,7 +3,7 @@
 Remove a runtime class
 
 ```
-iofog-agent runtimeclass rm [flags]
+iofog-agent runtimeclass rm <name> [flags]
 ```
 
 ### Options

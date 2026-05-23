@@ -4,7 +4,7 @@ Local CLI for the ioFog Agent daemon
 
 ### Synopsis
 
-Local CLI for the ioFog Agent daemon (v1498a45-dirty).
+Local CLI for the ioFog Agent daemon.
 
 Use "iofog-agent <command> --help" for command-specific usage.
 

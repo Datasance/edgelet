@@ -11,8 +11,10 @@ import (
 
 func newImageCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "image",
-		Short: "Image operations",
+		Use:     "image",
+		Short:   "Image operations",
+		Long:    image.CommandLong(),
+		Example: image.CommandExamples(),
 	}
 
 	var imagePruneMode string
@@ -24,11 +26,7 @@ func newImageCommand() *cobra.Command {
 			RunE:  runGET("/v3/images"),
 		},
 		newImagePullCommand(),
-		&cobra.Command{
-			Use:   "load",
-			Short: "Load an image archive",
-			RunE:  runImageLoad,
-		},
+		newImageLoadCommand(),
 		func() *cobra.Command {
 			pruneCmd := &cobra.Command{
 				Use:       "prune [dangling]",
@@ -47,7 +45,7 @@ func newImageCommand() *cobra.Command {
 			return pruneCmd
 		}(),
 		&cobra.Command{
-			Use:   "rm",
+			Use:   "rm <selector>",
 			Short: "Remove an image",
 			Args:  cobra.ExactArgs(1),
 			RunE:  runImageRemove,
@@ -57,22 +55,29 @@ func newImageCommand() *cobra.Command {
 	return cmd
 }
 
-func runImageLoad(cmd *cobra.Command, args []string) error {
-	if appCtx == nil {
-		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+func newImageLoadCommand() *cobra.Command {
+	var filePath string
+	cmd := &cobra.Command{
+		Use:   "load",
+		Short: "Load an image archive",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appCtx == nil {
+				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+			}
+			if err := run.RequireDaemon(appCtx.Client); err != nil {
+				return err
+			}
+			result, err := image.Load(appCtx.Client, image.LoadRequest{Path: filePath})
+			if err != nil {
+				return err
+			}
+			return writeHumanOrRoute(appCtx, "/v3/images:load", result.Human, result.Data)
+		},
 	}
-	if err := run.RequireDaemon(appCtx.Client); err != nil {
-		return err
-	}
-	req, err := image.ParseLoadArgs(args)
-	if err != nil {
-		return err
-	}
-	result, err := image.Load(appCtx.Client, *req)
-	if err != nil {
-		return err
-	}
-	return writeHumanOrRoute(appCtx, "/v3/images:load", result.Human, result.Data)
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to image tar archive")
+	_ = cmd.MarkFlagRequired("file")
+	return cmd
 }
 
 func runImagePrune(cmd *cobra.Command, args []string) error {
