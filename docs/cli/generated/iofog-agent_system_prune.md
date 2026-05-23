@@ -2,14 +2,28 @@
 
 Prune unused resources
 
+### Synopsis
+
+Prune unused resources. Default mode is dangling images.
+
 ```
-iofog-agent system prune [flags]
+iofog-agent system prune [dangling|containers|volumes|all] [flags]
+```
+
+### Examples
+
+```
+iofog-agent system prune
+iofog-agent system prune all
+iofog-agent system prune --mode all
+iofog-agent system prune --mode volumes
 ```
 
 ### Options
 
 ```
-  -h, --help   help for prune
+  -h, --help          help for prune
+  -m, --mode string   Prune mode: dangling|containers|volumes|all
 ```
 
 ### Options inherited from parent commands

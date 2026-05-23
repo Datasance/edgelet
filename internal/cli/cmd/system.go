@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"strings"
+
+	"github.com/eclipse-iofog/agent/internal/cli/output"
 	"github.com/eclipse-iofog/agent/internal/cli/domain/prune"
 	"github.com/eclipse-iofog/agent/internal/cli/domain/system"
 	"github.com/eclipse-iofog/agent/internal/cli/run"
@@ -12,6 +15,8 @@ func newSystemCommand() *cobra.Command {
 		Use:   "system",
 		Short: "System operations",
 	}
+
+	var systemPruneMode string
 
 	cmd.AddCommand(
 		&cobra.Command{
@@ -41,11 +46,24 @@ func newSystemCommand() *cobra.Command {
 			Short: "Gracefully stop the daemon",
 			RunE:  runSystemStop,
 		},
-		&cobra.Command{
-			Use:   "prune",
-			Short: "Prune unused resources",
-			RunE:  runSystemPrune,
-		},
+		func() *cobra.Command {
+			pruneCmd := &cobra.Command{
+				Use:       "prune [dangling|containers|volumes|all]",
+				Short:     "Prune unused resources",
+				Long:      "Prune unused resources. Default mode is dangling images.",
+				Args:      cobra.MaximumNArgs(1),
+				ValidArgs: []string{"dangling", "containers", "volumes", "all"},
+				Example: strings.Join([]string{
+					"iofog-agent system prune",
+					"iofog-agent system prune all",
+					"iofog-agent system prune --mode all",
+					"iofog-agent system prune --mode volumes",
+				}, "\n"),
+				RunE: runSystemPrune,
+			}
+			pruneCmd.Flags().StringVarP(&systemPruneMode, "mode", "m", "", "Prune mode: dangling|containers|volumes|all")
+			return pruneCmd
+		}(),
 		&cobra.Command{
 			Use:   "logs",
 			Short: "Stream daemon logs",
@@ -77,7 +95,13 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	mode, err := prune.ParseMode(args, "Usage: iofog-agent system prune [dangling|containers|volumes|all]")
+	modeArg, _ := cmd.Flags().GetString("mode")
+	parseArgs := make([]string, 0, len(args)+2)
+	if strings.TrimSpace(modeArg) != "" {
+		parseArgs = append(parseArgs, "--mode", modeArg)
+	}
+	parseArgs = append(parseArgs, args...)
+	mode, err := prune.ParseMode(parseArgs, "Usage: iofog-agent system prune [dangling|containers|volumes|all]")
 	if err != nil {
 		return err
 	}
@@ -85,11 +109,24 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 	if mode != "" {
 		path += "?mode=" + mode
 	}
+	if appCtx.Format.IsStructured() {
+		data, reqErr := appCtx.Client.RequestV3("POST", path, nil)
+		if reqErr != nil {
+			return run.MapAPIError(reqErr)
+		}
+		return run.WriteRouteData(appCtx, path, data)
+	}
+	spin := appCtx.UI.StartSpinner("Pruning resources...")
 	data, err := appCtx.Client.RequestV3("POST", path, nil)
+	spin.Stop()
 	if err != nil {
 		return run.MapAPIError(err)
 	}
-	return run.WriteRouteData(appCtx, path, data)
+	human := output.FormatV3Human(path, data)
+	if strings.TrimSpace(human) == "" {
+		return run.WriteRouteData(appCtx, path, data)
+	}
+	return run.WriteHumanSuccess(appCtx, human)
 }
 
 func runSystemLogs(cmd *cobra.Command, args []string) error {

@@ -2,14 +2,27 @@
 
 Prune dangling images
 
+### Synopsis
+
+Prune dangling images only.
+
 ```
-iofog-agent image prune [flags]
+iofog-agent image prune [dangling] [flags]
+```
+
+### Examples
+
+```
+iofog-agent image prune
+iofog-agent image prune dangling
+iofog-agent image prune --mode dangling
 ```
 
 ### Options
 
 ```
-  -h, --help   help for prune
+  -h, --help          help for prune
+  -m, --mode string   Prune mode (only: dangling)
 ```
 
 ### Options inherited from parent commands
