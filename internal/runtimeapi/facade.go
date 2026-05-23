@@ -897,6 +897,13 @@ func (f *Facade) StartRuntimeMicroservice(selector string) (string, error) {
 	if err := processmanager.GetInstance().StartMicroservice(uuid); err != nil {
 		return "", err
 	}
+	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+		local.RuntimeState = "running"
+		local.State = local.RuntimeState
+		local.LastError = ""
+		local.LastTransitionAt = time.Now().Unix()
+		_ = f.db.UpsertLocalDeployedMicroservice(local)
+	}
 	return uuid, nil
 }
 
@@ -952,6 +959,13 @@ func (f *Facade) RestartRuntimeMicroservice(selector string) (string, error) {
 	}
 	if err := processmanager.GetInstance().RestartMicroservice(uuid); err != nil {
 		return "", err
+	}
+	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+		local.RuntimeState = "running"
+		local.State = local.RuntimeState
+		local.LastError = ""
+		local.LastTransitionAt = time.Now().Unix()
+		_ = f.db.UpsertLocalDeployedMicroservice(local)
 	}
 	return uuid, nil
 }

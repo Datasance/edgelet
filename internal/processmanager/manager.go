@@ -38,21 +38,22 @@ const (
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
-	engine                  engine.ContainerEngine
-	engineName              string
-	microserviceManager     MicroserviceManagerInterface
-	containerManager        *ContainerManager
-	taskQueue               *TaskQueue
-	updateChan              chan struct{}
-	ctx                     context.Context
-	cancel                  context.CancelFunc
-	wg                      sync.WaitGroup
-	logger                  *logging.ModuleLogger
-	startMicroserviceFn     func(microserviceUUID string) error
-	removeContainerByIDFn   func(containerID string) error
-	launchLocalDeploymentFn func(item *models.LocalDeployedMicroservice, now int64)
-	getContainerStatusFn    func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
-	reconcileMonitorTick    uint64
+	engine                    engine.ContainerEngine
+	engineName                string
+	microserviceManager       MicroserviceManagerInterface
+	containerManager          *ContainerManager
+	taskQueue                 *TaskQueue
+	updateChan                chan struct{}
+	ctx                       context.Context
+	cancel                    context.CancelFunc
+	wg                        sync.WaitGroup
+	logger                    *logging.ModuleLogger
+	startMicroserviceFn       func(microserviceUUID string) error
+	removeContainerByIDFn     func(containerID string) error
+	launchLocalDeploymentFn   func(item *models.LocalDeployedMicroservice, now int64)
+	recreateLocalDeploymentFn func(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error
+	getContainerStatusFn      func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
+	reconcileMonitorTick      uint64
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -680,17 +681,9 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 					nr.ExitCode,
 					nr.Message,
 				)
-				if rmErr := pm.removeLocalContainerByID(container.ID); rmErr != nil {
-					pm.bumpLocalFailure(item, fmt.Errorf("failed to remove non-restartable container: %w", rmErr), "created")
-					break
+				if recErr := pm.recreateLocalDeployment(item, false, now); recErr != nil {
+					_ = recErr
 				}
-				item.ContainerID = ""
-				item.RuntimeState = "unknown"
-				item.State = item.RuntimeState
-				item.LastError = ""
-				item.FailureCount = 0
-				item.LastTransitionAt = now
-				pm.launchLocalDeploymentWithHook(item, now)
 				return
 			}
 			pm.bumpLocalFailure(item, err, "created")
@@ -702,6 +695,20 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 			item.FailureCount = 0
 		}
 	case "failed", "exiting", "unknown":
+		if runtime == "exiting" {
+			if force, reason, exitCode := shouldForceRecreateFromStatus(status); force {
+				pm.logger.Warnf(
+					"local reconcile exiting with non-restartable terminal state localUUID=%s containerID=%s reason=%s exitCode=%d decision=recreate",
+					item.LocalUUID,
+					container.ID,
+					reason,
+					exitCode,
+				)
+				if recErr := pm.recreateLocalDeployment(item, false, now); recErr == nil {
+					return
+				}
+			}
+		}
 		pm.bumpLocalFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
 	default:
 		if status.ErrorMessage != nil {
@@ -728,21 +735,11 @@ func (pm *ProcessManager) bumpLocalFailure(item *models.LocalDeployedMicroservic
 }
 
 func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicroservice, now int64) {
-	doc := &models.LocalDeployManifest{}
-	dec := yaml.NewDecoder(strings.NewReader(item.ManifestYAML))
-	dec.KnownFields(true)
-	if err := dec.Decode(doc); err != nil {
+	doc, err := decodeLocalDeployManifest(item.ManifestYAML)
+	if err != nil {
 		item.RuntimeState = "failed"
 		item.State = item.RuntimeState
-		pm.bumpLocalFailure(item, fmt.Errorf("invalid persisted manifest: %w", err), item.RuntimeState)
-		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
-		return
-	}
-	if err := doc.Validate(); err != nil {
-		item.RuntimeState = "failed"
-		item.State = item.RuntimeState
-		pm.bumpLocalFailure(item, fmt.Errorf("invalid persisted manifest: %w", err), item.RuntimeState)
+		pm.bumpLocalFailure(item, err, item.RuntimeState)
 		item.LastTransitionAt = now
 		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
 		return
@@ -1573,12 +1570,173 @@ func (pm *ProcessManager) GetContainerByID(containerID string) (*engine.Containe
 	return pm.engine.GetContainerByID(containerID)
 }
 
+func decodeLocalDeployManifest(manifestYAML string) (*models.LocalDeployManifest, error) {
+	doc := &models.LocalDeployManifest{}
+	dec := yaml.NewDecoder(strings.NewReader(manifestYAML))
+	dec.KnownFields(true)
+	if err := dec.Decode(doc); err != nil {
+		return nil, fmt.Errorf("invalid persisted manifest: %w", err)
+	}
+	if err := doc.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid persisted manifest: %w", err)
+	}
+	return doc, nil
+}
+
+func (pm *ProcessManager) resolveMicroserviceForLifecycle(microserviceUUID string) (*models.Microservice, error) {
+	if pm.microserviceManager != nil {
+		if ms := pm.microserviceManager.FindLatestMicroserviceByUUID(microserviceUUID); ms != nil {
+			return ms, nil
+		}
+	}
+	item, err := store.GetInstance().GetLocalDeployedMicroservice(microserviceUUID)
+	if err != nil || item == nil {
+		return nil, fmt.Errorf("microservice spec not found")
+	}
+	doc, err := decodeLocalDeployManifest(item.ManifestYAML)
+	if err != nil {
+		return nil, err
+	}
+	arch := strings.ToLower(strings.TrimSpace(config.GetInstance().Arch))
+	image := doc.ResolveImageForArch(arch)
+	localMS := models.BuildMicroserviceFromLocalManifest(doc, item.LocalUUID, image)
+	if doc.Spec.Images.Registry != nil {
+		if reg, regErr := store.GetInstance().GetLocalRegistry(*doc.Spec.Images.Registry); regErr == nil && reg != nil {
+			localMS.RegistryID = reg.ID
+		}
+	}
+	return localMS, nil
+}
+
+func (pm *ProcessManager) shouldRecreateForStatus(status *models.MicroserviceStatus) bool {
+	if force, _, _ := shouldForceRecreateFromStatus(status); force {
+		return true
+	}
+	return status != nil && status.Status == models.MicroserviceStateExiting
+}
+
+func (pm *ProcessManager) recreateMicroservice(microserviceUUID string, pullImage bool) (string, error) {
+	if pm.containerManager == nil {
+		return "", fmt.Errorf("process manager is not initialized")
+	}
+	ms, err := pm.resolveMicroserviceForLifecycle(microserviceUUID)
+	if err != nil {
+		return "", err
+	}
+	var managedMS *models.Microservice
+	if pm.microserviceManager != nil {
+		managedMS = pm.microserviceManager.FindLatestMicroserviceByUUID(microserviceUUID)
+	}
+	if managedMS != nil {
+		managedMS.SetIsUpdating(true)
+		defer managedMS.SetIsUpdating(false)
+		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
+			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateUpdating)
+		})
+	}
+	newID, err := pm.containerManager.RecreateContainer(pm.operationContext(microserviceUUID), ms, RecreateOptions{PullImage: pullImage})
+	if err != nil {
+		return "", err
+	}
+	pm.updateLocalContainerAfterRecreate(microserviceUUID, newID)
+	return newID, nil
+}
+
+func (pm *ProcessManager) recreateLocalDeployment(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error {
+	if pm.recreateLocalDeploymentFn != nil {
+		return pm.recreateLocalDeploymentFn(item, pullImage, now)
+	}
+	if pm.containerManager == nil {
+		err := fmt.Errorf("process manager is not initialized")
+		pm.bumpLocalFailure(item, err, "failed")
+		return err
+	}
+	ms, err := pm.resolveMicroserviceForLifecycle(item.LocalUUID)
+	if err != nil {
+		pm.bumpLocalFailure(item, err, "failed")
+		return err
+	}
+	newID, err := pm.containerManager.RecreateContainer(pm.reconcileOperationContext(item.LocalUUID), ms, RecreateOptions{PullImage: pullImage})
+	if err != nil {
+		pm.bumpLocalFailure(item, err, "failed")
+		return err
+	}
+	item.ContainerID = newID
+	item.RuntimeState = "running"
+	item.State = item.RuntimeState
+	item.ObservedGeneration = item.Generation
+	item.LastError = ""
+	item.FailureCount = 0
+	item.LastTransitionAt = now
+	if pm.engine != nil {
+		if sandboxID, sbErr := pm.engine.GetContainerSandboxID(newID); sbErr == nil && sandboxID != "" {
+			_ = store.GetInstance().SaveLocalContainerState(item.LocalUUID, newID, sandboxID)
+		}
+	}
+	return store.GetInstance().UpsertLocalDeployedMicroservice(item)
+}
+
+func (pm *ProcessManager) updateLocalContainerAfterRecreate(microserviceUUID, containerID string) {
+	item, err := store.GetInstance().GetLocalDeployedMicroservice(microserviceUUID)
+	if err != nil || item == nil {
+		return
+	}
+	item.ContainerID = containerID
+	item.RuntimeState = "running"
+	item.State = item.RuntimeState
+	item.LastError = ""
+	item.LastTransitionAt = time.Now().Unix()
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	if pm.engine != nil {
+		if sandboxID, sbErr := pm.engine.GetContainerSandboxID(containerID); sbErr == nil && sandboxID != "" {
+			_ = store.GetInstance().SaveLocalContainerState(microserviceUUID, containerID, sandboxID)
+		}
+	}
+}
+
 // StartMicroservice starts a runtime microservice container.
 func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
 		return fmt.Errorf("process manager is not initialized")
 	}
-	return pm.containerManager.StartContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
+	ctx := pm.operationContext(microserviceUUID)
+
+	container, err := pm.containerManager.GetContainerForMicroservice(microserviceUUID)
+	if err != nil {
+		return err
+	}
+	if container == nil {
+		_, err := pm.recreateMicroservice(microserviceUUID, true)
+		return err
+	}
+	if pm.engine == nil {
+		return fmt.Errorf("process manager engine is not initialized")
+	}
+
+	status, err := pm.engine.GetContainerStatus(container.ID, microserviceUUID)
+	if err != nil {
+		return err
+	}
+	if status.Status == models.MicroserviceStateRunning {
+		return nil
+	}
+	if engine.SupportsInPlaceRestart(pm.engineName) {
+		return pm.containerManager.StartContainerByMicroserviceUUID(ctx, microserviceUUID)
+	}
+	if pm.shouldRecreateForStatus(status) {
+		_, err := pm.recreateMicroservice(microserviceUUID, false)
+		return err
+	}
+
+	startErr := pm.containerManager.StartContainerByMicroserviceUUID(ctx, microserviceUUID)
+	if startErr == nil {
+		return nil
+	}
+	if _, ok := engine.IsNonRestartableContainerError(startErr); ok {
+		_, err := pm.recreateMicroservice(microserviceUUID, false)
+		return err
+	}
+	return startErr
 }
 
 // StopMicroservice stops a runtime microservice container.
@@ -1602,7 +1760,11 @@ func (pm *ProcessManager) RestartMicroservice(microserviceUUID string) error {
 	if err := pm.StopMicroservice(microserviceUUID); err != nil {
 		return err
 	}
-	return pm.StartMicroservice(microserviceUUID)
+	if engine.SupportsInPlaceRestart(pm.engineName) {
+		return pm.StartMicroservice(microserviceUUID)
+	}
+	_, err := pm.recreateMicroservice(microserviceUUID, false)
+	return err
 }
 
 // RemoveMicroservice removes a runtime microservice container.

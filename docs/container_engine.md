@@ -113,6 +113,22 @@ The engine is initialised with `engine.Init(EngineConfig{...})` which establishe
 | Host networking | `--network=host` | `--network=host` | `NamespaceMode_NODE` in CRI |
 | WASM workloads | No | No | Not bundled by default |
 | Linux only | No (macOS supported) | No | Yes (`//go:build linux`) |
+| Manual `ms start` / `ms restart` | In-place (`stop` → `start` same ID) | In-place | Remove + create + start (new container ID) |
+
+### Microservice lifecycle restart semantics
+
+Manual lifecycle commands (`iofog-agent ms start`, `stop`, `restart`) behave differently per engine:
+
+| Operation | Docker / Podman | Embedded containerd (CRI) |
+|-----------|-----------------|---------------------------|
+| `ms stop` | Stops container; same object remains | Same |
+| `ms start` after stop | Starts the same container ID | Removes exited container, creates and starts a new one |
+| `ms restart` | Stop + start same ID | Stop + remove + create + start (no image pull) |
+| `ms start` when container missing | Creates from spec (may pull) | Same |
+
+CRI containers enter `CONTAINER_EXITED` after stop — a terminal state where `StartContainer` cannot reuse the object. The agent uses `ContainerManager.RecreateContainer` synchronously for CLI/API operations and in local reconcile when `CONTAINER_EXITED` is detected.
+
+Capability detection: `pkg/engine/capabilities.go` → `SupportsInPlaceRestart(engineName)`.
 
 ---
 

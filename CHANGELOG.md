@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Full flavor (CRI/iofog engine):** `ms restart`, `ms start` after stop, and `stop` + `start` now succeed synchronously via remove+create+start instead of failing with `CONTAINER_EXITED` / non-restartable errors. Docker/Podman in-place restart behavior is unchanged. Local reconcile also recreates on `exiting` + `CONTAINER_EXITED`.
+
 ### Changed - CLI redesign (breaking)
 
 The `iofog-agent` CLI was rebuilt on Cobra with layered packages (`internal/cli/cmd`, `domain`, `client`, `ui`, `output`). **There are no legacy aliases.** See [docs/cli/migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md) for operator migration steps.

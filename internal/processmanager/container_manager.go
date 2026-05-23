@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/eclipse-iofog/agent/internal/config"
@@ -482,6 +483,48 @@ func (cm *ContainerManager) KillContainerByMicroserviceUUID(ctx context.Context,
 	killEvent.Result = runtimeops.ResultOK
 	cm.emitFromCM(ctx, killEvent)
 	return nil
+}
+
+// RecreateOptions controls remove+create lifecycle recreation.
+type RecreateOptions struct {
+	PullImage   bool
+	WithCleanup bool
+	RemoveImage bool
+}
+
+// RecreateContainer removes an existing workload container when present, then
+// creates and starts a new one from the microservice spec.
+func (cm *ContainerManager) RecreateContainer(ctx context.Context, ms *models.Microservice, opts RecreateOptions) (string, error) {
+	if ms == nil {
+		return "", fmt.Errorf("microservice is nil")
+	}
+
+	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
+		Event:   runtimeops.EventContainerUpdatePhase,
+		MsUUID:  ms.MicroserviceUUID,
+		Image:   ms.ImageName,
+		Phase:   "recreate",
+		Source:  runtimeops.SourceTask,
+		Message: "recreate phase",
+	})
+
+	container, err := cm.GetContainerForMicroservice(ms.MicroserviceUUID)
+	if err != nil {
+		return "", err
+	}
+	if container != nil {
+		if err := cm.RemoveContainerByMicroserviceUUID(ctx, ms.MicroserviceUUID, opts.WithCleanup, opts.RemoveImage); err != nil {
+			return "", err
+		}
+	}
+
+	if err := cm.createContainerWithPull(ctx, ms, opts.PullImage); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(ms.ContainerID) == "" {
+		return "", fmt.Errorf("recreate completed without container id for %s", ms.MicroserviceUUID)
+	}
+	return ms.ContainerID, nil
 }
 
 // createContainer creates a container for a microservice

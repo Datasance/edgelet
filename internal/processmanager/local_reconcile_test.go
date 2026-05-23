@@ -53,8 +53,7 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreates(t *testing.
 		DesiredState: "running",
 	}
 	container := &engine.Container{ID: "old-container"}
-	removeCalled := false
-	launchCalled := false
+	recreateCalled := false
 	pm.startMicroserviceFn = func(_ string) error {
 		return &engine.NonRestartableContainerError{
 			ContainerID: "old-container",
@@ -63,20 +62,17 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreates(t *testing.
 			Message:     "container is in CONTAINER_EXITED state",
 		}
 	}
-	pm.removeContainerByIDFn = func(containerID string) error {
-		if containerID != "old-container" {
-			t.Fatalf("unexpected container id: %s", containerID)
+	pm.recreateLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, pullImage bool, _ int64) error {
+		recreateCalled = true
+		if pullImage {
+			t.Fatalf("expected pullImage=false for created non-restartable recreate")
 		}
-		removeCalled = true
-		return nil
-	}
-	pm.launchLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, _ int64) {
-		launchCalled = true
 		target.ContainerID = "new-container"
 		target.RuntimeState = "running"
 		target.State = "running"
 		target.LastError = ""
 		target.FailureCount = 0
+		return nil
 	}
 	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
 		return &models.MicroserviceStatus{Status: models.MicroserviceStateCreated}, nil
@@ -84,11 +80,8 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreates(t *testing.
 
 	pm.reconcileLocalDesiredRunning(item, container, 123)
 
-	if !removeCalled {
-		t.Fatalf("expected remove to be called for non-restartable created container")
-	}
-	if !launchCalled {
-		t.Fatalf("expected relaunch to be called for non-restartable created container")
+	if !recreateCalled {
+		t.Fatalf("expected recreate to be called for non-restartable created container")
 	}
 	if item.RuntimeState != "running" || item.State != "running" {
 		t.Fatalf("expected running state after recreate, got runtime=%q state=%q", item.RuntimeState, item.State)
@@ -146,8 +139,9 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreateLaunchFailure
 		return &engine.NonRestartableContainerError{ContainerID: "container-3", Reason: "CONTAINER_EXITED", ExitCode: 255, Message: "terminal"}
 	}
 	pm.removeContainerByIDFn = func(_ string) error { return nil }
-	pm.launchLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, _ int64) {
+	pm.recreateLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, _ bool, _ int64) error {
 		pm.bumpLocalFailure(target, errors.New("recreate launch failed"), "failed")
+		return errors.New("recreate launch failed")
 	}
 	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
 		return &models.MicroserviceStatus{Status: models.MicroserviceStateCreated}, nil
@@ -163,6 +157,55 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreateLaunchFailure
 	}
 }
 
+func TestReconcileLocalDesiredRunning_ExitingNonRestartableRecreates(t *testing.T) {
+	openLocalReconcileTestDB(t)
+
+	pm := &ProcessManager{}
+	pm.logger = logging.NewModuleLogger("test-process-manager")
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:    "local-exiting",
+		ManifestYAML: minimalLocalManifestYAML(),
+		Generation:   1,
+		RuntimeState: "exiting",
+		State:        "exiting",
+		ContainerID:  "old-container",
+		DesiredState: "running",
+	}
+	container := &engine.Container{ID: "old-container"}
+	recreateCalled := false
+	pm.recreateLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, pullImage bool, _ int64) error {
+		recreateCalled = true
+		if pullImage {
+			t.Fatalf("expected pullImage=false for exiting non-restartable recreate")
+		}
+		target.ContainerID = "new-container"
+		target.RuntimeState = "running"
+		target.State = "running"
+		target.LastError = ""
+		target.FailureCount = 0
+		return nil
+	}
+	criMsg := "CRI reason=CONTAINER_EXITED exitCode=143 message=container is in CONTAINER_EXITED state"
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{
+			Status:       models.MicroserviceStateExiting,
+			ErrorMessage: &criMsg,
+		}, nil
+	}
+
+	pm.reconcileLocalDesiredRunning(item, container, 999)
+
+	if !recreateCalled {
+		t.Fatal("expected recreate for exiting CONTAINER_EXITED state")
+	}
+	if item.RuntimeState != "running" || item.State != "running" {
+		t.Fatalf("expected running state after recreate, got runtime=%q state=%q", item.RuntimeState, item.State)
+	}
+	if item.FailureCount != 0 {
+		t.Fatalf("expected failure count reset after recreate, got %d", item.FailureCount)
+	}
+}
+
 func openLocalReconcileTestDB(t *testing.T) {
 	t.Helper()
 	db := store.GetInstance()
@@ -174,14 +217,15 @@ func openLocalReconcileTestDB(t *testing.T) {
 }
 
 func minimalLocalManifestYAML() string {
-	return `apiVersion: iofog.org/v3
+	return `apiVersion: datasance.com/v3
 kind: Microservice
 metadata:
   name: local-ms
 spec:
   images:
-    arm64: busybox:latest
+    x86: busybox:latest
   container:
-    rootHostAccess: false
+    hostNetworkMode: false
+    isPrivileged: false
 `
 }
