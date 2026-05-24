@@ -5,6 +5,6 @@ profiles:
   production:
     containerEngine: docker
     dockerUrl: unix:///var/run/docker.sock
-    diskDirectory: /var/lib/iofog-agent/
-    logDirectory: /var/log/iofog-agent/
+    diskDirectory: /var/lib/edgelet/
+    logDirectory: /var/log/edgelet/
     logLevel: INFO

@@ -1,10 +1,10 @@
-# Example profile for **full** tarball (embedded containerd; engine fixed to iofog).
+# Example profile for **full** tarball (embedded containerd; engine fixed to edgelet).
 # dockerUrl must match the embedded socket path.
 currentProfile: production
 profiles:
   production:
-    containerEngine: iofog
-    dockerUrl: unix:///run/iofog-agent/containerd.sock
-    diskDirectory: /var/lib/iofog-agent/
-    logDirectory: /var/log/iofog-agent/
+    containerEngine: edgelet
+    dockerUrl: unix:///run/edgelet/containerd.sock
+    diskDirectory: /var/lib/edgelet/
+    logDirectory: /var/log/edgelet/
     logLevel: INFO

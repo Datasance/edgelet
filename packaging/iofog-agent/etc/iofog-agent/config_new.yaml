@@ -19,7 +19,7 @@ profiles:
     iofogUuid: ""
     secureMode: "off"
     devMode: "off"
-    controllerCert: "/etc/iofog-agent/cert.crt"
+    controllerCert: "/etc/edgelet/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
     # containerEngine selects the container runtime.
@@ -29,19 +29,19 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
     #             dockerUrl is ignored; the daemon always connects to its private
-    #             socket at /run/iofog-agent/containerd.sock.
-    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
-    containerEngine: "iofog"
-    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
-    diskDirectory: "/var/lib/iofog-agent/"
+    diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
     processorConsumptionLimit: "80.0"
     logDiskConsumptionLimit: "10.0"
-    logDiskDirectory: "/var/log/iofog-agent/"
+    logDiskDirectory: "/var/log/edgelet/"
     logFileCount: "10"
     logLevel: "INFO"
     statusFrequency: "30"
@@ -64,7 +64,7 @@ profiles:
     iofogUuid: ""
     secureMode: "off"
     devMode: "on"
-    controllerCert: "/etc/iofog-agent/cert.crt"
+    controllerCert: "/etc/edgelet/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
     # containerEngine selects the container runtime.
@@ -74,19 +74,19 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
     #             dockerUrl is ignored; the daemon always connects to its private
-    #             socket at /run/iofog-agent/containerd.sock.
-    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
-    containerEngine: "iofog"
-    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
-    diskDirectory: "/var/lib/iofog-agent/"
+    diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
     processorConsumptionLimit: "80.0"
     logDiskConsumptionLimit: "10.0"
-    logDiskDirectory: "/var/log/iofog-agent/"
+    logDiskDirectory: "/var/log/edgelet/"
     logFileCount: "10"
     logLevel: "INFO"
     statusFrequency: "30"
@@ -109,7 +109,7 @@ profiles:
     iofogUuid: ""
     secureMode: "on"
     devMode: "off"
-    controllerCert: "/etc/iofog-agent/cert.crt"
+    controllerCert: "/etc/edgelet/cert.crt"
     arch: "auto"
     networkInterface: "dynamic"
     # containerEngine selects the container runtime.
@@ -119,19 +119,19 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   iofog   — use the embedded containerd engine bundled with iofog-agentd.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
     #             dockerUrl is ignored; the daemon always connects to its private
-    #             socket at /run/iofog-agent/containerd.sock.
-    #             Persistent data lives in /var/lib/iofog-agent-containerd/ and
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
-    containerEngine: "iofog"
-    dockerUrl: "unix:///run/iofog-agent/containerd.sock"
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
-    diskDirectory: "/var/lib/iofog-agent/"
+    diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
     processorConsumptionLimit: "80.0"
     logDiskConsumptionLimit: "10.0"
-    logDiskDirectory: "/var/log/iofog-agent/"
+    logDiskDirectory: "/var/log/edgelet/"
     logFileCount: "10"
     logLevel: "INFO"
     statusFrequency: "30"
