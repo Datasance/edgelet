@@ -21,17 +21,17 @@ FLAVOR ?= full
 
 # Build flags
 # CLI is flavor-agnostic; daemon carries flavor metadata.
-LDFLAGS_CLI := -X github.com/eclipse-iofog/agent/internal/cli/cmd.Version=$(VERSION) -X github.com/eclipse-iofog/agent/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/eclipse-iofog/agent/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
+LDFLAGS_CLI := -X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) -X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
 LDFLAGS_DAEMON := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=$(FLAVOR) -s -w
+	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=$(FLAVOR) -s -w
 BUILD_FLAGS_CLI := -trimpath -ldflags "$(LDFLAGS_CLI)"
 BUILD_FLAGS_DAEMON := -trimpath -ldflags "$(LDFLAGS_DAEMON)"
 
 # Fixed flavor ldflags for multi-flavor release builds (do not depend on FLAVOR=)
 LDFLAGS_LITE := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=lite -s -w
+	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=lite -s -w
 LDFLAGS_FULL := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=full -s -w
+	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full -s -w
 
 # Binary names
 CLI_BINARY := build/iofog-agent
