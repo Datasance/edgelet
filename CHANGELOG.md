@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Edgelet Plan 1 (Foundation)
+
+Greenfield rebrand from ioFog Agent to **Edgelet** (`github.com/datasance/edgelet`):
+
+- **Module & toolchain:** Go 1.26.2; containerd **v2.2.3-k3s1** (k3s fork) with cri-api **v1.36.1-k3s1** replace block.
+- **Identity:** Labels `edgelet.iofog.org/*`, env `EDGELET_*`, JWT/DNS `edgelet.default.svc.bridge.local`, RBAC group **`edgelet.iofog.org/v1`** only.
+- **Local API v1:** All routes moved from `/v3/` to **`/v1/`**; OpenAPI spec at `docs/localapi-v1-openapi.yaml`.
+- **Paths & engine:** `/var/lib/edgelet`, `/run/edgelet`, `containerEngine=edgelet` (full flavor); child flag **`--edgelet-containerd-child`**.
+- **Deploy manifests:** Accept **`apiVersion: edgelet.iofog.org/v1`** only (kinds unchanged).
+- **Provision:** Full profile sends `engine=edgelet` to Pot controller (REST `/api/v3/…` unchanged).
+
+Legacy `cmd/iofog-agent` / `cmd/iofog-agentd` entrypoints retained until Plan 3 multicall merge.
+
 ### Changed
 
 - **Provision payload:** Controller provision requests now include `engine` (configured `containerEngine`) and `flavor` (daemon build metadata: `lite` or `full`) alongside the existing `key` and architecture `type` fields. Invalid engine/flavor combinations are rejected before the controller call.
