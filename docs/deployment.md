@@ -233,7 +233,7 @@ kubectl apply -f k8s-deployment.yaml
 sudo iofog-agent system status
 
 # API status
-curl http://localhost:54321/api/v3/status
+curl http://localhost:54321/api/v1/status
 ```
 
 ### Check Logs
@@ -250,13 +250,13 @@ tail -f /var/log/iofog-agent/agent.log
 
 ```bash
 # Test Local API
-curl http://localhost:54321/api/v3/status
+curl http://localhost:54321/api/v1/status
 
 # Test Docker
 docker ps
 
 # Test Controller connection
-curl https://controller.example.com/api/v3/status
+curl https://controller.example.com/api/v1/status
 ```
 
 ## Upgrades

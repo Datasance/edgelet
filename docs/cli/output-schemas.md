@@ -1,10 +1,10 @@
 # iofog-agent CLI JSON output schemas
 
-Structured output (`-o json` or `-o yaml`) emits the LocalAPI v3 **data** envelope contents directly (no extra CLI wrapper). Shapes below match golden fixtures in `internal/cli/output/testdata/golden/`.
+Structured output (`-o json` or `-o yaml`) emits the LocalAPI v1 **data** envelope contents directly (no extra CLI wrapper). Shapes below match golden fixtures in `internal/cli/output/testdata/golden/`.
 
 ## `iofog-agent system status -o json`
 
-Route: `GET /v3/system/status`
+Route: `GET /v1/system/status`
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -33,7 +33,7 @@ Golden fixture (minimal subset):
 
 ## `iofog-agent ms ls -o json`
 
-Route: `GET /v3/ms`
+Route: `GET /v1/ms`
 
 | Field | Type | Description |
 |-------|------|-------------|

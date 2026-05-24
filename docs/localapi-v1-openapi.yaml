@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
-  title: ioFog Agent LocalAPI
-  version: 3.0.0
+  title: Edgelet LocalAPI
+  version: 1.0.0
   description: >
-    Frozen LocalAPI v1 baseline for Agent daemon and iofog-agent CLI.
-    Canonical namespace is /v3. Any path/schema/auth deviation must be
+    LocalAPI v1 baseline for Edgelet daemon and CLI.
+    Canonical namespace is /v1. Any path/schema/auth deviation must be
     explicitly approved before implementation.
 servers:
   - url: https://edgelet.default.svc.bridge.local
     description: HTTPS/WSS transport for microservices and local clients
-  - url: http+unix://%2Frun%2Fiofog-agent%2Fedgelet.sock
+  - url: http+unix://%2Frun%2Fedgelet%2Fedgelet.sock
     description: Unix socket transport for CLI/admin operations
 security:
   - BearerAuth: []

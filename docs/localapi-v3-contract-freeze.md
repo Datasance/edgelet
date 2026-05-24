@@ -1,13 +1,13 @@
-# LocalAPI v3 Contract Freeze
+# LocalAPI v1 Contract Freeze
 
-This document freezes the LocalAPI v3 baseline used for implementation in this repository.
+This document freezes the LocalAPI v1 baseline used for implementation in this repository.
 
 ## Scope
 
-- Canonical route namespace: `/v3/...`
+- Canonical route namespace: `/v1/...`
 - Baseline OpenAPI contract: `docs/localapi-v3-openapi.yaml`
 - CLI must remain a thin transport client and should not implement daemon runtime logic.
-- RuntimeClass surface is part of v3 contract (`/v3/deploy/runtimeclasses*`) with full+iofog gating.
+- RuntimeClass surface is part of v3 contract (`/v1/deploy/runtimeclasses*`) with full+iofog gating.
 
 ## Locked Decisions
 
@@ -30,7 +30,7 @@ Implementation must pause and request explicit user confirmation before any of t
 - auth requirement changes
 - request/response schema changes
 - behavior changes in bootstrap/provisioned token acceptance
-- changes to canonical namespace away from `/v3/...`
+- changes to canonical namespace away from `/v1/...`
 
 ## Notes
 

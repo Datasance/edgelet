@@ -171,7 +171,7 @@ If you encounter compatibility issues:
 
 1. Check API compatibility:
    ```bash
-   curl http://localhost:54321/api/v3/status
+   curl http://localhost:54321/api/v1/status
    ```
 
 2. Verify Docker integration:

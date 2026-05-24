@@ -4,7 +4,7 @@
 
 The ioFog Agent exposes a Local API for managing the agent and its microservices.
 
-> Note: current implementation is LocalAPI **v3** (`/v3/...`). Legacy path examples in this file are historical and should be treated as non-authoritative.
+> Note: current implementation is LocalAPI **v3** (`/v1/...`). Legacy path examples in this file are historical and should be treated as non-authoritative.
 
 ### Base URL
 
@@ -20,13 +20,13 @@ The Local API uses JWT tokens for authentication. Tokens can be obtained through
 
 #### RuntimeClass endpoints (v3)
 
-- `POST /v3/deploy/runtimeclasses:validate`
-- `POST /v3/deploy/runtimeclasses:apply`
-- `GET /v3/deploy/runtimeclasses:apply/{operationId}`
-- `GET /v3/deploy/runtimeclasses`
-- `GET /v3/deploy/runtimeclasses/{name}`
-- `DELETE /v3/deploy/runtimeclasses/{name}`
-- `GET /v3/deploy/runtimeclasses:delete/{operationId}`
+- `POST /v1/deploy/runtimeclasses:validate`
+- `POST /v1/deploy/runtimeclasses:apply`
+- `GET /v1/deploy/runtimeclasses:apply/{operationId}`
+- `GET /v1/deploy/runtimeclasses`
+- `GET /v1/deploy/runtimeclasses/{name}`
+- `DELETE /v1/deploy/runtimeclasses/{name}`
+- `GET /v1/deploy/runtimeclasses:delete/{operationId}`
 
 RuntimeClass support is gated to `full` flavor with `containerEngine=iofog`.
 Unsupported modes return:
@@ -52,7 +52,7 @@ Semantics:
 ##### RuntimeClass delete contract
 
 Request transport:
-- `DELETE /v3/deploy/runtimeclasses/{name}`
+- `DELETE /v1/deploy/runtimeclasses/{name}`
 - optional query: `async=true|false` (default `false`)
 
 Semantics:
@@ -327,7 +327,7 @@ Unknown delete operation (`404 NOT_FOUND`):
 ##### GET /status
 Get agent status information.
 
-For v3 (`GET /v3/system/status`), response includes `availableRuntimes`.
+For v3 (`GET /v1/system/status`), response includes `availableRuntimes`.
 
 **Response:**
 ```json

@@ -134,8 +134,8 @@ The controller-facing brain. Runs three background workers:
 
 | Worker | Frequency | Purpose |
 |--------|-----------|---------|
-| `postStatusWorker` | `cfg.StatusFrequency` | `PUT /api/v3/agent/status` with aggregated status |
-| `getChangesWorker` | `cfg.ChangeFrequency` | `GET /api/v3/agent/config/changes`; dispatches handlers |
+| `postStatusWorker` | `cfg.StatusFrequency` | `PUT /api/v1/agent/status` with aggregated status |
+| `getChangesWorker` | `cfg.ChangeFrequency` | `GET /api/v1/agent/config/changes`; dispatches handlers |
 
 On each `getChangesWorker` cycle, the field agent checks a set of boolean change flags returned by the controller (`microserviceList`, `registries`, `volumeMounts`, `config`, `tunnel`, `version`, …). For each active flag it calls the corresponding loader:
 
@@ -257,24 +257,24 @@ Key endpoints:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/v3/system/status` | ✓ | Full daemon status |
-| GET | `/v3/system/info` | ✓ | Config/runtime report |
-| GET | `/v3/system/version` | ✓ | Version/build/flavor metadata |
-| POST/DELETE | `/v3/system/provision` | ✓ | Provision/deprovision agent |
-| POST | `/v3/system/reload` | ✓ | Reload configuration |
-| POST | `/v3/system/prune` | ✓ | Trigger prune |
-| GET/POST | `/v3/system/gps` | ✓ | Read/update GPS state |
-| GET/PATCH | `/v3/system/config` | ✓ | Read/patch system config |
-| POST | `/v3/system/controller/cert` | ✓ | Install controller CA cert and enable secure mode |
-| POST | `/v3/system/config/switch` | ✓ | Switch active profile |
-| GET | `/v3/microservices/config` | ✓ | Microservice self config (JWT identity-derived) |
-| WS GET | `/v3/microservices/control` | ✓ | Microservice control channel (JWT identity-derived) |
+| GET | `/v1/system/status` | ✓ | Full daemon status |
+| GET | `/v1/system/info` | ✓ | Config/runtime report |
+| GET | `/v1/system/version` | ✓ | Version/build/flavor metadata |
+| POST/DELETE | `/v1/system/provision` | ✓ | Provision/deprovision agent |
+| POST | `/v1/system/reload` | ✓ | Reload configuration |
+| POST | `/v1/system/prune` | ✓ | Trigger prune |
+| GET/POST | `/v1/system/gps` | ✓ | Read/update GPS state |
+| GET/PATCH | `/v1/system/config` | ✓ | Read/patch system config |
+| POST | `/v1/system/controller/cert` | ✓ | Install controller CA cert and enable secure mode |
+| POST | `/v1/system/config/switch` | ✓ | Switch active profile |
+| GET | `/v1/microservices/config` | ✓ | Microservice self config (JWT identity-derived) |
+| WS GET | `/v1/microservices/control` | ✓ | Microservice control channel (JWT identity-derived) |
 
 ---
 
 ### Status Reporter (`internal/statusreporter`)
 
-A singleton, thread-safe status hub. Every module writes its status via `UpdateProcessManagerStatus`, `UpdateFieldAgentStatus`, etc. (functional update pattern: `fn(status *Status)`). The Field Agent reads the aggregated struct and serializes it to the controller in `PUT /api/v3/agent/status`.
+A singleton, thread-safe status hub. Every module writes its status via `UpdateProcessManagerStatus`, `UpdateFieldAgentStatus`, etc. (functional update pattern: `fn(status *Status)`). The Field Agent reads the aggregated struct and serializes it to the controller in `PUT /api/v1/agent/status`.
 
 ---
 
@@ -304,7 +304,7 @@ sequenceDiagram
     participant ContainerEngine
 
     Controller->>FieldAgent: GET /config/changes → microserviceList=true
-    FieldAgent->>Controller: GET /api/v3/agent/microservices
+    FieldAgent->>Controller: GET /api/v1/agent/microservices
     Controller-->>FieldAgent: Microservice definitions JSON
     FieldAgent->>FieldAgent: Parse + store to SQLite
     FieldAgent->>ProcessManager: notify via updateChan
