@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 func TestGenerateToken(t *testing.T) {

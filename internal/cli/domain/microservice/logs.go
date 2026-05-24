@@ -3,10 +3,10 @@ package microservice
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/domain/logs"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/domain/logs"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 const logsHumanOnlyMsg = "logs output supports human format only"
@@ -16,7 +16,7 @@ func FetchLogs(ctx *run.CLIContext, api client.V3API, id string, opts logs.Optio
 	if ctx != nil && ctx.Format.IsStructured() {
 		return run.NewCLIError(run.CodeInvalidArgument, logsHumanOnlyMsg, nil)
 	}
-	path := "/v3/ms/" + id + "/logs?tail=" + opts.Tail
+	path := "/v1/ms/" + id + "/logs?tail=" + opts.Tail
 	if opts.Since != "" {
 		path += "&since=" + opts.Since
 	}

@@ -3,11 +3,11 @@ package pruning
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 func TestIsManagedContainer_UsesCanonicalLabelsOnly(t *testing.T) {

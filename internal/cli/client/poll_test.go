@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 type pollFakeAPI struct {

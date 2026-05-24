@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/embedded"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	iofogcontainerd "github.com/eclipse-iofog/agent/pkg/containerd"
+	"github.com/datasance/edgelet/internal/embedded"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
 const (
@@ -27,13 +27,13 @@ type bootstrapDeps struct {
 	sleep              func(time.Duration)
 }
 
-func startEmbeddedContainerdWithRetry() (*iofogcontainerd.Service, error) {
+func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
 	deps := bootstrapDeps{
 		ensureDependencies: embedded.EnsureEmbeddedDependencies,
 		newService: func() containerdStarter {
-			return iofogcontainerd.NewService()
+			return edgeletcontainerdd.NewService()
 		},
-		cleanupRuntime: iofogcontainerd.CleanupRuntimeArtifacts,
+		cleanupRuntime: edgeletcontainerdd.CleanupRuntimeArtifacts,
 		sleep:          time.Sleep,
 	}
 
@@ -42,7 +42,7 @@ func startEmbeddedContainerdWithRetry() (*iofogcontainerd.Service, error) {
 		return nil, err
 	}
 
-	typed, ok := svc.(*iofogcontainerd.Service)
+	typed, ok := svc.(*edgeletcontainerdd.Service)
 	if !ok {
 		return nil, fmt.Errorf("unexpected embedded containerd service type %T", svc)
 	}

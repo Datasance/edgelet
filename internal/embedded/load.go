@@ -11,8 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 var loadLogger = logging.NewModuleLogger("Embedded")
@@ -53,7 +53,7 @@ func EnsureEmbeddedDependencies() error {
 // plugin can resolve the shim by name (e.g. "io.containerd.runc.v2" →
 // containerd-shim-runc-v2) without requiring the bin dir to be in PATH.
 func loadContainerdComponents() error {
-	if err := os.MkdirAll(constants.IofogContainerdBinDir, 0755); err != nil {
+	if err := os.MkdirAll(constants.EdgeletContainerdBinDir, 0755); err != nil {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
 
@@ -63,8 +63,8 @@ func loadContainerdComponents() error {
 		name    string
 		symlink bool // create a /usr/local/bin symlink for PATH resolution
 	}{
-		{ContainerdShimRuncBinary, filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2"), "containerd-shim-runc-v2", true},
-		{CrunBinary, filepath.Join(constants.IofogContainerdBinDir, "crun"), "crun", true},
+		{ContainerdShimRuncBinary, filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2"), "containerd-shim-runc-v2", true},
+		{CrunBinary, filepath.Join(constants.EdgeletContainerdBinDir, "crun"), "crun", true},
 	}
 
 	for _, b := range binaries {
@@ -96,7 +96,7 @@ func symlinkShimToPath(src, name string) {
 
 // loadCNIPlugins extracts the CNI plugin binaries used by embedded networking.
 func loadCNIPlugins() error {
-	if err := os.MkdirAll(constants.IofogCNIPluginsDir, 0755); err != nil {
+	if err := os.MkdirAll(constants.EdgeletCNIPluginsDir, 0755); err != nil {
 		return fmt.Errorf("create CNI plugins dir: %w", err)
 	}
 
@@ -111,7 +111,7 @@ func loadCNIPlugins() error {
 	}
 
 	for _, p := range plugins {
-		dest := filepath.Join(constants.IofogCNIPluginsDir, p.name)
+		dest := filepath.Join(constants.EdgeletCNIPluginsDir, p.name)
 		if err := extractBinary(p.data, dest); err != nil {
 			return fmt.Errorf("extract CNI plugin %s: %w", p.name, err)
 		}
@@ -123,7 +123,7 @@ func loadCNIPlugins() error {
 // the standard system CNI config directory.
 func loadCNIConfig() error {
 	for _, dir := range []string{
-		constants.IofogCNIConfDir,
+		constants.EdgeletCNIConfDir,
 		constants.DefaultSystemCNIConfDir,
 	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -132,7 +132,7 @@ func loadCNIConfig() error {
 	}
 	if err := writeAndSymlinkCNIConfig(
 		generateManagedCNIConfig(),
-		constants.IofogCNIConfigFile,
+		constants.EdgeletCNIConfigFile,
 		filepath.Join(constants.DefaultSystemCNIConfDir, constants.DefaultCNIConfigName),
 	); err != nil {
 		return err
@@ -164,10 +164,10 @@ func loadPauseImage() error {
 	if len(PauseImageTarGz) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(constants.IofogContainerdImagesDir, 0755); err != nil {
+	if err := os.MkdirAll(constants.EdgeletContainerdImagesDir, 0755); err != nil {
 		return fmt.Errorf("create images dir: %w", err)
 	}
-	dest := filepath.Join(constants.IofogContainerdImagesDir, "pause.tar.gz")
+	dest := filepath.Join(constants.EdgeletContainerdImagesDir, "pause.tar.gz")
 	if _, err := os.Stat(dest); err == nil {
 		return nil // Already extracted (idempotent).
 	}

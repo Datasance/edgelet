@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 // SaveMicroservices replaces all microservice rows in a single transaction.

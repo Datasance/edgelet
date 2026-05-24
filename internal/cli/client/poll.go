@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 const defaultPollInterval = 500 * time.Millisecond

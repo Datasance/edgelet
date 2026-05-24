@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 // LocalRuntimeClass is the persistent RuntimeClass row stored in SQLite.
@@ -44,5 +44,5 @@ func RuntimeClassBinaryPathForHandler(handler string) string {
 	if !strings.HasPrefix(binaryName, "containerd-shim-") {
 		binaryName = "containerd-shim-" + normalized
 	}
-	return filepath.Join(constants.IofogContainerdBinDir, binaryName)
+	return filepath.Join(constants.EdgeletContainerdBinDir, binaryName)
 }

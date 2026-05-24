@@ -1,8 +1,8 @@
 package microservice
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // LifecycleResult carries a microservice lifecycle operation outcome.
@@ -29,25 +29,25 @@ func lifecycle(client run.V3Client, method, path string) (*LifecycleResult, erro
 
 // Start starts a microservice.
 func Start(client run.V3Client, id string) (*LifecycleResult, error) {
-	return lifecycle(client, "POST", "/v3/ms/"+id+"/start")
+	return lifecycle(client, "POST", "/v1/ms/"+id+"/start")
 }
 
 // Stop stops a microservice.
 func Stop(client run.V3Client, id string) (*LifecycleResult, error) {
-	return lifecycle(client, "POST", "/v3/ms/"+id+"/stop")
+	return lifecycle(client, "POST", "/v1/ms/"+id+"/stop")
 }
 
 // Restart restarts a microservice.
 func Restart(client run.V3Client, id string) (*LifecycleResult, error) {
-	return lifecycle(client, "POST", "/v3/ms/"+id+"/restart")
+	return lifecycle(client, "POST", "/v1/ms/"+id+"/restart")
 }
 
 // Kill kills a microservice.
 func Kill(client run.V3Client, id string) (*LifecycleResult, error) {
-	return lifecycle(client, "POST", "/v3/ms/"+id+"/kill")
+	return lifecycle(client, "POST", "/v1/ms/"+id+"/kill")
 }
 
 // Remove deletes a microservice.
 func Remove(client run.V3Client, id string) (*LifecycleResult, error) {
-	return lifecycle(client, "DELETE", "/v3/ms/"+id)
+	return lifecycle(client, "DELETE", "/v1/ms/"+id)
 }

@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"bytes"

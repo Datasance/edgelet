@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/datasance/edgelet/internal/auth"
 )
 
 // AuthHandler handles auth-related LocalAPI requests.
@@ -26,7 +26,7 @@ type AuthWhoAmIResponse struct {
 	Claims    map[string]interface{} `json:"claims"`
 }
 
-// HandleWhoAmI handles GET /v3/auth/whoami.
+// HandleWhoAmI handles GET /v1/auth/whoami.
 func (h *AuthHandler) HandleWhoAmI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)

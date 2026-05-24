@@ -13,14 +13,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 const (
 	localAPICACertFilename     = "localapi-ca.crt"
 	localAPIServerCertFilename = "localapi-server.crt"
 	localAPIServerKeyFilename  = "localapi-server.key"
-	localAPIServerDNSName      = "iofog.default.svc.bridge.local"
+	localAPIServerDNSName      = "edgelet.default.svc.bridge.local"
 )
 
 func LocalAPIPKIPaths() (caPath, certPath, keyPath string) {

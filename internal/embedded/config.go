@@ -3,7 +3,7 @@
 package embedded
 
 import (
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 // generateCNIConfig builds a CNI conflist for one bridge network.
@@ -48,5 +48,5 @@ func generateCNIConfig(networkName, bridgeName, bridgeCIDR string) map[string]an
 }
 
 func generateManagedCNIConfig() map[string]any {
-	return generateCNIConfig(constants.IofogNetworkName, constants.IofogBridgeName, constants.IofogBridgeCIDR)
+	return generateCNIConfig(constants.EdgeletNetworkName, constants.EdgeletBridgeName, constants.EdgeletBridgeCIDR)
 }

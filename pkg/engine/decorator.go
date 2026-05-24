@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/runtimeops"
 )
 
 const loggingEngineModule = "ContainerEngine"

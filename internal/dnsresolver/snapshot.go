@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
-	defaultSnapshotPath = "/var/lib/iofog-agent/dns/snapshot-v1.json"
+	defaultSnapshotPath = "/var/lib/edgelet/dns/snapshot-v1.json"
 	snapshotVersionV1   = "v1"
 )
 

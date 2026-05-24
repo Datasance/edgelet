@@ -10,7 +10,7 @@ func TestProvisionHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/system/provision": {"agentUuid": "agent-1"},
+			"POST /v1/system/provision": {"agentUuid": "agent-1"},
 		},
 	}
 	stdout, stderr, code := runCLI(t, client, "provision", "test-key")
@@ -32,7 +32,7 @@ func TestProvisionJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/system/provision": {"agentUuid": "agent-1"},
+			"POST /v1/system/provision": {"agentUuid": "agent-1"},
 		},
 	}
 	stdout, stderr, code := runCLI(t, client, "-o", "json", "provision", "test-key")
@@ -55,7 +55,7 @@ func TestDeprovisionHumanShowsSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"DELETE /v3/system/provision": {"status": "ok"},
+			"DELETE /v1/system/provision": {"status": "ok"},
 		},
 	}
 	stdout, stderr, code := runCLI(t, client, "deprovision")

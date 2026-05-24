@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/runtimeapi"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/runtimeapi"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 type runtimeClassDetailedTestError struct {
@@ -60,7 +60,7 @@ func TestHandleSystemControllerCert_DecodesBase64WritesPathEnablesSecureMode(t *
 	pemCert := generateTestCertPEM(t)
 	base64Cert := base64.StdEncoding.EncodeToString([]byte(pemCert))
 	reqBody := []byte(`{"certificate":` + strconv.Quote(base64Cert) + `}`)
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/controller/cert", bytes.NewBuffer(reqBody))
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/controller/cert", bytes.NewBuffer(reqBody))
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemControllerCert(rec, req)
@@ -90,7 +90,7 @@ func TestHandleSystemControllerCert_RejectsNonBase64Input(t *testing.T) {
 		t.Fatalf("failed to set certificate path: %v", errorsMap)
 	}
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/controller/cert", bytes.NewBufferString(`{"certificate":"-----BEGIN CERTIFICATE-----bad"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/controller/cert", bytes.NewBufferString(`{"certificate":"-----BEGIN CERTIFICATE-----bad"}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemControllerCert(rec, req)
@@ -109,7 +109,7 @@ func TestHandleSystemConfigSwitch_SwitchesProfileAndTriggersReload(t *testing.T)
 	})
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/config/switch", bytes.NewBufferString(`{"profile":"dev"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/config/switch", bytes.NewBufferString(`{"profile":"dev"}`))
 	rec := httptest.NewRecorder()
 	handler.HandleSystemConfigSwitch(rec, req)
 	if rec.Code != http.StatusOK {
@@ -129,7 +129,7 @@ func TestHandleConfig_RejectsInvalidNetworkInterfaceWithoutPersisting(t *testing
 	cfg.NetworkInterface = "dynamic"
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPatch, "/v3/system/config", bytes.NewBufferString(`{"set":{"networkInterface":"iface-does-not-exist-98765"}}`))
+	req := httptest.NewRequest(http.MethodPatch, "/v1/system/config", bytes.NewBufferString(`{"set":{"networkInterface":"iface-does-not-exist-98765"}}`))
 	rec := httptest.NewRecorder()
 	handler.HandleConfig(rec, req)
 
@@ -158,7 +158,7 @@ func TestHandleConfig_RejectsInvalidNetworkInterfaceWithoutPersisting(t *testing
 
 func TestHandleSystemProvisionDelete_RejectsInvalidScope(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/v3/system/provision?scope=bad", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/v1/system/provision?scope=bad", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemProvision(rec, req)
@@ -169,7 +169,7 @@ func TestHandleSystemProvisionDelete_RejectsInvalidScope(t *testing.T) {
 
 func TestHandleSystemPrune_RejectsInvalidMode(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/prune?mode=bad", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/prune?mode=bad", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemPrune(rec, req)
@@ -183,7 +183,7 @@ func TestHandleSystemLogs_RejectsInvalidTail(t *testing.T) {
 	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/logs?tailLines=bad", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/logs?tailLines=bad", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemLogs(rec, req)
@@ -205,7 +205,7 @@ func TestHandleSystemLogs_BoundedReturnsEntries(t *testing.T) {
 	}
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/logs?tailLines=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/logs?tailLines=2", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleSystemLogs(rec, req)
@@ -243,7 +243,7 @@ func TestHandleDeployRegistries_GetByID_IncludesPassword(t *testing.T) {
 	}
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/registries/7", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/deploy/registries/7", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleDeployRegistries(rec, req)
@@ -280,8 +280,8 @@ func TestHandleDeployRuntimeClassesValidate_RejectsUnsupportedEngineOrFlavor(t *
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
 	handler := NewV3Handler()
-	req := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:validate", `
-apiVersion: iofog.org/v3
+	req := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:validate", `
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -317,7 +317,7 @@ handler: edgelet
 
 func TestHandleDeployRuntimeClassesCRUD_SucceedsWhenFullAndIofog(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
@@ -331,7 +331,7 @@ func TestHandleDeployRuntimeClassesCRUD_SucceedsWhenFullAndIofog(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	manifest := `
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -340,21 +340,21 @@ handler: edgelet
 
 	handler := NewV3Handler()
 
-	validateReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:validate", manifest, nil)
+	validateReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:validate", manifest, nil)
 	validateRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesValidate(validateRec, validateReq)
 	if validateRec.Code != http.StatusOK {
 		t.Fatalf("expected validate 200, got %d body=%s", validateRec.Code, validateRec.Body.String())
 	}
 
-	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"dryRun": "false"})
+	applyReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:apply", manifest, map[string]string{"dryRun": "false"})
 	applyRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
 	if applyRec.Code != http.StatusOK {
 		t.Fatalf("expected apply 200, got %d body=%s", applyRec.Code, applyRec.Body.String())
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses", nil)
 	listRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(listRec, listReq)
 	if listRec.Code != http.StatusOK {
@@ -383,7 +383,7 @@ handler: edgelet
 		t.Fatalf("expected runtimeclass list camelCase key runtimeName=edgelet, got=%q body=%s", got, listRec.Body.String())
 	}
 
-	getReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses/edgelet", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses/edgelet", nil)
 	getRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(getRec, getReq)
 	if getRec.Code != http.StatusOK {
@@ -406,7 +406,7 @@ handler: edgelet
 		t.Fatalf("expected runtimeclass inspect camelCase key runtimeName=edgelet, got=%q body=%s", got, getRec.Body.String())
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/edgelet", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/edgelet", nil)
 	deleteRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusOK {
@@ -416,13 +416,13 @@ handler: edgelet
 
 func TestHandleDeployRuntimeClassesApply_AsyncAcceptedAndPollSucceeded(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
 	manifest := `
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin
@@ -441,7 +441,7 @@ handler: spin
 	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
 
 	handler := NewV3Handler()
-	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
+	applyReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
 	applyRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
 	if applyRec.Code != http.StatusAccepted {
@@ -462,7 +462,7 @@ handler: spin
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
 		statusRec := httptest.NewRecorder()
 		handler.HandleDeployRuntimeClassesApplyStatus(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
@@ -493,13 +493,13 @@ handler: spin
 
 func TestHandleDeployRuntimeClassesApply_SyncTimeoutReturnsAccepted(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
 	manifest := `
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin
@@ -523,7 +523,7 @@ handler: spin
 	})
 
 	handler := NewV3Handler()
-	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, nil)
+	applyReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:apply", manifest, nil)
 	applyRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
 	if applyRec.Code != http.StatusAccepted {
@@ -533,13 +533,13 @@ handler: spin
 
 func TestHandleDeployRuntimeClassesApply_PollFailureReturns200WithFailedData(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
 	manifest := `
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin
@@ -559,7 +559,7 @@ handler: spin
 	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
 
 	handler := NewV3Handler()
-	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
+	applyReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:apply", manifest, map[string]string{"async": "true"})
 	applyRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
 	if applyRec.Code != http.StatusAccepted {
@@ -576,7 +576,7 @@ handler: spin
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses:apply/"+applyEnvelope.Data.OperationID, nil)
 		statusRec := httptest.NewRecorder()
 		handler.HandleDeployRuntimeClassesApplyStatus(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
@@ -628,13 +628,13 @@ handler: spin
 
 func TestHandleDeployRuntimeClassesApply_SyncFailureIncludesStageDetails(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
 	manifest := `
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin
@@ -653,7 +653,7 @@ handler: spin
 	t.Cleanup(func() { runtimeClassApplyRunner = originalRunner })
 
 	handler := NewV3Handler()
-	applyReq := newManifestMultipartRequest(t, "/v3/deploy/runtimeclasses:apply", manifest, nil)
+	applyReq := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:apply", manifest, nil)
 	applyRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApply(applyRec, applyReq)
 	if applyRec.Code != http.StatusInternalServerError {
@@ -684,7 +684,7 @@ handler: spin
 
 func TestHandleDeployRuntimeClassesApplyStatus_NotFound(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:apply/not-found", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses:apply/not-found", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesApplyStatus(rec, req)
 	if rec.Code != http.StatusNotFound {
@@ -694,7 +694,7 @@ func TestHandleDeployRuntimeClassesApplyStatus_NotFound(t *testing.T) {
 
 func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -722,7 +722,7 @@ func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testi
 	})
 
 	handler := NewV3Handler()
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin?async=true", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/spin?async=true", nil)
 	deleteRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusAccepted {
@@ -743,7 +743,7 @@ func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testi
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:delete/"+deleteEnvelope.Data.OperationID, nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses:delete/"+deleteEnvelope.Data.OperationID, nil)
 		statusRec := httptest.NewRecorder()
 		handler.HandleDeployRuntimeClassesDeleteStatus(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
@@ -774,7 +774,7 @@ func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testi
 
 func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -802,7 +802,7 @@ func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.
 	})
 
 	handler := NewV3Handler()
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/spin", nil)
 	deleteRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusAccepted {
@@ -812,7 +812,7 @@ func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.
 
 func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -824,7 +824,7 @@ func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
 	t.Cleanup(func() { runtimeClassDeletePreflightRunner = originalPreflight })
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/crun", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/crun", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -834,7 +834,7 @@ func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
 
 func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -850,7 +850,7 @@ func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *
 	t.Cleanup(func() { runtimeClassDeletePreflightRunner = originalPreflight })
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodDelete, "/v3/deploy/runtimeclasses/spin", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/spin", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -880,7 +880,7 @@ func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *
 
 func TestHandleDeployRuntimeClassesDeleteStatus_NotFound(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/runtimeclasses:delete/not-found", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses:delete/not-found", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClassesDeleteStatus(rec, req)
 	if rec.Code != http.StatusNotFound {

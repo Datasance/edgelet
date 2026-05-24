@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 // RuntimeSnapshotProvider returns runtime-truth workload records for reconcile.
@@ -21,13 +21,13 @@ type reconcileReport struct {
 }
 
 func reconcileIntervalFromEnv() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("IOFOG_DNS_RECONCILE_INTERVAL_SECONDS"))
+	raw := strings.TrimSpace(os.Getenv("EDGELET_DNS_RECONCILE_INTERVAL_SECONDS"))
 	if raw == "" {
 		return reconcileDefaultEvery
 	}
 	secs, err := strconv.Atoi(raw)
 	if err != nil || secs <= 0 {
-		logging.LogWarn(moduleName, fmt.Sprintf("invalid IOFOG_DNS_RECONCILE_INTERVAL_SECONDS=%q, using default=%ds", raw, int(reconcileDefaultEvery/time.Second)))
+		logging.LogWarn(moduleName, fmt.Sprintf("invalid EDGELET_DNS_RECONCILE_INTERVAL_SECONDS=%q, using default=%ds", raw, int(reconcileDefaultEvery/time.Second)))
 		return reconcileDefaultEvery
 	}
 	return time.Duration(secs) * time.Second

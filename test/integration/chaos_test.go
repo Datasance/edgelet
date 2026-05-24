@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/supervisor"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/supervisor"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 // TestControllerDown verifies agent remains running when controller is unreachable.
@@ -35,7 +35,7 @@ func TestControllerDown(t *testing.T) {
 
 	// Use iofog engine to avoid Docker/Podman socket dependency
 	originalEngine := cfg.ContainerEngine
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	defer func() { cfg.ContainerEngine = originalEngine }()
 
 	sup := supervisor.NewSupervisor()

@@ -8,9 +8,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/pkg/engine"
-	dockerengine "github.com/eclipse-iofog/agent/pkg/engine/docker"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/pkg/engine"
+	dockerengine "github.com/datasance/edgelet/pkg/engine/docker"
 )
 
 const (

@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/domain/registry"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/registry"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +18,7 @@ func newRegistryCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "ls",
 			Short: "List registries",
-			RunE:  runGET("/v3/deploy/registries"),
+			RunE:  runGET("/v1/deploy/registries"),
 		},
 		newRegistryInspectCommand(),
 		&cobra.Command{
@@ -73,7 +73,7 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	path := "/v3/deploy/registries/" + args[0]
+	path := "/v1/deploy/registries/" + args[0]
 	var data map[string]interface{}
 	err := run.WithSpinner(appCtx, "Removing registry "+args[0]+"...", func() error {
 		var reqErr error

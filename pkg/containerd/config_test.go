@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {
@@ -28,12 +28,12 @@ func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {
 	runtimes := containerdCfg["runtimes"].(map[string]any)
 
 	crun := runtimes["crun"].(map[string]any)
-	if got := crun["cni_conf_dir"]; got != constants.IofogCNIConfDir {
-		t.Fatalf("crun cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogCNIConfDir)
+	if got := crun["cni_conf_dir"]; got != constants.EdgeletCNIConfDir {
+		t.Fatalf("crun cni_conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
 	crunOpts := crun["options"].(map[string]any)
-	if got := crunOpts["BinaryName"]; got != filepath.Join(constants.IofogContainerdBinDir, "crun") {
-		t.Fatalf("crun BinaryName mismatch: got=%v want=%s", got, filepath.Join(constants.IofogContainerdBinDir, "crun"))
+	if got := crunOpts["BinaryName"]; got != filepath.Join(constants.EdgeletContainerdBinDir, "crun") {
+		t.Fatalf("crun BinaryName mismatch: got=%v want=%s", got, filepath.Join(constants.EdgeletContainerdBinDir, "crun"))
 	}
 	if _, ok := runtimes["crun-local"]; ok {
 		t.Fatal("crun-local runtime should not be registered")
@@ -55,8 +55,8 @@ func TestGenerateConfigUsesScopeSelectorCNIConf(t *testing.T) {
 	plugins := cfg["plugins"].(map[string]any)
 	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
 	cni := criRuntime["cni"].(map[string]any)
-	if got := cni["conf_dir"]; got != constants.IofogCNIConfDir {
-		t.Fatalf("cni conf_dir mismatch: got=%v want=%s", got, constants.IofogCNIConfDir)
+	if got := cni["conf_dir"]; got != constants.EdgeletCNIConfDir {
+		t.Fatalf("cni conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
 	if got := cni["max_conf_num"]; got != 1 {
 		t.Fatalf("cni max_conf_num mismatch: got=%v want=1", got)
@@ -111,8 +111,8 @@ func TestGenerateConfigProjectsDiscoveredShimFamilyRuntimes(t *testing.T) {
 	if _, ok := edgelet["options"]; ok {
 		t.Fatalf("edgelet shim runtime should not include runc options")
 	}
-	if got := edgelet["cni_conf_dir"]; got != constants.IofogCNIConfDir {
-		t.Fatalf("edgelet cni_conf_dir mismatch: got=%v want=%s", got, constants.IofogCNIConfDir)
+	if got := edgelet["cni_conf_dir"]; got != constants.EdgeletCNIConfDir {
+		t.Fatalf("edgelet cni_conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
 	if _, ok := runtimes["edgelet-local"]; ok {
 		t.Fatalf("edgelet-local runtime entry must not be generated")
@@ -144,7 +144,7 @@ func TestGenerateConfigProjectsDiscoveredRuncFamilyRuntimeWithBinaryName(t *test
 	if got := nvidia["runtime_type"]; got != "io.containerd.runc.v2" {
 		t.Fatalf("nvidia runtime_type mismatch: got=%v want=io.containerd.runc.v2", got)
 	}
-	if got := nvidia["runtime_path"]; got != filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2") {
+	if got := nvidia["runtime_path"]; got != filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2") {
 		t.Fatalf("nvidia runtime_path mismatch: got=%v", got)
 	}
 	opts, ok := nvidia["options"].(map[string]any)

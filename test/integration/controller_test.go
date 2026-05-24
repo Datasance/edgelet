@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/fieldagent"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/fieldagent"
 )
 
 // TestControllerConnection tests connection to ioFog controller

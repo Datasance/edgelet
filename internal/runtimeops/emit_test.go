@@ -7,7 +7,7 @@ import (
 )
 
 func TestEmit_InfoFieldsAppearAsTopLevelJSON(t *testing.T) {
-	ctx := WithOperation(context.Background(), "op-abc", "iofog", "ms-123")
+	ctx := WithOperation(context.Background(), "op-abc", "edgelet", "ms-123")
 	merged := mergeEvent(ctx, RuntimeEvent{
 		Event:   EventContainerStarted,
 		Level:   LevelInfo,
@@ -26,7 +26,7 @@ func TestEmit_InfoFieldsAppearAsTopLevelJSON(t *testing.T) {
 	if fields["msUUID"] != "ms-123" {
 		t.Fatalf("msUUID=%v", fields["msUUID"])
 	}
-	if fields["engine"] != "iofog" {
+	if fields["engine"] != "edgelet" {
 		t.Fatalf("engine=%v", fields["engine"])
 	}
 }
@@ -83,7 +83,7 @@ func TestEmit_OmitsEmptyFields(t *testing.T) {
 }
 
 func TestMergeEvent_EventOverridesContext(t *testing.T) {
-	ctx := WithOperation(context.Background(), "ctx-op", "iofog", "ctx-ms")
+	ctx := WithOperation(context.Background(), "ctx-op", "edgelet", "ctx-ms")
 	merged := mergeEvent(ctx, RuntimeEvent{
 		OperationID: "event-op",
 		MsUUID:      "event-ms",
@@ -94,7 +94,7 @@ func TestMergeEvent_EventOverridesContext(t *testing.T) {
 	if merged.MsUUID != "event-ms" {
 		t.Fatalf("MsUUID=%q", merged.MsUUID)
 	}
-	if merged.Engine != "iofog" {
+	if merged.Engine != "edgelet" {
 		t.Fatalf("Engine=%q", merged.Engine)
 	}
 }

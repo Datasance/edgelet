@@ -8,26 +8,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/edgeguard"
-	"github.com/eclipse-iofog/agent/internal/engines"
-	"github.com/eclipse-iofog/agent/internal/fieldagent"
-	"github.com/eclipse-iofog/agent/internal/gps"
-	"github.com/eclipse-iofog/agent/internal/healthcheck"
-	"github.com/eclipse-iofog/agent/internal/localapi"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/processmanager"
-	"github.com/eclipse-iofog/agent/internal/pruning"
-	"github.com/eclipse-iofog/agent/internal/resourceconsumption"
-	"github.com/eclipse-iofog/agent/internal/resourcemanager"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	iofogcontainerd "github.com/eclipse-iofog/agent/pkg/containerd"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/edgeguard"
+	"github.com/datasance/edgelet/internal/engines"
+	"github.com/datasance/edgelet/internal/fieldagent"
+	"github.com/datasance/edgelet/internal/gps"
+	"github.com/datasance/edgelet/internal/healthcheck"
+	"github.com/datasance/edgelet/internal/localapi"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/pruning"
+	"github.com/datasance/edgelet/internal/resourceconsumption"
+	"github.com/datasance/edgelet/internal/resourcemanager"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 const (
@@ -42,7 +42,7 @@ var requestDaemonRestart = func(reason string, cause error) {
 	}
 }
 
-var setContainerdUnexpectedExitHandler = func(svc *iofogcontainerd.Service, handler func(error)) {
+var setContainerdUnexpectedExitHandler = func(svc *edgeletcontainerdd.Service, handler func(error)) {
 	svc.SetUnexpectedExitHandler(handler)
 }
 
@@ -58,7 +58,7 @@ type Supervisor struct {
 	wg     sync.WaitGroup
 
 	// Embedded containerd service (non-nil only when containerEngine=iofog)
-	containerdSvc *iofogcontainerd.Service
+	containerdSvc *edgeletcontainerdd.Service
 
 	// Module instances
 	statusReporter             *statusreporter.StatusReporter
@@ -87,7 +87,7 @@ func NewSupervisor() *Supervisor {
 // SetPrestartedContainerd injects an embedded containerd service already started in main
 // (full flavor + iofog engine). Supervisor will not start containerd again; it only runs
 // the watchdog and stops containerd on shutdown.
-func (s *Supervisor) SetPrestartedContainerd(svc *iofogcontainerd.Service) {
+func (s *Supervisor) SetPrestartedContainerd(svc *edgeletcontainerdd.Service) {
 	s.containerdSvc = svc
 }
 
@@ -149,9 +149,9 @@ func (s *Supervisor) Start() error {
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
 	// Startup ownership is in cmd/iofog-agentd bootstrap; Supervisor only consumes prestarted runtime.
-	if cfg.ContainerEngine == constants.EngineIofog {
+	if cfg.ContainerEngine == constants.EngineEdgelet {
 		if s.containerdSvc == nil {
-			return fmt.Errorf("embedded containerd must be prestarted before Supervisor when containerEngine=%q", constants.EngineIofog)
+			return fmt.Errorf("embedded containerd must be prestarted before Supervisor when containerEngine=%q", constants.EngineEdgelet)
 		}
 		logging.LogInfo(moduleName, "Using embedded containerd started before Supervisor")
 		s.configureContainerdFailFastHandler()
@@ -198,7 +198,7 @@ func (s *Supervisor) Start() error {
 	fieldagent.GetLogSessionManager().SetEngine(eng)
 
 	// Start HealthcheckRunner when using iofog engine (Docker/Podman use native healthcheck)
-	if cfg.ContainerEngine == constants.EngineIofog {
+	if cfg.ContainerEngine == constants.EngineEdgelet {
 		var hcEng healthcheck.HealthcheckEngine
 		if he, ok := eng.(healthcheck.HealthcheckEngine); ok {
 			hcEng = he
@@ -308,7 +308,7 @@ const (
 
 // initExternalEngineWithRetry creates and initializes Docker or Podman engine with
 // exponential backoff. Used when the socket may be temporarily unavailable (e.g.
-// daemon restart). After max retries, suggests switching to containerEngine: iofog.
+// daemon restart). After max retries, suggests switching to containerEngine: edgelet.
 func (s *Supervisor) initExternalEngineWithRetry(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
 	var lastErr error
 	backoff := engineInitInitialBackoff
@@ -346,7 +346,7 @@ func (s *Supervisor) initExternalEngineWithRetry(engineType string, cfg engine.E
 	}
 
 	logging.LogError(moduleName, fmt.Sprintf("%s socket still unavailable after %d attempts", engineType, engineInitMaxRetries),
-		fmt.Errorf("consider setting containerEngine: iofog to use the embedded container engine: %w", lastErr))
+		fmt.Errorf("consider setting containerEngine: edgelet to use the embedded container engine: %w", lastErr))
 	return nil, fmt.Errorf("%s engine init failed after %d retries: %w", engineType, engineInitMaxRetries, lastErr)
 }
 

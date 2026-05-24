@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/engine"
-	dockerengine "github.com/eclipse-iofog/agent/pkg/engine/docker"
-	iofogengine "github.com/eclipse-iofog/agent/pkg/engine/iofog"
-	podmanengine "github.com/eclipse-iofog/agent/pkg/engine/podman"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/engine"
+	dockerengine "github.com/datasance/edgelet/pkg/engine/docker"
+	iofogengine "github.com/datasance/edgelet/pkg/engine/iofog"
+	podmanengine "github.com/datasance/edgelet/pkg/engine/podman"
 )
 
 var factoryLogger = logging.NewModuleLogger("ContainerEngine")
 
 // NewContainerEngine constructs and returns the engine specified by engineType.
-// Valid values: "docker", "podman", "iofog".
+// Valid values: "docker", "podman", "edgelet".
 func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
 	switch engineType {
 	case constants.EngineDocker:
@@ -24,7 +24,7 @@ func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.Cont
 	case constants.EnginePodman:
 		return podmanengine.New(), nil
 
-	case constants.EngineIofog:
+	case constants.EngineEdgelet:
 		warnIfExternalRuntimePresent()
 		return iofogengine.New(cfg.LogDir), nil
 
@@ -62,8 +62,8 @@ func warnIfExternalRuntimePresent() {
 		if _, err := os.Stat(s.path); err == nil {
 			factoryLogger.Warnf(
 				"%s socket detected at %s while containerEngine=iofog is selected. "+
-					"The iofog engine uses isolated private paths (/var/lib/iofog-agent-containerd/, "+
-					"/run/iofog-agent/containerd.sock) and will not interfere with %s.",
+					"The iofog engine uses isolated private paths (/var/lib/edgelet-containerd/, "+
+					"/run/edgelet/containerd.sock) and will not interfere with %s.",
 				s.name, s.path, s.name,
 			)
 		}

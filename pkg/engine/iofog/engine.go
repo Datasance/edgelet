@@ -3,7 +3,7 @@
 // Package iofog implements the ContainerEngine interface using the embedded
 // containerd runtime. It communicates directly with the in-process containerd
 // via the containerd Go client (not the Docker SDK), connecting to the private
-// socket at /run/iofog-agent/containerd.sock.
+// socket at /run/edgelet/containerd.sock.
 package iofog
 
 import (
@@ -33,21 +33,21 @@ import (
 	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/errdefs"
 	tuypeurl "github.com/containerd/typeurl/v2"
-	"github.com/eclipse-iofog/agent/internal/dnsresolver"
-	"github.com/eclipse-iofog/agent/pkg/engine/iofog/cri"
+	"github.com/datasance/edgelet/internal/dnsresolver"
+	"github.com/datasance/edgelet/pkg/engine/iofog/cri"
 	"github.com/nxadm/tail"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
-	"github.com/eclipse-iofog/agent/pkg/imageref"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/datasance/edgelet/pkg/imageref"
 )
 
 const (
@@ -57,9 +57,9 @@ const (
 	spinRuntimeType = "io.containerd.spin.v2"
 
 	// hostsDir is the directory where per-container /etc/hosts files are written.
-	hostsDir = "/run/iofog-agent/hosts"
+	hostsDir = "/run/edgelet/hosts"
 	// resolvDir is the directory where per-container /etc/resolv.conf files are written.
-	resolvDir = "/run/iofog-agent/resolv"
+	resolvDir = "/run/edgelet/resolv"
 )
 
 var log = logging.NewModuleLogger("IofogEngine")
@@ -93,7 +93,7 @@ type Engine struct {
 // per-container log files to.
 func New(logDir string) *Engine {
 	if logDir == "" {
-		logDir = "/var/log/iofog-agent/containers"
+		logDir = "/var/log/edgelet/containers"
 	}
 	return &Engine{
 		logDir:       logDir,
@@ -110,11 +110,11 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 	initStart := time.Now()
 	socketPath := cfg.SocketURL
 	if socketPath == "" {
-		socketPath = constants.IofogContainerdSocket
+		socketPath = constants.EdgeletContainerdSocket
 	}
 	socketPath = strings.TrimPrefix(socketPath, "unix://")
 
-	c, err := client.New(socketPath, client.WithDefaultNamespace(constants.IofogContainerdNamespace))
+	c, err := client.New(socketPath, client.WithDefaultNamespace(constants.EdgeletContainerdNamespace))
 	if err != nil {
 		return fmt.Errorf("connect to containerd at %s: %w", socketPath, err)
 	}
@@ -148,7 +148,7 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 		DurationMs: time.Since(initStart).Milliseconds(),
 		Fields: map[string]any{
 			"socket":    socketPath,
-			"namespace": constants.IofogContainerdNamespace,
+			"namespace": constants.EdgeletContainerdNamespace,
 		},
 	})
 	return nil
@@ -157,7 +157,7 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 // importPauseImage imports the embedded pause (sandbox) image into containerd's
 // content store so the CRI plugin can use it for pod sandboxes.
 func (e *Engine) importPauseImage() error {
-	pausePath := filepath.Join(constants.IofogContainerdImagesDir, "pause.tar.gz")
+	pausePath := filepath.Join(constants.EdgeletContainerdImagesDir, "pause.tar.gz")
 	if _, err := os.Stat(pausePath); err != nil {
 		if os.IsNotExist(err) {
 			log.Debugf("Pause image not found at %s, skipping import", pausePath)
@@ -240,7 +240,7 @@ func (e *Engine) Close() error {
 
 // ctx returns a context with the iofog containerd namespace set.
 func (e *Engine) ctx() context.Context {
-	return namespaces.WithNamespace(context.Background(), constants.IofogContainerdNamespace)
+	return namespaces.WithNamespace(context.Background(), constants.EdgeletContainerdNamespace)
 }
 
 // isSandboxContainer returns true if the container is the CRI pod sandbox (pause).
@@ -252,7 +252,7 @@ func isSandboxContainer(ctx context.Context, c client.Container) bool {
 		return false
 	}
 	// Sandbox uses portainer/pause image; main containers use microservice images.
-	return info.Image != "" && (info.Image == constants.IofogSandboxImage ||
+	return info.Image != "" && (info.Image == constants.EdgeletSandboxImage ||
 		strings.Contains(info.Image, "portainer/pause"))
 }
 
@@ -352,7 +352,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	createStart := time.Now()
 	ctx := e.ctx()
 	cfg := config.GetInstance()
-	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+	containerName := utils.EdgeletDockerContainerNamePrefix + ms.MicroserviceUUID
 	networkSelection := cri.SelectCNINetworkForMicroservice(ms)
 
 	runtimeHandler, err := cri.GetRuntimeHandler(ms)
@@ -572,11 +572,11 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	if st, ok := e.store.get(containerID); ok {
 		sandboxIDStr = st.sandboxID
 		if msUUID == "" {
-			msUUID = strings.TrimPrefix(containerID, utils.IOFogDockerContainerNamePrefix)
+			msUUID = strings.TrimPrefix(containerID, utils.EdgeletDockerContainerNamePrefix)
 		}
 	}
 	if msUUID == "" {
-		msUUID = strings.TrimPrefix(containerID, utils.IOFogDockerContainerNamePrefix)
+		msUUID = strings.TrimPrefix(containerID, utils.EdgeletDockerContainerNamePrefix)
 	}
 
 	// CRI teardown order: StopContainer, RemoveContainer, StopPodSandbox, RemovePodSandbox.
@@ -633,9 +633,9 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	}
 
 	// Remove per-container hosts file (path uses container name, not CRI-generated ID).
-	hostsFile := filepath.Join(hostsDir, utils.IOFogDockerContainerNamePrefix+msUUID)
+	hostsFile := filepath.Join(hostsDir, utils.EdgeletDockerContainerNamePrefix+msUUID)
 	_ = os.Remove(hostsFile)
-	resolvFile := filepath.Join(resolvDir, utils.IOFogDockerContainerNamePrefix+msUUID+".conf")
+	resolvFile := filepath.Join(resolvDir, utils.EdgeletDockerContainerNamePrefix+msUUID+".conf")
 	_ = os.Remove(resolvFile)
 
 	// Remove per-container log directory.
@@ -696,7 +696,7 @@ func (e *Engine) runtimeDNSSnapshot(ctx context.Context) ([]dnsresolver.Workload
 		return nil, nil
 	}
 
-	nsCtx := namespaces.WithNamespace(ctx, constants.IofogContainerdNamespace)
+	nsCtx := namespaces.WithNamespace(ctx, constants.EdgeletContainerdNamespace)
 	cs, err := e.client.Containers(nsCtx)
 	if err != nil {
 		return nil, fmt.Errorf("list containers for dns reconcile: %w", err)
@@ -972,7 +972,7 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 			Digest:     id,
 			CreatedAt:  img.Metadata().CreatedAt.UTC(),
 			SizeBytes:  sizeBytes,
-			Engine:     "iofog",
+			Engine:     "edgelet",
 		})
 	}
 	return result, nil
@@ -2011,7 +2011,7 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		return fmt.Errorf("get task for %s: %w", pending.containerID, err)
 	}
 
-	fifoDir := filepath.Join(constants.IofogRunDir, "exec-fifo")
+	fifoDir := filepath.Join(constants.EdgeletRunDir, "exec-fifo")
 	if err := os.MkdirAll(fifoDir, 0700); err != nil {
 		return fmt.Errorf("create exec fifo dir: %w", err)
 	}
@@ -2237,7 +2237,7 @@ func containerFromContainerd(ctx context.Context, c client.Container) (*engine.C
 	// Pause containers are already excluded by isSandboxContainer before this is called.
 	name := c.ID()
 	if uuid := workloadmeta.MicroserviceUIDFromLabels(info.Labels); uuid != "" {
-		name = utils.IOFogDockerContainerNamePrefix + uuid
+		name = utils.EdgeletDockerContainerNamePrefix + uuid
 	}
 
 	return &engine.Container{
@@ -2260,7 +2260,7 @@ func envVarMapFromMicroservice(envVars []*models.EnvVar) map[string]string {
 	return m
 }
 
-// buildIofogContainerEnv returns canonical IOFOG_* env and user env with reserved-key and TZ policy.
+// buildIofogContainerEnv returns canonical EDGELET_* env and user env with reserved-key and TZ policy.
 func buildIofogContainerEnv(ms *models.Microservice, cfg *config.Config) []string {
 	if cfg == nil {
 		cfg = config.GetInstance()
@@ -2270,7 +2270,7 @@ func buildIofogContainerEnv(ms *models.Microservice, cfg *config.Config) []strin
 		MicroserviceName: ms.MicroserviceName,
 		ApplicationName:  ms.ApplicationName,
 		NodeUUID:         cfg.IOFogUUID,
-		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
 		HostNetwork:      ms.HostNetworkMode,

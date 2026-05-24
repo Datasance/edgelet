@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/volumemount"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/volumemount"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -46,16 +46,16 @@ var listRuntimeClassesForHandler = func() ([]*models.LocalRuntimeClass, error) {
 
 func ResolveCNINetwork(scope string, hostNetwork bool) string {
 	if hostNetwork {
-		return constants.IofogNetworkName
+		return constants.EdgeletNetworkName
 	}
 	_ = scope // Scope remains metadata-only in single-bridge mode.
-	return constants.IofogNetworkName
+	return constants.EdgeletNetworkName
 }
 
 func SelectCNINetworkForMicroservice(ms *models.Microservice) CNINetworkSelection {
 	selection := CNINetworkSelection{
 		Scope:       workloadmeta.ScopeManaged,
-		NetworkName: constants.IofogNetworkName,
+		NetworkName: constants.EdgeletNetworkName,
 	}
 	if ms == nil {
 		return selection
@@ -109,10 +109,10 @@ func podSandboxNeedsLinuxBlock(ms *models.Microservice) bool {
 // PodSandboxConfigFromMicroservice builds a CRI PodSandboxConfig from a
 // microservice. 1 microservice = 1 pod sandbox.
 func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir, nodeUID string) *runtimeapi.PodSandboxConfig {
-	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+	containerName := utils.EdgeletDockerContainerNamePrefix + ms.MicroserviceUUID
 	metadata := &runtimeapi.PodSandboxMetadata{
 		Name:      containerName,
-		Namespace: constants.IofogContainerdNamespace,
+		Namespace: constants.EdgeletContainerdNamespace,
 		Uid:       ms.MicroserviceUUID,
 		Attempt:   0,
 	}
@@ -123,7 +123,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir,
 		MicroserviceName: ms.MicroserviceName,
 		ApplicationName:  ms.ApplicationName,
 		NodeUUID:         nodeUID,
-		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
 		HostNetwork:      ms.HostNetworkMode,
@@ -167,7 +167,7 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir,
 // microservice. Includes image, env, args, mounts, and security context.
 // sandboxID is stored in labels for teardown and recovery.
 func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, envVars []string, logPath string, hostsFilePath string, resolvFilePath string, sandboxID string, nodeUID string) (*runtimeapi.ContainerConfig, error) {
-	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+	containerName := utils.EdgeletDockerContainerNamePrefix + ms.MicroserviceUUID
 	metadata := &runtimeapi.ContainerMetadata{
 		Name:    containerName,
 		Attempt: 0,
@@ -196,7 +196,7 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 		MicroserviceName: ms.MicroserviceName,
 		ApplicationName:  ms.ApplicationName,
 		NodeUUID:         nodeUID,
-		RuntimeEngine:    workloadmeta.RuntimeEngineIofog,
+		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
 		HostNetwork:      ms.HostNetworkMode,

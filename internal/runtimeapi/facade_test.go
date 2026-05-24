@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func testLocalManifestYAML() string {
 	return strings.TrimSpace(`
-apiVersion: datasance.com/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: router
@@ -26,7 +26,7 @@ spec:
 
 func testLocalManifestWithLabelsYAML() string {
 	return strings.TrimSpace(`
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: svc-a
@@ -41,7 +41,7 @@ spec:
 
 func testLocalManifestWithNameYAML(name string) string {
 	return strings.TrimSpace(`
-apiVersion: datasance.com/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: `+name+`
@@ -53,7 +53,7 @@ spec:
 
 func testLocalManifestWithVolumeMountYAML() string {
 	return strings.TrimSpace(`
-apiVersion: datasance.com/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: router
@@ -641,7 +641,7 @@ func TestFacadePrune_AllModeReturnsPartialOnStepFailures(t *testing.T) {
 func TestApplyRuntimeClassManifest_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -652,7 +652,7 @@ func TestApplyRuntimeClassManifest_MetadataOnlyPathDoesNotDependOnRuntimeCallbac
 	t.Cleanup(func() { _ = f.db.Close() })
 
 	item, err := f.ApplyLocalRuntimeClassManifest(`
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -672,7 +672,7 @@ handler: edgelet
 func TestDeleteRuntimeClass_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -683,7 +683,7 @@ func TestDeleteRuntimeClass_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *te
 	t.Cleanup(func() { _ = f.db.Close() })
 
 	if _, err := f.ApplyLocalRuntimeClassManifest(`
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -704,7 +704,7 @@ handler: edgelet
 func TestDeleteRuntimeClass_RejectsReservedName(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -727,7 +727,7 @@ func TestDeleteRuntimeClass_RejectsReservedName(t *testing.T) {
 func TestDeleteRuntimeClass_RejectsWhenRuntimeInUse(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -738,7 +738,7 @@ func TestDeleteRuntimeClass_RejectsWhenRuntimeInUse(t *testing.T) {
 	t.Cleanup(func() { _ = f.db.Close() })
 
 	if _, err := f.ApplyLocalRuntimeClassManifest(`
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -752,7 +752,7 @@ handler: edgelet
 		ApplicationName:  "local",
 		MicroserviceName: "runtime-edgelet-ms",
 		SourceName:       "local-cli",
-		ManifestYAML: `apiVersion: iofog.org/v3
+		ManifestYAML: `apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: runtime-edgelet-ms

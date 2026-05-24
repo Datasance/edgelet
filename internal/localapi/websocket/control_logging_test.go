@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/datasance/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 	gws "github.com/gorilla/websocket"
 )
@@ -22,7 +22,7 @@ func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 	}
 
 	handler := NewControlHandler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/microservices/control", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token")
 	rr := httptest.NewRecorder()
 	handler.Handle(rr, req)
@@ -49,7 +49,7 @@ func TestHandle_NonGETRejected(t *testing.T) {
 	}
 
 	handler := NewControlHandler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/microservices/control", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	rr := httptest.NewRecorder()
 	handler.Handle(rr, req)
@@ -85,7 +85,7 @@ func TestHandle_V3MissingMicroserviceUUIDRejected(t *testing.T) {
 	}
 
 	handler := NewControlHandler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/microservices/control", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
 	handler.Handle(rr, req)
@@ -118,7 +118,7 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"iofog.org": map[string]interface{}{
+				"edgelet.iofog.org": map[string]interface{}{
 					"microservice": map[string]interface{}{
 						"uuid": "ms-1",
 					},
@@ -129,7 +129,7 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return false }
 
 	handler := NewControlHandler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/microservices/control", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
 	handler.Handle(rr, req)
@@ -162,7 +162,7 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"iofog.org": map[string]interface{}{
+				"edgelet.iofog.org": map[string]interface{}{
 					"microservice": map[string]interface{}{
 						"uuid": "ms-1",
 					},
@@ -173,7 +173,7 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
 
 	handler := NewControlHandler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/microservices/control", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
 	handler.Handle(rr, req)
@@ -195,13 +195,13 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"iofog.org": map[string]interface{}{
+				"edgelet.iofog.org": map[string]interface{}{
 					"microservice": map[string]interface{}{
 						"uuid": "ms-1",
 					},
 					"rbac": map[string]interface{}{
 						"rulesByGroup": map[string]interface{}{
-							"agent.datasance.com/v3": []interface{}{
+							"edgelet.iofog.org/v1": []interface{}{
 								map[string]interface{}{
 									"resources": []interface{}{"microservices/control/self"},
 									"verbs":     []interface{}{"get"},
@@ -230,7 +230,7 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 		return conn.Close()
 	}
 
-	if err := dial("/v3/microservices/control"); err != nil {
+	if err := dial("/v1/microservices/control"); err != nil {
 		t.Fatalf("expected v3 websocket upgrade success, got err=%v", err)
 	}
 }

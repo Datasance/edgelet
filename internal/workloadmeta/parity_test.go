@@ -19,7 +19,7 @@ func TestBuildLabels_keysParityAcrossRuntimeEngines(t *testing.T) {
 		LabelHostNetwork,
 	}
 
-	for _, rt := range []string{RuntimeEngineDocker, RuntimeEnginePodman, RuntimeEngineIofog} {
+	for _, rt := range []string{RuntimeEngineDocker, RuntimeEnginePodman, RuntimeEngineEdgelet} {
 		in := BuildInput{
 			MicroserviceUUID: "ms-parity",
 			MicroserviceName: "parity-svc",

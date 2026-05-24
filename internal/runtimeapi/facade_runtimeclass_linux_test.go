@@ -5,16 +5,16 @@ package runtimeapi
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/pkg/engine/iofog/cri"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/pkg/engine/iofog/cri"
 )
 
 func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
-	cfg.ContainerEngine = "iofog"
+	cfg.ContainerEngine = "edgelet"
 	originalFlavor := buildmeta.Flavor
 	buildmeta.Flavor = buildmeta.FlavorFull
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
@@ -25,7 +25,7 @@ func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {
 	t.Cleanup(func() { _ = f.db.Close() })
 
 	if _, err := f.ApplyLocalRuntimeClassManifest(`
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet

@@ -4,18 +4,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/cli/domain/config"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/config"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 func TestConfigLongFlagPatch(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/config": {
+			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},
-			"PATCH /v3/system/config": {
+			"PATCH /v1/system/config": {
 				"status": "ok",
 			},
 		},
@@ -39,12 +39,12 @@ func TestConfigShortAliasFlags(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/config": {
+			"GET /v1/system/config": {
 				"controllerUrl":          "http://old/api/v3",
 				"changeFrequencySeconds": 20,
 				"statusFrequencySeconds": 30,
 			},
-			"PATCH /v3/system/config": {
+			"PATCH /v1/system/config": {
 				"status": "ok",
 			},
 		},
@@ -70,10 +70,10 @@ func TestConfigPartialRejectionExit2(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/config": {
+			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},
-			"PATCH /v3/system/config": {
+			"PATCH /v1/system/config": {
 				"status": "ok",
 				"errorMap": map[string]interface{}{
 					"changeFrequencySeconds": "value out of range",
@@ -97,10 +97,10 @@ func TestConfigJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/config": {
+			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},
-			"PATCH /v3/system/config": {
+			"PATCH /v1/system/config": {
 				"status": "ok",
 			},
 		},

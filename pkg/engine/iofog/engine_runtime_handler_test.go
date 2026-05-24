@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/dnsresolver"
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/dnsresolver"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func TestCreateContainer_RejectsUnknownRuntimeBeforeCRI(t *testing.T) {

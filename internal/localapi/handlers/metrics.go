@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/dnsresolver"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/dnsresolver"
+	"github.com/datasance/edgelet/internal/statusreporter"
 )
 
 // MetricsHandler handles /metrics — Prometheus-format metrics.

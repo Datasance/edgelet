@@ -5,20 +5,20 @@ package embedded
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestGenerateManagedCNIConfigUsesManagedConstants(t *testing.T) {
 	cfg := generateManagedCNIConfig()
-	if got := cfg["name"]; got != constants.IofogNetworkName {
-		t.Fatalf("managed network name mismatch: got=%v want=%s", got, constants.IofogNetworkName)
+	if got := cfg["name"]; got != constants.EdgeletNetworkName {
+		t.Fatalf("managed network name mismatch: got=%v want=%s", got, constants.EdgeletNetworkName)
 	}
 	plugins, ok := cfg["plugins"].([]map[string]any)
 	if !ok || len(plugins) == 0 {
 		t.Fatalf("plugins missing from managed config")
 	}
 	bridge := plugins[0]
-	if got := bridge["bridge"]; got != constants.IofogBridgeName {
-		t.Fatalf("managed bridge mismatch: got=%v want=%s", got, constants.IofogBridgeName)
+	if got := bridge["bridge"]; got != constants.EdgeletBridgeName {
+		t.Fatalf("managed bridge mismatch: got=%v want=%s", got, constants.EdgeletBridgeName)
 	}
 }

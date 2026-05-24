@@ -38,8 +38,7 @@ func (sa *ServiceAccount) CanonicalRBACV1() RBACEnvelopeV1 {
 	envelope := RBACEnvelopeV1{
 		Version: "v1",
 		RulesByGroup: map[string][]RBACRuleV1{
-			"agent.datasance.com/v3": {},
-			"agent.iofog.org/v3":     {},
+			"edgelet.iofog.org/v1": {},
 		},
 	}
 	if sa == nil {

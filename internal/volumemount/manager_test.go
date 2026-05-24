@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/store"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/store"
 )
 
 func TestVolumeMountManager_GetInstance(t *testing.T) {

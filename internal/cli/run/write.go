@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/output"
 )
 
 const daemonUnavailableMessage = "ioFog Agent daemon is not running. Start it with `iofog-agentd` or `systemctl start iofog-agentd`."

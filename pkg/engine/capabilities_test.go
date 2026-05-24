@@ -15,7 +15,7 @@ func TestSupportsInPlaceRestart_Podman(t *testing.T) {
 }
 
 func TestSupportsInPlaceRestart_Iofog(t *testing.T) {
-	if SupportsInPlaceRestart("iofog") {
+	if SupportsInPlaceRestart("edgelet") {
 		t.Fatal("expected iofog to require recreate on restart")
 	}
 }

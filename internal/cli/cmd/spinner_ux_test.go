@@ -10,7 +10,7 @@ func TestSpinnerUX_ProvisionQuietNoSpinnerControlChars(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/system/provision": {"agentUuid": "agent-1"},
+			"POST /v1/system/provision": {"agentUuid": "agent-1"},
 		},
 	}
 	_, stderr, code := runCLI(t, client, "--quiet", "provision", "test-key")
@@ -29,7 +29,7 @@ func TestSpinnerUX_MSStartQuietNoSpinnerControlChars(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/ms/ms-1/start": {
+			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
 			},

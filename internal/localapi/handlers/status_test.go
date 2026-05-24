@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/buildmeta"
 )
 
 func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {
@@ -58,7 +58,7 @@ func TestHandleStatus_ExcludesDNSKeysForLiteFlavor(t *testing.T) {
 	}()
 
 	handler := &StatusHandler{}
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleStatus(rec, req)
 
@@ -83,7 +83,7 @@ func TestHandleStatus_IncludesDNSKeysForFullFlavor(t *testing.T) {
 	}()
 
 	handler := &StatusHandler{}
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleStatus(rec, req)
 
@@ -108,7 +108,7 @@ func TestHandleStatus_IncludesAvailableNetworkInterfaces(t *testing.T) {
 	}()
 
 	handler := &StatusHandler{}
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleStatus(rec, req)
 
@@ -133,7 +133,7 @@ func TestHandleStatus_IncludesAvailableRuntimes(t *testing.T) {
 	}()
 
 	handler := &StatusHandler{}
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleStatus(rec, req)
 

@@ -59,7 +59,7 @@ func TestBuildHostsFile_DoesNotWriteLegacyOrReservedAliases(t *testing.T) {
 
 	forbidden := []string{
 		"service.local",
-		"iofog.default.svc.bridge.local",
+		"edgelet.default.svc.bridge.local",
 		"router.default.svc.bridge.local",
 		"nats.default.svc.bridge.local",
 		"\tiofog\n",

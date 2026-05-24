@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
 )
 
 func TestClearSQLiteCacheTablesOnDeprovision_AllClearsLocalRows(t *testing.T) {
@@ -196,7 +196,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_OnlyLiteDockerPodman(t *testing.
 	buildmeta.Flavor = buildmeta.FlavorLite
 	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
 
-	GetInstance().config.ContainerEngine = constants.EngineIofog
+	GetInstance().config.ContainerEngine = constants.EngineEdgelet
 	called := false
 	GetInstance().clearLiteRuntimeArtifactsOnDeprovision(false, func() error {
 		called = true

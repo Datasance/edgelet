@@ -14,14 +14,14 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	nat "github.com/docker/go-connections/nat"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 const (
-	canonicalAgentHost  = "iofog.default.svc.bridge.local"
+	canonicalAgentHost  = "edgelet.default.svc.bridge.local"
 	canonicalRouterHost = "router.default.svc.bridge.local"
 	canonicalNatsHost   = "nats.default.svc.bridge.local"
 )
@@ -46,7 +46,7 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 	ctx := c.GetContext()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("name", utils.IOFogDockerContainerNamePrefix+microserviceUUID)),
+		Filters: filters.NewArgs(filters.Arg("name", utils.EdgeletDockerContainerNamePrefix+microserviceUUID)),
 	})
 
 	if err != nil {
@@ -307,7 +307,7 @@ func (c *Client) GetRunningNonIofogContainers() ([]Container, error) {
 	for _, cont := range containers {
 		// Check if container name doesn't start with ioFog prefix
 		name := c.GetContainerName(cont)
-		if !strings.HasPrefix(name, utils.IOFogDockerContainerNamePrefix) {
+		if !strings.HasPrefix(name, utils.EdgeletDockerContainerNamePrefix) {
 			result = append(result, cont)
 		}
 	}
@@ -405,7 +405,7 @@ func (c *Client) GetContainerMicroserviceUUID(cont Container) string {
 	}
 
 	// Remove prefix
-	prefix := utils.IOFogDockerContainerNamePrefix
+	prefix := utils.EdgeletDockerContainerNamePrefix
 	if len(name) > len(prefix) && name[:len(prefix)] == prefix {
 		return name[len(prefix):]
 	}
@@ -575,7 +575,7 @@ func (c *Client) isPortMappingEqual(inspect types.ContainerJSON, ms *models.Micr
 
 // isNetworkModeEqual compares if microservice network mode matches container network mode.
 // host-network microservice → container must have NetworkMode "host"
-// non-host-network microservice → container must be on the "iofog" user-defined bridge
+// non-host-network microservice → container must be on the "edgelet" user-defined bridge
 func (c *Client) isNetworkModeEqual(inspect types.ContainerJSON, ms *models.Microservice) bool {
 	hostConfig := inspect.HostConfig
 	if hostConfig == nil {
@@ -752,7 +752,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
-	// Ensure the "iofog" bridge network exists before attempting container creation.
+	// Ensure the "edgelet" bridge network exists before attempting container creation.
 	// This guards against races where the network hasn't been created yet (e.g. after
 	// a Docker client re-init) — matches Java's synchronous ensureIoFogNetworkExists().
 	if !ms.HostNetworkMode {
@@ -785,7 +785,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	config.Labels = labels
 
 	// Build host config — NetworkMode is set later after ExtraHosts are resolved,
-	// matching Java: networkMode("iofog") is only applied when extraHosts is non-empty.
+	// matching Java: networkMode("edgelet") is only applied when extraHosts is non-empty.
 	hostConfig := &container.HostConfig{
 		Privileged:      ms.IsPrivileged,
 		PublishAllPorts: false,
@@ -886,9 +886,9 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	}
 	// Apply network mode + extra hosts — matches Java's conditional logic:
 	//   hostNetworkMode → NetworkMode "host"  (no ExtraHosts, no iofog network)
-	//   else            → NetworkMode "iofog" (always; ExtraHosts only when non-empty)
+	//   else            → NetworkMode "edgelet" (always; ExtraHosts only when non-empty)
 	//
-	// All non-host-network containers must be on the "iofog" user-defined bridge so that
+	// All non-host-network containers must be on the "edgelet" user-defined bridge so that
 	// Docker DNS aliases (service discovery) work correctly.  ExtraHosts are independent
 	// — they add entries to /etc/hosts and are only set when there are valid entries.
 	targetNetwork := resolveIofogBridgeNetworkName(ms.ApplicationName, ms.HostNetworkMode)
@@ -959,7 +959,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	}
 
 	// Container name
-	containerName := utils.IOFogDockerContainerNamePrefix + ms.MicroserviceUUID
+	containerName := utils.EdgeletDockerContainerNamePrefix + ms.MicroserviceUUID
 
 	// Build networking config with DNS alias for service discovery
 	var networkingConfig *network.NetworkingConfig

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/datasance/edgelet/internal/config"
 )
 
 func TestReconcileAgainstRecordsRepairsLossDriftAndStaleIndex(t *testing.T) {
@@ -115,11 +115,11 @@ func TestRunReconcileOnceUpdatesCounters(t *testing.T) {
 }
 
 func TestReconcileIntervalFromEnv(t *testing.T) {
-	t.Setenv("IOFOG_DNS_RECONCILE_INTERVAL_SECONDS", "75")
+	t.Setenv("EDGELET_DNS_RECONCILE_INTERVAL_SECONDS", "75")
 	if got := reconcileIntervalFromEnv(); got != 75*time.Second {
 		t.Fatalf("expected 75s interval, got %s", got)
 	}
-	t.Setenv("IOFOG_DNS_RECONCILE_INTERVAL_SECONDS", "-2")
+	t.Setenv("EDGELET_DNS_RECONCILE_INTERVAL_SECONDS", "-2")
 	if got := reconcileIntervalFromEnv(); got != reconcileDefaultEvery {
 		t.Fatalf("expected default interval on invalid value, got %s", got)
 	}

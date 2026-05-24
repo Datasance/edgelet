@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -156,18 +156,18 @@ func TestPodSandboxConfigFromMicroserviceSetsNetworkAnnotation(t *testing.T) {
 	ms := models.NewMicroservice("u1", "img")
 	ms.ApplicationName = "local"
 	cfg := PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
-	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+	if cfg.Annotations[AnnotationIofogNetwork] != "edgelet" {
 		t.Fatalf("expected local annotation iofog in single-bridge mode, got %q", cfg.Annotations[AnnotationIofogNetwork])
 	}
 	ms.HostNetworkMode = true
 	cfg = PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
-	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+	if cfg.Annotations[AnnotationIofogNetwork] != "edgelet" {
 		t.Fatalf("expected host-network local workload to bypass local annotation, got %q", cfg.Annotations[AnnotationIofogNetwork])
 	}
 	ms.HostNetworkMode = false
 	ms.ApplicationName = "managed"
 	cfg = PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
-	if cfg.Annotations[AnnotationIofogNetwork] != "iofog" {
+	if cfg.Annotations[AnnotationIofogNetwork] != "edgelet" {
 		t.Fatalf("expected managed annotation iofog, got %q", cfg.Annotations[AnnotationIofogNetwork])
 	}
 }
@@ -182,7 +182,7 @@ func TestSelectCNINetworkForMicroservice_RuntimeIndependent(t *testing.T) {
 	if selection.Scope != workloadmeta.ScopeLocal {
 		t.Fatalf("expected local scope, got %q", selection.Scope)
 	}
-	if selection.NetworkName != "iofog" {
+	if selection.NetworkName != "edgelet" {
 		t.Fatalf("expected canonical iofog network in single-bridge mode, got %q", selection.NetworkName)
 	}
 
@@ -191,7 +191,7 @@ func TestSelectCNINetworkForMicroservice_RuntimeIndependent(t *testing.T) {
 	if selection.Scope != workloadmeta.ScopeManaged {
 		t.Fatalf("expected managed scope on host network, got %q", selection.Scope)
 	}
-	if selection.NetworkName != "iofog" {
+	if selection.NetworkName != "edgelet" {
 		t.Fatalf("expected managed network on host network bypass, got %q", selection.NetworkName)
 	}
 }
@@ -211,7 +211,7 @@ func TestPodSandboxConfigFromMicroserviceUsesCanonicalLabels(t *testing.T) {
 	if cfg.Labels[workloadmeta.LabelMicroserviceUID] != "u1" {
 		t.Fatalf("expected canonical microservice uid label, got %q", cfg.Labels[workloadmeta.LabelMicroserviceUID])
 	}
-	if cfg.Labels[workloadmeta.LabelRuntimeEngine] != workloadmeta.RuntimeEngineIofog {
+	if cfg.Labels[workloadmeta.LabelRuntimeEngine] != workloadmeta.RuntimeEngineEdgelet {
 		t.Fatalf("expected runtime-engine iofog, got %q", cfg.Labels[workloadmeta.LabelRuntimeEngine])
 	}
 	if cfg.Labels[workloadmeta.LabelRole] != workloadmeta.RoleRouter {

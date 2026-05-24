@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -85,7 +85,7 @@ func runVersion(ctx *run.CLIContext) error {
 	if err := run.RequireDaemon(ctx.Client); err != nil {
 		return err
 	}
-	daemon, err := ctx.Client.RequestV3("GET", "/v3/system/version", nil)
+	daemon, err := ctx.Client.RequestV3("GET", "/v1/system/version", nil)
 	payload := output.BuildVersionPayload(ctx.Version, ctx.BuildTime, ctx.GitCommit, daemon, err)
 	if ctx.Format.IsStructured() {
 		return run.WriteValue(ctx, payload)

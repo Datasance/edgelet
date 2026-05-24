@@ -6,11 +6,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/runtimeops"
 )
 
 const (
-	iofogEngineName    = "iofog"
+	edgeletEngineName    = "edgelet"
 	iofogRuntimeModule = "IofogEngine"
 )
 
@@ -27,7 +27,7 @@ func (e *Engine) sandboxIDFor(containerID string) string {
 
 func (e *Engine) emitRuntime(ev runtimeops.RuntimeEvent) {
 	if ev.Engine == "" {
-		ev.Engine = iofogEngineName
+		ev.Engine = edgeletEngineName
 	}
 	if ev.Module == "" {
 		ev.Module = iofogRuntimeModule

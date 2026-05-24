@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 // The blank imports here register all containerd plugins as in-process components.
 // Without these imports, containerd would start but have no working runtime,

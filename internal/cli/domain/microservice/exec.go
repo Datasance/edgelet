@@ -3,9 +3,9 @@ package microservice
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // Exec runs a command inside a microservice via LocalAPI exec session.
@@ -20,7 +20,7 @@ func Exec(c *client.Client, id string, command []string) error {
 		"stdout":  true,
 		"stderr":  true,
 	}
-	result, err := c.RequestV3("POST", "/v3/ms/"+id+"/exec/sessions", payload)
+	result, err := c.RequestV3("POST", "/v1/ms/"+id+"/exec/sessions", payload)
 	if err != nil {
 		return run.MapAPIError(err)
 	}

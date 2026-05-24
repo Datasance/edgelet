@@ -3,7 +3,7 @@ package models
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 func TestBuildMicroserviceFromLocalManifestUsesLocalApplicationScope(t *testing.T) {

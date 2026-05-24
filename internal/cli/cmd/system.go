@@ -3,10 +3,10 @@ package cmd
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/domain/prune"
-	"github.com/eclipse-iofog/agent/internal/cli/domain/system"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/prune"
+	"github.com/datasance/edgelet/internal/cli/domain/system"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
@@ -23,12 +23,12 @@ func newSystemCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "status",
 			Short: "Show agent runtime status",
-			RunE:  runGET("/v3/system/status"),
+			RunE:  runGET("/v1/system/status"),
 		},
 		&cobra.Command{
 			Use:   "info",
 			Short: "Show agent configuration info",
-			RunE:  runGET("/v3/system/info"),
+			RunE:  runGET("/v1/system/info"),
 		},
 		&cobra.Command{
 			Use:   "version",
@@ -113,7 +113,7 @@ func runSystemStop(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeHumanOrRoute(appCtx, "/v3/system/stop", result.Human, result.Data)
+	return writeHumanOrRoute(appCtx, "/v1/system/stop", result.Human, result.Data)
 }
 
 func runSystemReload(cmd *cobra.Command, args []string) error {
@@ -123,7 +123,7 @@ func runSystemReload(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	path := "/v3/system/reload"
+	path := "/v1/system/reload"
 	var data map[string]interface{}
 	err := run.WithSpinner(appCtx, "Reloading configuration...", func() error {
 		var reqErr error
@@ -153,7 +153,7 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	path := "/v3/system/prune"
+	path := "/v1/system/prune"
 	if mode != "" {
 		path += "?mode=" + mode
 	}

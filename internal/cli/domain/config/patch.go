@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // Result carries config patch outcome.
@@ -17,8 +17,8 @@ func Patch(client run.V3Client, setMap map[string]interface{}) (human string, da
 		return "", nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
 	}
 	payload := map[string]interface{}{"set": setMap}
-	before, _ := client.RequestV3("GET", "/v3/system/config", nil)
-	after, reqErr := client.RequestV3("PATCH", "/v3/system/config", payload)
+	before, _ := client.RequestV3("GET", "/v1/system/config", nil)
+	after, reqErr := client.RequestV3("PATCH", "/v1/system/config", payload)
 	if reqErr != nil {
 		return "", nil, run.MapAPIError(reqErr)
 	}

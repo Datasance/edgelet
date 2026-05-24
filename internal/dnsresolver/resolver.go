@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/miekg/dns"
 )
 
@@ -23,7 +23,7 @@ const (
 	defaultZoneName       = "svc.bridge.local"
 	reservedRouterName    = "router.default.svc.bridge.local"
 	reservedNatsName      = "nats.default.svc.bridge.local"
-	reservedAgentName     = "iofog.default.svc.bridge.local"
+	reservedAgentName     = "edgelet.default.svc.bridge.local"
 	compatDockerHostName  = "host.docker.internal"
 	compatContainerHost   = "host.container.internal"
 	bindRetryInterval     = 5 * time.Second
@@ -35,7 +35,7 @@ const (
 type Scope string
 
 const (
-	ScopeManaged Scope = "iofog"
+	ScopeManaged Scope = "edgelet"
 	ScopeLocal   Scope = "iofog-local"
 )
 
@@ -190,7 +190,7 @@ func (r *Resolver) Start() error {
 		return nil
 	}
 
-	r.compatOn = strings.EqualFold(strings.TrimSpace(os.Getenv("IOFOG_DNS_COMPAT_ALIASES")), "true")
+	r.compatOn = strings.EqualFold(strings.TrimSpace(os.Getenv("EDGELET_DNS_COMPAT_ALIASES")), "true")
 	r.reconcileEvery = reconcileIntervalFromEnv()
 	r.applyGuardrailConfigFromEnvLocked()
 	if strings.TrimSpace(r.snapshotPath) == "" {
@@ -889,7 +889,7 @@ func (r *Resolver) hostAdvertiseIP() string {
 
 func GatewayIPForScope(scope Scope) (string, error) {
 	_ = scope
-	cidr := constants.IofogBridgeCIDR
+	cidr := constants.EdgeletBridgeCIDR
 	pfx, err := netip.ParsePrefix(cidr)
 	if err != nil {
 		return "", err

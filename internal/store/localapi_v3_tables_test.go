@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func openStoreForLocalAPIV3Tests(t *testing.T) *DB {
@@ -218,10 +218,10 @@ func TestServiceAccountTokenCRUD(t *testing.T) {
 		RoleRefKind:        "Role",
 		RoleRefName:        "role-1",
 		RBACVersion:        "v1",
-		RulesByGroupJSON:   `{"agent.datasance.com/v3":[{"resources":["logs"],"verbs":["get"]}]}`,
+		RulesByGroupJSON:   `{"edgelet.iofog.org/v1":[{"resources":["logs"],"verbs":["get"]}]}`,
 		ClaimsJSON:         `{}`,
-		Issuer:             "https://iofog.default.svc.bridge.local",
-		Audience:           "https://iofog.default.svc.bridge.local",
+		Issuer:             "https://edgelet.default.svc.bridge.local",
+		Audience:           "https://edgelet.default.svc.bridge.local",
 		Alg:                "EdDSA",
 		JTI:                "jti-1",
 		TokenSHA256:        "sha256-1",

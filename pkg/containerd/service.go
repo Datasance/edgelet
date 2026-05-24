@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"bytes"
@@ -17,8 +17,8 @@ import (
 
 	"github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const maxRetries = 30
@@ -26,7 +26,7 @@ const maxRetries = 30
 const (
 	containerdStartupTimeout      = 60 * time.Second
 	containerdClientRetryInterval = 2 * time.Second
-	containerdChildArg            = "--iofog-containerd-child"
+	containerdChildArg            = "--edgelet-containerd-child"
 )
 
 const (
@@ -154,7 +154,7 @@ func (s *Service) Run() error {
 	defer close(s.done)
 
 	logger.Infof("Starting embedded containerd child process (socket=%s config=%s)",
-		constants.IofogContainerdSocket, constants.IofogContainerdConfigFile)
+		constants.EdgeletContainerdSocket, constants.EdgeletContainerdConfigFile)
 
 	if err := s.prepare(); err != nil {
 		return fmt.Errorf("%w: prepare runtime directories: %v", ErrContainerdSpawnFailure, err)
@@ -259,7 +259,7 @@ func (s *Service) Run() error {
 
 // Reconfigure rewrites containerd config and performs a controlled restart.
 func (s *Service) Reconfigure() error {
-	previousLKG, lkgErr := readLKGForService(constants.IofogContainerdConfigFile)
+	previousLKG, lkgErr := readLKGForService(constants.EdgeletContainerdConfigFile)
 	hasLKG := lkgErr == nil && len(previousLKG) > 0
 
 	if err := writeConfigForService(); err != nil {
@@ -410,7 +410,7 @@ func (s *Service) SetUnexpectedExitHandler(handler func(error)) {
 
 // IsHealthy returns true if the containerd socket is reachable.
 func (s *Service) IsHealthy() bool {
-	c, err := client.New(constants.IofogContainerdSocket)
+	c, err := client.New(constants.EdgeletContainerdSocket)
 	if err != nil {
 		return false
 	}
@@ -429,10 +429,10 @@ func (s *Service) spawnChild() (*exec.Cmd, error) {
 
 	args := []string{
 		containerdChildArg,
-		"--config", constants.IofogContainerdConfigFile,
-		"--address", constants.IofogContainerdSocket,
-		"--root", constants.IofogContainerdRootDir,
-		"--state", constants.IofogContainerdStateDir,
+		"--config", constants.EdgeletContainerdConfigFile,
+		"--address", constants.EdgeletContainerdSocket,
+		"--root", constants.EdgeletContainerdRootDir,
+		"--state", constants.EdgeletContainerdStateDir,
 		"--log-level", "warn",
 	}
 
@@ -537,7 +537,7 @@ func (s *Service) rollbackToLKG(previousLKG []byte, hasLKG bool) error {
 	if !hasLKG {
 		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("last-known-good config is unavailable"))
 	}
-	if err := writeAtomicForService(constants.IofogContainerdConfigFile, previousLKG, 0644); err != nil {
+	if err := writeAtomicForService(constants.EdgeletContainerdConfigFile, previousLKG, 0644); err != nil {
 		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("restore last-known-good config: %w", err))
 	}
 	if err := s.reconfigureAttempt(0); err != nil {
@@ -556,12 +556,12 @@ func (s *Service) escalateRestart(cause error) error {
 // prepare ensures required directories exist and removes any stale socket
 // from a previous run (e.g. after crash) so containerd can bind successfully.
 func (s *Service) prepare() error {
-	_ = os.Remove(constants.IofogContainerdSocket)
+	_ = os.Remove(constants.EdgeletContainerdSocket)
 
 	for _, dir := range []string{
-		constants.IofogContainerdRootDir,
-		constants.IofogContainerdStateDir,
-		constants.IofogRunDir,
+		constants.EdgeletContainerdRootDir,
+		constants.EdgeletContainerdStateDir,
+		constants.EdgeletRunDir,
 	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", dir, err)
@@ -620,14 +620,14 @@ func (s *Service) healthCheck(ctx context.Context, c *client.Client) error {
 func (s *Service) waitForClient(ctx context.Context) (*client.Client, error) {
 	var lastErr error
 	for {
-		c, err := client.New(constants.IofogContainerdSocket)
+		c, err := client.New(constants.EdgeletContainerdSocket)
 		if err == nil {
 			return c, nil
 		}
 		lastErr = err
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("timed out waiting for containerd socket %s: %w", constants.IofogContainerdSocket, lastErr)
+			return nil, fmt.Errorf("timed out waiting for containerd socket %s: %w", constants.EdgeletContainerdSocket, lastErr)
 		case <-time.After(containerdClientRetryInterval):
 		}
 	}
@@ -643,7 +643,7 @@ func waitForDone(done <-chan struct{}, timeout time.Duration) bool {
 }
 
 func (s *Service) reapManagedShims() error {
-	remaining, err := findManagedShimPIDs(constants.IofogContainerdSocket)
+	remaining, err := findManagedShimPIDs(constants.EdgeletContainerdSocket)
 	if err != nil {
 		return fmt.Errorf("discover managed shims before reap: %w", err)
 	}
@@ -658,13 +658,13 @@ func (s *Service) reapManagedShims() error {
 		}
 	}
 
-	if exited, waitErr := waitForManagedShimsExit(constants.IofogContainerdSocket, containerdShimReapGraceTimeout); waitErr != nil {
+	if exited, waitErr := waitForManagedShimsExit(constants.EdgeletContainerdSocket, containerdShimReapGraceTimeout); waitErr != nil {
 		return fmt.Errorf("wait for shim SIGTERM completion: %w", waitErr)
 	} else if exited {
 		return nil
 	}
 
-	remaining, err = findManagedShimPIDs(constants.IofogContainerdSocket)
+	remaining, err = findManagedShimPIDs(constants.EdgeletContainerdSocket)
 	if err != nil {
 		return fmt.Errorf("discover managed shims before SIGKILL: %w", err)
 	}
@@ -674,10 +674,10 @@ func (s *Service) reapManagedShims() error {
 		}
 	}
 
-	if exited, waitErr := waitForManagedShimsExit(constants.IofogContainerdSocket, containerdShimReapForceTimeout); waitErr != nil {
+	if exited, waitErr := waitForManagedShimsExit(constants.EdgeletContainerdSocket, containerdShimReapForceTimeout); waitErr != nil {
 		return fmt.Errorf("wait for shim SIGKILL completion: %w", waitErr)
 	} else if !exited {
-		if stillRunning, listErr := findManagedShimPIDs(constants.IofogContainerdSocket); listErr == nil {
+		if stillRunning, listErr := findManagedShimPIDs(constants.EdgeletContainerdSocket); listErr == nil {
 			return fmt.Errorf("managed shims still running after reap attempts: pids=%v", stillRunning)
 		}
 		return fmt.Errorf("managed shims still running after reap attempts")
@@ -733,12 +733,12 @@ func findManagedShimPIDsFromProc(socketPath string) ([]int, error) {
 }
 
 // CleanupRuntimeArtifacts removes stale runtime artifacts used by embedded containerd.
-// It intentionally preserves persistent image/layer data under IofogContainerdRootDir.
+// It intentionally preserves persistent image/layer data under EdgeletContainerdRootDir.
 func CleanupRuntimeArtifacts() error {
 	paths := []string{
-		constants.IofogContainerdSocket,
-		constants.IofogRunDir,
-		constants.IofogContainerdStateDir,
+		constants.EdgeletContainerdSocket,
+		constants.EdgeletRunDir,
+		constants.EdgeletContainerdStateDir,
 	}
 
 	var errs []string
@@ -748,7 +748,7 @@ func CleanupRuntimeArtifacts() error {
 		}
 	}
 
-	for _, dir := range []string{constants.IofogRunDir, constants.IofogContainerdStateDir} {
+	for _, dir := range []string{constants.EdgeletRunDir, constants.EdgeletContainerdStateDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			errs = append(errs, fmt.Sprintf("mkdir %s: %v", dir, err))
 		}

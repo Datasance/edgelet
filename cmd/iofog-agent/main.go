@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/eclipse-iofog/agent/internal/cli/cmd"
+	"github.com/datasance/edgelet/internal/cli/cmd"
 )
 
 func main() {

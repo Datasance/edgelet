@@ -15,8 +15,7 @@ type rbacPermission struct {
 }
 
 var localAPIAuthorizationGroups = []string{
-	"agent.iofog.org/v3",
-	"agent.datasance.com/v3",
+	"edgelet.iofog.org/v1",
 }
 
 func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
@@ -24,73 +23,73 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 	method := strings.ToUpper(r.Method)
 	verb := toRBACVerb(method)
 	switch {
-	case path == "/v3/system/status":
+	case path == "/v1/system/status":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/status", Verb: verb}, true
-	case path == "/v3/system/info":
+	case path == "/v1/system/info":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/info", Verb: verb}, true
-	case path == "/v3/system/version":
+	case path == "/v1/system/version":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/version", Verb: verb}, true
-	case path == "/v3/system/provision":
+	case path == "/v1/system/provision":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/provision", Verb: verb}, true
-	case path == "/v3/system/reload":
+	case path == "/v1/system/reload":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/reload", Verb: verb}, true
-	case path == "/v3/system/prune":
+	case path == "/v1/system/prune":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/prune", Verb: verb}, true
-	case path == "/v3/system/logs":
+	case path == "/v1/system/logs":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/logs", Verb: verb}, true
-	case path == "/v3/system/logs:stream":
+	case path == "/v1/system/logs:stream":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/logs/stream", Verb: verb}, true
-	case path == "/v3/system/config":
+	case path == "/v1/system/config":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/config", Verb: verb}, true
-	case path == "/v3/system/controller/cert":
+	case path == "/v1/system/controller/cert":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controller/cert", Verb: "update"}, true
-	case path == "/v3/system/config/switch":
+	case path == "/v1/system/config/switch":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/config/switch", Verb: "update"}, true
-	case path == "/v3/system/gps":
+	case path == "/v1/system/gps":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/gps", Verb: verb}, true
-	case path == "/v3/images":
+	case path == "/v1/images":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images", Verb: verb}, true
-	case path == "/v3/images:pull":
+	case path == "/v1/images:pull":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/pull", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/images:pull/"):
+	case strings.HasPrefix(path, "/v1/images:pull/"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/pull/status", Verb: verb}, true
-	case path == "/v3/images:load":
+	case path == "/v1/images:load":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/load", Verb: verb}, true
-	case path == "/v3/images:prune":
+	case path == "/v1/images:prune":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/prune", Verb: verb}, true
-	case path == "/v3/images:remove":
+	case path == "/v1/images:remove":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/remove", Verb: verb}, true
-	case path == "/v3/microservices/config":
+	case path == "/v1/microservices/config":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices/config/self", Verb: verb}, true
-	case path == "/v3/microservices/control":
+	case path == "/v1/microservices/control":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices/control/self", Verb: verb}, true
-	case path == "/v3/ms":
+	case path == "/v1/ms":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/ms/"):
+	case strings.HasPrefix(path, "/v1/ms/"):
 		if id, ok := microserviceResourceName(path); ok {
 			return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb, ResourceName: id}, true
 		}
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "microservices", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/deploy/microservices/"):
-		id := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/microservices/"))
+	case strings.HasPrefix(path, "/v1/deploy/microservices/"):
+		id := strings.TrimSpace(strings.TrimPrefix(path, "/v1/deploy/microservices/"))
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices", Verb: verb, ResourceName: id}, true
-	case strings.HasPrefix(path, "/v3/deploy/microservices:apply/"):
+	case strings.HasPrefix(path, "/v1/deploy/microservices:apply/"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices/apply/status", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/deploy/registries/"):
-		id := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/registries/"))
+	case strings.HasPrefix(path, "/v1/deploy/registries/"):
+		id := strings.TrimSpace(strings.TrimPrefix(path, "/v1/deploy/registries/"))
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb, ResourceName: id}, true
-	case strings.HasPrefix(path, "/v3/deploy/runtimeclasses/"):
-		name := strings.TrimSpace(strings.TrimPrefix(path, "/v3/deploy/runtimeclasses/"))
+	case strings.HasPrefix(path, "/v1/deploy/runtimeclasses/"):
+		name := strings.TrimSpace(strings.TrimPrefix(path, "/v1/deploy/runtimeclasses/"))
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/runtimeclasses", Verb: verb, ResourceName: name}, true
-	case strings.HasPrefix(path, "/v3/deploy/microservices"):
+	case strings.HasPrefix(path, "/v1/deploy/microservices"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/microservices", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/deploy/registries"):
+	case strings.HasPrefix(path, "/v1/deploy/registries"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb}, true
-	case strings.HasPrefix(path, "/v3/deploy/runtimeclasses"):
+	case strings.HasPrefix(path, "/v1/deploy/runtimeclasses"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/runtimeclasses", Verb: verb}, true
-	case path == "/v3/auth/whoami":
+	case path == "/v1/auth/whoami":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "auth/whoami", Verb: verb}, true
-	case path == "/v3/auth/tokens" || path == "/v3/auth/tokens/revoke":
+	case path == "/v1/auth/tokens" || path == "/v1/auth/tokens/revoke":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "auth/tokens", Verb: verb}, true
 	default:
 		return rbacPermission{}, false
@@ -98,7 +97,7 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 }
 
 func microserviceResourceName(path string) (string, bool) {
-	rest := strings.TrimPrefix(path, "/v3/ms/")
+	rest := strings.TrimPrefix(path, "/v1/ms/")
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
 		return "", false
@@ -121,7 +120,7 @@ func isAuthorized(claims jwt.MapClaims, p rbacPermission) bool {
 		return true
 	}
 
-	iofogRaw, ok := claims["iofog.org"].(map[string]interface{})
+	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]interface{})
 	if !ok {
 		return false
 	}

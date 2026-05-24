@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/output"
 	"github.com/gorilla/websocket"
 	"golang.org/x/term"
 )
@@ -21,7 +21,7 @@ import (
 // AttachExecSession attaches to an exec WebSocket session and streams stdin/stdout/stderr.
 // Returns the remote command exit code when the session ends cleanly.
 func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
-	conn, err := DialWS(c, "/v3/ms/"+selector+"/exec/sessions/"+sessionID+":attach")
+	conn, err := DialWS(c, "/v1/ms/"+selector+"/exec/sessions/"+sessionID+":attach")
 	if err != nil {
 		return 0, fmt.Errorf("attach exec session: %w", err)
 	}
@@ -123,7 +123,7 @@ func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
 
 // StreamMSLogs follows microservice logs over WebSocket.
 func StreamMSLogs(c *Client, id, tail, since, until string, timestamps bool) error {
-	wsPath := "/v3/ms/" + id + "/logs:stream?tail=" + url.QueryEscape(tail)
+	wsPath := "/v1/ms/" + id + "/logs:stream?tail=" + url.QueryEscape(tail)
 	if since != "" {
 		wsPath += "&since=" + url.QueryEscape(since)
 	}
@@ -135,7 +135,7 @@ func StreamMSLogs(c *Client, id, tail, since, until string, timestamps bool) err
 
 // StreamSystemLogs follows daemon logs over WebSocket.
 func StreamSystemLogs(c *Client, tail, since, until string, timestamps bool) error {
-	wsPath := "/v3/system/logs:stream?tailLines=" + url.QueryEscape(tail)
+	wsPath := "/v1/system/logs:stream?tailLines=" + url.QueryEscape(tail)
 	if since != "" {
 		wsPath += "&since=" + url.QueryEscape(since)
 	}

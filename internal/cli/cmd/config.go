@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/domain/config"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/config"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 

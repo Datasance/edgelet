@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/runtimeops"
 )
 
 func captureRuntimeEvents(t *testing.T) *[]runtimeops.RuntimeEvent {
@@ -103,7 +103,7 @@ func TestEmitEngineInit_InfoFields(t *testing.T) {
 		Result:     runtimeops.ResultOK,
 		DurationMs: 5,
 		Fields: map[string]any{
-			"socket":    "/run/iofog-agent/containerd.sock",
+			"socket":    "/run/edgelet/containerd.sock",
 			"namespace": "k8s.io",
 		},
 	})

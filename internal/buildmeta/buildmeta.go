@@ -3,7 +3,7 @@ package buildmeta
 
 import "strings"
 
-// Flavor is set at link time: "lite" (docker/podman only) or "full" (embedded containerd / iofog engine).
+// Flavor is set at link time: "lite" (docker/podman only) or "full" (embedded containerd / edgelet engine).
 var Flavor = "lite"
 
 const (
@@ -24,7 +24,7 @@ func IsLite() bool {
 // AllowedEngines returns containerEngine values valid for this binary build.
 func AllowedEngines() []string {
 	if IsFull() {
-		return []string{"iofog"}
+		return []string{"edgelet"}
 	}
 	return []string{"docker", "podman"}
 }

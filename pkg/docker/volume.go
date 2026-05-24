@@ -7,9 +7,9 @@ import (
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/volumemount"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/volumemount"
 )
 
 // ResolveVolumeMountPath resolves volume mount paths for VOLUME_MOUNT type
@@ -59,7 +59,7 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		}
 
 		// Check if agent is running in container
-		iofogDaemon := os.Getenv("IOFOG_DAEMON")
+		iofogDaemon := os.Getenv("EDGELET_DAEMON")
 		isContainer := strings.ToLower(iofogDaemon) == "container"
 
 		if isContainer {
@@ -100,7 +100,7 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		volumeName := hostDestination[len("$VolumeMount/"):]
 
 		// Check if agent is running in container
-		iofogDaemon := os.Getenv("IOFOG_DAEMON")
+		iofogDaemon := os.Getenv("EDGELET_DAEMON")
 		isContainer := strings.ToLower(iofogDaemon) == "container"
 
 		cfg := config.GetInstance()

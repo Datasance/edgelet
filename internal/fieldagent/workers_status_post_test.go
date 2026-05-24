@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/statusreporter"
 )
 
 func TestPostStatusHelper_SuccessfulPostSendsAndClearsTerminalStates(t *testing.T) {
@@ -113,7 +113,7 @@ func TestGetFogStatus_AvailableRuntimesPerEngine(t *testing.T) {
 		t.Fatalf("expected podman runtime list, got: %#v", status["availableRuntimes"])
 	}
 
-	cfg.ContainerEngine = constants.EngineIofog
+	cfg.ContainerEngine = constants.EngineEdgelet
 	status = fa.getFogStatus()
 	available, ok := status["availableRuntimes"].([]string)
 	if !ok {
@@ -127,7 +127,7 @@ func TestGetFogStatus_AvailableRuntimesPerEngine(t *testing.T) {
 }
 
 func TestRuntimeNamesForController_SortsAndDeduplicatesDeterministically(t *testing.T) {
-	got := runtimeNamesForController(constants.EngineIofog, []string{
+	got := runtimeNamesForController(constants.EngineEdgelet, []string{
 		"edgelet",
 		"crun",
 		"spin",

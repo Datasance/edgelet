@@ -10,18 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/processmanager"
-	"github.com/eclipse-iofog/agent/internal/serviceaccount"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/volumemount"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/serviceaccount"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/volumemount"
 )
 
 const (
@@ -856,7 +856,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 
 	// Clear microservice manager (matching Java: microserviceManager.clear())
 	fa.Clear()
-	// Clear stale runtime status cache so /v3/ms and CLI cannot show ghost entries
+	// Clear stale runtime status cache so /v1/ms and CLI cannot show ghost entries
 	// after deprovision while cleanup continues in background.
 	statusreporter.GetInstance().ResetProcessManagerStatus()
 

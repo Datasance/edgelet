@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 	"github.com/pelletier/go-toml"
 	"github.com/urfave/cli/v2"
 )
@@ -21,24 +21,24 @@ const (
 )
 
 var (
-	containerdTemplateExtensionPath = filepath.Join(constants.IofogContainerdLibDir, "config.toml.tmpl")
+	containerdTemplateExtensionPath = filepath.Join(constants.EdgeletContainerdLibDir, "config.toml.tmpl")
 	containerdLKGSuffix             = ".lkg"
 )
 
 // writeConfigFile generates and writes the containerd config.toml to disk.
 func writeConfigFile() error {
-	if err := os.MkdirAll(filepath.Dir(constants.IofogContainerdConfigFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(constants.EdgeletContainerdConfigFile), 0755); err != nil {
 		return fmt.Errorf("mkdir for config: %w", err)
 	}
 	content, err := renderContainerdConfig()
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomically(constants.IofogContainerdConfigFile, content, 0644); err != nil {
+	if err := writeFileAtomically(constants.EdgeletContainerdConfigFile, content, 0644); err != nil {
 		return fmt.Errorf("write TOML config atomically: %w", err)
 	}
 	// PR4 primitive: maintain a successful config snapshot for future rollback wiring.
-	if err := writeLastKnownGoodConfig(constants.IofogContainerdConfigFile, content); err != nil {
+	if err := writeLastKnownGoodConfig(constants.EdgeletContainerdConfigFile, content); err != nil {
 		return fmt.Errorf("write config last-known-good snapshot: %w", err)
 	}
 	return nil
@@ -178,8 +178,8 @@ func readLastKnownGoodConfig(configPath string) ([]byte, error) {
 // Uses config version 3 (containerd v2+) and registers crun handlers backed by
 // crun.
 func generateConfig() map[string]any {
-	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
-	crunPath := filepath.Join(constants.IofogContainerdBinDir, "crun")
+	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
+	crunPath := filepath.Join(constants.EdgeletContainerdBinDir, "crun")
 
 	runtimes := map[string]any{
 		"crun": map[string]any{
@@ -190,7 +190,7 @@ func generateConfig() map[string]any {
 			"privileged_without_host_devices": false,
 			"privileged_without_host_devices_all_devices_allowed": false,
 			"base_runtime_spec": "",
-			"cni_conf_dir":      constants.IofogCNIConfDir,
+			"cni_conf_dir":      constants.EdgeletCNIConfDir,
 			"cni_max_conf_num":  1,
 			"snapshotter":       "",
 			"sandboxer":         "podsandbox",
@@ -206,18 +206,18 @@ func generateConfig() map[string]any {
 
 	return map[string]any{
 		"version":          3,
-		"root":             constants.IofogContainerdRootDir,
-		"state":            constants.IofogContainerdStateDir,
+		"root":             constants.EdgeletContainerdRootDir,
+		"state":            constants.EdgeletContainerdStateDir,
 		"temp":             "",
 		"disabled_plugins": []string{},
 		"required_plugins": []string{},
 		"oom_score":        0,
 
 		// Allow drop-in config overrides — operators can place *.toml files here.
-		"imports": []string{constants.IofogContainerdLibDir + "/config.d/*.toml"},
+		"imports": []string{constants.EdgeletContainerdLibDir + "/config.d/*.toml"},
 
 		"grpc": map[string]any{
-			"address": constants.IofogContainerdSocket,
+			"address": constants.EdgeletContainerdSocket,
 			"uid":     0,
 			"gid":     0,
 		},
@@ -246,7 +246,7 @@ func generateConfig() map[string]any {
 				"image_pull_with_sync_fs":      false,
 				"stats_collect_period":         120,
 				"pinned_images": map[string]any{
-					"sandbox": constants.IofogSandboxImage,
+					"sandbox": constants.EdgeletSandboxImage,
 				},
 				"registry": map[string]any{
 					"config_path": "",
@@ -258,7 +258,7 @@ func generateConfig() map[string]any {
 
 			// --- CRI runtime plugin ---
 			"io.containerd.cri.v1.runtime": map[string]any{
-				"sandbox_image":                          constants.IofogSandboxImage,
+				"sandbox_image":                          constants.EdgeletSandboxImage,
 				"enable_selinux":                         false,
 				"selinux_category_range":                 1024,
 				"max_container_log_line_size":            16384,
@@ -285,8 +285,8 @@ func generateConfig() map[string]any {
 				// bin_dirs (plural array) replaces the deprecated bin_dir string
 				// introduced in containerd v2.1.
 				"cni": map[string]any{
-					"bin_dirs":              []string{constants.IofogCNIPluginsDir},
-					"conf_dir":              constants.IofogCNIConfDir,
+					"bin_dirs":              []string{constants.EdgeletCNIPluginsDir},
+					"conf_dir":              constants.EdgeletCNIConfDir,
 					"max_conf_num":          1,
 					"setup_serially":        false,
 					"conf_template":         "",
@@ -302,7 +302,7 @@ func generateConfig() map[string]any {
 				"stream_server_port":    "0",
 				"stream_idle_timeout":   "4h0m0s",
 				"enable_tls_streaming":  false,
-				"sandbox_image":         constants.IofogSandboxImage,
+				"sandbox_image":         constants.EdgeletSandboxImage,
 			},
 
 			// --- Overlayfs snapshotter ---
@@ -335,7 +335,7 @@ func generateConfig() map[string]any {
 
 func appendDiscoveredRuntimes(runtimes map[string]any) {
 	catalog := BuildRuntimeCatalog()
-	shimRuncPath := filepath.Join(constants.IofogContainerdBinDir, "containerd-shim-runc-v2")
+	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
 	sort.Slice(catalog, func(i, j int) bool {
 		return catalog[i].Handler < catalog[j].Handler
 	})
@@ -361,7 +361,7 @@ func runtimeClassRuntimeConfig(entry RuntimeCatalogEntry, shimRuncPath string) m
 		"privileged_without_host_devices": false,
 		"privileged_without_host_devices_all_devices_allowed": false,
 		"base_runtime_spec": "",
-		"cni_conf_dir":      constants.IofogCNIConfDir,
+		"cni_conf_dir":      constants.EdgeletCNIConfDir,
 		"cni_max_conf_num":  1,
 		"snapshotter":       "",
 		"sandboxer":         "podsandbox",
@@ -384,19 +384,19 @@ func buildFlags() []cli.Flag {
 		&cli.StringFlag{
 			Name:    "config",
 			Aliases: []string{"c"},
-			Value:   constants.IofogContainerdConfigFile,
+			Value:   constants.EdgeletContainerdConfigFile,
 		},
 		&cli.StringFlag{
 			Name:  "address",
-			Value: constants.IofogContainerdSocket,
+			Value: constants.EdgeletContainerdSocket,
 		},
 		&cli.StringFlag{
 			Name:  "root",
-			Value: constants.IofogContainerdRootDir,
+			Value: constants.EdgeletContainerdRootDir,
 		},
 		&cli.StringFlag{
 			Name:  "state",
-			Value: constants.IofogContainerdStateDir,
+			Value: constants.EdgeletContainerdStateDir,
 		},
 		&cli.StringFlag{
 			Name:  "log-level",

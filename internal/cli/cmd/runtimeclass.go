@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/domain/runtimeclass"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/runtimeclass"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +18,7 @@ func newRuntimeClassCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "ls",
 			Short: "List runtime classes",
-			RunE:  runGET("/v3/deploy/runtimeclasses"),
+			RunE:  runGET("/v1/deploy/runtimeclasses"),
 		},
 		&cobra.Command{
 			Use:   "inspect <name>",
@@ -44,7 +44,7 @@ func runRuntimeClassInspect(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	path := "/v3/deploy/runtimeclasses/" + args[0]
+	path := "/v1/deploy/runtimeclasses/" + args[0]
 	data, err := appCtx.Client.RequestV3("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
@@ -59,7 +59,7 @@ func runRuntimeClassRemove(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	path := "/v3/deploy/runtimeclasses/" + args[0]
+	path := "/v1/deploy/runtimeclasses/" + args[0]
 	var data map[string]interface{}
 	err := run.WithSpinner(appCtx, "Removing runtime class "+args[0]+"...", func() error {
 		var reqErr error

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 // Config represents the runtime configuration
@@ -58,7 +58,7 @@ type Config struct {
 	ShutdownGracePeriodSeconds      int
 	ControllerRequestTimeoutSeconds int
 	ControllerPingTimeoutSeconds    int
-	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
+	// HWSignature removed - now stored in separate file: /etc/edgelet/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 
 	// Automatic configurable params (calculated)

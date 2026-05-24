@@ -9,7 +9,7 @@ import (
 
 func TestHandleVersion_IncludesFlavorAndAllowedEngine(t *testing.T) {
 	h := &VersionHandler{}
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/version", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/version", nil)
 	rec := httptest.NewRecorder()
 
 	h.HandleVersion(rec, req)

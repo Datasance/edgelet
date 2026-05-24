@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 // UpsertLocalDeployedMicroservice upserts a locally deployed microservice record.

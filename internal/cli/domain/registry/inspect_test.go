@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 type inspectFakeClient struct {
@@ -28,7 +28,7 @@ func (f *inspectFakeClient) RequestV3MultipartFile(string, string, string, strin
 func TestInspect_PasswordPlain(t *testing.T) {
 	client := &inspectFakeClient{
 		gets: map[string]map[string]interface{}{
-			"GET /v3/deploy/registries/7": {
+			"GET /v1/deploy/registries/7": {
 				"id":        7,
 				"url":       "https://registry.example/v2/",
 				"isPublic":  false,

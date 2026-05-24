@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/pkg/engine"
 	"github.com/gorilla/websocket"
 )
 

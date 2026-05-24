@@ -8,13 +8,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/supervisor"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	iofogcontainerd "github.com/eclipse-iofog/agent/pkg/containerd"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/supervisor"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
 var (
@@ -32,7 +32,7 @@ func main() {
 	}()
 
 	// Internal child-process mode: run containerd and exit.
-	if handled, err := iofogcontainerd.MaybeRunChildProcess(os.Args); handled {
+	if handled, err := edgeletcontainerdd.MaybeRunChildProcess(os.Args); handled {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Embedded containerd child failed: %v\n", err)
 			os.Exit(1)
@@ -83,8 +83,8 @@ func main() {
 	cfg := config.GetInstance()
 
 	// Bootstrap embedded containerd in main before Supervisor (full build + iofog engine).
-	var prestarted *iofogcontainerd.Service
-	if buildmeta.IsFull() && cfg.ContainerEngine == constants.EngineIofog {
+	var prestarted *edgeletcontainerdd.Service
+	if buildmeta.IsFull() && cfg.ContainerEngine == constants.EngineEdgelet {
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()
 		if err != nil {

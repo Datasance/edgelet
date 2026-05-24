@@ -16,17 +16,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/fieldagent"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/processmanager"
-	"github.com/eclipse-iofog/agent/internal/runtimeapi"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/fieldagent"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/runtimeapi"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/engine"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -276,7 +276,7 @@ func (h *V3Handler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v3/system/logs:stream" {
+	if r.URL.Path == "/v1/system/logs:stream" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
@@ -284,7 +284,7 @@ func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
 		h.handleSystemLogsStreamWS(w, r)
 		return
 	}
-	if r.URL.Path != "/v3/system/logs" {
+	if r.URL.Path != "/v1/system/logs" {
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
 		return
 	}
@@ -479,7 +479,7 @@ func (h *V3Handler) HandleImagePullStatus(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/images:pull/"))
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/images:pull/"))
 	if operationID == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
 		return
@@ -912,7 +912,7 @@ func (h *V3Handler) HandleMicroserviceConfigSelf(w http.ResponseWriter, r *http.
 }
 
 func (h *V3Handler) HandleMicroservices(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v3/ms" {
+	if r.URL.Path == "/v1/ms" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
@@ -939,7 +939,7 @@ func (h *V3Handler) HandleMicroservices(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rest := strings.TrimPrefix(r.URL.Path, "/v3/ms/")
+	rest := strings.TrimPrefix(r.URL.Path, "/v1/ms/")
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing microservice id", nil)
@@ -1213,7 +1213,7 @@ func (h *V3Handler) HandleDeployMicroservicesApplyStatus(w http.ResponseWriter, 
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/microservices:apply/"))
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/deploy/microservices:apply/"))
 	if operationID == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
 		return
@@ -1286,7 +1286,7 @@ func (h *V3Handler) HandleDeployMicroservicesValidate(w http.ResponseWriter, r *
 }
 
 func (h *V3Handler) HandleDeployMicroservices(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v3/deploy/microservices" {
+	if r.URL.Path == "/v1/deploy/microservices" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
@@ -1300,7 +1300,7 @@ func (h *V3Handler) HandleDeployMicroservices(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/v3/deploy/microservices/")
+	id := strings.TrimPrefix(r.URL.Path, "/v1/deploy/microservices/")
 	if id == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing deployment id", nil)
 		return
@@ -1378,7 +1378,7 @@ func (h *V3Handler) HandleDeployRegistriesValidate(w http.ResponseWriter, r *htt
 }
 
 func (h *V3Handler) HandleDeployRegistries(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v3/deploy/registries" {
+	if r.URL.Path == "/v1/deploy/registries" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
@@ -1392,7 +1392,7 @@ func (h *V3Handler) HandleDeployRegistries(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	idRaw := strings.TrimPrefix(r.URL.Path, "/v3/deploy/registries/")
+	idRaw := strings.TrimPrefix(r.URL.Path, "/v1/deploy/registries/")
 	idRaw = strings.TrimSpace(idRaw)
 	id, err := strconv.Atoi(idRaw)
 	if err != nil || id <= 0 {
@@ -1549,7 +1549,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesApplyStatus(w http.ResponseWriter,
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses:apply/"))
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/deploy/runtimeclasses:apply/"))
 	if operationID == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
 		return
@@ -1594,7 +1594,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r 
 }
 
 func (h *V3Handler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v3/deploy/runtimeclasses" {
+	if r.URL.Path == "/v1/deploy/runtimeclasses" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
@@ -1612,7 +1612,7 @@ func (h *V3Handler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses/"))
+	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/deploy/runtimeclasses/"))
 	if name == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing runtime class name", nil)
 		return
@@ -1646,7 +1646,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesDeleteStatus(w http.ResponseWriter
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v3/deploy/runtimeclasses:delete/"))
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/deploy/runtimeclasses:delete/"))
 	if operationID == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
 		return
@@ -2013,7 +2013,7 @@ func (h *V3Handler) handleCreateExecSession(w http.ResponseWriter, r *http.Reque
 	h.execMu.Unlock()
 	writeSuccess(w, http.StatusOK, map[string]interface{}{
 		"sessionId": execID,
-		"wsUrl":     fmt.Sprintf("/v3/ms/%s/exec/sessions/%s:attach", selector, execID),
+		"wsUrl":     fmt.Sprintf("/v1/ms/%s/exec/sessions/%s:attach", selector, execID),
 	})
 }
 
@@ -2490,7 +2490,7 @@ func normalizeGPSLatLon(lat, lon string) (string, error) {
 }
 
 func claimMicroserviceUUID(claims map[string]interface{}) (string, bool) {
-	iofog, ok := claims["iofog.org"].(map[string]interface{})
+	iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{})
 	if !ok {
 		return "", false
 	}

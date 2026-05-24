@@ -13,7 +13,7 @@ import (
 
 func TestHandleImages_RejectsRequestBody(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/images", bytes.NewBufferString(`{"unexpected":true}`))
+	req := httptest.NewRequest(http.MethodGet, "/v1/images", bytes.NewBufferString(`{"unexpected":true}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImages(rec, req)
@@ -27,7 +27,7 @@ func TestHandleImages_RejectsRequestBody(t *testing.T) {
 
 func TestHandleImagePull_RejectsUnknownFields(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","extra":"x"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","extra":"x"}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePull(rec, req)
@@ -38,7 +38,7 @@ func TestHandleImagePull_RejectsUnknownFields(t *testing.T) {
 
 func TestHandleImagePull_RequiresImage(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:pull", bytes.NewBufferString(`{"platform":"linux/arm64"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"platform":"linux/arm64"}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePull(rec, req)
@@ -52,7 +52,7 @@ func TestHandleImagePull_RequiresImage(t *testing.T) {
 
 func TestHandleImagePull_AsyncReturnsOperationID(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePull(rec, req)
@@ -76,7 +76,7 @@ func TestHandleImagePull_AsyncReturnsOperationID(t *testing.T) {
 
 func TestHandleImagePullStatus_MissingOperationID(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/images:pull/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/images:pull/", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePullStatus(rec, req)
@@ -87,7 +87,7 @@ func TestHandleImagePullStatus_MissingOperationID(t *testing.T) {
 
 func TestHandleImageLoad_RequiresPath(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:load", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:load", bytes.NewBufferString(`{}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImageLoad(rec, req)
@@ -101,7 +101,7 @@ func TestHandleImageLoad_RequiresPath(t *testing.T) {
 
 func TestHandleImagePrune_MethodNotAllowed(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/images:prune", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/images:prune", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePrune(rec, req)
@@ -112,7 +112,7 @@ func TestHandleImagePrune_MethodNotAllowed(t *testing.T) {
 
 func TestHandleImagePrune_InvalidMode(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:prune?mode=bad", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:prune?mode=bad", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePrune(rec, req)
@@ -126,7 +126,7 @@ func TestHandleImagePrune_InvalidMode(t *testing.T) {
 
 func TestHandleImagePullStatus_NotFound(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/images:pull/non-existent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/images:pull/non-existent", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleImagePullStatus(rec, req)
@@ -137,7 +137,7 @@ func TestHandleImagePullStatus_NotFound(t *testing.T) {
 
 func TestHandleImageRemove_RequiresSelector(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/images:remove", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:remove", bytes.NewBufferString(`{}`))
 	rec := httptest.NewRecorder()
 
 	handler.HandleImageRemove(rec, req)
@@ -151,7 +151,7 @@ func TestHandleImageRemove_RequiresSelector(t *testing.T) {
 
 func TestHandleImagePullAsyncThenStatusEventuallyTerminal(t *testing.T) {
 	handler := NewV3Handler()
-	startReq := httptest.NewRequest(http.MethodPost, "/v3/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
+	startReq := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
 	startRec := httptest.NewRecorder()
 	handler.HandleImagePull(startRec, startReq)
 	if startRec.Code != http.StatusAccepted {
@@ -173,7 +173,7 @@ func TestHandleImagePullAsyncThenStatusEventuallyTerminal(t *testing.T) {
 	// Pull may fail quickly in tests due missing process manager engine; ensure status endpoint becomes terminal.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		statusReq := httptest.NewRequest(http.MethodGet, "/v3/images:pull/"+envelope.Data.OperationID, nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/images:pull/"+envelope.Data.OperationID, nil)
 		statusRec := httptest.NewRecorder()
 		handler.HandleImagePullStatus(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
@@ -221,7 +221,7 @@ func TestHandleDeployMicroservicesApply_AsyncAccepted(t *testing.T) {
 
 func TestHandleDeployMicroservicesApplyStatus_NotFound(t *testing.T) {
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodGet, "/v3/deploy/microservices:apply/does-not-exist", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/deploy/microservices:apply/does-not-exist", nil)
 	rec := httptest.NewRecorder()
 
 	handler.HandleDeployMicroservicesApplyStatus(rec, req)
@@ -256,7 +256,7 @@ func TestHandleDeployMicroservicesApplyStatus_EventuallySucceeded(t *testing.T) 
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		statusReq := httptest.NewRequest(http.MethodGet, "/v3/deploy/microservices:apply/"+envelope.Data.OperationID, nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/microservices:apply/"+envelope.Data.OperationID, nil)
 		statusRec := httptest.NewRecorder()
 		handler.HandleDeployMicroservicesApplyStatus(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
@@ -276,7 +276,7 @@ func TestHandleDeployMicroservicesApplyStatus_EventuallySucceeded(t *testing.T) 
 func newDeployApplyMultipartRequest(t *testing.T, fields map[string]string) *http.Request {
 	t.Helper()
 	manifest := strings.TrimSpace(`
-apiVersion: datasance.com/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: router
@@ -301,7 +301,7 @@ spec:
 	if err := writer.Close(); err != nil {
 		t.Fatalf("failed to close multipart writer: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v3/deploy/microservices:apply", &body)
+	req := httptest.NewRequest(http.MethodPost, "/v1/deploy/microservices:apply", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req
 }

@@ -70,27 +70,27 @@ var infoAliasToCanonical = map[string]string{
 	"pruningFrequency":     "dockerPruningFrequency",
 }
 
-// FormatV3Human renders human-readable output for a LocalAPI v3 route payload.
+// FormatV3Human renders human-readable output for a LocalAPI v1 route payload.
 func FormatV3Human(routePath string, result map[string]interface{}) string {
 	routePath = stripQuery(routePath)
 	switch routePath {
-	case "/v3/system/status":
+	case "/v1/system/status":
 		return formatFlatMapWithOrder(result, statusOutputOrder)
-	case "/v3/system/info":
+	case "/v1/system/info":
 		return formatInfoWithAliasOrder(result)
-	case "/v3/ms":
+	case "/v1/ms":
 		return formatMSList(result)
-	case "/v3/images":
+	case "/v1/images":
 		return formatImageList(result)
-	case "/v3/deploy/registries":
+	case "/v1/deploy/registries":
 		return formatRegistryList(result)
-	case "/v3/deploy/runtimeclasses":
+	case "/v1/deploy/runtimeclasses":
 		return formatRuntimeClassList(result)
 	default:
 		if human := formatMutationRoute(routePath, result); human != "" {
 			return human
 		}
-		if strings.HasPrefix(routePath, "/v3/ms/") {
+		if strings.HasPrefix(routePath, "/v1/ms/") {
 			return formatMSInspect(result)
 		}
 		return ""

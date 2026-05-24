@@ -32,7 +32,7 @@ type configKeyRule struct {
 var configKeyRules = map[string]configKeyRule{
 	"controllerUrl":          {Key: "controllerUrl", Aliases: []string{"a"}, Type: configValueString, Help: "controller URL"},
 	"controllerCert":         {Key: "controllerCert", Aliases: []string{"ac"}, Type: configValueString, Help: "controller CA certificate file path"},
-	"containerEngine":        {Key: "containerEngine", Aliases: []string{"ce"}, Type: configValueString, Enums: []string{"docker", "podman", "iofog"}, Help: "container engine"},
+	"containerEngine":        {Key: "containerEngine", Aliases: []string{"ce"}, Type: configValueString, Enums: []string{"docker", "podman", "edgelet"}, Help: "container engine"},
 	"dockerUrl":              {Key: "dockerUrl", Aliases: []string{"c"}, Type: configValueString, Help: "runtime socket URL"},
 	"networkInterface":       {Key: "networkInterface", Aliases: []string{"n"}, Type: configValueString, Help: "network interface"},
 	"diskLimitGiB":           {Key: "diskLimitGiB", Aliases: []string{"d"}, Type: configValueFloat, Help: "disk usage limit (GiB)"},

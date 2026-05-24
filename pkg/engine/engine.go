@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 // ImageInfo is the engine-agnostic representation of a local container image.
@@ -144,7 +144,7 @@ type PullImageOptions struct {
 
 // EngineConfig holds the configuration passed to ContainerEngine.Init().
 // For docker/podman the SocketURL and APIVersion fields are used.
-// For iofog the SocketURL is always overridden by the IofogContainerdSocket constant.
+// For iofog the SocketURL is always overridden by the EdgeletContainerdSocket constant.
 type EngineConfig struct {
 	SocketURL  string // e.g. "unix:///var/run/docker.sock"
 	APIVersion string // Docker API version negotiation (empty = auto)

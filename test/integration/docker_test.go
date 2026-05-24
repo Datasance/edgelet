@@ -3,8 +3,8 @@ package integration
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/pkg/docker"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/pkg/docker"
 )
 
 // TestDockerConnection tests basic Docker connectivity

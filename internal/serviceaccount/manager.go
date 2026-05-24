@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 
 const (
 	// MountPath is the in-container projection path for serviceaccount material.
-	MountPath                      = "/var/run/secrets/iofog.org/serviceaccount"
+	MountPath                      = "/var/run/secrets/edgelet.iofog.org/serviceaccount"
 	serviceAccountTokenTTL         = time.Hour
 	serviceAccountTypePrefix       = "datasance.com~serviceaccount"
 	defaultServiceAccountVolumeKey = "default"
@@ -194,7 +194,7 @@ func (m *Manager) rotateForMicroservice(cfg *config.Config, ms *models.Microserv
 	subject := fmt.Sprintf("system:serviceaccount:%s:%s", app, name)
 	rbac := normalizeServiceAccountRules(ms)
 	extraClaims := map[string]interface{}{
-		"iofog.org": map[string]interface{}{
+		"edgelet.iofog.org": map[string]interface{}{
 			"namespace": cfg.Namespace,
 			"node": map[string]interface{}{
 				"uuid":      cfg.IOFogUUID,
@@ -254,8 +254,8 @@ func (m *Manager) rotateForMicroservice(cfg *config.Config, ms *models.Microserv
 		RBACVersion:        rbac.Version,
 		RulesByGroupJSON:   string(rulesByGroupJSON),
 		ClaimsJSON:         string(claimsJSON),
-		Issuer:             "https://iofog.default.svc.bridge.local",
-		Audience:           "https://iofog.default.svc.bridge.local",
+		Issuer:             "https://edgelet.default.svc.bridge.local",
+		Audience:           "https://edgelet.default.svc.bridge.local",
 		Alg:                "EdDSA",
 		JTI:                jti,
 		TokenSHA256:        auth.TokenSHA256(token),

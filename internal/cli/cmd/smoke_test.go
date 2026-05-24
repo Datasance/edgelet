@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 func TestExitCodeMatrix(t *testing.T) {
@@ -76,7 +76,7 @@ func TestMSListJSONJqFriendly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/ms?source=all": {
+			"GET /v1/ms?source=all": {
 				"items": []interface{}{
 					map[string]interface{}{
 						"uuid":        "abc-123",
@@ -117,7 +117,7 @@ func TestSystemStatusJSONJqFriendly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/status": {
+			"GET /v1/system/status": {
 				"iofogDaemon":            "running",
 				"connectionToController": "ok",
 				"cpuUsage":               float64(12),

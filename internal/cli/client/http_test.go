@@ -10,7 +10,7 @@ import (
 
 func TestCloneRequestWithBody_ReplaysBodyAcrossClones(t *testing.T) {
 	payload := []byte(`{"image":"quay.io/skupper/skupper-router:latest"}`)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://localhost:54321/v3/images:pull", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://localhost:54321/v1/images:pull", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestCloneRequestWithBody_ReplaysBodyAcrossClones(t *testing.T) {
 }
 
 func TestCloneRequestWithBody_NoBody(t *testing.T) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://localhost:54321/v3/images", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://localhost:54321/v1/images", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}

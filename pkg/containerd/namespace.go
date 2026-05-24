@@ -1,13 +1,13 @@
 //go:build linux
 
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/containerd/containerd/v2/client"
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 // ensureNamespace creates the iofog namespace in containerd if it does not
@@ -20,16 +20,16 @@ func ensureNamespace(ctx context.Context, c *client.Client) error {
 	}
 
 	for _, ns := range namespaces {
-		if ns == constants.IofogContainerdNamespace {
-			logger.Debugf("Containerd namespace %q already exists.", constants.IofogContainerdNamespace)
+		if ns == constants.EdgeletContainerdNamespace {
+			logger.Debugf("Containerd namespace %q already exists.", constants.EdgeletContainerdNamespace)
 			return nil
 		}
 	}
 
-	if err := c.NamespaceService().Create(ctx, constants.IofogContainerdNamespace, nil); err != nil {
-		return fmt.Errorf("create namespace %q: %w", constants.IofogContainerdNamespace, err)
+	if err := c.NamespaceService().Create(ctx, constants.EdgeletContainerdNamespace, nil); err != nil {
+		return fmt.Errorf("create namespace %q: %w", constants.EdgeletContainerdNamespace, err)
 	}
 
-	logger.Infof("Created containerd namespace %q.", constants.IofogContainerdNamespace)
+	logger.Infof("Created containerd namespace %q.", constants.EdgeletContainerdNamespace)
 	return nil
 }

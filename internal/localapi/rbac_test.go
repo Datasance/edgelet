@@ -12,11 +12,11 @@ func TestIsAuthorized_ReadsCanonicalRulesByGroup(t *testing.T) {
 	claims := jwt.MapClaims{
 		"tokenUse": "serviceaccount",
 		"sub":      "system:serviceaccount:app:svc",
-		"iofog.org": map[string]interface{}{
+		"edgelet.iofog.org": map[string]interface{}{
 			"rbac": map[string]interface{}{
 				"version": "v1",
 				"rulesByGroup": map[string]interface{}{
-					"agent.datasance.com/v3": []interface{}{
+					"edgelet.iofog.org/v1": []interface{}{
 						map[string]interface{}{
 							"resources": []interface{}{"system/config"},
 							"verbs":     []interface{}{"get"},
@@ -27,7 +27,7 @@ func TestIsAuthorized_ReadsCanonicalRulesByGroup(t *testing.T) {
 		},
 	}
 	perm := rbacPermission{
-		APIGroups: []string{"agent.datasance.com/v3", "agent.iofog.org/v3"},
+		APIGroups: []string{"edgelet.iofog.org/v1", "edgelet.iofog.org/v1"},
 		Resource:  "system/config",
 		Verb:      "get",
 	}
@@ -40,11 +40,11 @@ func TestIsAuthorized_AcceptsVerbAliases(t *testing.T) {
 	claims := jwt.MapClaims{
 		"tokenUse": "serviceaccount",
 		"sub":      "system:serviceaccount:app:svc",
-		"iofog.org": map[string]interface{}{
+		"edgelet.iofog.org": map[string]interface{}{
 			"rbac": map[string]interface{}{
 				"version": "v1",
 				"rulesByGroup": map[string]interface{}{
-					"agent.datasance.com/v3": []interface{}{
+					"edgelet.iofog.org/v1": []interface{}{
 						map[string]interface{}{
 							"resources": []interface{}{"system/config"},
 							"verbs":     []interface{}{"patch"},
@@ -55,7 +55,7 @@ func TestIsAuthorized_AcceptsVerbAliases(t *testing.T) {
 		},
 	}
 	perm := rbacPermission{
-		APIGroups: []string{"agent.datasance.com/v3"},
+		APIGroups: []string{"edgelet.iofog.org/v1"},
 		Resource:  "system/config",
 		Verb:      "update",
 	}
@@ -71,22 +71,22 @@ func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 		resource string
 		verb     string
 	}{
-		{method: http.MethodPost, path: "/v3/system/controller/cert", resource: "system/controller/cert", verb: "update"},
-		{method: http.MethodPost, path: "/v3/system/config/switch", resource: "system/config/switch", verb: "update"},
-		{method: http.MethodGet, path: "/v3/system/logs", resource: "system/logs", verb: "get"},
-		{method: http.MethodGet, path: "/v3/system/logs:stream", resource: "system/logs/stream", verb: "get"},
-		{method: http.MethodGet, path: "/v3/images", resource: "images", verb: "get"},
-		{method: http.MethodPost, path: "/v3/images:pull", resource: "images/pull", verb: "create"},
-		{method: http.MethodGet, path: "/v3/images:pull/abc", resource: "images/pull/status", verb: "get"},
-		{method: http.MethodPost, path: "/v3/images:load", resource: "images/load", verb: "create"},
-		{method: http.MethodPost, path: "/v3/images:prune", resource: "images/prune", verb: "create"},
-		{method: http.MethodPost, path: "/v3/images:remove", resource: "images/remove", verb: "create"},
-		{method: http.MethodGet, path: "/v3/deploy/microservices:apply/op-123", resource: "deploy/microservices/apply/status", verb: "get"},
-		{method: http.MethodPost, path: "/v3/deploy/runtimeclasses:apply", resource: "deploy/runtimeclasses", verb: "create"},
-		{method: http.MethodPost, path: "/v3/deploy/runtimeclasses:validate", resource: "deploy/runtimeclasses", verb: "create"},
-		{method: http.MethodGet, path: "/v3/deploy/runtimeclasses", resource: "deploy/runtimeclasses", verb: "get"},
-		{method: http.MethodGet, path: "/v3/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "get"},
-		{method: http.MethodDelete, path: "/v3/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "delete"},
+		{method: http.MethodPost, path: "/v1/system/controller/cert", resource: "system/controller/cert", verb: "update"},
+		{method: http.MethodPost, path: "/v1/system/config/switch", resource: "system/config/switch", verb: "update"},
+		{method: http.MethodGet, path: "/v1/system/logs", resource: "system/logs", verb: "get"},
+		{method: http.MethodGet, path: "/v1/system/logs:stream", resource: "system/logs/stream", verb: "get"},
+		{method: http.MethodGet, path: "/v1/images", resource: "images", verb: "get"},
+		{method: http.MethodPost, path: "/v1/images:pull", resource: "images/pull", verb: "create"},
+		{method: http.MethodGet, path: "/v1/images:pull/abc", resource: "images/pull/status", verb: "get"},
+		{method: http.MethodPost, path: "/v1/images:load", resource: "images/load", verb: "create"},
+		{method: http.MethodPost, path: "/v1/images:prune", resource: "images/prune", verb: "create"},
+		{method: http.MethodPost, path: "/v1/images:remove", resource: "images/remove", verb: "create"},
+		{method: http.MethodGet, path: "/v1/deploy/microservices:apply/op-123", resource: "deploy/microservices/apply/status", verb: "get"},
+		{method: http.MethodPost, path: "/v1/deploy/runtimeclasses:apply", resource: "deploy/runtimeclasses", verb: "create"},
+		{method: http.MethodPost, path: "/v1/deploy/runtimeclasses:validate", resource: "deploy/runtimeclasses", verb: "create"},
+		{method: http.MethodGet, path: "/v1/deploy/runtimeclasses", resource: "deploy/runtimeclasses", verb: "get"},
+		{method: http.MethodGet, path: "/v1/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "get"},
+		{method: http.MethodDelete, path: "/v1/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "delete"},
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(tt.method, tt.path, nil)

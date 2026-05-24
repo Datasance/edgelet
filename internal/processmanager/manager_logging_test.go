@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 func TestExecuteTask_EmitsTaskCompletedOnSuccess(t *testing.T) {
@@ -61,7 +61,7 @@ func TestEmitTaskFailed_AfterMaxRetries(t *testing.T) {
 	t.Cleanup(func() { runtimeops.SetTestSink(nil) })
 
 	pm := &ProcessManager{
-		engineName: "iofog",
+		engineName: "edgelet",
 		ctx:        context.Background(),
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
 	}
@@ -83,7 +83,7 @@ func TestEmitTaskFailed_AfterMaxRetries(t *testing.T) {
 	if failed.OperationID != "fixed-op-id" {
 		t.Fatalf("operationId=%q", failed.OperationID)
 	}
-	if failed.Engine != "iofog" {
+	if failed.Engine != "edgelet" {
 		t.Fatalf("engine=%q", failed.Engine)
 	}
 	if failed.ReasonCode != runtimeops.ReasonTaskExhaustedRetries {
@@ -132,7 +132,7 @@ func TestAddTask_EmitsEnqueued(t *testing.T) {
 func TestExecuteTask_RetryEmitsWarn(t *testing.T) {
 	events := captureEvents(t)
 	pm := &ProcessManager{
-		engineName: "iofog",
+		engineName: "edgelet",
 		ctx:        context.Background(),
 		taskQueue:  NewTaskQueue(10),
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),

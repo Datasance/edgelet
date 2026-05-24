@@ -10,7 +10,7 @@ func TestMSStartHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/ms/ms-1/start": {
+			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
 			},
@@ -35,7 +35,7 @@ func TestMSStartHumanWritesDetailToStdout(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/ms/ms-1/start": {
+			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
 				"warning":          "controller reconcile may restart it",
@@ -61,7 +61,7 @@ func TestMSStartJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"POST /v3/ms/ms-1/start": {
+			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
 			},

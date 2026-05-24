@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 type fakeClient struct {
@@ -40,14 +40,14 @@ func (f *fakeClient) RequestV3(method, path string, _ interface{}) (map[string]i
 	if data, ok := f.gets[key]; ok {
 		return data, nil
 	}
-	if method == "POST" && path == "/v3/images:pull" {
+	if method == "POST" && path == "/v1/images:pull" {
 		return map[string]interface{}{"status": "running", "operationId": "pull-1"}, nil
 	}
-	if method == "GET" && strings.HasPrefix(path, "/v3/images:pull/") {
+	if method == "GET" && strings.HasPrefix(path, "/v1/images:pull/") {
 		return map[string]interface{}{
 			"status":        "succeeded",
 			"resolvedImage": "docker.io/library/alpine:3.19",
-			"engine":        "iofog",
+			"engine":        "edgelet",
 			"platform":      "linux/amd64",
 			"operationId":   "pull-1",
 		}, nil
@@ -59,7 +59,7 @@ func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/status": {
+			"GET /v1/system/status": {
 				"iofogDaemon":            "running",
 				"connectionToController": "ok",
 			},
@@ -85,12 +85,12 @@ func TestVersionMatchesSystemVersionHuman(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/version": {
+			"GET /v1/system/version": {
 				"version":                "1.2.3",
 				"buildTime":              "2026-01-01",
 				"gitCommit":              "deadbeef",
 				"flavor":                 "full",
-				"allowedContainerEngine": "iofog",
+				"allowedContainerEngine": "edgelet",
 			},
 		},
 	}
@@ -111,7 +111,7 @@ func TestVersionMatchesSystemVersionJSON(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/version": {
+			"GET /v1/system/version": {
 				"version":   "1.2.3",
 				"buildTime": "2026-01-01",
 				"gitCommit": "deadbeef",

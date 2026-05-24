@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/datasance/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -19,7 +19,7 @@ func TestRequestIDMiddleware_GeneratesWhenMissing(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Header().Get(requestIDHeader) == "" {
@@ -34,7 +34,7 @@ func TestRequestIDMiddleware_PassthroughWhenProvided(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	req.Header.Set(requestIDHeader, "req-123")
 	rr := httptest.NewRecorder()
 	handler(rr, req)
@@ -49,14 +49,14 @@ func TestAccessLoggingMiddleware_EmitsStructuredAccessFields(t *testing.T) {
 	localAPILogSink = func(event structuredEvent) { captured = event }
 	defer func() { localAPILogSink = originalSink }()
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(withRoute("/v3/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIdMiddleware(accessLoggingMiddleware(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte("ok"))
 	})))
 
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	req.Host = "unix"
-	req.RemoteAddr = "@/run/iofog-agent/iofog-agentd.sock"
+	req.RemoteAddr = "@/run/edgelet/edgelet.sock"
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
@@ -80,10 +80,10 @@ func TestAuthMiddlewareV3_MissingBearerPrefixEmitsReasonCode(t *testing.T) {
 	localAPILogSink = func(event structuredEvent) { captured = event }
 	defer func() { localAPILogSink = originalSink }()
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV3(withRoute("/v3/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
@@ -118,10 +118,10 @@ func TestAuthMiddlewareV3_UnmappedRouteStrictDenyAndReasonCode(t *testing.T) {
 		return rbacPermission{}, false
 	}
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV3(withRoute("/v3/unmapped", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/unmapped", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
-	req := httptest.NewRequest(http.MethodGet, "/v3/unmapped", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/unmapped", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	rr := httptest.NewRecorder()
 	handler(rr, req)
@@ -160,10 +160,10 @@ func TestAuthMiddlewareV3_RBACDeniedReasonCode(t *testing.T) {
 	}
 	isAuthorizedFn = func(jwt.MapClaims, rbacPermission) bool { return false }
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV3(withRoute("/v3/system/config", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/config", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/config", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	rr := httptest.NewRecorder()
 	handler(rr, req)
@@ -193,10 +193,10 @@ func TestAuthMiddlewareV3_TokenIsRedactedFromRejectLogs(t *testing.T) {
 	}
 
 	rawToken := "secret-token-value"
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV3(withRoute("/v3/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
-	req := httptest.NewRequest(http.MethodGet, "/v3/system/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	req.Header.Set("Authorization", "Bearer "+rawToken)
 	rr := httptest.NewRecorder()
 	handler(rr, req)

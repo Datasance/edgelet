@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 // Operational label keys persisted on containerd workloads (engine state; not workload identity).
-// Identity and RBAC-aligned metadata use workloadmeta canonical keys (iofog.org/*, app.kubernetes.io/*).
+// Identity and RBAC-aligned metadata use workloadmeta canonical keys (edgelet.iofog.org/*, app.kubernetes.io/*).
 const (
 	labelIP          = "iofog-ip"
 	labelNetns       = "iofog-netns"

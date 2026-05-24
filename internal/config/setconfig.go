@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
@@ -185,7 +185,7 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 
 	case "containerEngine":
 		switch value {
-		case "docker", "podman", "iofog":
+		case "docker", "podman", "edgelet":
 			c.ContainerEngine = value
 			if err := c.setYamlProperty("containerEngine", value); err != nil {
 				logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
@@ -467,14 +467,14 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	// Create default profile with default values
 	defaultProfile := models.NewProfileConfig()
 	defaultProfile.SetProperty("controllerUrl", "http://localhost:54421/api/v3/")
-	defaultProfile.SetProperty("controllerCert", "/etc/iofog-agent/cert.crt")
+	defaultProfile.SetProperty("controllerCert", "/etc/edgelet/cert.crt")
 	defaultProfile.SetProperty("networkInterface", "dynamic")
 	defaultProfile.SetProperty("dockerUrl", "unix:///var/run/docker.sock")
-	defaultProfile.SetProperty("diskDirectory", "/var/lib/iofog-agent/")
+	defaultProfile.SetProperty("diskDirectory", "/var/lib/edgelet/")
 	defaultProfile.SetProperty("diskLimit", "10")
 	defaultProfile.SetProperty("memoryLimit", "4096")
 	defaultProfile.SetProperty("cpuLimit", "80")
-	defaultProfile.SetProperty("logDirectory", "/var/log/iofog-agent/")
+	defaultProfile.SetProperty("logDirectory", "/var/log/edgelet/")
 	defaultProfile.SetProperty("logLimit", "10")
 	defaultProfile.SetProperty("logFileCount", "10")
 	defaultProfile.SetProperty("logLevel", "INFO")

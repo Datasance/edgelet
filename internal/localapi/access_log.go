@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (

@@ -3,9 +3,9 @@ package processmanager
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 type invariantMicroserviceManager struct {

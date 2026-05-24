@@ -12,19 +12,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/fieldagent"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/processmanager"
-	"github.com/eclipse-iofog/agent/internal/pruning"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
-	"github.com/eclipse-iofog/agent/pkg/imageref"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/fieldagent"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/pruning"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/datasance/edgelet/pkg/imageref"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -1038,7 +1038,7 @@ func (f *Facade) DeleteLocalDeployment(id string) error {
 }
 
 func (f *Facade) ensureRuntimeClassSupported() error {
-	if !buildmeta.IsFull() || !strings.EqualFold(strings.TrimSpace(f.cfg.ContainerEngine), "iofog") {
+	if !buildmeta.IsFull() || !strings.EqualFold(strings.TrimSpace(f.cfg.ContainerEngine), "edgelet") {
 		return ErrRuntimeClassUnsupported
 	}
 	return nil

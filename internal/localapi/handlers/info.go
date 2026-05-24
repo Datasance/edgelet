@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
@@ -20,7 +20,7 @@ type InfoHandler struct {
 	// Will be injected with Configuration when needed
 }
 
-// HandleInfo handles GET /v3/system/info
+// HandleInfo handles GET /v1/system/info
 func (h *InfoHandler) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(infoHandlerModuleName, "Processing info http request")
 

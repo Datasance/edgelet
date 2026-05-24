@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 // Engine is a stub on non-Linux platforms.

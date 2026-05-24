@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	eventtypes "github.com/containerd/containerd/api/events"
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/runtimeops"
 )
 
 func TestTaskExitContainerID_PrefersID(t *testing.T) {
