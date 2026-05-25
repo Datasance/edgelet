@@ -131,7 +131,7 @@ func TestDaemonDownExit10(t *testing.T) {
 	if code != run.ExitDaemonUnavailable {
 		t.Fatalf("expected exit 10, got %d", code)
 	}
-	if !strings.Contains(stderr, "iofog-agentd") || !strings.Contains(stderr, "systemctl start iofog-agentd") {
+	if !strings.Contains(stderr, "edgelet") || !strings.Contains(stderr, "systemctl start edgelet") {
 		t.Fatalf("expected daemon start guidance, got stderr=%q", stderr)
 	}
 }

@@ -13,21 +13,21 @@ Use config cert to install a controller CA certificate, or config switch to chan
 // CommandExamples returns config command examples for Cobra.
 func CommandExamples() string {
 	return strings.TrimSpace(`# Long flags
-  iofog-agent config --controller-url http://localhost:51121/api/v3
-  iofog-agent config --change-frequency-seconds 10 --status-frequency-seconds 10
-  iofog-agent config --disk-limit-gib 20 --memory-limit-mib 512
+  edgelet config --controller-url http://localhost:51121/api/v3
+  edgelet config --change-frequency-seconds 10 --status-frequency-seconds 10
+  edgelet config --disk-limit-gib 20 --memory-limit-mib 512
 
 # Short alias flags
-  iofog-agent config --a http://localhost:51121/api/v3 --cf 10 --sf 10
+  edgelet config --a http://localhost:51121/api/v3 --cf 10 --sf 10
 
 # Install controller CA certificate (base64-encoded PEM string)
-  iofog-agent config cert <base64-encoded-cert-string>
+  edgelet config cert <base64-encoded-cert-string>
 
 # Switch configuration profile
-  iofog-agent config switch prod
+  edgelet config switch prod
 
 # Structured output (global flags before subcommand)
-  iofog-agent -o json config --cf 10`)
+  edgelet -o json config --cf 10`)
 }
 
 // CertCommandLong returns help for config cert.

@@ -1,3 +1,5 @@
+//go:build linux && full
+
 package main
 
 import (
@@ -53,8 +55,6 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 	var lastErr error
 	backoff := containerdBootstrapBaseBackoff
 
-	// Pre-start cleanup before the first attempt helps clear stale runtime
-	// artifacts after crashes/reboots instead of waiting for attempt-1 failure.
 	if err := deps.cleanupRuntime(); err != nil {
 		logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("Embedded containerd pre-start runtime cleanup failed: %v", err))
 	}
@@ -66,10 +66,9 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 			svc := deps.newService()
 			if err := svc.Start(); err == nil {
 				return svc, nil
-			} else {
-				lastErr = fmt.Errorf("start embedded containerd: %w", err)
-				svc.Stop()
 			}
+			lastErr = fmt.Errorf("start embedded containerd: %w", err)
+			svc.Stop()
 		}
 
 		logging.LogWarn("MAIN_DAEMON", fmt.Sprintf(

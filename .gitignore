@@ -21,15 +21,8 @@ go.work
 # Build directory
 build/iofog-agent*
 build/iofog-agentd*
-build/src/
-build/gopath/
-build/pkg/
-build/bin/
-build/out/
-build/stage/
-build/data-staging/
-build/images/
-pkg/data/embed/*.tar.zst
+build/edgelet*
+internal/embedded/bin/
 
 
 # IDE files
@@ -55,5 +48,20 @@ tmp/
 
 dev/
 
-.cursor
+# Build directory
+build/iofog-agent*
+build/iofog-agentd*
+build/edgelet*
+build/src/
+build/gopath/
+build/pkg/
+build/bin/
+build/out/
+build/stage/
+build/data-staging/
+build/images/
+pkg/data/embed/*.tar.zst
+
+
+.cursor/
 AGENTS.md
