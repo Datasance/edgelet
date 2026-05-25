@@ -1,0 +1,50 @@
+#!/bin/bash
+# Edgelet CI pipeline (linux gate).
+# macOS developers: docker build -f build/Dockerfile.embedded . && docker run --rm edgelet-embed-ci
+set -e
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${ROOT}"
+
+if [ "$(uname -s)" != Linux ]; then
+  echo "ERROR: scripts/ci must run on Linux (native runner, Lima, or Docker)." >&2
+  echo "  docker build -f build/Dockerfile.embedded -t edgelet-embed-ci ." >&2
+  echo "  docker run --rm -v \"\$(pwd)\":/src -w /src edgelet-embed-ci ./scripts/ci" >&2
+  exit 1
+fi
+
+chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data \
+  scripts/build-edgelet scripts/binary_size_check.sh 2>/dev/null || true
+
+if [ -f scripts/validate ] && [ -n "${RUN_VALIDATE}" ]; then
+  ./scripts/validate
+fi
+
+CI_ARCHES="${EDGELET_CI_ARCHES:-$(go env GOARCH)}"
+IFS=',' read -r -a _arch_list <<< "${CI_ARCHES}"
+
+for _arch in "${_arch_list[@]}"; do
+  _arch=$(echo "${_arch}" | tr -d ' ')
+  [ -n "${_arch}" ] || continue
+  echo "=== embed + build for linux/${_arch} ==="
+  ARCH="${_arch}" ./scripts/download
+  ARCH="${_arch}" ./scripts/build-embedded
+  ARCH="${_arch}" ./scripts/package-data
+  ARCH="${_arch}" ./scripts/build-edgelet
+done
+
+echo "Running unit tests (linux)..."
+export GO111MODULE=on
+unset GOPATH
+_TEST_PKGS="./cmd/... ./internal/... ./pkg/... ./test/..."
+_FULL_LDFLAGS="-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full"
+go test -tags lite ${_TEST_PKGS}
+CGO_ENABLED=1 go test -tags "cgo full" -ldflags "${_FULL_LDFLAGS}" ${_TEST_PKGS}
+
+for _arch in "${_arch_list[@]}"; do
+  _arch=$(echo "${_arch}" | tr -d ' ')
+  [ -n "${_arch}" ] || continue
+  ARCH="${_arch}" ./scripts/binary_size_check.sh
+done
+
+echo "scripts/ci passed"

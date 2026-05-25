@@ -77,13 +77,30 @@ for plugin in bridge host-local loopback portmap; do
 done
 
 # ── containerd-shim-runc-v2 ───────────────────────────────────────────────────
-export GOPATH="$(pwd)/build/gopath"
-mkdir -p "${GOPATH}/src"
-echo "Building containerd-shim-runc-v2"
+_SHIM_GOPATH=$(mktemp -d)
+trap 'rm -rf "${_SHIM_GOPATH}"' EXIT
+mkdir -p "${_SHIM_GOPATH}/src"
+_HOST_GOARCH=$("${GO}" env GOARCH)
+_SHIM_CC="${CC:-gcc}"
+case "${ARCH}" in
+  amd64)
+    if [ "${_HOST_GOARCH}" != "amd64" ]; then
+      _SHIM_CC="${CC:-x86_64-linux-gnu-gcc}"
+    fi
+    ;;
+  arm64)
+    if [ "${_HOST_GOARCH}" != "arm64" ]; then
+      _SHIM_CC="${CC:-aarch64-linux-gnu-gcc}"
+    fi
+    ;;
+  arm) _SHIM_CC="${CC:-arm-linux-gnueabihf-gcc}" ;;
+  riscv64) _SHIM_CC="${CC:-riscv64-linux-gnu-gcc}" ;;
+esac
+echo "Building containerd-shim-runc-v2 (CC=${_SHIM_CC})"
 pushd ./build/src/github.com/containerd/containerd
 SHIM_TAGS="${TAGS/netcgo/netgo}"
-CGO_ENABLED=1 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" \
-  "${GO}" build -tags "${SHIM_TAGS}" -gcflags="all=${GCFLAGS}" \
+CGO_ENABLED=1 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" CC="${_SHIM_CC}" \
+  "${GO}" build -tags "${SHIM_TAGS}" -gcflags "all=${GCFLAGS}" \
   -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
   -o bin/containerd-shim-runc-v2 ./cmd/containerd-shim-runc-v2
 popd
@@ -97,8 +114,9 @@ case "${ARCH}" in
   arm) CRUN_ARCH="arm" ;;
 esac
 
-if [ "$(uname -s)" != Linux ]; then
-  echo "Non-Linux host: fetching prebuilt crun for linux/${CRUN_ARCH}"
+_NATIVE_GO="${_HOST_GOARCH}"
+if [ "$(uname -s)" != Linux ] || [ "${ARCH}" != "${_NATIVE_GO}" ]; then
+  echo "Cross/non-native: fetching prebuilt crun for linux/${CRUN_ARCH}"
   curl -fsSL -o "${INSTALLBIN}/crun${BINARY_POSTFIX}" \
     "https://github.com/containers/crun/releases/download/${VERSION_CRUN}/crun-${VERSION_CRUN}-linux-${CRUN_ARCH}"
   chmod +x "${INSTALLBIN}/crun${BINARY_POSTFIX}"
@@ -127,6 +145,7 @@ esac
 if ! command -v crane >/dev/null 2>&1; then
   echo "Installing crane..."
   go install github.com/google/go-containerregistry/cmd/crane@latest
+  export PATH="$(go env GOPATH)/bin:${PATH}"
 fi
 
 echo "Pulling pause image ${VERSION_PAUSE} for ${OS}/${PAUSE_ARCH}"
@@ -134,3 +153,5 @@ crane pull --platform "${OS}/${PAUSE_ARCH}" "${VERSION_PAUSE}" build/images/paus
 gzip -f build/images/pause.tar
 
 echo "Build-embedded complete: ${INSTALLBIN}"
+trap - EXIT
+rm -rf "${_SHIM_GOPATH}"

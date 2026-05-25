@@ -15,13 +15,13 @@ fi
 MAX_BINARY_MB=55
 MAX_BINARY_SIZE=$((MAX_BINARY_MB * 1024 * 1024))
 
-CMD_NAME="build/iofog-agentd-linux-${ARCH}-full"
+CMD_NAME="build/edgelet-linux-${ARCH}-full"
 if [ ! -f "${CMD_NAME}" ]; then
-  CMD_NAME="build/iofog-agentd"
+  CMD_NAME="build/edgelet"
 fi
 
 if [ ! -f "${CMD_NAME}" ]; then
-  echo "ERROR: binary not found: ${CMD_NAME} (run make build-daemon-full first)" >&2
+  echo "ERROR: binary not found: ${CMD_NAME} (run scripts/build-edgelet or make build-edgelet-full first)" >&2
   exit 1
 fi
 
