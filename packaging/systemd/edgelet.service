@@ -1,6 +1,6 @@
 [Unit]
-Description=ioFog Agent Daemon
-Documentation=https://github.com/eclipse-iofog/agent
+Description=Edgelet daemon
+Documentation=https://github.com/datasance/edgelet
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=300
@@ -8,7 +8,7 @@ StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iofog-agentd start
+ExecStart=/usr/local/bin/edgelet
 Restart=always
 RestartSec=2s
 TimeoutStopSec=120s
@@ -18,14 +18,14 @@ SendSIGKILL=yes
 User=root
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=iofog-agentd
+SyslogIdentifier=edgelet
 
-# Security settings
+# Security settings (full flavor — embedded containerd paths)
 NoNewPrivileges=no
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/lib/iofog-agent-containerd /var/log/iofog-agent /run/iofog-agent /var/backups/iofog-agent
+ReadWritePaths=/etc/edgelet /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet /var/backups/edgelet
 
 # Resource limits
 LimitNOFILE=65536
