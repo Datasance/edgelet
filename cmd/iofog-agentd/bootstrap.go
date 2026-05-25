@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datasance/edgelet/internal/embedded"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/data"
 )
 
 const (
@@ -29,7 +29,7 @@ type bootstrapDeps struct {
 
 func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
 	deps := bootstrapDeps{
-		ensureDependencies: embedded.EnsureEmbeddedDependencies,
+		ensureDependencies: data.EnsureExtracted,
 		newService: func() containerdStarter {
 			return edgeletcontainerdd.NewService()
 		},
