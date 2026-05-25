@@ -1,4 +1,8 @@
 // Package buildmeta holds compile-time build metadata (flavor, etc.).
+//
+// Build with exactly one flavor tag and matching link-time -X Flavor=…:
+//   - full:  -tags "cgo,full"  -X …/buildmeta.Flavor=full
+//   - lite:  -tags lite       -X …/buildmeta.Flavor=lite
 package buildmeta
 
 import "strings"
