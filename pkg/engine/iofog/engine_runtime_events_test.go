@@ -39,7 +39,7 @@ func TestEmitContainerRuntimeWatchEvent_Fields(t *testing.T) {
 	if ev.Source != runtimeops.SourceRuntimeWatch {
 		t.Fatalf("source=%s", ev.Source)
 	}
-	if ev.Engine != iofogEngineName {
+	if ev.Engine != edgeletEngineName {
 		t.Fatalf("engine=%s", ev.Engine)
 	}
 	if ev.MsUUID != "ms-1" || ev.ContainerID != "cid-1" || ev.SandboxID != "sandbox-1" {
@@ -58,7 +58,7 @@ func TestEmitContainerRuntimeWatchEvent_Fields(t *testing.T) {
 
 func TestEmitContainerRuntimeWatchEvent_OOM(t *testing.T) {
 	got := captureRuntimeEvents(t)
-	e := &Engine{}
+	e := &Engine{store: newStateStore()}
 	e.emitContainerRuntimeWatchEvent("cid-2", "ms-2", "oom", 0, "OOMKilled")
 
 	ev := (*got)[0]

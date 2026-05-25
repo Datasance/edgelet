@@ -55,7 +55,7 @@ func TestEmitCRITeardownStep_DebugOrder(t *testing.T) {
 		if ev.Level != runtimeops.LevelDebug {
 			t.Fatalf("step=%v level=%q", ev.Fields["step"], ev.Level)
 		}
-		if ev.Engine != iofogEngineName {
+		if ev.Engine != edgeletEngineName {
 			t.Fatalf("engine=%q", ev.Engine)
 		}
 		if ev.ContainerID != "cid-1" || ev.SandboxID != "sandbox-1" {
@@ -115,7 +115,7 @@ func TestEmitEngineInit_InfoFields(t *testing.T) {
 	if ev.Event != runtimeops.EventEngineInit || ev.Level != runtimeops.LevelInfo {
 		t.Fatalf("event=%s level=%s", ev.Event, ev.Level)
 	}
-	if ev.Engine != iofogEngineName {
+	if ev.Engine != edgeletEngineName {
 		t.Fatalf("engine=%q", ev.Engine)
 	}
 	if ev.Fields["socket"] == "" || ev.Fields["namespace"] == "" {
