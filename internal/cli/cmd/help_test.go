@@ -47,7 +47,7 @@ func TestHelp_ConfigShowsExamples(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "iofog-agent config --controller-url") {
+	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "edgelet config --controller-url") {
 		t.Fatalf("expected config Examples in help stdout, got stdout=%q", stdout)
 	}
 }
@@ -58,7 +58,7 @@ func TestHelp_RootShowsLongAndBanner(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "Local CLI for the ioFog Agent daemon") {
+	if !strings.Contains(stdout, "Local CLI for the Edgelet daemon") {
 		t.Fatalf("expected root Long in help stdout, got stdout=%q", stdout)
 	}
 	if strings.Count(stderr, bannerMarker) != 1 {
