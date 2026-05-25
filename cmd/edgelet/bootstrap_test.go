@@ -1,3 +1,5 @@
+//go:build linux && full
+
 package main
 
 import (
