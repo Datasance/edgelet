@@ -61,6 +61,7 @@ build/stage/
 build/data-staging/
 build/images/
 pkg/data/embed/*.tar.zst
+dist/
 
 
 .cursor/

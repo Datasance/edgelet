@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded build-edgelet build-edgelet-full build-edgelet-lite deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion
+.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded build-edgelet build-edgelet-full build-edgelet-lite deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -68,7 +68,7 @@ build-edgelet-lite: ## Lite edgelet: CGO=0, docker|podman only
 build-edgelet-full: ## Full edgelet: CGO=1, embedded containerd (linux)
 	@echo "Building edgelet full..."
 	@mkdir -p build
-	@CGO_ENABLED=1 go build $(BUILD_FLAGS_EDGELET) -tags "cgo,full" -o $(EDGELET_BINARY) ./cmd/edgelet
+	@CGO_ENABLED=1 go build $(BUILD_FLAGS_EDGELET) -tags "cgo full" -o $(EDGELET_BINARY) ./cmd/edgelet
 	@echo "Built: $(EDGELET_BINARY) (full)"
 
 build-cli: build-edgelet-lite ## (alias) Build edgelet lite profile
@@ -87,9 +87,9 @@ cli-help-check: ## Fail if CLI help regression tests fail
 	@echo "CLI help regression tests passed"
 
 cli-completion: build-cli ## Regenerate bash completion for packaging
-	@mkdir -p packaging/iofog-agent/etc/bash_completion.d
-	@$(CLI_BINARY) completion bash > packaging/iofog-agent/etc/bash_completion.d/iofog-agent
-	@echo "Updated packaging/iofog-agent/etc/bash_completion.d/iofog-agent"
+	@mkdir -p packaging/edgelet/etc/bash_completion.d
+	@$(CLI_BINARY) completion bash > packaging/edgelet/etc/bash_completion.d/edgelet
+	@echo "Updated packaging/edgelet/etc/bash_completion.d/edgelet"
 
 build-daemon: build-edgelet-$(FLAVOR) ## (alias) Build edgelet for FLAVOR
 
@@ -102,89 +102,65 @@ _build-daemon-cgo0: build-edgelet-lite
 
 _build-daemon-cgo1: build-edgelet-full
 
-deps: ## Download, build, and package embedded zstd bundle (run before build-daemon-full)
+deps: ## Download, build, and package embedded zstd bundle (linux full; run before build-edgelet-full)
 	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
-	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/binary_size_check.sh 2>/dev/null || true
+	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
 	@ARCH=$(or $(ARCH),amd64) ./scripts/download
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-embedded
 	@ARCH=$(or $(ARCH),amd64) ./scripts/package-data
 
 build-daemon-embedded: build-daemon-full ## (alias) Build full daemon with embedded containerd
 
-# ── static cross-compilation targets (CGO_ENABLED=1 + musl toolchains) ─────────
-build-linux-amd64: ## Build lite+full for linux/amd64 (glibc)
-	@echo "Building for linux/amd64 (lite + full)..."
+# ── Linux release matrix (RFC R20; no musl-suffixed artifacts — RFC R9) ────────
+# Optional ops-only static linking: STATIC_BUILD=true make build-linux-amd64
+
+build-linux-amd64: ## Build lite+full edgelet for linux/amd64
 	@$(MAKE) deps ARCH=amd64
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-amd64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=gcc go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-amd64-full ./cmd/iofog-agentd
+	@ARCH=amd64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-amd64-musl: ## Build lite+full for linux/amd64-musl (static daemon for full)
-	@echo "Building for linux/amd64-musl (lite + full)..."
-	@$(MAKE) deps ARCH=amd64
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-musl-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-amd64-musl-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-amd64-musl-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=x86_64-linux-musl-gcc \
-		go build -trimpath -ldflags "$(LDFLAGS_FULL) -extldflags '-static'" -tags cgo \
-		-o build/iofog-agentd-linux-amd64-musl-full ./cmd/iofog-agentd
-
-build-linux-arm64: ## Build lite+full for linux/arm64 (glibc)
-	@echo "Building for linux/arm64 (lite + full)..."
+build-linux-arm64: ## Build lite+full edgelet for linux/arm64
 	@$(MAKE) deps ARCH=arm64
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-arm64-full ./cmd/iofog-agentd
+	@ARCH=arm64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-arm64-musl: ## Build lite+full for linux/arm64-musl
-	@echo "Building for linux/arm64-musl (lite + full)..."
-	@$(MAKE) deps ARCH=arm64
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-musl-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm64-musl-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm64-musl-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-musl-gcc \
-		go build -trimpath -ldflags "$(LDFLAGS_FULL) -extldflags '-static'" -tags cgo \
-		-o build/iofog-agentd-linux-arm64-musl-full ./cmd/iofog-agentd
-
-build-linux-arm: ## Build lite+full for linux/arm (armhf)
-	@echo "Building for linux/arm (armhf) (lite + full)..."
+build-linux-arm: ## Build lite+full edgelet for linux/arm (armhf)
 	@$(MAKE) deps ARCH=arm
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-arm-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-arm-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC=arm-linux-gnueabihf-gcc \
-		go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-arm-full ./cmd/iofog-agentd
+	@ARCH=arm STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-riscv64: ## Build lite+full for linux/riscv64
-	@echo "Building for linux/riscv64 (lite + full)..."
+build-linux-riscv64: ## Build lite+full edgelet for linux/riscv64
 	@$(MAKE) deps ARCH=riscv64
-	@mkdir -p build
-	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-riscv64-lite ./cmd/iofog-agent
-	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_LITE)" -o build/iofog-agentd-linux-riscv64-lite ./cmd/iofog-agentd
-	@CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags "$(LDFLAGS_CLI)" -o build/iofog-agent-linux-riscv64-full ./cmd/iofog-agent
-	@CGO_ENABLED=1 GOOS=linux GOARCH=riscv64 CC=riscv64-linux-gnu-gcc \
-		go build -trimpath -ldflags "$(LDFLAGS_FULL)" -tags cgo -o build/iofog-agentd-linux-riscv64-full ./cmd/iofog-agentd
+	@ARCH=riscv64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-all-archs: build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 ## Build all 6 targets (lite + full per arch)
+build-all-archs: build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 ## Build all linux lite+full targets (no musl matrix)
 
-release-tarballs: build-all-archs ## Package build/release/*.tar.gz and SHA256SUMS-lite / SHA256SUMS-full
+build-desktop-darwin-lite: ## Build lite edgelet for darwin amd64+arm64
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-amd64-lite ./cmd/edgelet
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-arm64-lite ./cmd/edgelet
+
+build-desktop-windows-lite: ## Build lite edgelet for windows/amd64
+	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-windows-amd64-lite.exe ./cmd/edgelet
+
+build-desktop-darwin: build-desktop-darwin-lite ## (alias) lite darwin builds
+
+build-desktop-windows: build-desktop-windows-lite ## (alias) lite windows build
+
+release-tarballs: build-all-archs ## Package dist/edgelet-*-{full|lite}.tar.gz and SHA256SUMS-*
 	@chmod +x scripts/release-tarballs.sh
 	@./scripts/release-tarballs.sh "$(VERSION)"
 
-test: ## Run tests
+ci-docker: ## Run linux CI gate inside Docker (macOS-friendly)
+	@docker build -f build/Dockerfile.embedded -t edgelet-embed-ci .
+	@docker run --rm -v "$(CURDIR)":/src -w /src edgelet-embed-ci ./scripts/ci
+
+test: ## Run unit tests (excludes build/src and build/gopath)
 	@echo "Running tests..."
-	@go test -v ./...
+	@go test -v -tags lite ./cmd/... ./internal/... ./pkg/... ./test/...
 
 test-unit: ## Run unit tests only (skip integration tests)
 	@echo "Running unit tests..."
-	@go test -v -short ./...
+	@go test -v -short -tags lite ./cmd/... ./internal/... ./pkg/... ./test/...
+	@if [ "$$(uname -s)" = Linux ]; then \
+		CGO_ENABLED=1 go test -v -short -tags "cgo full" -ldflags "-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full" ./cmd/... ./internal/... ./pkg/... ./test/...; \
+	fi
 
 test-integration: ## Run integration tests
 	@echo "Running integration tests..."
@@ -194,7 +170,7 @@ test-embedded: ## Run embedded-containerd integration tests in a Lima VM (macOS 
 	@echo "Running embedded containerd integration tests..."
 	@./test/embedded/run-all.sh
 
-test-embedded-ci: ## Run embedded tests in CI mode (deletes VM on failure)
+test-embedded-ci: ## Run embedded tests in CI mode (deletes VM on failure; Lima on macOS)
 	@./test/embedded/run-all.sh --ci --delete-vm
 
 test-coverage: ## Run tests with coverage
@@ -241,7 +217,8 @@ vet: ## Run go vet
 
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
-	@rm -rf build/
+	@chmod +x scripts/clean 2>/dev/null || true
+	@./scripts/clean
 	@echo "Clean complete"
 
 docker-build: ## Build production Docker image
@@ -473,10 +450,7 @@ export-dev-env: ## Print export command to set SNAP_COMMON for dev mode (usage: 
 
 build-size: build ## Show binary sizes
 	@echo "Binary sizes:"
-	@ls -lh build/iofog-agent* build/iofog-agentd* 2>/dev/null | awk '{print $$5 "\t" $$9}'
-	@echo ""
-	@echo "Total size:"
-	@du -sk build/iofog-agent* | awk '{sum+=$$1} END {printf "%.1fM\n", sum/1024}'
+	@ls -lh build/edgelet* 2>/dev/null | awk '{print $$5 "\t" $$9}' || true
 
 security-audit: ## Run dependency security audit
 	@echo "🔐 Running dependency vulnerability scan..."
@@ -512,8 +486,8 @@ desktop-deps: ## Install frontend npm deps for desktop app
 desktop-dev: desktop-deps ## Run desktop app in development mode (hot-reload)
 	cd $(DESKTOP_DIR) && wails dev
 
-build-desktop-darwin: desktop-deps ## Build macOS .app bundle (amd64 + arm64)
+desktop-app-darwin: desktop-deps ## Build macOS .app bundle (Wails desktop app)
 	cd $(DESKTOP_DIR) && wails build -platform darwin/amd64,darwin/arm64 -o build/darwin/iofog-agent-desktop
 
-build-desktop-windows: desktop-deps ## Build Windows .exe installer (amd64)
+desktop-app-windows: desktop-deps ## Build Windows .exe installer (Wails desktop app)
 	cd $(DESKTOP_DIR) && wails build -platform windows/amd64 -o build/windows/iofog-agent-desktop.exe

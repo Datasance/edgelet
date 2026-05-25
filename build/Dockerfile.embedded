@@ -1,0 +1,24 @@
+# Reproducible linux CI gate for embed pipeline + edgelet build matrix.
+# macOS dev:
+#   docker build -f build/Dockerfile.embedded -t edgelet-embed-ci .
+#   docker run --rm -v "$(pwd)":/src -w /src edgelet-embed-ci ./scripts/ci
+FROM golang:1.26-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git zstd curl ca-certificates \
+    gcc g++ pkg-config libseccomp-dev \
+    libyajl-dev libcap-dev libsystemd-dev \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
+    gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+    gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+    autoconf automake libtool make \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+RUN chmod +x scripts/ci scripts/clean scripts/download scripts/build-embedded \
+    scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/validate
+
+CMD ["./scripts/ci"]
