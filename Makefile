@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion
+.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded build-edgelet build-edgelet-full build-edgelet-lite deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-amd64-musl build-linux-arm64 build-linux-arm64-musl build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -20,7 +20,15 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 FLAVOR ?= full
 
 # Build flags
-# CLI is flavor-agnostic; daemon carries flavor metadata.
+# edgelet is a single multicall binary (CLI + daemon + containerd child on full linux).
+LDFLAGS_EDGELET := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
+	-X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) \
+	-X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) \
+	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) \
+	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=$(FLAVOR) -s -w
+BUILD_FLAGS_EDGELET := -trimpath -ldflags "$(LDFLAGS_EDGELET)"
+
+# Legacy aliases (CLI/daemon were separate binaries pre-Plan 3).
 LDFLAGS_CLI := -X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) -X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
 LDFLAGS_DAEMON := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
 	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=$(FLAVOR) -s -w
@@ -34,8 +42,9 @@ LDFLAGS_FULL := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X ma
 	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full -s -w
 
 # Binary names
-CLI_BINARY := build/iofog-agent
-DAEMON_BINARY := build/iofog-agentd
+EDGELET_BINARY := build/edgelet
+CLI_BINARY := $(EDGELET_BINARY)
+DAEMON_BINARY := $(EDGELET_BINARY)
 
 # Default target
 .DEFAULT_GOAL := help
@@ -46,13 +55,23 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: build-cli build-daemon ## Build both binaries for FLAVOR (default: full)
+build: build-edgelet ## Build edgelet for FLAVOR (default: full)
 
-build-cli: ## Build CLI binary (flavor-agnostic)
-	@echo "Building iofog-agent CLI..."
+build-edgelet: build-edgelet-$(FLAVOR) ## Build edgelet multicall binary for FLAVOR
+
+build-edgelet-lite: ## Lite edgelet: CGO=0, docker|podman only
+	@echo "Building edgelet lite..."
 	@mkdir -p build
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS_CLI) -o $(CLI_BINARY) ./cmd/iofog-agent
-	@echo "Built: $(CLI_BINARY)"
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags lite -o $(EDGELET_BINARY) ./cmd/edgelet
+	@echo "Built: $(EDGELET_BINARY) (lite)"
+
+build-edgelet-full: ## Full edgelet: CGO=1, embedded containerd (linux)
+	@echo "Building edgelet full..."
+	@mkdir -p build
+	@CGO_ENABLED=1 go build $(BUILD_FLAGS_EDGELET) -tags "cgo,full" -o $(EDGELET_BINARY) ./cmd/edgelet
+	@echo "Built: $(EDGELET_BINARY) (full)"
+
+build-cli: build-edgelet-lite ## (alias) Build edgelet lite profile
 
 cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
 	@mkdir -p docs/cli/generated
@@ -72,24 +91,16 @@ cli-completion: build-cli ## Regenerate bash completion for packaging
 	@$(CLI_BINARY) completion bash > packaging/iofog-agent/etc/bash_completion.d/iofog-agent
 	@echo "Updated packaging/iofog-agent/etc/bash_completion.d/iofog-agent"
 
-build-daemon: build-daemon-$(FLAVOR) ## Build daemon for current FLAVOR (default full)
+build-daemon: build-edgelet-$(FLAVOR) ## (alias) Build edgelet for FLAVOR
 
-build-daemon-lite: ## Lite daemon: CGO=0, external docker/podman only
-	@echo "Building iofog-agentd lite..."
-	@mkdir -p build
-	@$(MAKE) FLAVOR=lite _build-daemon-cgo0
+build-daemon-lite: build-edgelet-lite ## (alias) Lite edgelet
 
-build-daemon-full: ## Full daemon: CGO=1, embedded containerd (iofog engine)
-	@echo "Building iofog-agentd full..."
-	@mkdir -p build
-	@$(MAKE) FLAVOR=full _build-daemon-cgo1
+build-daemon-full: build-edgelet-full ## (alias) Full edgelet
 
 .PHONY: _build-daemon-cgo0 _build-daemon-cgo1
-_build-daemon-cgo0:
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS_DAEMON) -o $(DAEMON_BINARY) ./cmd/iofog-agentd
+_build-daemon-cgo0: build-edgelet-lite
 
-_build-daemon-cgo1:
-	@CGO_ENABLED=1 go build $(BUILD_FLAGS_DAEMON) -tags cgo -o $(DAEMON_BINARY) ./cmd/iofog-agentd
+_build-daemon-cgo1: build-edgelet-full
 
 deps: ## Download all embedded binary dependencies (run before build-daemon-embedded)
 	@echo "Downloading embedded dependencies for ARCH=$(ARCH)..."
