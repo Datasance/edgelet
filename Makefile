@@ -91,9 +91,12 @@ _build-daemon-cgo0:
 _build-daemon-cgo1:
 	@CGO_ENABLED=1 go build $(BUILD_FLAGS_DAEMON) -tags cgo -o $(DAEMON_BINARY) ./cmd/iofog-agentd
 
-deps: ## Download all embedded binary dependencies (run before build-daemon-embedded)
-	@echo "Downloading embedded dependencies for ARCH=$(ARCH)..."
-	@./build/download-deps.sh --os=linux --arch=$(or $(ARCH),amd64)
+deps: ## Download, build, and package embedded zstd bundle (run before build-daemon-full)
+	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
+	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/binary_size_check.sh 2>/dev/null || true
+	@ARCH=$(or $(ARCH),amd64) ./scripts/download
+	@ARCH=$(or $(ARCH),amd64) ./scripts/build-embedded
+	@ARCH=$(or $(ARCH),amd64) ./scripts/package-data
 
 build-daemon-embedded: build-daemon-full ## (alias) Build full daemon with embedded containerd
 
