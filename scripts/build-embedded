@@ -1,0 +1,136 @@
+#!/bin/bash
+set -e -x
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+GO=${GO-go}
+PKG="github.com/datasance/edgelet"
+PKG_CONTAINERD="github.com/containerd/containerd/v2"
+PKG_CNI_PLUGINS="github.com/containernetworking/plugins"
+
+buildDate=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+VERSIONFLAGS="
+    -X ${PKG_CONTAINERD}/version.Version=${VERSION_CONTAINERD}
+    -X ${PKG_CONTAINERD}/version.Package=${PKG_CONTAINERD}
+    -X ${PKG_CNI_PLUGINS}/pkg/utils/buildversion.BuildVersion=${VERSION_CNIPLUGINS}
+"
+
+LDFLAGS="-w -s"
+TAGS="netcgo osusergo urfave_cli_no_docs sqlite_omit_load_extension apparmor seccomp"
+
+if [ -n "${DEBUG}" ]; then
+  GCFLAGS="-N -l"
+else
+  GCFLAGS=""
+fi
+
+case ${OS} in
+  linux)
+    ;;
+  darwin)
+    OS=linux
+    ;;
+  *)
+    echo "[ERROR] unsupported OS for embed build: ${OS}" >&2
+    exit 1
+    ;;
+esac
+
+mkdir -p build/bin build/images
+
+if [ "${ARCH}" = armv7l ] || [ "${ARCH}" = arm ]; then
+  export GOARCH=arm
+  export GOARM=7
+fi
+
+INSTALLBIN="$(pwd)/build/bin"
+
+# ── CNI multicall (bridge, host-local, loopback, portmap) ───────────────────
+if [ ! -x "${INSTALLBIN}/cni${BINARY_POSTFIX}" ]; then
+  echo "Building CNI multicall"
+  TMPDIR=$(mktemp -d)
+  trap 'rm -rf "${TMPDIR}"' EXIT
+  WORKDIR="${TMPDIR}/src/github.com/containernetworking/plugins"
+  git clone --single-branch --depth=1 --branch="${VERSION_CNIPLUGINS}" \
+    https://github.com/rancher/plugins.git "${WORKDIR}"
+  cd "${WORKDIR}"
+  rm -rf plugins/meta/flannel
+  git clone --single-branch --depth=1 --branch="${VERSION_FLANNEL_PLUGIN}" \
+    https://github.com/flannel-io/cni-plugin.git plugins/meta/flannel
+  sed -i '' 's/package main/package flannel/; s/func main/func Main/' plugins/meta/flannel/*.go 2>/dev/null || \
+    sed -i 's/package main/package flannel/; s/func main/func Main/' plugins/meta/flannel/*.go
+  GO111MODULE=off GOPATH="${TMPDIR}" CGO_ENABLED=0 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" \
+    "${GO}" build -tags "${TAGS}" -gcflags="all=${GCFLAGS}" \
+    -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
+    -o "${INSTALLBIN}/cni${BINARY_POSTFIX}"
+  cd - >/dev/null
+  trap - EXIT
+  rm -rf "${TMPDIR}"
+fi
+
+for plugin in bridge host-local loopback portmap; do
+  rm -f "${INSTALLBIN}/${plugin}${BINARY_POSTFIX}"
+  ln -sf "cni${BINARY_POSTFIX}" "${INSTALLBIN}/${plugin}${BINARY_POSTFIX}"
+done
+
+# ── containerd-shim-runc-v2 ───────────────────────────────────────────────────
+export GOPATH="$(pwd)/build/gopath"
+mkdir -p "${GOPATH}/src"
+echo "Building containerd-shim-runc-v2"
+pushd ./build/src/github.com/containerd/containerd
+SHIM_TAGS="${TAGS/netcgo/netgo}"
+CGO_ENABLED=1 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" \
+  "${GO}" build -tags "${SHIM_TAGS}" -gcflags="all=${GCFLAGS}" \
+  -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
+  -o bin/containerd-shim-runc-v2 ./cmd/containerd-shim-runc-v2
+popd
+cp -vf ./build/src/github.com/containerd/containerd/bin/containerd-shim-runc-v2 \
+  "${INSTALLBIN}/containerd-shim-runc-v2${BINARY_POSTFIX}"
+
+# ── crun ──────────────────────────────────────────────────────────────────────
+echo "Building crun ${VERSION_CRUN}"
+CRUN_ARCH="${ARCH}"
+case "${ARCH}" in
+  arm) CRUN_ARCH="arm" ;;
+esac
+
+if [ "$(uname -s)" != Linux ]; then
+  echo "Non-Linux host: fetching prebuilt crun for linux/${CRUN_ARCH}"
+  curl -fsSL -o "${INSTALLBIN}/crun${BINARY_POSTFIX}" \
+    "https://github.com/containers/crun/releases/download/${VERSION_CRUN}/crun-${VERSION_CRUN}-linux-${CRUN_ARCH}"
+  chmod +x "${INSTALLBIN}/crun${BINARY_POSTFIX}"
+else
+  pushd ./build/src/github.com/containers/crun
+  if [ ! -f configure ]; then
+    ./autogen.sh
+  fi
+  if [ -n "${CC}" ]; then
+    CC="${CC}" ./configure --prefix=/usr
+  else
+    ./configure --prefix=/usr
+  fi
+  make -j"$(nproc 2>/dev/null || echo 2)"
+  popd
+  cp -vf ./build/src/github.com/containers/crun/crun "${INSTALLBIN}/crun${BINARY_POSTFIX}"
+  chmod +x "${INSTALLBIN}/crun${BINARY_POSTFIX}"
+fi
+
+# ── pause image ───────────────────────────────────────────────────────────────
+PAUSE_ARCH="${ARCH}"
+case "${ARCH}" in
+  arm) PAUSE_ARCH="arm/v7" ;;
+esac
+
+if ! command -v crane >/dev/null 2>&1; then
+  echo "Installing crane..."
+  go install github.com/google/go-containerregistry/cmd/crane@latest
+fi
+
+echo "Pulling pause image ${VERSION_PAUSE} for ${OS}/${PAUSE_ARCH}"
+crane pull --platform "${OS}/${PAUSE_ARCH}" "${VERSION_PAUSE}" build/images/pause.tar
+gzip -f build/images/pause.tar
+
+echo "Build-embedded complete: ${INSTALLBIN}"

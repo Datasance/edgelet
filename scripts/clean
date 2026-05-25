@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+rm -rf build/bin build/out build/stage build/src build/data-staging
+find pkg/data/embed -mindepth 1 ! -name '.empty' -delete 2>/dev/null || true
+
+echo "Clean complete (preserved pkg/data/embed/.empty)"
