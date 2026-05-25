@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 
+	"github.com/datasance/edgelet/internal/branding"
 	"github.com/datasance/edgelet/internal/cli/output"
 	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/datasance/edgelet/internal/cli/ui"
@@ -15,15 +16,7 @@ var (
 	newClient = run.DefaultClientFactory
 )
 
-const banner = "\n" +
-	"  _        __                                     _   \n" +
-	" (_)      / _|                                   | |  \n" +
-	"  _  ___ | |_ ___   __ _    __ _  __ _  ___ _ __ | |_ \n" +
-	" | |/ _ \\|  _/ _ \\ / _` |  / _` |/ _` |/ _ \\ '_ \\| __|\n" +
-	" | | (_) | || (_) | (_| | | (_| | (_| |  __/ | | | |_ \n" +
-	" |_|\\___/|_| \\___/ \\__, |  \\__,_| \\__, |\\___|_| |_|\\__|\n" +
-	"                    __/ |         __/ |               \n" +
-	"                   |___/         |___/                \n\n" +
+const banner = "\n" + branding.EdgeletANSIShadow + "\n" +
 	"  Datasance PoT Edgelet\n" +
 	"  Command Line Interface\n" +
 	"  =====================\n"

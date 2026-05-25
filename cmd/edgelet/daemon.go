@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/datasance/edgelet/internal/branding"
 	"github.com/datasance/edgelet/internal/buildmeta"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
@@ -146,16 +147,7 @@ func setupEnvironment() {
 }
 
 func startLoggingService() {
-	logo := "\n" +
-		"  _        __                                     _   \n" +
-		" (_)      / _|                                   | |  \n" +
-		"  _  ___ | |_ ___   __ _    __ _  __ _  ___ _ __ | |_ \n" +
-		" | |/ _ \\|  _/ _ \\ / _` |  / _` |/ _` |/ _ \\ '_ \\| __|\n" +
-		" | | (_) | || (_) | (_| | | (_| | (_| |  __/ | | | |_ \n" +
-		" |_|\\___/|_| \\___/ \\__, |  \\__,_|\\__, |\\___|_| |_|\\__|\n" +
-		"                    __/ |         __/ |               \n" +
-		"                   |___/         |___/                \n" +
-		"                                                                                \n" +
+	logo := "\n" + branding.EdgeletANSIShadow + "\n" +
 		"  Datasance PoT Edgelet v" + version + " (build: " + buildTime + ", commit: " + gitCommit + ")\n" +
 		"  Logging Service Started\n"
 
