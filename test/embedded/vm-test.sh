@@ -471,10 +471,10 @@ handler: edgelet
 EOF"
 
 assert_contains "validate RuntimeClass spin manifest" "manifest is valid" \
-    R "edgelet deploy runtimeclass -f /tmp/runtimeclass-spin.yaml --dry-run"
+    R "edgelet deploy -f /tmp/runtimeclass-spin.yaml --dry-run"
 
 assert_contains "validate RuntimeClass edgelet manifest" "manifest is valid" \
-    R "edgelet deploy runtimeclass -f /tmp/runtimeclass-edgelet.yaml --dry-run"
+    R "edgelet deploy -f /tmp/runtimeclass-edgelet.yaml --dry-run"
 
 assert_ok "create RuntimeClass apply/delete operation helper" \
     R "cat >/tmp/runtimeclass-ops.sh <<'EOF'
