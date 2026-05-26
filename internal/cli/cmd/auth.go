@@ -43,7 +43,7 @@ func runAuthRevoke(cmd *cobra.Command, args []string) error {
 	if err := run.RequireDaemon(appCtx.Client); err != nil {
 		return err
 	}
-	data, err := appCtx.Client.RequestV3("POST", "/v1/auth/tokens/revoke", map[string]interface{}{"jti": args[0]})
+	data, err := appCtx.Client.Request("POST", "/v1/auth/tokens/revoke", map[string]interface{}{"jti": args[0]})
 	if err != nil {
 		return run.MapAPIError(err)
 	}

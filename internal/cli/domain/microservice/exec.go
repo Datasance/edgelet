@@ -8,10 +8,10 @@ import (
 	"github.com/datasance/edgelet/internal/cli/run"
 )
 
-// Exec runs a command inside a microservice via LocalAPI exec session.
+// Exec runs a command inside a microservice via EdgeletAPI exec session.
 func Exec(c *client.Client, id string, command []string) error {
 	if c == nil {
-		return run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	payload := map[string]interface{}{
 		"command": command,
@@ -20,7 +20,7 @@ func Exec(c *client.Client, id string, command []string) error {
 		"stdout":  true,
 		"stderr":  true,
 	}
-	result, err := c.RequestV3("POST", "/v1/ms/"+id+"/exec/sessions", payload)
+	result, err := c.Request("POST", "/v1/ms/"+id+"/exec/sessions", payload)
 	if err != nil {
 		return run.MapAPIError(err)
 	}

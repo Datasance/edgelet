@@ -21,7 +21,7 @@ func (f *fakeClient) IsDaemonRunning() bool {
 	return f.running
 }
 
-func (f *fakeClient) RequestV3(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *fakeClient) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
 	key := method + " " + path
 	if strings.Contains(path, ":apply/op-1") {
 		f.applyPoll++
@@ -185,12 +185,12 @@ func TestMSPsRejected(t *testing.T) {
 	}
 }
 
-func runCLI(t *testing.T, client run.V3Client, args ...string) (stdout, stderr string, exitCode int) {
+func runCLI(t *testing.T, client run.EdgeletAPIClient, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
 	clearInteractiveEnv(t)
 
 	oldFactory := newClient
-	newClient = func() run.V3Client { return client }
+	newClient = func() run.EdgeletAPIClient { return client }
 	t.Cleanup(func() { newClient = oldFactory })
 
 	SetBuildInfo("test-cli", "test-time", "test-commit")

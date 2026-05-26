@@ -13,7 +13,7 @@ type inspectFakeClient struct {
 
 func (f *inspectFakeClient) IsDaemonRunning() bool { return true }
 
-func (f *inspectFakeClient) RequestV3(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *inspectFakeClient) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
 	key := method + " " + path
 	if data, ok := f.gets[key]; ok {
 		return data, nil
@@ -21,7 +21,7 @@ func (f *inspectFakeClient) RequestV3(method, path string, _ interface{}) (map[s
 	return nil, run.NewCLIError(run.CodeNotFound, "not found", nil)
 }
 
-func (f *inspectFakeClient) RequestV3MultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
+func (f *inspectFakeClient) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
 	return nil, run.NewCLIError(run.CodeInternal, "unexpected multipart request", nil)
 }
 

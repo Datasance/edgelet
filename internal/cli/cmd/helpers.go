@@ -99,7 +99,7 @@ func runVersion(ctx *run.CLIContext) error {
 	if err := run.RequireDaemon(ctx.Client); err != nil {
 		return err
 	}
-	daemon, err := ctx.Client.RequestV3("GET", "/v1/system/version", nil)
+	daemon, err := ctx.Client.Request("GET", "/v1/system/version", nil)
 	payload := output.BuildVersionPayload(ctx.Version, ctx.BuildTime, ctx.GitCommit, daemon, err)
 	if ctx.Format.IsStructured() {
 		return run.WriteValue(ctx, payload)

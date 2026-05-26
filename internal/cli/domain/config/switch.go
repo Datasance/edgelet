@@ -14,9 +14,9 @@ type SwitchResult struct {
 }
 
 // SwitchProfile validates and switches the active configuration profile.
-func SwitchProfile(client run.V3Client, profile string) (*SwitchResult, error) {
+func SwitchProfile(client run.EdgeletAPIClient, profile string) (*SwitchResult, error) {
 	if client == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	profile = strings.TrimSpace(profile)
 	if profile == "" {
@@ -27,14 +27,14 @@ func SwitchProfile(client run.V3Client, profile string) (*SwitchResult, error) {
 	default:
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "profile must be one of dev|prod|def", nil)
 	}
-	data, err := client.RequestV3("POST", "/v1/system/config/switch", map[string]interface{}{
+	data, err := client.Request("POST", "/v1/system/config/switch", map[string]interface{}{
 		"profile": profile,
 	})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
 	return &SwitchResult{
-		Human: output.FormatV3Human("/v1/system/config/switch", data),
+		Human: output.FormatEdgeletAPIHuman("/v1/system/config/switch", data),
 		Data:  data,
 	}, nil
 }

@@ -13,7 +13,7 @@ import (
 const logsHumanOnlyMsg = "logs output supports human format only"
 
 // FetchLogs retrieves buffered daemon logs.
-func FetchLogs(ctx *run.CLIContext, api client.V3API, opts logs.Options) error {
+func FetchLogs(ctx *run.CLIContext, api client.EdgeletAPI, opts logs.Options) error {
 	if ctx != nil && ctx.Format.IsStructured() {
 		return run.NewCLIError(run.CodeInvalidArgument, logsHumanOnlyMsg, nil)
 	}
@@ -24,7 +24,7 @@ func FetchLogs(ctx *run.CLIContext, api client.V3API, opts logs.Options) error {
 	if opts.Until != "" {
 		path += "&until=" + url.QueryEscape(opts.Until)
 	}
-	result, err := api.RequestV3("GET", path, nil)
+	result, err := api.Request("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
 	}
@@ -38,7 +38,7 @@ func StreamLogs(ctx *run.CLIContext, c *client.Client, opts logs.Options) error 
 		return run.NewCLIError(run.CodeInvalidArgument, logsHumanOnlyMsg, nil)
 	}
 	if c == nil {
-		return run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	if err := client.StreamSystemLogs(c, opts.Tail, opts.Since, opts.Until, opts.Timestamps); err != nil {
 		return run.NewCLIError(run.CodeInternal, err.Error(), err)

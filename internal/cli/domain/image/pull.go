@@ -25,9 +25,9 @@ type PullResult struct {
 }
 
 // Pull executes async image pull with shared polling progress.
-func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequest) (*PullResult, error) {
+func Pull(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req PullRequest) (*PullResult, error) {
 	if api == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	imageRef := strings.TrimSpace(req.Image)
 	if imageRef == "" {
@@ -45,7 +45,7 @@ func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequ
 		payload["platform"] = req.Platform
 	}
 
-	startResult, err := api.RequestV3("POST", "/v1/images:pull", payload)
+	startResult, err := api.Request("POST", "/v1/images:pull", payload)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
@@ -65,7 +65,7 @@ func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequ
 	}
 
 	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/v1/images:pull/"+operationID, nil)
+		return api.Request("GET", "/v1/images:pull/"+operationID, nil)
 	}, progress)
 	if err != nil {
 		return nil, run.MapAPIError(err)

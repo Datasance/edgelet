@@ -19,7 +19,7 @@ type applyFakeAPI struct {
 	statusIndex   int
 }
 
-func (f *applyFakeAPI) RequestV3(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *applyFakeAPI) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
 	if strings.Contains(path, ":apply/") {
 		if f.statusIndex >= len(f.statusCalls) {
 			return f.statusCalls[len(f.statusCalls)-1], nil
@@ -31,7 +31,7 @@ func (f *applyFakeAPI) RequestV3(method, path string, _ interface{}) (map[string
 	return map[string]interface{}{}, nil
 }
 
-func (f *applyFakeAPI) RequestV3MultipartFile(method, path, _, filePath string, fields map[string]string) (map[string]interface{}, error) {
+func (f *applyFakeAPI) RequestMultipartFile(method, path, _, filePath string, fields map[string]string) (map[string]interface{}, error) {
 	f.multipartPath = path
 	if fields["dryRun"] == "true" {
 		return map[string]interface{}{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil
@@ -99,13 +99,13 @@ func TestExecute_RuntimeClassApplyPollSucceeded(t *testing.T) {
 	runtimeClassApplyPollInterval = time.Millisecond
 
 	polls := 0
-	startMultipartApply = func(api run.V3Client, target Target, _ string, _ map[string]string) (map[string]interface{}, error) {
+	startMultipartApply = func(api run.EdgeletAPIClient, target Target, _ string, _ map[string]string) (map[string]interface{}, error) {
 		if target != TargetRuntimeClasses {
 			t.Fatalf("expected runtimeclasses target, got %s", target)
 		}
 		return map[string]interface{}{"status": "running", "operationId": "op-rc"}, nil
 	}
-	fetchApplyStatus = func(_ run.V3Client, target Target, operationID string) (map[string]interface{}, error) {
+	fetchApplyStatus = func(_ run.EdgeletAPIClient, target Target, operationID string) (map[string]interface{}, error) {
 		if target != TargetRuntimeClasses || operationID != "op-rc" {
 			t.Fatalf("unexpected status fetch: %s %s", target, operationID)
 		}

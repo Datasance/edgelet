@@ -116,7 +116,7 @@ func runImagePrune(cmd *cobra.Command, args []string) error {
 	}
 	human := strings.TrimSpace(result.Human)
 	if human == "" {
-		human = strings.TrimSpace(output.FormatV3Human("/v1/images:prune", result.Data))
+		human = strings.TrimSpace(output.FormatEdgeletAPIHuman("/v1/images:prune", result.Data))
 	}
 	if human == "" {
 		return writeHumanOrRoute(appCtx, "/v1/images:prune", result.Human, result.Data)

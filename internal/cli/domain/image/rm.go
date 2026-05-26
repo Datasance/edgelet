@@ -14,20 +14,20 @@ type RemoveResult struct {
 }
 
 // Remove deletes an image by selector.
-func Remove(client run.V3Client, selector string) (*RemoveResult, error) {
+func Remove(client run.EdgeletAPIClient, selector string) (*RemoveResult, error) {
 	if client == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "selector is required", nil)
 	}
-	data, err := client.RequestV3("POST", "/v1/images:remove", map[string]interface{}{"selector": selector})
+	data, err := client.Request("POST", "/v1/images:remove", map[string]interface{}{"selector": selector})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
 	return &RemoveResult{
-		Human: output.FormatV3Human("/v1/images:remove", data),
+		Human: output.FormatEdgeletAPIHuman("/v1/images:remove", data),
 		Data:  data,
 	}, nil
 }

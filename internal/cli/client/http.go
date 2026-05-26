@@ -25,21 +25,21 @@ const (
 	localAPIBaseURL = "https://localhost:54321"
 )
 
-// Client is a client for communicating with the Local API
+// Client is a client for communicating with the Edgelet API
 type Client struct {
 	baseURL        string
 	unixSocketPath string
 	token          string
 }
 
-// V3APIError is a structured LocalAPI v1 error.
-type V3APIError struct {
+// EdgeletAPIError is a structured EdgeletAPI v1 error.
+type EdgeletAPIError struct {
 	StatusCode int
 	Code       string
 	Message    string
 }
 
-func (e *V3APIError) Error() string {
+func (e *EdgeletAPIError) Error() string {
 	if e == nil {
 		return ""
 	}
@@ -49,7 +49,7 @@ func (e *V3APIError) Error() string {
 	return fmt.Sprintf("%s (%d): %s", e.Code, e.StatusCode, e.Message)
 }
 
-// New creates a new Local API client.
+// New creates a new Edgelet API client.
 func New() *Client {
 	return &Client{
 		baseURL:        localAPIBaseURL,
@@ -58,7 +58,7 @@ func New() *Client {
 	}
 }
 
-// Token returns the LocalAPI bearer token used for WebSocket auth.
+// Token returns the EdgeletAPI bearer token used for WebSocket auth.
 func (c *Client) Token() string {
 	if c == nil {
 		return ""
@@ -67,7 +67,7 @@ func (c *Client) Token() string {
 }
 
 // IsDaemonRunning checks if the daemon is running
-// First checks PID file, then tries Local API connection
+// First checks PID file, then tries Edgelet API connection
 func (c *Client) IsDaemonRunning() bool {
 	// First check PID file (faster and more reliable)
 	if utils.IsAnotherInstanceRunning() {
@@ -79,7 +79,7 @@ func (c *Client) IsDaemonRunning() bool {
 		return true
 	}
 
-	// Fallback: try to connect to Local API via v3 status endpoint.
+	// Fallback: try to connect to Edgelet API via /v1/system/status endpoint.
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.baseURL+"/v1/system/status", nil)
 	if err != nil {
 		return false
@@ -89,7 +89,7 @@ func (c *Client) IsDaemonRunning() bool {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.doV3Request(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return false
 	}
@@ -128,8 +128,8 @@ func isDaemonProcessPresent() bool {
 	return false
 }
 
-// RequestV3 sends a typed request to LocalAPI v1 and returns JSON response map when possible.
-func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[string]interface{}, error) {
+// Request sends a typed request to EdgeletAPI v1 and returns JSON response map when possible.
+func (c *Client) Request(method, path string, requestBody interface{}) (map[string]interface{}, error) {
 	url := c.baseURL + path
 
 	var bodyBytes []byte
@@ -163,19 +163,19 @@ func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[st
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.doV3Request(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "connect: connection refused") {
 			if utils.IsAnotherInstanceRunning() || isDaemonProcessPresent() {
-				return nil, &V3APIError{
+				return nil, &EdgeletAPIError{
 					StatusCode: http.StatusServiceUnavailable,
 					Code:       "DAEMON_STARTING",
-					Message:    "Local API is still initializing. Daemon process is running; retry shortly.",
+					Message:    "Edgelet API is still initializing. Daemon process is running; retry shortly.",
 				}
 			}
-			return nil, fmt.Errorf("Local API is not accessible. The daemon may be starting up or the Local API service is not running. Error: %w", err)
+			return nil, fmt.Errorf("Edgelet API is not accessible. The daemon may be starting up or the Edgelet API service is not running. Error: %w", err)
 		}
-		return nil, fmt.Errorf("failed to send v3 request: %w", err)
+		return nil, fmt.Errorf("failed to send Edgelet API request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -195,7 +195,7 @@ func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[st
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &envelope); err == nil && (envelope.Success || envelope.Error.Code != "" || envelope.Error.Message != "") {
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 || !envelope.Success {
-				return nil, &V3APIError{
+				return nil, &EdgeletAPIError{
 					StatusCode: resp.StatusCode,
 					Code:       envelope.Error.Code,
 					Message:    envelope.Error.Message,
@@ -210,7 +210,7 @@ func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[st
 
 	// Backward-compatible fallback for legacy/non-enveloped responses.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &V3APIError{
+		return nil, &EdgeletAPIError{
 			StatusCode: resp.StatusCode,
 			Code:       "HTTP_ERROR",
 			Message:    string(raw),
@@ -226,8 +226,8 @@ func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[st
 	return result, nil
 }
 
-// RequestV3MultipartFile uploads a multipart manifest file with optional fields.
-func (c *Client) RequestV3MultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
+// RequestMultipartFile uploads a multipart manifest file with optional fields.
+func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
 	url := c.baseURL + path
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -266,9 +266,9 @@ func (c *Client) RequestV3MultipartFile(method, path, fileField, filePath string
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.doV3Request(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send v3 multipart request: %w", err)
+		return nil, fmt.Errorf("failed to send Edgelet API multipart request: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
@@ -287,7 +287,7 @@ func (c *Client) RequestV3MultipartFile(method, path, fileField, filePath string
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &envelope); err == nil && (envelope.Success || envelope.Error.Code != "" || envelope.Error.Message != "") {
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 || !envelope.Success {
-				return nil, &V3APIError{
+				return nil, &EdgeletAPIError{
 					StatusCode: resp.StatusCode,
 					Code:       envelope.Error.Code,
 					Message:    envelope.Error.Message,
@@ -300,7 +300,7 @@ func (c *Client) RequestV3MultipartFile(method, path, fileField, filePath string
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &V3APIError{StatusCode: resp.StatusCode, Code: "HTTP_ERROR", Message: string(raw)}
+		return nil, &EdgeletAPIError{StatusCode: resp.StatusCode, Code: "HTTP_ERROR", Message: string(raw)}
 	}
 	if len(raw) == 0 {
 		return map[string]interface{}{}, nil
@@ -312,7 +312,7 @@ func (c *Client) RequestV3MultipartFile(method, path, fileField, filePath string
 	return result, nil
 }
 
-func (c *Client) doV3Request(req *http.Request) (*http.Response, error) {
+func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 	// Prefer unix socket transport for admin/CLI path.
 	reqUnix, err := cloneRequestWithBody(req)
 	if err == nil {
@@ -362,7 +362,7 @@ func cloneRequestWithBody(req *http.Request) (*http.Request, error) {
 }
 
 func (c *Client) tlsTransport() *http.Transport {
-	caPath := filepath.Join(utils.GetConfigDir(), "localapi-ca.crt")
+	caPath := filepath.Join(utils.GetConfigDir(), "edgeletapi-ca.crt")
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
@@ -406,7 +406,7 @@ func (c *Client) doViaUnixSocket(req *http.Request, socketPath string) (*http.Re
 func readAccessToken() string {
 	// Recalculate config path in case SNAP_COMMON changed (for dev environment)
 	configDir := utils.GetConfigDir()
-	tokenPath := filepath.Join(configDir, "local-api")
+	tokenPath := filepath.Join(configDir, "edgelet-api")
 	data, err := os.ReadFile(tokenPath) // #nosec G304 -- path computed from known config directory constant
 	if err != nil {
 		return ""

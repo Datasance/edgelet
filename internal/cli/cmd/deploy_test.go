@@ -20,7 +20,7 @@ func writeTestManifest(t *testing.T) string {
 	return path
 }
 
-func (f *fakeClient) RequestV3MultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
+func (f *fakeClient) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
 	switch {
 	case strings.Contains(path, ":validate"):
 		return map[string]interface{}{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil

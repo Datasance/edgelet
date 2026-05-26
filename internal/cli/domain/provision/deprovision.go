@@ -18,9 +18,9 @@ type DeprovisionRequest struct {
 }
 
 // Deprovision removes agent provisioning and optionally preserves local microservices.
-func Deprovision(client run.V3Client, req DeprovisionRequest) (*DeprovisionResult, error) {
+func Deprovision(client run.EdgeletAPIClient, req DeprovisionRequest) (*DeprovisionResult, error) {
 	if client == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	scope := strings.ToLower(strings.TrimSpace(req.Scope))
 	if scope == "" {
@@ -33,7 +33,7 @@ func Deprovision(client run.V3Client, req DeprovisionRequest) (*DeprovisionResul
 	if scope != "all" {
 		path += "?scope=" + scope
 	}
-	data, err := client.RequestV3("DELETE", path, nil)
+	data, err := client.Request("DELETE", path, nil)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}

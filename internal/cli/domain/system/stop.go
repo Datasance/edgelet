@@ -11,15 +11,15 @@ type StopResult struct {
 	Data  map[string]interface{}
 }
 
-// Stop requests daemon shutdown via LocalAPI.
-func Stop(client run.V3Client) (*StopResult, error) {
+// Stop requests daemon shutdown via EdgeletAPI.
+func Stop(client run.EdgeletAPIClient) (*StopResult, error) {
 	if client == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
-	data, err := client.RequestV3("POST", "/v1/system/stop", nil)
+	data, err := client.Request("POST", "/v1/system/stop", nil)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
-	human := output.FormatV3Human("/v1/system/stop", data)
+	human := output.FormatEdgeletAPIHuman("/v1/system/stop", data)
 	return &StopResult{Human: human, Data: data}, nil
 }

@@ -104,7 +104,7 @@ func newMSLogsCommand() *cobra.Command {
 	return cmd
 }
 
-type msLifecycleFn func(run.V3Client, string) (*microservice.LifecycleResult, error)
+type msLifecycleFn func(run.EdgeletAPIClient, string) (*microservice.LifecycleResult, error)
 
 func msLifecycleSpinnerMessage(name, id string) string {
 	switch name {
@@ -170,7 +170,7 @@ func runMSList(cmd *cobra.Command, args []string) error {
 		return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|all", nil)
 	}
 	path := "/v1/ms?source=" + source
-	data, err := appCtx.Client.RequestV3("GET", path, nil)
+	data, err := appCtx.Client.Request("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
 	}
@@ -192,7 +192,7 @@ func runMSInspect(cmd *cobra.Command, args []string) error {
 	if summary {
 		path += "?summary=true"
 	}
-	data, err := appCtx.Client.RequestV3("GET", path, nil)
+	data, err := appCtx.Client.Request("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
 	}

@@ -15,11 +15,11 @@ const runtimeClassApplyPollTimeout = 90 * time.Second
 
 var (
 	runtimeClassApplyPollInterval = time.Second
-	startMultipartApply           = func(api run.V3Client, target Target, manifestPath string, fields map[string]string) (map[string]interface{}, error) {
-		return api.RequestV3MultipartFile("POST", target.applyPath(), "manifest", manifestPath, fields)
+	startMultipartApply           = func(api run.EdgeletAPIClient, target Target, manifestPath string, fields map[string]string) (map[string]interface{}, error) {
+		return api.RequestMultipartFile("POST", target.applyPath(), "manifest", manifestPath, fields)
 	}
-	fetchApplyStatus = func(api run.V3Client, target Target, operationID string) (map[string]interface{}, error) {
-		return api.RequestV3("GET", target.applyStatusPath(operationID), nil)
+	fetchApplyStatus = func(api run.EdgeletAPIClient, target Target, operationID string) (map[string]interface{}, error) {
+		return api.Request("GET", target.applyStatusPath(operationID), nil)
 	}
 )
 
@@ -38,9 +38,9 @@ type Result struct {
 }
 
 // Execute runs deploy validate or apply for a manifest file.
-func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Request) (*Result, error) {
+func Execute(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req Request) (*Result, error) {
 	if api == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	if strings.TrimSpace(req.ManifestPath) == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: edgelet deploy -f <manifest.yaml>", nil)
@@ -60,7 +60,7 @@ func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Reque
 	}
 
 	if req.DryRun {
-		data, err := api.RequestV3MultipartFile("POST", target.validatePath(), "manifest", req.ManifestPath, fields)
+		data, err := api.RequestMultipartFile("POST", target.validatePath(), "manifest", req.ManifestPath, fields)
 		if err != nil {
 			return nil, run.MapAPIError(err)
 		}
@@ -77,7 +77,7 @@ func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Reque
 			spin = uiProgress.StartSpinner("Applying registry manifest...")
 			defer spin.Stop()
 		}
-		data, err := api.RequestV3MultipartFile("POST", target.applyPath(), "manifest", req.ManifestPath, fields)
+		data, err := api.RequestMultipartFile("POST", target.applyPath(), "manifest", req.ManifestPath, fields)
 		if err != nil {
 			return nil, run.MapAPIError(err)
 		}
@@ -85,7 +85,7 @@ func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Reque
 	}
 }
 
-func applyAsync(ctx context.Context, api run.V3Client, uiProgress *ui.UI, target Target, manifestPath string, fields map[string]string) (*Result, error) {
+func applyAsync(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, target Target, manifestPath string, fields map[string]string) (*Result, error) {
 	startResult, err := startMultipartApply(api, target, manifestPath, fields)
 	if err != nil {
 		return nil, run.MapAPIError(err)

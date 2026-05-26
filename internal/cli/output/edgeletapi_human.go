@@ -70,8 +70,8 @@ var infoAliasToCanonical = map[string]string{
 	"pruningFrequency":     "dockerPruningFrequency",
 }
 
-// FormatV3Human renders human-readable output for a LocalAPI v1 route payload.
-func FormatV3Human(routePath string, result map[string]interface{}) string {
+// FormatEdgeletAPIHuman renders human-readable output for a EdgeletAPI v1 route payload.
+func FormatEdgeletAPIHuman(routePath string, result map[string]interface{}) string {
 	routePath = stripQuery(routePath)
 	switch routePath {
 	case "/v1/system/status":

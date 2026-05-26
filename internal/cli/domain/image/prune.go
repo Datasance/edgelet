@@ -15,9 +15,9 @@ type PruneResult struct {
 const imagePruneUsage = "usage: edgelet image prune [dangling]"
 
 // Prune removes dangling images.
-func Prune(client run.V3Client, args []string) (*PruneResult, error) {
+func Prune(client run.EdgeletAPIClient, args []string) (*PruneResult, error) {
 	if client == nil {
-		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
+		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	mode, err := prune.ParseImageMode(args, imagePruneUsage)
 	if err != nil {
@@ -27,12 +27,12 @@ func Prune(client run.V3Client, args []string) (*PruneResult, error) {
 	if mode != "" {
 		path += "?mode=" + mode
 	}
-	data, reqErr := client.RequestV3("POST", path, nil)
+	data, reqErr := client.Request("POST", path, nil)
 	if reqErr != nil {
 		return nil, run.MapAPIError(reqErr)
 	}
 	return &PruneResult{
-		Human: output.FormatV3Human(path, data),
+		Human: output.FormatEdgeletAPIHuman(path, data),
 		Data:  data,
 	}, nil
 }

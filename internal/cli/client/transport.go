@@ -164,7 +164,7 @@ func streamLogs(c *Client, wsPath string, timestamps bool) error {
 	}
 }
 
-// DialWS opens a LocalAPI WebSocket using the same auth/dial behavior as the legacy CLI.
+// DialWS opens a EdgeletAPI WebSocket using the same auth/dial behavior as the legacy CLI.
 func DialWS(c *Client, path string) (*websocket.Conn, error) {
 	wsURL := "wss://localhost:54321" + path
 	dialer := websocket.Dialer{

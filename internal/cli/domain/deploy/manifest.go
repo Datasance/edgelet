@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Target is a LocalAPI deploy collection.
+// Target is a EdgeletAPI deploy collection.
 type Target string
 
 const (

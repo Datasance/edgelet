@@ -19,7 +19,7 @@ type CLIContext struct {
 	Socket    string
 	Timeout   string
 	NoColor   bool
-	Client    V3Client
+	Client    EdgeletAPIClient
 	Version   string
 	BuildTime string
 	GitCommit string

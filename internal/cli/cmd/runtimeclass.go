@@ -45,7 +45,7 @@ func runRuntimeClassInspect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v1/deploy/runtimeclasses/" + args[0]
-	data, err := appCtx.Client.RequestV3("GET", path, nil)
+	data, err := appCtx.Client.Request("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
 	}
@@ -63,7 +63,7 @@ func runRuntimeClassRemove(cmd *cobra.Command, args []string) error {
 	var data map[string]interface{}
 	err := run.WithSpinner(appCtx, "Removing runtime class "+args[0]+"...", func() error {
 		var reqErr error
-		data, reqErr = appCtx.Client.RequestV3("DELETE", path, nil)
+		data, reqErr = appCtx.Client.Request("DELETE", path, nil)
 		return run.MapAPIError(reqErr)
 	})
 	if err != nil {

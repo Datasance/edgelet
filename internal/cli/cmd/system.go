@@ -127,7 +127,7 @@ func runSystemReload(cmd *cobra.Command, args []string) error {
 	var data map[string]interface{}
 	err := run.WithSpinner(appCtx, "Reloading configuration...", func() error {
 		var reqErr error
-		data, reqErr = appCtx.Client.RequestV3("POST", path, nil)
+		data, reqErr = appCtx.Client.Request("POST", path, nil)
 		return run.MapAPIError(reqErr)
 	})
 	if err != nil {
@@ -158,19 +158,19 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 		path += "?mode=" + mode
 	}
 	if appCtx.Format.IsStructured() {
-		data, reqErr := appCtx.Client.RequestV3("POST", path, nil)
+		data, reqErr := appCtx.Client.Request("POST", path, nil)
 		if reqErr != nil {
 			return run.MapAPIError(reqErr)
 		}
 		return run.WriteRouteData(appCtx, path, data)
 	}
 	spin := appCtx.UI.StartSpinner("Pruning resources...")
-	data, err := appCtx.Client.RequestV3("POST", path, nil)
+	data, err := appCtx.Client.Request("POST", path, nil)
 	spin.Stop()
 	if err != nil {
 		return run.MapAPIError(err)
 	}
-	human := output.FormatV3Human(path, data)
+	human := output.FormatEdgeletAPIHuman(path, data)
 	if strings.TrimSpace(human) == "" {
 		return run.WriteRouteData(appCtx, path, data)
 	}
@@ -185,7 +185,7 @@ func runGET(path string) func(*cobra.Command, []string) error {
 		if err := run.RequireDaemon(appCtx.Client); err != nil {
 			return err
 		}
-		data, err := appCtx.Client.RequestV3("GET", path, nil)
+		data, err := appCtx.Client.Request("GET", path, nil)
 		if err != nil {
 			return run.MapAPIError(err)
 		}
@@ -201,7 +201,7 @@ func runPOST(path string, payload any) func(*cobra.Command, []string) error {
 		if err := run.RequireDaemon(appCtx.Client); err != nil {
 			return err
 		}
-		data, err := appCtx.Client.RequestV3("POST", path, payload)
+		data, err := appCtx.Client.Request("POST", path, payload)
 		if err != nil {
 			return run.MapAPIError(err)
 		}

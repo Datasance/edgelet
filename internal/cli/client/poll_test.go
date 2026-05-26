@@ -14,7 +14,7 @@ type pollFakeAPI struct {
 	calls     int
 }
 
-func (f *pollFakeAPI) RequestV3(string, string, interface{}) (map[string]interface{}, error) {
+func (f *pollFakeAPI) Request(string, string, interface{}) (map[string]interface{}, error) {
 	if f.calls >= len(f.responses) {
 		return map[string]interface{}{"status": "running"}, nil
 	}
@@ -23,7 +23,7 @@ func (f *pollFakeAPI) RequestV3(string, string, interface{}) (map[string]interfa
 	return resp, nil
 }
 
-func (f *pollFakeAPI) RequestV3MultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
+func (f *pollFakeAPI) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
@@ -43,7 +43,7 @@ func TestPollAsyncOperation_StageTerminalSuccess(t *testing.T) {
 	defer spin.Stop()
 
 	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/status", nil)
+		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
 		Spinner:        spin,
@@ -76,7 +76,7 @@ func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 	spin := u.StartSpinner("Applying microservice manifest...")
 
 	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/status", nil)
+		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
 		Spinner:        spin,
@@ -110,7 +110,7 @@ func TestPollAsyncOperation_StageSuffixNonInteractive(t *testing.T) {
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{})
 
 	_, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/status", nil)
+		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
 		StageFormatter: ui.FormatDeployStageLine,
@@ -139,7 +139,7 @@ func TestPollAsyncOperation_PercentDone(t *testing.T) {
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{ForceTTY: true})
 
 	_, _, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond, PercentStep: 5}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/status", nil)
+		return api.Request("GET", "/status", nil)
 	}, PollProgress{UI: u, PercentLabel: "pulling image"})
 	if err != nil {
 		t.Fatalf("poll: %v", err)

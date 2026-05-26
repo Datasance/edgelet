@@ -21,8 +21,8 @@ func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {
 	}
 }
 
-func TestFormatV3Human_StatusOrder(t *testing.T) {
-	out := FormatV3Human("/v1/system/status", map[string]interface{}{
+func TestFormatEdgeletAPIHuman_StatusOrder(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]interface{}{
 		"controllerUrl":          "u",
 		"connectionToController": "not provisioned",
 		"cpuUsage":               "1%",
@@ -34,8 +34,8 @@ func TestFormatV3Human_StatusOrder(t *testing.T) {
 	}
 }
 
-func TestFormatV3Human_StatusIncludesAvailableNetworkInterfacesAfterTotalCPU(t *testing.T) {
-	out := FormatV3Human("/v1/system/status", map[string]interface{}{
+func TestFormatEdgeletAPIHuman_StatusIncludesAvailableNetworkInterfacesAfterTotalCPU(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]interface{}{
 		"systemTotalCpu":             "3200%",
 		"availableNetworkInterfaces": "eth0, wlan0",
 		"connectionToController":     "ok",
@@ -73,8 +73,8 @@ func TestFormatVersionHuman_DaemonUnavailableFallback(t *testing.T) {
 	}
 }
 
-func TestFormatV3Human_MSListHandlesQueryPath(t *testing.T) {
-	out := FormatV3Human("/v1/ms?source=all", map[string]interface{}{
+func TestFormatEdgeletAPIHuman_MSListHandlesQueryPath(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/ms?source=all", map[string]interface{}{
 		"items": []interface{}{
 			map[string]interface{}{
 				"uuid":        "u1",
@@ -92,8 +92,8 @@ func TestFormatV3Human_MSListHandlesQueryPath(t *testing.T) {
 	}
 }
 
-func TestFormatV3Human_MSLifecycleFormatting(t *testing.T) {
-	out := FormatV3Human("/v1/ms/abc/start", map[string]interface{}{
+func TestFormatEdgeletAPIHuman_MSLifecycleFormatting(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/ms/abc/start", map[string]interface{}{
 		"status":           "ok",
 		"microserviceUuid": "abc",
 		"warning":          "controller reconcile may restart it",

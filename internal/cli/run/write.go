@@ -13,19 +13,19 @@ import (
 const daemonUnavailableMessage = "Edgelet daemon is not running. Start it with `edgelet daemon` or `systemctl start edgelet`."
 
 // RequireDaemon returns DAEMON_UNAVAILABLE when the daemon is unreachable.
-func RequireDaemon(client V3Client) error {
+func RequireDaemon(client EdgeletAPIClient) error {
 	if client == nil || client.IsDaemonRunning() {
 		return nil
 	}
 	return NewCLIError(CodeDaemonUnavailable, daemonUnavailableMessage, nil)
 }
 
-// MapAPIError converts LocalAPI errors to CLIError values.
+// MapAPIError converts EdgeletAPI errors to CLIError values.
 func MapAPIError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var apiErr *client.V3APIError
+	var apiErr *client.EdgeletAPIError
 	if errors.As(err, &apiErr) {
 		code := apiErr.Code
 		if code == "" {
@@ -56,7 +56,7 @@ func WriteRouteData(ctx *CLIContext, routePath string, data map[string]interface
 		return writeBytes(ctx.Out, raw)
 	}
 
-	human := output.FormatV3Human(routePath, data)
+	human := output.FormatEdgeletAPIHuman(routePath, data)
 	if human == "" {
 		raw, err := json.MarshalIndent(data, "", "  ")
 		if err != nil {
