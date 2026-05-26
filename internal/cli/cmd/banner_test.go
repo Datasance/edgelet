@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const bannerMarker = "Datasance PoT Edgelet"
+const bannerMarker = "Edgelet"
 
 func TestBanner_BareCommandOnce(t *testing.T) {
 	client := &fakeClient{running: true}

@@ -11,7 +11,7 @@ Subcommands: ls, inspect, rm.`)
 
 // CommandExamples returns runtimeclass command examples for Cobra.
 func CommandExamples() string {
-	return strings.TrimSpace(`iofog-agent runtimeclass ls -o json
-  iofog-agent runtimeclass inspect <name>
-  iofog-agent runtimeclass rm <name>`)
+	return strings.TrimSpace(`edgelet runtimeclass ls -o json
+  edgelet runtimeclass inspect <name>
+  edgelet runtimeclass rm <name>`)
 }

@@ -17,23 +17,18 @@ var (
 )
 
 const banner = "\n" + branding.EdgeletANSIShadow + "\n" +
-	"  Datasance PoT Edgelet\n" +
+	"  Edgelet\n" +
 	"  Command Line Interface\n" +
 	"  =====================\n"
 
 // ShouldRunCLI reports whether argv should dispatch to the operator CLI instead
-// of the daemon supervisor. Daemon-only invocations are bare "edgelet" or
-// "edgelet daemon" (optional systemd alias).
+// of the daemon supervisor. Daemon-only invocation is "edgelet daemon"
+// (used by systemd and service scripts).
 func ShouldRunCLI(args []string) bool {
 	if len(args) <= 1 {
-		return false
-	}
-	switch args[1] {
-	case "daemon":
-		return false
-	default:
 		return true
 	}
+	return args[1] != "daemon"
 }
 
 // Execute runs the Cobra command tree and returns a process exit code.
@@ -117,7 +112,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newDeprecatedTopLevelCommand("cert", "use `edgelet config cert` instead of top-level cert"))
 	cmd.AddCommand(newDeprecatedTopLevelCommand("switch", "use `edgelet config switch` instead of top-level switch"))
-	cmd.AddCommand(newDeprecatedTopLevelCommand("start", "top-level start is removed; start the daemon with `edgelet` or `systemctl start edgelet`"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("start", "top-level start is removed; start the daemon with `edgelet daemon` or `systemctl start edgelet`"))
 	cmd.AddCommand(newDeprecatedTopLevelCommand("stop", "use `edgelet system stop` instead of top-level stop"))
 	cmd.AddCommand(newDeprecatedTopLevelCommand("prune", "use `edgelet system prune` instead of top-level prune"))
 

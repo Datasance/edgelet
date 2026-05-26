@@ -229,7 +229,7 @@ func (fs *FlagSet) Collect(flags *pflag.FlagSet) (map[string]interface{}, error)
 		setMap[binding.canonical] = normalized
 	}
 	if len(setMap) == 0 {
-		return nil, fmt.Errorf("at least one config flag is required (see iofog-agent config --help)")
+		return nil, fmt.Errorf("at least one config flag is required (see edgelet config --help)")
 	}
 	return setMap, nil
 }

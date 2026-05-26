@@ -12,7 +12,7 @@ type PruneResult struct {
 	Data  map[string]interface{}
 }
 
-const imagePruneUsage = "usage: iofog-agent image prune [dangling]"
+const imagePruneUsage = "usage: edgelet image prune [dangling]"
 
 // Prune removes dangling images.
 func Prune(client run.V3Client, args []string) (*PruneResult, error) {

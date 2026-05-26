@@ -54,7 +54,7 @@ func ParseExecCommand(args []string) ([]string, error) {
 // ParseExecArgs validates ms exec positional args.
 func ParseExecArgs(args []string) (id string, command []string, err error) {
 	if len(args) < 1 {
-		return "", nil, run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent ms exec <id> [-- <command...>]", nil)
+		return "", nil, run.NewCLIError(run.CodeInvalidArgument, "usage: edgelet ms exec <id> [-- <command...>]", nil)
 	}
 	id = strings.TrimSpace(args[0])
 	command, err = ParseExecCommand(args[1:])

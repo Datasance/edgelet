@@ -121,7 +121,7 @@ func isDaemonProcessPresent() bool {
 		if err != nil || len(cmdline) == 0 {
 			continue
 		}
-		if bytes.Contains(cmdline, []byte("iofog-agentd")) {
+		if bytes.Contains(cmdline, []byte("edgelet")) {
 			return true
 		}
 	}

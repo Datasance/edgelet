@@ -35,9 +35,9 @@ func newImageCommand() *cobra.Command {
 				Args:      cobra.MaximumNArgs(1),
 				ValidArgs: []string{"dangling"},
 				Example: strings.Join([]string{
-					"iofog-agent image prune",
-					"iofog-agent image prune dangling",
-					"iofog-agent image prune --mode dangling",
+					"edgelet image prune",
+					"edgelet image prune dangling",
+					"edgelet image prune --mode dangling",
 				}, "\n"),
 				RunE: runImagePrune,
 			}

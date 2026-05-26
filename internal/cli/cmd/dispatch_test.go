@@ -11,7 +11,7 @@ func TestShouldRunCLI(t *testing.T) {
 		args []string
 		want bool
 	}{
-		{"bare binary", []string{"edgelet"}, false},
+		{"bare binary", []string{"edgelet"}, true},
 		{"daemon alias", []string{"edgelet", "daemon"}, false},
 		{"cli subcommand", []string{"edgelet", "provision"}, true},
 		{"version subcommand", []string{"edgelet", "version"}, true},

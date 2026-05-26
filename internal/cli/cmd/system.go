@@ -56,10 +56,10 @@ func newSystemCommand() *cobra.Command {
 				Args:      cobra.MaximumNArgs(1),
 				ValidArgs: []string{"dangling", "containers", "volumes", "all"},
 				Example: strings.Join([]string{
-					"iofog-agent system prune",
-					"iofog-agent system prune all",
-					"iofog-agent system prune --mode all",
-					"iofog-agent system prune --mode volumes",
+					"edgelet system prune",
+					"edgelet system prune all",
+					"edgelet system prune --mode all",
+					"edgelet system prune --mode volumes",
 				}, "\n"),
 				RunE: runSystemPrune,
 			}
@@ -149,7 +149,7 @@ func runSystemPrune(cmd *cobra.Command, args []string) error {
 		parseArgs = append(parseArgs, "--mode", modeArg)
 	}
 	parseArgs = append(parseArgs, args...)
-	mode, err := prune.ParseMode(parseArgs, "Usage: iofog-agent system prune [dangling|containers|volumes|all]")
+	mode, err := prune.ParseMode(parseArgs, "Usage: edgelet system prune [dangling|containers|volumes|all]")
 	if err != nil {
 		return err
 	}

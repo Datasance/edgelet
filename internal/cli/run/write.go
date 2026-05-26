@@ -10,7 +10,7 @@ import (
 	"github.com/datasance/edgelet/internal/cli/output"
 )
 
-const daemonUnavailableMessage = "Edgelet daemon is not running. Start it with `edgelet` or `systemctl start edgelet`."
+const daemonUnavailableMessage = "Edgelet daemon is not running. Start it with `edgelet daemon` or `systemctl start edgelet`."
 
 // RequireDaemon returns DAEMON_UNAVAILABLE when the daemon is unreachable.
 func RequireDaemon(client V3Client) error {

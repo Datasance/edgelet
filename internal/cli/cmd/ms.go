@@ -23,7 +23,7 @@ func newMSCommand() *cobra.Command {
 			Use:    "ps",
 			Hidden: true,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return run.NewCLIError(run.CodeInvalidArgument, "unknown ms subcommand \"ps\"; use \"iofog-agent ms ls\"", nil)
+				return run.NewCLIError(run.CodeInvalidArgument, "unknown ms subcommand \"ps\"; use \"edgelet ms ls\"", nil)
 			},
 		},
 		newMSInspectCommand(),

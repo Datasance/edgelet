@@ -37,7 +37,7 @@ func HasRejections(data map[string]interface{}) bool {
 // ApplySetMap validates and PATCHes the provided config keys.
 func ApplySetMap(client run.V3Client, setMap map[string]interface{}) (*Result, error) {
 	if len(setMap) == 0 {
-		return nil, run.NewCLIError(run.CodeInvalidArgument, "at least one config flag is required (see iofog-agent config --help)", nil)
+		return nil, run.NewCLIError(run.CodeInvalidArgument, "at least one config flag is required (see edgelet config --help)", nil)
 	}
 	human, data, err := Patch(client, setMap)
 	if err != nil {

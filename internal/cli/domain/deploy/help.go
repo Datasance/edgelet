@@ -11,9 +11,9 @@ Manifest kind is auto-detected from the YAML file.`)
 
 // CommandExamples returns deploy command examples for Cobra.
 func CommandExamples() string {
-	return strings.TrimSpace(`iofog-agent deploy -f microservice.yaml
-  iofog-agent deploy -f microservice.yaml --dry-run
-  iofog-agent deploy -f microservice.yaml --sourceName my-app
-  iofog-agent deploy -f registry.yaml
-  iofog-agent -o json deploy -f microservice.yaml --dry-run`)
+	return strings.TrimSpace(`edgelet deploy -f microservice.yaml
+  edgelet deploy -f microservice.yaml --dry-run
+  edgelet deploy -f microservice.yaml --sourceName my-app
+  edgelet deploy -f registry.yaml
+  edgelet -o json deploy -f microservice.yaml --dry-run`)
 }

@@ -328,7 +328,7 @@ start_edgelet_service() {
             rc-service "${UNIT_NAME}" start 2>/dev/null || true
             ;;
         *)
-            nohup "${BINARY_PATH}" >/var/log/edgelet/daemon.log 2>&1 &
+            nohup "${BINARY_PATH}" daemon >/var/log/edgelet/daemon.log 2>&1 &
             ;;
     esac
 }
@@ -363,7 +363,7 @@ StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=${BINARY_PATH}
+ExecStart=${BINARY_PATH} daemon
 Restart=always
 RestartSec=2s
 TimeoutStopSec=120s

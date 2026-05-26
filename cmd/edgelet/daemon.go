@@ -148,7 +148,7 @@ func setupEnvironment() {
 
 func startLoggingService() {
 	logo := "\n" + branding.EdgeletANSIShadow + "\n" +
-		"  Datasance PoT Edgelet v" + version + " (build: " + buildTime + ", commit: " + gitCommit + ")\n" +
+		"  Edgelet v" + version + " (build: " + buildTime + ", commit: " + gitCommit + ")\n" +
 		"  Logging Service Started\n"
 
 	cfg := config.GetInstance()
