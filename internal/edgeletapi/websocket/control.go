@@ -44,7 +44,7 @@ var (
 			return true
 		},
 	}
-	validateLocalJWTFn = auth.ValidateLocalJWT
+	validateLocalJWTFn = auth.ValidateEdgeletAPIJWT
 	authorizeV3WSFn    = authorizeV3WebsocketClaims
 )
 
@@ -127,7 +127,7 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	connection := h.manager.AddConnection(ControlWebSocket, id, conn)
 	logging.LogDebug(controlHandlerModuleName, "Websocket for the real-time control signals is open")
 	emitWSEvent("info", map[string]interface{}{
-		"event":            "localapi.access",
+		"event":            "edgeletapi.access",
 		"requestId":        requestID,
 		"path":             r.URL.Path,
 		"method":           r.Method,
@@ -148,7 +148,7 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 func emitWSReject(r *http.Request, requestID, reasonCode string, status int, tokenMeta map[string]string) {
 	fields := map[string]interface{}{
-		"event":      "localapi.reject",
+		"event":      "edgeletapi.reject",
 		"requestId":  requestID,
 		"reasonCode": reasonCode,
 		"path":       r.URL.Path,
@@ -264,7 +264,7 @@ func mergeTokenMeta(a, b map[string]string) map[string]string {
 func authorizeV3WebsocketClaims(claims jwt.MapClaims) bool {
 	tokenUse, _ := claims["tokenUse"].(string)
 	sub, _ := claims["sub"].(string)
-	if strings.TrimSpace(tokenUse) == "localapi" && (strings.HasPrefix(sub, "system:localadmin:") || sub == "system:localadmin:bootstrap") {
+	if strings.TrimSpace(tokenUse) == "edgeletapi" && (strings.HasPrefix(sub, "system:edgeletadmin:") || sub == "system:edgeletadmin:bootstrap") {
 		return true
 	}
 

@@ -12,7 +12,7 @@ import (
 )
 
 func TestHandleImages_RejectsRequestBody(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/images", bytes.NewBufferString(`{"unexpected":true}`))
 	rec := httptest.NewRecorder()
 
@@ -26,7 +26,7 @@ func TestHandleImages_RejectsRequestBody(t *testing.T) {
 }
 
 func TestHandleImagePull_RejectsUnknownFields(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","extra":"x"}`))
 	rec := httptest.NewRecorder()
 
@@ -37,7 +37,7 @@ func TestHandleImagePull_RejectsUnknownFields(t *testing.T) {
 }
 
 func TestHandleImagePull_RequiresImage(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"platform":"linux/arm64"}`))
 	rec := httptest.NewRecorder()
 
@@ -51,7 +51,7 @@ func TestHandleImagePull_RequiresImage(t *testing.T) {
 }
 
 func TestHandleImagePull_AsyncReturnsOperationID(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
 	rec := httptest.NewRecorder()
 
@@ -75,7 +75,7 @@ func TestHandleImagePull_AsyncReturnsOperationID(t *testing.T) {
 }
 
 func TestHandleImagePullStatus_MissingOperationID(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/images:pull/", nil)
 	rec := httptest.NewRecorder()
 
@@ -86,7 +86,7 @@ func TestHandleImagePullStatus_MissingOperationID(t *testing.T) {
 }
 
 func TestHandleImageLoad_RequiresPath(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:load", bytes.NewBufferString(`{}`))
 	rec := httptest.NewRecorder()
 
@@ -100,7 +100,7 @@ func TestHandleImageLoad_RequiresPath(t *testing.T) {
 }
 
 func TestHandleImagePrune_MethodNotAllowed(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/images:prune", nil)
 	rec := httptest.NewRecorder()
 
@@ -111,7 +111,7 @@ func TestHandleImagePrune_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandleImagePrune_InvalidMode(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:prune?mode=bad", nil)
 	rec := httptest.NewRecorder()
 
@@ -125,7 +125,7 @@ func TestHandleImagePrune_InvalidMode(t *testing.T) {
 }
 
 func TestHandleImagePullStatus_NotFound(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/images:pull/non-existent", nil)
 	rec := httptest.NewRecorder()
 
@@ -136,7 +136,7 @@ func TestHandleImagePullStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleImageRemove_RequiresSelector(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:remove", bytes.NewBufferString(`{}`))
 	rec := httptest.NewRecorder()
 
@@ -150,7 +150,7 @@ func TestHandleImageRemove_RequiresSelector(t *testing.T) {
 }
 
 func TestHandleImagePullAsyncThenStatusEventuallyTerminal(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	startReq := httptest.NewRequest(http.MethodPost, "/v1/images:pull", bytes.NewBufferString(`{"image":"nginx:latest","async":true}`))
 	startRec := httptest.NewRecorder()
 	handler.HandleImagePull(startRec, startReq)
@@ -188,7 +188,7 @@ func TestHandleImagePullAsyncThenStatusEventuallyTerminal(t *testing.T) {
 }
 
 func TestHandleDeployMicroservicesApply_AsyncAccepted(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := newDeployApplyMultipartRequest(t, map[string]string{
 		"async":  "false",
 		"dryRun": "true",
@@ -220,7 +220,7 @@ func TestHandleDeployMicroservicesApply_AsyncAccepted(t *testing.T) {
 }
 
 func TestHandleDeployMicroservicesApplyStatus_NotFound(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/deploy/microservices:apply/does-not-exist", nil)
 	rec := httptest.NewRecorder()
 
@@ -232,7 +232,7 @@ func TestHandleDeployMicroservicesApplyStatus_NotFound(t *testing.T) {
 
 func TestHandleDeployMicroservicesApplyStatus_EventuallySucceeded(t *testing.T) {
 	ensureStoreDBOpen(t)
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	startReq := newDeployApplyMultipartRequest(t, map[string]string{
 		"async":  "true",
 		"dryRun": "true",

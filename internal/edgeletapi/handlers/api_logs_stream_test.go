@@ -15,7 +15,7 @@ import (
 )
 
 func TestHandleLogsStreamWS_UsesFollowStreamAndForwardsEntries(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	handler.resolveMicroservice = func(selector string) (string, error) {
 		if selector != "edgelet.demo" {
 			t.Fatalf("unexpected selector: %s", selector)
@@ -67,7 +67,7 @@ func TestHandleLogsStreamWS_UsesFollowStreamAndForwardsEntries(t *testing.T) {
 }
 
 func TestHandleLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	handler.resolveMicroservice = func(_ string) (string, error) { return "ms-1", nil }
 	streamCalled := false
 	handler.streamMicroservicLog = func(_ string, _ *engine.TailConfig, _ engine.LogTailHandler) error {
@@ -101,7 +101,7 @@ func TestHandleLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 }
 
 func TestHandleLogsStreamWS_StreamingErrorReturnsErrorEvent(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	handler.resolveMicroservice = func(_ string) (string, error) { return "ms-1", nil }
 	handler.streamMicroservicLog = func(_ string, _ *engine.TailConfig, _ engine.LogTailHandler) error {
 		return errors.New("stream init failed")
@@ -137,7 +137,7 @@ func TestHandleSystemLogsStreamWS_StreamsDaemonLogs(t *testing.T) {
 		t.Fatalf("failed to write log file: %v", err)
 	}
 
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleSystemLogsStreamWS(w, r)
 	}))
@@ -161,7 +161,7 @@ func TestHandleSystemLogsStreamWS_StreamsDaemonLogs(t *testing.T) {
 }
 
 func TestHandleSystemLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleSystemLogsStreamWS(w, r)
 	}))

@@ -156,7 +156,7 @@ const (
 	PruneModeAll        = "all"
 )
 
-// Facade is a thin runtime adapter used by LocalAPI v3 handlers.
+// Facade is a thin runtime adapter used by EdgeletAPI handlers.
 // It intentionally delegates to existing modules to preserve daemon behavior.
 type Facade struct {
 	cfg  *config.Config

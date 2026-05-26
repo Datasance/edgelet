@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"context"
@@ -6,38 +6,38 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/localapi/handlers"
+	"github.com/datasance/edgelet/internal/edgeletapi/handlers"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
-	localAPIModuleName = "Local API"
+	localAPIModuleName = "Edgelet API"
 	defaultPort        = 54321
 	localAPIStartWait  = 15 * time.Second
 )
 
-// LocalAPI is the main Local API module
-type LocalAPI struct {
+// EdgeletAPI is the main Edgelet API module
+type EdgeletAPI struct {
 	server *Server
 	mu     sync.RWMutex
 }
 
 var (
-	instance *LocalAPI
+	instance *EdgeletAPI
 	once     sync.Once
 )
 
-// GetInstance returns the singleton LocalAPI instance
-func GetInstance() *LocalAPI {
+// GetInstance returns the singleton EdgeletAPI instance
+func GetInstance() *EdgeletAPI {
 	once.Do(func() {
-		instance = &LocalAPI{}
+		instance = &EdgeletAPI{}
 	})
 	return instance
 }
 
-// Start starts the Local API server
-func (l *LocalAPI) Start() error {
+// Start starts the Edgelet API server
+func (l *EdgeletAPI) Start() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -45,7 +45,7 @@ func (l *LocalAPI) Start() error {
 
 	// Create and configure server
 	l.server = NewServer(defaultPort)
-	handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupInitializing, "local_api_starting")
+	handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupInitializing, "local_api_starting")
 
 	errCh := make(chan error, 1)
 
@@ -64,11 +64,11 @@ func (l *LocalAPI) Start() error {
 
 	select {
 	case <-l.server.Ready():
-		handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupListening, "")
+		handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupListening, "")
 		logging.LogInfo(localAPIModuleName, "Local api listeners are ready")
 		go func() {
 			if err := <-errCh; err != nil {
-				handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupFailed, err.Error())
+				handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupFailed, err.Error())
 				logging.LogError(localAPIModuleName, "Local api server exited with error", err)
 			}
 		}()
@@ -77,26 +77,26 @@ func (l *LocalAPI) Start() error {
 		if err == nil {
 			err = fmt.Errorf("local api server exited before signaling readiness")
 		}
-		handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupFailed, err.Error())
+		handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupFailed, err.Error())
 		logging.LogError(localAPIModuleName, "Failed to start local api server", err)
 		return err
 	case <-time.After(localAPIStartWait):
 		err := fmt.Errorf("local api listener readiness timed out after %s", localAPIStartWait)
-		handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupFailed, err.Error())
+		handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupFailed, err.Error())
 		logging.LogError(localAPIModuleName, "Failed to start local api server", err)
 		return err
 	}
 }
 
-// Stop stops the Local API server
-func (l *LocalAPI) Stop() error {
+// Stop stops the Edgelet API server
+func (l *EdgeletAPI) Stop() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	logging.LogInfo(localAPIModuleName, "Stopping local api server")
 
 	if l.server != nil {
-		handlers.SetLocalAPIStartupState(handlers.LocalAPIStartupInitializing, "local_api_stopping")
+		handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupInitializing, "local_api_stopping")
 		return l.server.Shutdown(context.Background())
 	}
 
@@ -104,7 +104,7 @@ func (l *LocalAPI) Stop() error {
 }
 
 // Update is called when configuration changes
-func (l *LocalAPI) Update() {
+func (l *EdgeletAPI) Update() {
 	logging.LogDebug(localAPIModuleName, "Start the real-time control signal when the configuration updated")
 	// This will be implemented to trigger control signals
 	// For now, just log
@@ -112,11 +112,11 @@ func (l *LocalAPI) Update() {
 }
 
 // GetName returns the module name
-func (l *LocalAPI) GetName() string {
+func (l *EdgeletAPI) GetName() string {
 	return localAPIModuleName
 }
 
 // GetModuleIndex returns the module index
-func (l *LocalAPI) GetModuleIndex() int {
-	return utils.LocalAPI
+func (l *EdgeletAPI) GetModuleIndex() int {
+	return utils.EdgeletAPI
 }

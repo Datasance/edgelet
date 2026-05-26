@@ -32,11 +32,11 @@ import (
 )
 
 const (
-	v3HandlerModuleName = "V3 Api Handler"
+	apiHandlerModuleName = "Edgelet API Handler"
 )
 
-// V3Handler handles v3 endpoint groups.
-type V3Handler struct {
+// EdgeletAPIHandler handles Edgelet API v1 endpoint groups.
+type EdgeletAPIHandler struct {
 	facade                *runtimeapi.Facade
 	execSessions          map[string]*localExecSession
 	execMu                sync.RWMutex
@@ -52,10 +52,10 @@ type V3Handler struct {
 	streamMicroservicLog  func(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error
 }
 
-// NewV3Handler creates a new v3 handler.
-func NewV3Handler() *V3Handler {
+// NewEdgeletAPIHandler creates a new Edgelet API handler.
+func NewEdgeletAPIHandler() *EdgeletAPIHandler {
 	facade := runtimeapi.NewFacade()
-	return &V3Handler{
+	return &EdgeletAPIHandler{
 		facade:                facade,
 		execSessions:          make(map[string]*localExecSession),
 		pullOps:               make(map[string]*imagePullOperation),
@@ -71,7 +71,7 @@ func NewV3Handler() *V3Handler {
 	}
 }
 
-var localAPIUpgrader = websocket.Upgrader{
+var edgeletAPIUpgrader = websocket.Upgrader{
 	CheckOrigin: func(_ *http.Request) bool {
 		return true
 	},
@@ -207,7 +207,7 @@ func (c *localExecCallback) close(err error) {
 	close(c.done)
 }
 
-func (h *V3Handler) HandleSystemProvision(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemProvision(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var req struct {
@@ -246,7 +246,7 @@ func (h *V3Handler) HandleSystemProvision(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func (h *V3Handler) HandleSystemReload(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -258,7 +258,7 @@ func (h *V3Handler) HandleSystemReload(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }
 
-func (h *V3Handler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -275,7 +275,7 @@ func (h *V3Handler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, http.StatusOK, result)
 }
 
-func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/system/logs:stream" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
@@ -314,7 +314,7 @@ func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	readerHandler := newSystemLogsCollectHandler()
 	reader := utils.NewLocalLogReader(
-		fmt.Sprintf("localapi-system-logs-%d", time.Now().UnixNano()),
+		fmt.Sprintf("edgeletapi-system-logs-%d", time.Now().UnixNano()),
 		iofogUUID,
 		cfg.LogDiskDirectory,
 		&utils.TailConfig{
@@ -341,7 +341,7 @@ func (h *V3Handler) HandleSystemLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *V3Handler) HandleImages(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImages(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -361,7 +361,7 @@ func (h *V3Handler) HandleImages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -382,7 +382,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "image is required", nil)
 		return
 	}
-	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull requested image=%s async=%v", strings.TrimSpace(req.Image), req.Async))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull requested image=%s async=%v", strings.TrimSpace(req.Image), req.Async))
 	if req.Async {
 		op := &imagePullOperation{
 			OperationID: uuid.NewString(),
@@ -397,7 +397,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		h.pullMu.Lock()
 		h.pullOps[op.OperationID] = op
 		h.pullMu.Unlock()
-		logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull operation started operationId=%s image=%s engine=%s", op.OperationID, op.Image, op.Engine))
+		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull operation started operationId=%s image=%s engine=%s", op.OperationID, op.Image, op.Engine))
 
 		go func(operationID string) {
 			resolvedImage, err := h.facade.PullImageWithProgress(req.Image, req.RegistryID, req.Platform, func(progress float32) {
@@ -429,12 +429,12 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				current.Status = "failed"
 				current.Error = err.Error()
-				logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local image pull failed operationId=%s image=%s err=%v", operationID, strings.TrimSpace(req.Image), err))
+				logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("local image pull failed operationId=%s image=%s err=%v", operationID, strings.TrimSpace(req.Image), err))
 				return
 			}
 			current.Progress = 100
 			current.Status = "succeeded"
-			logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull succeeded operationId=%s image=%s resolvedImage=%s", operationID, strings.TrimSpace(req.Image), current.ResolvedImage))
+			logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull succeeded operationId=%s image=%s resolvedImage=%s", operationID, strings.TrimSpace(req.Image), current.ResolvedImage))
 		}(op.OperationID)
 
 		writeSuccess(w, http.StatusAccepted, map[string]interface{}{
@@ -459,7 +459,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local image pull succeeded image=%s resolvedImage=%s", strings.TrimSpace(req.Image), strings.TrimSpace(resolvedImage)))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull succeeded image=%s resolvedImage=%s", strings.TrimSpace(req.Image), strings.TrimSpace(resolvedImage)))
 	payload := map[string]interface{}{
 		"status":        "ok",
 		"image":         strings.TrimSpace(req.Image),
@@ -474,7 +474,7 @@ func (h *V3Handler) HandleImagePull(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, http.StatusOK, payload)
 }
 
-func (h *V3Handler) HandleImagePullStatus(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImagePullStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -513,7 +513,7 @@ func (h *V3Handler) HandleImagePullStatus(w http.ResponseWriter, r *http.Request
 	writeSuccess(w, http.StatusOK, response)
 }
 
-func (h *V3Handler) HandleImageLoad(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -552,7 +552,7 @@ func (h *V3Handler) HandleImageLoad(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *V3Handler) HandleImagePrune(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImagePrune(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -574,7 +574,7 @@ func (h *V3Handler) HandleImagePrune(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, http.StatusOK, result)
 }
 
-func (h *V3Handler) HandleImageRemove(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleImageRemove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -614,7 +614,7 @@ func (h *V3Handler) HandleImageRemove(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *V3Handler) HandleSystemGPS(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Request) {
 	cfg := config.GetInstance()
 	switch r.Method {
 	case http.MethodGet:
@@ -679,7 +679,7 @@ func (h *V3Handler) HandleSystemGPS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *V3Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		cfg := config.GetInstance()
@@ -770,7 +770,7 @@ func validateNetworkInterfaceUpdate(cfg *config.Config, configMap map[string]int
 	return nil
 }
 
-func (h *V3Handler) HandleSystemControllerCert(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemControllerCert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -833,7 +833,7 @@ func (h *V3Handler) HandleSystemControllerCert(w http.ResponseWriter, r *http.Re
 	})
 }
 
-func (h *V3Handler) HandleSystemConfigSwitch(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleSystemConfigSwitch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -872,7 +872,7 @@ func (h *V3Handler) HandleSystemConfigSwitch(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (h *V3Handler) HandleMicroserviceConfigSelf(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleMicroserviceConfigSelf(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -883,7 +883,7 @@ func (h *V3Handler) HandleMicroserviceConfigSelf(w http.ResponseWriter, r *http.
 		return
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	result, err := auth.ValidateLocalJWT(token)
+	result, err := auth.ValidateEdgeletAPIJWT(token)
 	if err != nil {
 		writeAPIError(w, http.StatusUnauthorized, ErrCodeUnauthorized, "invalid JWT token", nil)
 		return
@@ -911,7 +911,7 @@ func (h *V3Handler) HandleMicroserviceConfigSelf(w http.ResponseWriter, r *http.
 	})
 }
 
-func (h *V3Handler) HandleMicroservices(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/ms" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
@@ -1124,7 +1124,7 @@ func (h *V3Handler) HandleMicroservices(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1160,7 +1160,7 @@ func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *htt
 	h.deployMu.Lock()
 	h.deployOps[op.OperationID] = op
 	h.deployMu.Unlock()
-	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local deploy apply operation started operationId=%s source=%s dryRun=%v name=%s image=%s", op.OperationID, strings.TrimSpace(sourceName), dryRun, op.Name, op.Image))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local deploy apply operation started operationId=%s source=%s dryRun=%v name=%s image=%s", op.OperationID, strings.TrimSpace(sourceName), dryRun, op.Name, op.Image))
 
 	go func(operationID string, manifestText string, source string, applyDryRun bool) {
 		deploymentID, _, applyErr := h.facade.ApplyLocalManifest(manifestText, source, applyDryRun, func(stage string, _ string) {
@@ -1189,13 +1189,13 @@ func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *htt
 			current.Status = "failed"
 			current.ErrorCode = ErrCodeInternal
 			current.ErrorMessage = applyErr.Error()
-			logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local deploy apply failed operationId=%s source=%s err=%v", operationID, strings.TrimSpace(source), applyErr))
+			logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("local deploy apply failed operationId=%s source=%s err=%v", operationID, strings.TrimSpace(source), applyErr))
 			return
 		}
 		current.Status = "succeeded"
 		current.Stage = runtimeapi.DeployStageDone
 		current.DeploymentID = strings.TrimSpace(deploymentID)
-		logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local deploy apply succeeded operationId=%s deploymentId=%s stage=%s", operationID, current.DeploymentID, current.Stage))
+		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local deploy apply succeeded operationId=%s deploymentId=%s stage=%s", operationID, current.DeploymentID, current.Stage))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
 	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
@@ -1208,7 +1208,7 @@ func (h *V3Handler) HandleDeployMicroservicesApply(w http.ResponseWriter, r *htt
 	})
 }
 
-func (h *V3Handler) HandleDeployMicroservicesApplyStatus(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployMicroservicesApplyStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1261,7 +1261,7 @@ func (h *V3Handler) HandleDeployMicroservicesApplyStatus(w http.ResponseWriter, 
 	writeSuccess(w, http.StatusOK, response)
 }
 
-func (h *V3Handler) HandleDeployMicroservicesValidate(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployMicroservicesValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1285,7 +1285,7 @@ func (h *V3Handler) HandleDeployMicroservicesValidate(w http.ResponseWriter, r *
 	})
 }
 
-func (h *V3Handler) HandleDeployMicroservices(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployMicroservices(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/deploy/microservices" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
@@ -1328,7 +1328,7 @@ func (h *V3Handler) HandleDeployMicroservices(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (h *V3Handler) HandleDeployRegistriesApply(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRegistriesApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1338,14 +1338,14 @@ func (h *V3Handler) HandleDeployRegistriesApply(w http.ResponseWriter, r *http.R
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local registry apply requested dryRun=%v", dryRun))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local registry apply requested dryRun=%v", dryRun))
 	reg, err := h.facade.ApplyLocalRegistryManifest(manifest, dryRun)
 	if err != nil {
-		logging.LogWarn(v3HandlerModuleName, fmt.Sprintf("local registry apply failed dryRun=%v err=%v", dryRun, err))
+		logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("local registry apply failed dryRun=%v err=%v", dryRun, err))
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	logging.LogInfo(v3HandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), dryRun))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), dryRun))
 	writeSuccess(w, http.StatusOK, map[string]interface{}{
 		"accepted": true,
 		"dryRun":   dryRun,
@@ -1353,7 +1353,7 @@ func (h *V3Handler) HandleDeployRegistriesApply(w http.ResponseWriter, r *http.R
 	})
 }
 
-func (h *V3Handler) HandleDeployRegistriesValidate(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRegistriesValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1377,7 +1377,7 @@ func (h *V3Handler) HandleDeployRegistriesValidate(w http.ResponseWriter, r *htt
 	})
 }
 
-func (h *V3Handler) HandleDeployRegistries(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRegistries(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/deploy/registries" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
@@ -1422,7 +1422,7 @@ func (h *V3Handler) HandleDeployRegistries(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (h *V3Handler) HandleDeployRuntimeClassesApply(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1544,7 +1544,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesApply(w http.ResponseWriter, r *ht
 	}
 }
 
-func (h *V3Handler) HandleDeployRuntimeClassesApplyStatus(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApplyStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1564,7 +1564,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesApplyStatus(w http.ResponseWriter,
 	writeSuccess(w, http.StatusOK, runtimeClassApplyOperationResponse(op))
 }
 
-func (h *V3Handler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1593,7 +1593,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r 
 	})
 }
 
-func (h *V3Handler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/deploy/runtimeclasses" {
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
@@ -1641,7 +1641,7 @@ func (h *V3Handler) HandleDeployRuntimeClasses(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (h *V3Handler) HandleDeployRuntimeClassesDeleteStatus(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesDeleteStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1661,7 +1661,7 @@ func (h *V3Handler) HandleDeployRuntimeClassesDeleteStatus(w http.ResponseWriter
 	writeSuccess(w, http.StatusOK, runtimeClassDeleteOperationResponse(op))
 }
 
-func (h *V3Handler) handleDeployRuntimeClassDelete(w http.ResponseWriter, r *http.Request, name string) {
+func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter, r *http.Request, name string) {
 	async, err := parseBooleanFormValue(r.URL.Query().Get("async"), "async")
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
@@ -1935,7 +1935,7 @@ func facadePlatformArch() string {
 	}
 }
 
-func (h *V3Handler) HandleAuthTokens(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleAuthTokens(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1948,7 +1948,7 @@ func (h *V3Handler) HandleAuthTokens(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, http.StatusOK, map[string]interface{}{"items": items})
 }
 
-func (h *V3Handler) HandleAuthTokensRevoke(w http.ResponseWriter, r *http.Request) {
+func (h *EdgeletAPIHandler) HandleAuthTokensRevoke(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
@@ -1965,14 +1965,14 @@ func (h *V3Handler) HandleAuthTokensRevoke(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := store.GetInstance().RevokeServiceAccountToken(req.JTI, time.Now().Unix()); err != nil {
-		logging.LogError(v3HandlerModuleName, "Failed to revoke token", err)
+		logging.LogError(apiHandlerModuleName, "Failed to revoke token", err)
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
 	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }
 
-func (h *V3Handler) handleCreateExecSession(w http.ResponseWriter, r *http.Request, selector string) {
+func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *http.Request, selector string) {
 	var req struct {
 		Command []string `json:"command"`
 	}
@@ -2017,7 +2017,7 @@ func (h *V3Handler) handleCreateExecSession(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (h *V3Handler) handleGetExecSessionStatus(w http.ResponseWriter, selector, sessionID string) {
+func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, selector, sessionID string) {
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
@@ -2049,7 +2049,7 @@ func (h *V3Handler) handleGetExecSessionStatus(w http.ResponseWriter, selector, 
 	})
 }
 
-func (h *V3Handler) handleStopExecSession(w http.ResponseWriter, selector, sessionID string) {
+func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selector, sessionID string) {
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
@@ -2065,7 +2065,7 @@ func (h *V3Handler) handleStopExecSession(w http.ResponseWriter, selector, sessi
 	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok", "sessionId": sessionID})
 }
 
-func (h *V3Handler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Request, selector, sessionID string) {
+func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Request, selector, sessionID string) {
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
@@ -2078,7 +2078,7 @@ func (h *V3Handler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
 		return
 	}
-	conn, err := localAPIUpgrader.Upgrade(w, r, nil)
+	conn, err := edgeletAPIUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -2162,8 +2162,8 @@ func (h *V3Handler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Req
 	wg.Wait()
 }
 
-func (h *V3Handler) handleLogsStreamWS(w http.ResponseWriter, r *http.Request, selector string) {
-	conn, err := localAPIUpgrader.Upgrade(w, r, nil)
+func (h *EdgeletAPIHandler) handleLogsStreamWS(w http.ResponseWriter, r *http.Request, selector string) {
+	conn, err := edgeletAPIUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -2212,8 +2212,8 @@ func (h *V3Handler) handleLogsStreamWS(w http.ResponseWriter, r *http.Request, s
 	<-tailHandler.done
 }
 
-func (h *V3Handler) handleSystemLogsStreamWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := localAPIUpgrader.Upgrade(w, r, nil)
+func (h *EdgeletAPIHandler) handleSystemLogsStreamWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := edgeletAPIUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -2238,7 +2238,7 @@ func (h *V3Handler) handleSystemLogsStreamWS(w http.ResponseWriter, r *http.Requ
 	}
 	tailHandler := newWSSystemLogTailHandler(conn)
 	reader := utils.NewLocalLogReader(
-		fmt.Sprintf("localapi-system-log-stream-%d", time.Now().UnixNano()),
+		fmt.Sprintf("edgeletapi-system-log-stream-%d", time.Now().UnixNano()),
 		iofogUUID,
 		cfg.LogDiskDirectory,
 		&utils.TailConfig{

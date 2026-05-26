@@ -14,33 +14,33 @@ import (
 
 var (
 	agentStartTime = time.Now()
-	localAPIState  = localAPIStartupState{
-		phase:  LocalAPIStartupInitializing,
+	localAPIState  = edgeletAPIStartupState{
+		phase:  EdgeletAPIStartupInitializing,
 		reason: "local_api_initializing",
 	}
 	localAPIStateMu sync.RWMutex
 )
 
 const (
-	LocalAPIStartupInitializing = "initializing"
-	LocalAPIStartupListening    = "listening"
-	LocalAPIStartupFailed       = "failed"
+	EdgeletAPIStartupInitializing = "initializing"
+	EdgeletAPIStartupListening    = "listening"
+	EdgeletAPIStartupFailed       = "failed"
 )
 
-type localAPIStartupState struct {
+type edgeletAPIStartupState struct {
 	phase  string
 	reason string
 }
 
-// SetLocalAPIStartupState updates the listener startup phase for health checks.
-func SetLocalAPIStartupState(phase, reason string) {
+// SetEdgeletAPIStartupState updates the listener startup phase for health checks.
+func SetEdgeletAPIStartupState(phase, reason string) {
 	localAPIStateMu.Lock()
 	defer localAPIStateMu.Unlock()
 	localAPIState.phase = strings.TrimSpace(phase)
 	localAPIState.reason = strings.TrimSpace(reason)
 }
 
-func getLocalAPIStartupState() localAPIStartupState {
+func getEdgeletAPIStartupState() edgeletAPIStartupState {
 	localAPIStateMu.RLock()
 	defer localAPIStateMu.RUnlock()
 	return localAPIState
@@ -50,7 +50,7 @@ func getLocalAPIStartupState() localAPIStartupState {
 // Returns 200 if the process is running and the HTTP server can respond.
 // Used by orchestrators (Kubernetes, systemd) to determine if the process should be restarted.
 func HealthLiveHandler(w http.ResponseWriter, _ *http.Request) {
-	state := getLocalAPIStartupState()
+	state := getEdgeletAPIStartupState()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","localApiPhase":"%s"}`, state.phase)))
@@ -60,14 +60,14 @@ func HealthLiveHandler(w http.ResponseWriter, _ *http.Request) {
 // Returns 200 if the agent is provisioned and ready to serve (e.g. modules started).
 // Returns 503 if not yet ready (e.g. still starting, not provisioned).
 func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
-	state := getLocalAPIStartupState()
-	if state.phase == LocalAPIStartupFailed {
+	state := getEdgeletAPIStartupState()
+	if state.phase == EdgeletAPIStartupFailed {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_start_failed","detail":"%s"}`, state.reason)))
 		return
 	}
-	if state.phase != LocalAPIStartupListening {
+	if state.phase != EdgeletAPIStartupListening {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_listener_not_ready","phase":"%s"}`, state.phase)))

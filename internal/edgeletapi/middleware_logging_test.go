@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"encoding/json"
@@ -60,7 +60,7 @@ func TestAccessLoggingMiddleware_EmitsStructuredAccessFields(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
-	if captured.Fields["event"] != "localapi.access" {
+	if captured.Fields["event"] != "edgeletapi.access" {
 		t.Fatalf("unexpected event: %#v", captured.Fields["event"])
 	}
 	if captured.Fields["transport"] != "unix" || captured.Fields["scheme"] != "http+unix" {
@@ -90,7 +90,7 @@ func TestAuthMiddlewareV3_MissingBearerPrefixEmitsReasonCode(t *testing.T) {
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
-	if captured.Fields["event"] != "localapi.access" {
+	if captured.Fields["event"] != "edgeletapi.access" {
 		t.Fatalf("last event should be access completion")
 	}
 }
@@ -99,7 +99,7 @@ func TestAuthMiddlewareV3_UnmappedRouteStrictDenyAndReasonCode(t *testing.T) {
 	var rejectEvent structuredEvent
 	originalSink := localAPILogSink
 	localAPILogSink = func(event structuredEvent) {
-		if event.Fields["event"] == "localapi.reject" {
+		if event.Fields["event"] == "edgeletapi.reject" {
 			rejectEvent = event
 		}
 	}
@@ -138,7 +138,7 @@ func TestAuthMiddlewareV3_RBACDeniedReasonCode(t *testing.T) {
 	var rejectEvent structuredEvent
 	originalSink := localAPILogSink
 	localAPILogSink = func(event structuredEvent) {
-		if event.Fields["event"] == "localapi.reject" {
+		if event.Fields["event"] == "edgeletapi.reject" {
 			rejectEvent = event
 		}
 	}
@@ -180,7 +180,7 @@ func TestAuthMiddlewareV3_TokenIsRedactedFromRejectLogs(t *testing.T) {
 	var rejectEvent structuredEvent
 	originalSink := localAPILogSink
 	localAPILogSink = func(event structuredEvent) {
-		if event.Fields["event"] == "localapi.reject" {
+		if event.Fields["event"] == "edgeletapi.reject" {
 			rejectEvent = event
 		}
 	}

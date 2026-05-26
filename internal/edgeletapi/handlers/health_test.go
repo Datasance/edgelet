@@ -8,8 +8,8 @@ import (
 )
 
 func TestHealthReadyWhenListenerNotReady(t *testing.T) {
-	SetLocalAPIStartupState(LocalAPIStartupInitializing, "booting")
-	defer SetLocalAPIStartupState(LocalAPIStartupInitializing, "local_api_initializing")
+	SetEdgeletAPIStartupState(EdgeletAPIStartupInitializing, "booting")
+	defer SetEdgeletAPIStartupState(EdgeletAPIStartupInitializing, "local_api_initializing")
 
 	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 	w := httptest.NewRecorder()
@@ -25,8 +25,8 @@ func TestHealthReadyWhenListenerNotReady(t *testing.T) {
 }
 
 func TestHealthReadyWhenStartupFailed(t *testing.T) {
-	SetLocalAPIStartupState(LocalAPIStartupFailed, "bind failed")
-	defer SetLocalAPIStartupState(LocalAPIStartupInitializing, "local_api_initializing")
+	SetEdgeletAPIStartupState(EdgeletAPIStartupFailed, "bind failed")
+	defer SetEdgeletAPIStartupState(EdgeletAPIStartupInitializing, "local_api_initializing")
 
 	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 	w := httptest.NewRecorder()
@@ -45,8 +45,8 @@ func TestHealthReadyWhenStartupFailed(t *testing.T) {
 }
 
 func TestHealthLiveIncludesStartupPhase(t *testing.T) {
-	SetLocalAPIStartupState(LocalAPIStartupListening, "")
-	defer SetLocalAPIStartupState(LocalAPIStartupInitializing, "local_api_initializing")
+	SetEdgeletAPIStartupState(EdgeletAPIStartupListening, "")
+	defer SetEdgeletAPIStartupState(EdgeletAPIStartupInitializing, "local_api_initializing")
 
 	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	w := httptest.NewRecorder()

@@ -16,7 +16,7 @@ func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 	defer func() { wsLogSink = originalSink }()
 	var captured map[string]interface{}
 	wsLogSink = func(_ string, fields map[string]interface{}) {
-		if fields["event"] == "localapi.reject" {
+		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
 	}
@@ -43,7 +43,7 @@ func TestHandle_NonGETRejected(t *testing.T) {
 	defer func() { wsLogSink = originalSink }()
 	var captured map[string]interface{}
 	wsLogSink = func(_ string, fields map[string]interface{}) {
-		if fields["event"] == "localapi.reject" {
+		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
 	}
@@ -71,7 +71,7 @@ func TestHandle_V3MissingMicroserviceUUIDRejected(t *testing.T) {
 	}()
 	var captured map[string]interface{}
 	wsLogSink = func(_ string, fields map[string]interface{}) {
-		if fields["event"] == "localapi.reject" {
+		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
 	}
@@ -109,7 +109,7 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 	}()
 	var captured map[string]interface{}
 	wsLogSink = func(_ string, fields map[string]interface{}) {
-		if fields["event"] == "localapi.reject" {
+		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
 	}
@@ -153,7 +153,7 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 	}()
 	var captured map[string]interface{}
 	wsLogSink = func(_ string, fields map[string]interface{}) {
-		if fields["event"] == "localapi.reject" && fields["reasonCode"] == "websocket_upgrade_failed" {
+		if fields["event"] == "edgeletapi.reject" && fields["reasonCode"] == "websocket_upgrade_failed" {
 			captured = fields
 		}
 	}

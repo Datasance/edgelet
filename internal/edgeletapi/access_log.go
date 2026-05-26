@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"bufio"
@@ -108,7 +108,7 @@ func accessLoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		wrapped := &responseCaptureWriter{ResponseWriter: w}
 		next(wrapped, r)
 		fields := baseLogFields(r, routeFromContextOrPath(r), wrapped.StatusCode(), wrapped.written, start)
-		fields["event"] = "localapi.access"
+		fields["event"] = "edgeletapi.access"
 		localAPILogSink(structuredEvent{
 			Level:  "info",
 			Module: middlewareModuleName,
@@ -119,7 +119,7 @@ func accessLoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func emitRejectEvent(r *http.Request, route, reasonCode string, statusCode int, tokenMeta map[string]interface{}) {
 	fields := baseLogFields(r, route, statusCode, 0, time.Now())
-	fields["event"] = "localapi.reject"
+	fields["event"] = "edgeletapi.reject"
 	fields["reasonCode"] = reasonCode
 	for key, value := range tokenMeta {
 		fields[key] = value
@@ -133,7 +133,7 @@ func emitRejectEvent(r *http.Request, route, reasonCode string, statusCode int, 
 
 func emitErrorEvent(r *http.Request, route, summary string) {
 	fields := baseLogFields(r, route, http.StatusInternalServerError, 0, time.Now())
-	fields["event"] = "localapi.error"
+	fields["event"] = "edgeletapi.error"
 	fields["errorSummary"] = summary
 	localAPILogSink(structuredEvent{
 		Level:  "error",

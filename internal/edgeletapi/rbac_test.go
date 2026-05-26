@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"net/http"

@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"context"
@@ -13,9 +13,9 @@ const requestIDHeader = "X-Request-Id"
 type contextKey string
 
 const (
-	requestIDContextKey contextKey = "localapi.requestId"
-	routeContextKey     contextKey = "localapi.route"
-	authMetaContextKey  contextKey = "localapi.authMeta"
+	requestIDContextKey contextKey = "edgeletapi.requestId"
+	routeContextKey     contextKey = "edgeletapi.route"
+	authMetaContextKey  contextKey = "edgeletapi.authMeta"
 )
 
 func requestIdMiddleware(next http.HandlerFunc) http.HandlerFunc {

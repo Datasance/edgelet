@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	serverModuleName = "Local API Server"
+	serverModuleName = "Edgelet API Server"
 )
 
 // Server represents the HTTP/WebSocket server
@@ -37,7 +37,7 @@ type Server struct {
 	readyOnce        sync.Once
 }
 
-// NewServer creates a new Local API server
+// NewServer creates a new Edgelet API server
 func NewServer(port int) *Server {
 	router := NewRouter()
 
@@ -80,9 +80,9 @@ func (s *Server) Start() error {
 			}
 		}()
 	}
-	_, certPath, keyPath, err := auth.EnsureLocalAPIPKI()
+	_, certPath, keyPath, err := auth.EnsureEdgeletAPIPKI()
 	if err != nil {
-		return fmt.Errorf("failed to ensure localapi TLS material: %w", err)
+		return fmt.Errorf("failed to ensure edgeletapi TLS material: %w", err)
 	}
 	s.tlsCertPath = certPath
 	s.tlsKeyPath = keyPath
@@ -98,7 +98,7 @@ func (s *Server) Start() error {
 	cert, err := tls.LoadX509KeyPair(s.tlsCertPath, s.tlsKeyPath)
 	if err != nil {
 		_ = s.tcpListener.Close()
-		return fmt.Errorf("failed to load localapi TLS keypair: %w", err)
+		return fmt.Errorf("failed to load edgeletapi TLS keypair: %w", err)
 	}
 
 	tlsListener := tls.NewListener(s.tcpListener, &tls.Config{

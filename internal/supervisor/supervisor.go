@@ -15,7 +15,7 @@ import (
 	"github.com/datasance/edgelet/internal/fieldagent"
 	"github.com/datasance/edgelet/internal/gps"
 	"github.com/datasance/edgelet/internal/healthcheck"
-	"github.com/datasance/edgelet/internal/localapi"
+	"github.com/datasance/edgelet/internal/edgeletapi"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
 	"github.com/datasance/edgelet/internal/processmanager"
@@ -68,12 +68,12 @@ type Supervisor struct {
 	processManager             *processmanager.ProcessManager
 	resourceManager            *resourcemanager.Manager
 	gpsManager                 *gps.Manager
-	localAPI                   *localapi.LocalAPI
+	localAPI                   *edgeletapi.EdgeletAPI
 	dockerPruningManager       *pruning.Manager
 	edgeGuardManager           *edgeguard.Manager
 	healthcheckRunner          *healthcheck.Runner
 
-	// Local API monitoring
+	// Edgelet API monitoring
 	localAPIMonitorTicker *time.Ticker
 }
 
@@ -221,17 +221,17 @@ func (s *Supervisor) Start() error {
 		return err
 	}
 
-	// Start Local API Server and wait until listeners are ready.
-	s.localAPI = localapi.GetInstance()
+	// Start Edgelet API Server and wait until listeners are ready.
+	s.localAPI = edgeletapi.GetInstance()
 	// Register Supervisor's ReloadConfig as the config reload callback
 	s.config.SetReloadCallback(s.ReloadConfig)
 	// Register FieldAgent GPS callback for dedicated config/gps controller sync.
 	s.config.SetGPSConfigCallback(s.fieldAgent.InstanceGPSConfigUpdated)
 	if err := s.localAPI.Start(); err != nil {
-		return fmt.Errorf("failed to start Local API server: %w", err)
+		return fmt.Errorf("failed to start Edgelet API server: %w", err)
 	}
 
-	// Monitor Local API status (check every 10 seconds)
+	// Monitor Edgelet API status (check every 10 seconds)
 	s.localAPIMonitorTicker = time.NewTicker(10 * time.Second)
 	s.wg.Add(1)
 	go s.monitorLocalAPI()
@@ -359,15 +359,15 @@ func (s *Supervisor) Stop() error {
 		s.cancel()
 	}
 
-	// Stop Local API monitor
+	// Stop Edgelet API monitor
 	if s.localAPIMonitorTicker != nil {
 		s.localAPIMonitorTicker.Stop()
 	}
 
-	// Stop Local API server
+	// Stop Edgelet API server
 	if s.localAPI != nil {
 		if err := s.localAPI.Stop(); err != nil {
-			logging.LogError(moduleName, "Error shutting down Local API", err)
+			logging.LogError(moduleName, "Error shutting down Edgelet API", err)
 		}
 	}
 
@@ -453,7 +453,7 @@ func (s *Supervisor) Stop() error {
 	return nil
 }
 
-// monitorLocalAPI monitors the Local API server and restarts it if it dies
+// monitorLocalAPI monitors the Edgelet API server and restarts it if it dies
 func (s *Supervisor) monitorLocalAPI() {
 	defer s.wg.Done()
 
@@ -463,7 +463,7 @@ func (s *Supervisor) monitorLocalAPI() {
 			return
 		case <-s.localAPIMonitorTicker.C:
 			logging.LogDebug(moduleName, "Check local API status")
-			// Local API runs in a goroutine, so we can't easily check if it's dead
+			// Edgelet API runs in a goroutine, so we can't easily check if it's dead
 			// In Go, if the server crashes, it will be logged but we can't restart it
 			// This is different from Java where we could check thread state
 			// For now, we just log that we're checking
@@ -602,7 +602,7 @@ func (s *Supervisor) ReloadConfig() error {
 		s.dockerPruningManager.ChangePruningFreqInterval()
 	}
 
-	// Update Local API (was missing)
+	// Update Edgelet API (was missing)
 	if s.localAPI != nil {
 		s.localAPI.Update()
 	}

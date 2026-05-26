@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"net/http"
@@ -116,7 +116,7 @@ func microserviceResourceName(path string) (string, bool) {
 func isAuthorized(claims jwt.MapClaims, p rbacPermission) bool {
 	tokenUse, _ := claims["tokenUse"].(string)
 	sub, _ := claims["sub"].(string)
-	if strings.TrimSpace(tokenUse) == "localapi" && (strings.HasPrefix(sub, "system:localadmin:") || sub == "system:localadmin:bootstrap") {
+	if strings.TrimSpace(tokenUse) == "edgeletapi" && (strings.HasPrefix(sub, "system:edgeletadmin:") || sub == "system:edgeletadmin:bootstrap") {
 		return true
 	}
 

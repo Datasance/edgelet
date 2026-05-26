@@ -1,4 +1,4 @@
-package localapi
+package edgeletapi
 
 import (
 	"encoding/json"
@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	middlewareModuleName = "Local API Middleware"
+	middlewareModuleName = "Edgelet API Middleware"
 )
 
 var (
-	validateLocalJWTFn       = auth.ValidateLocalJWT
+	validateLocalJWTFn       = auth.ValidateEdgeletAPIJWT
 	mapRequestToPermissionFn = mapRequestToPermission
 	isAuthorizedFn           = isAuthorized
 )
 
-// authMiddlewareV1 validates LocalAPI v1 JWTs.
+// authMiddlewareV1 validates EdgeletAPI v1 JWTs.
 // In unprovisioned mode, unsigned bootstrap JWTs are accepted.
 // In provisioned mode, unsigned JWTs are rejected and signed JWTs are required.
 func authMiddlewareV1(next http.HandlerFunc) http.HandlerFunc {

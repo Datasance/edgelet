@@ -7,7 +7,7 @@ import (
 	"github.com/datasance/edgelet/internal/auth"
 )
 
-// AuthHandler handles auth-related LocalAPI requests.
+// AuthHandler handles auth-related EdgeletAPI requests.
 type AuthHandler struct{}
 
 // NewAuthHandler creates a new auth handler.
@@ -35,7 +35,7 @@ func (h *AuthHandler) HandleWhoAmI(w http.ResponseWriter, r *http.Request) {
 
 	authHeader := r.Header.Get("Authorization")
 	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	result, err := auth.ValidateLocalJWT(token)
+	result, err := auth.ValidateEdgeletAPIJWT(token)
 	if err != nil {
 		writeAPIError(w, http.StatusUnauthorized, ErrCodeUnauthorized, "invalid JWT token", nil)
 		return

@@ -26,7 +26,7 @@ func TestHandleSystemGPSPost_SetsManualModeAndPersistsCoordinates(t *testing.T) 
 		return nil
 	})
 
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/system/gps", bytes.NewBufferString(`{"lat":"41.0151","lon":"28.9795"}`))
 	rec := httptest.NewRecorder()
 	handler.HandleSystemGPS(rec, req)
@@ -50,7 +50,7 @@ func TestHandleSystemGPSPost_SetsManualModeAndPersistsCoordinates(t *testing.T) 
 
 func TestHandleSystemGPSPost_RejectsOutOfRangeLatitude(t *testing.T) {
 	_ = setupConfigForGPSTests(t)
-	handler := NewV3Handler()
+	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/system/gps", bytes.NewBufferString(`{"lat":"95","lon":"28.9"}`))
 	rec := httptest.NewRecorder()
 	handler.HandleSystemGPS(rec, req)
