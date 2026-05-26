@@ -7,9 +7,9 @@ const (
 )
 
 const (
-	RuntimeEngineDocker = "docker"
-	RuntimeEnginePodman = "podman"
-	RuntimeEngineEdgelet  = "edgelet"
+	RuntimeEngineDocker  = "docker"
+	RuntimeEnginePodman  = "podman"
+	RuntimeEngineEdgelet = "edgelet"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 )
 
 const (
-	LocalApplicationName = "local"
+	LocalDeployApplicationName = "edgelet"
 )
 
 const (
@@ -139,7 +139,7 @@ func RoleFromMicroservice(isRouter, isNats bool) string {
 }
 
 func IsLocalApplication(application string) bool {
-	return strings.EqualFold(strings.TrimSpace(application), LocalApplicationName)
+	return strings.EqualFold(strings.TrimSpace(application), LocalDeployApplicationName)
 }
 
 func ResolveScope(application string, hostNetwork bool) string {

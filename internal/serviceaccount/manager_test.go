@@ -50,7 +50,7 @@ func TestProjectionDir_UsesDedicatedServiceaccountsRoot(t *testing.T) {
 	utils.SNAPCommon = tmp
 
 	m := NewManager()
-	expected := filepath.Join(tmp, "volumes", "serviceaccounts", "ms-1", "datasance.com~serviceaccount", "default")
+	expected := filepath.Join(tmp, "volumes", "serviceaccounts", "ms-1", "edgelet.iofog.org~serviceaccount", "default")
 	if got := m.ProjectionDir("ms-1"); got != expected {
 		t.Fatalf("unexpected projection dir: got=%q want=%q", got, expected)
 	}

@@ -108,7 +108,7 @@ func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
 	r := newTestResolver()
 	r.UpsertWorkload(WorkloadRecord{
 		UUID:        "local-ms",
-		Application: "local",
+		Application: "edgelet",
 		Name:        "svc",
 		Scope:       ScopeLocal,
 		IP:          "10.3.3.3",
@@ -116,7 +116,7 @@ func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
 	})
 	r.scopeEnabled[ScopeLocal] = true
 
-	known, _, denied := r.resolveInternal(ScopeManaged, "local.svc", 1)
+	known, _, denied := r.resolveInternal(ScopeManaged, "edgelet.svc", 1)
 	if known {
 		t.Fatalf("managed scope should not treat local scope name as directly known")
 	}
@@ -131,14 +131,14 @@ func TestSingleListenerManagedQueryResolvesLocalScopeRecord(t *testing.T) {
 	r.scopeEnabled[ScopeLocal] = false
 	r.UpsertWorkload(WorkloadRecord{
 		UUID:        "local-ms",
-		Application: "local",
+		Application: "edgelet",
 		Name:        "svc",
 		Scope:       ScopeLocal,
 		IP:          "10.3.3.3",
 		Active:      true,
 	})
 
-	known, answers, denied := r.resolveInternal(ScopeManaged, "local.svc", dns.TypeA)
+	known, answers, denied := r.resolveInternal(ScopeManaged, "edgelet.svc", dns.TypeA)
 	if !known {
 		t.Fatalf("expected managed query to resolve local-scope record in single-listener mode")
 	}

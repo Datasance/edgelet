@@ -8,14 +8,14 @@ import (
 	"io"
 	"strings"
 
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/pkg/imageref"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/api/types/volume"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/pkg/imageref"
 )
 
 // PullImage pulls an image from a registry with authentication

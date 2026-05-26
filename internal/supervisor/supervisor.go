@@ -148,7 +148,7 @@ func (s *Supervisor) Start() error {
 	cfg := config.GetInstance()
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
-	// Startup ownership is in cmd/iofog-agentd bootstrap; Supervisor only consumes prestarted runtime.
+	// Startup ownership is in cmd/edgelet bootstrap; Supervisor only consumes prestarted runtime.
 	if cfg.ContainerEngine == constants.EngineEdgelet {
 		if s.containerdSvc == nil {
 			return fmt.Errorf("embedded containerd must be prestarted before Supervisor when containerEngine=%q", constants.EngineEdgelet)

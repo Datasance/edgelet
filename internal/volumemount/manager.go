@@ -904,9 +904,9 @@ func (vmm *VolumeMountManager) cleanupOldVersions(mountPath string) {
 // Matching Java: getTypePrefix()
 func getTypePrefix(vmType VolumeMountType) string {
 	if vmType == VolumeMountTypeSecret {
-		return "datasance.com~secret"
+		return "edgelet.iofog.org~secret"
 	}
-	return "datasance.com~configmap"
+	return "edgelet.iofog.org~configmap"
 }
 
 // getMountPath gets the mount path for a microservice volume mount

@@ -98,7 +98,7 @@ var (
 
 // Path constants
 var (
-	WindowsEdgeletPath     = getEnvOrDefault("EDGELET_PATH", "./")
+	WindowsEdgeletPath   = getEnvOrDefault("EDGELET_PATH", "./")
 	VarRun               = getVarRunPath()
 	ConfigDir            = getConfigDir()
 	LocalAPITokenPath    = ConfigDir + "local-api"
@@ -108,9 +108,9 @@ var (
 
 // System constants
 const (
-	OSGroup                        = "edgelet"
+	OSGroup                          = "edgelet"
 	EdgeletDockerContainerNamePrefix = "edgelet_"
-	MicroserviceFile               = "microservices.json"
+	MicroserviceFile                 = "microservices.json"
 )
 
 // Event constants

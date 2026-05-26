@@ -62,10 +62,10 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 		maxFileSize = 2 * 1024 * 1024 * 1024 // Maximum 2GB
 	}
 
-	// Setup file rotation (matching Java behavior: iofog-agent.0.log as active)
-	// Only rotate on existing file if this is the first initialization (agent restart)
+	// Setup file rotation
+	// Only rotate on existing file if this is the first initialization (edgelet restart)
 	rotateOnExisting := !logger.isInitialized
-	logFile, err := NewRotatingWriter(logDir, "iofog-agent", int64(maxFileSize), logFileCount, rotateOnExisting)
+	logFile, err := NewRotatingWriter(logDir, "edgelet", int64(maxFileSize), logFileCount, rotateOnExisting)
 	if err != nil {
 		return err
 	}

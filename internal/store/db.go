@@ -10,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const dbFileName = "iofog-agent.db"
+const dbFileName = "edgelet.db"
 
 var (
 	instance *DB

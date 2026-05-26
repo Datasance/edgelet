@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/api/types/events"
 	"github.com/datasance/edgelet/internal/runtimeops"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/docker/docker/api/types/events"
 )
 
 func captureRuntimeEvents(t *testing.T) *[]runtimeops.RuntimeEvent {

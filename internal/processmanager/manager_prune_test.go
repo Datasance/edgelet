@@ -96,7 +96,7 @@ func TestPruneStaleProcessManagerStatuses_KeepsManagedLocalAndRuntimeOwned(t *te
 
 	local := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",

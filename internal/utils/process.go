@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	pidFileName = "iofog-agentd.pid"
+	pidFileName = "edgelet.pid"
 	// PIDFileName is the exported name for the PID file
 	PIDFileName = pidFileName
 )

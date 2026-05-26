@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	nat "github.com/docker/go-connections/nat"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 const (

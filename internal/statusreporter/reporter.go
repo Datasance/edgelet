@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/client"
 	"github.com/datasance/edgelet/internal/buildmeta"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
@@ -18,6 +17,7 @@ import (
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/docker/docker/client"
 )
 
 const (

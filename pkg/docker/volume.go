@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/volumemount"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/volume"
 )
 
 // ResolveVolumeMountPath resolves volume mount paths for VOLUME_MOUNT type
@@ -68,15 +68,15 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 			cli := dockerClient.GetClient()
 			if cli != nil {
 				ctx := dockerClient.GetContext()
-				// Check if iofog-agent-directory volume exists
+				// Check if edgelet-directory volume exists
 				volumes, err := cli.VolumeList(ctx, volume.ListOptions{
 					Filters: filters.NewArgs(),
 				})
 				if err == nil {
 					for _, vol := range volumes.Volumes {
-						if vol.Name == "iofog-agent-directory" {
+						if vol.Name == "edgelet-directory" {
 							// Volume exists - inspect it to get mount point
-							volumeInfo, err := cli.VolumeInspect(ctx, "iofog-agent-directory")
+							volumeInfo, err := cli.VolumeInspect(ctx, "edgelet-directory")
 							if err == nil {
 								mountPoint := volumeInfo.Mountpoint
 								cfg := config.GetInstance()
@@ -116,15 +116,15 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		cli := dockerClient.GetClient()
 		if cli != nil {
 			ctx := dockerClient.GetContext()
-			// Check if iofog-agent-directory volume exists
+			// Check if edgelet-directory volume exists
 			volumes, err := cli.VolumeList(ctx, volume.ListOptions{
 				Filters: filters.NewArgs(),
 			})
 			if err == nil {
 				for _, vol := range volumes.Volumes {
-					if vol.Name == "iofog-agent-directory" {
+					if vol.Name == "edgelet-directory" {
 						// Volume exists - inspect it to get mount point
-						volumeInfo, err := cli.VolumeInspect(ctx, "iofog-agent-directory")
+						volumeInfo, err := cli.VolumeInspect(ctx, "edgelet-directory")
 						if err == nil {
 							mountPoint := volumeInfo.Mountpoint
 							return mountPoint + "/volumes/" + volumeName, nil

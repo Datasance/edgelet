@@ -42,7 +42,7 @@ func TestReconcileAgainstRecordsRepairsLossDriftAndStaleIndex(t *testing.T) {
 		},
 		{
 			UUID:        "ms-2",
-			Application: "local",
+			Application: "edgelet",
 			Name:        "svc",
 			Scope:       ScopeLocal,
 			IP:          "10.0.1.2",
@@ -187,7 +187,7 @@ func TestRunReconcileOnce_DisablesLocalScopeWhenWatchdogEnabled(t *testing.T) {
 		return []WorkloadRecord{
 			{
 				UUID:        "local-1",
-				Application: "local",
+				Application: "edgelet",
 				Name:        "svc",
 				Scope:       ScopeLocal,
 				IP:          "10.8.8.8",

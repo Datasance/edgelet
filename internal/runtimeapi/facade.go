@@ -1256,7 +1256,7 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 	var existing *models.LocalDeployedMicroservice
 	deploymentID := uuid.NewString()
 	if f.db.Conn() != nil {
-		existingItems, findErr := f.db.FindLocalDeployedMicroservicesByAppAndName("local", doc.Metadata.Name)
+		existingItems, findErr := f.db.FindLocalDeployedMicroservicesByAppAndName(workloadmeta.LocalDeployApplicationName, doc.Metadata.Name)
 		if findErr != nil {
 			return "", nil, fmt.Errorf("failed to resolve existing local deployment: %w", findErr)
 		}
@@ -1322,7 +1322,7 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 	}
 	localItem := &models.LocalDeployedMicroservice{
 		LocalUUID:          deploymentID,
-		ApplicationName:    "local",
+		ApplicationName:    workloadmeta.LocalDeployApplicationName,
 		MicroserviceName:   doc.Metadata.Name,
 		SourceName:         sourceName,
 		ManifestYAML:       manifest,

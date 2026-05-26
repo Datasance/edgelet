@@ -8,7 +8,7 @@ import (
 	"github.com/datasance/edgelet/internal/buildmeta"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/pkg/engine/iofog/cri"
+	"github.com/datasance/edgelet/pkg/engine/edgelet/cri"
 )
 
 func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {
@@ -36,7 +36,7 @@ handler: edgelet
 
 	runtime := "edgelet"
 	ms := models.NewMicroservice("u1", "img")
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	ms.Runtime = &runtime
 	handler, err := cri.GetRuntimeHandler(ms)
 	if err != nil {

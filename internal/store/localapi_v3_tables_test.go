@@ -285,8 +285,8 @@ func TestLocalDeployedMicroserviceCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get local deployment: %v", err)
 	}
-	if got.ApplicationName != "local" {
-		t.Fatalf("expected application_name to normalize to local, got %q", got.ApplicationName)
+	if got.ApplicationName != "edgelet" {
+		t.Fatalf("expected application_name to normalize to edgelet, got %q", got.ApplicationName)
 	}
 	if got.MicroserviceName != "edge-processor" {
 		t.Fatalf("unexpected microservice name: %s", got.MicroserviceName)
@@ -327,7 +327,7 @@ func TestLocalDeployedMicroserviceUniqueByAppName(t *testing.T) {
 
 	first := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-a",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-apply",
 		ManifestYAML:     "kind: Microservice",
@@ -340,7 +340,7 @@ func TestLocalDeployedMicroserviceUniqueByAppName(t *testing.T) {
 
 	second := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-b",
-		ApplicationName:  "LOCAL",
+		ApplicationName:  "EDGELET",
 		MicroserviceName: "router",
 		SourceName:       "local-apply",
 		ManifestYAML:     "kind: Microservice",

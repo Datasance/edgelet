@@ -3,6 +3,9 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -59,8 +62,13 @@ func TestValidateConfig(t *testing.T) {
 	cfg.DeviceScanFrequency = 60
 	cfg.EdgeGuardFrequency = 0
 	cfg.GPSScanFrequency = 60
-	cfg.DockerURL = "unix:///var/run/docker.sock"
-	cfg.ContainerEngine = "docker"
+	if buildmeta.IsFull() {
+		cfg.ContainerEngine = constants.EngineEdgelet
+		cfg.DockerURL = constants.EdgeletEngineDockerURL()
+	} else {
+		cfg.ContainerEngine = constants.EngineDocker
+		cfg.DockerURL = "unix:///var/run/docker.sock"
+	}
 	cfg.ShutdownGracePeriodSeconds = 90
 	cfg.ControllerRequestTimeoutSeconds = 30
 	cfg.ControllerPingTimeoutSeconds = 60

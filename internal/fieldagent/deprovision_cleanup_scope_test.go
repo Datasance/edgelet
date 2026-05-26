@@ -20,7 +20,7 @@ func TestClearSQLiteCacheTablesOnDeprovision_AllClearsLocalRows(t *testing.T) {
 
 	local := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",
@@ -62,7 +62,7 @@ func TestClearSQLiteCacheTablesOnDeprovision_LocalScopePreservesLocalRows(t *tes
 
 	local := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-2",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "nodered",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",

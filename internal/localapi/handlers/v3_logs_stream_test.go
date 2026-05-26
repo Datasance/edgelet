@@ -17,7 +17,7 @@ import (
 func TestHandleLogsStreamWS_UsesFollowStreamAndForwardsEntries(t *testing.T) {
 	handler := NewV3Handler()
 	handler.resolveMicroservice = func(selector string) (string, error) {
-		if selector != "local.demo" {
+		if selector != "edgelet.demo" {
 			t.Fatalf("unexpected selector: %s", selector)
 		}
 		return "ms-1", nil
@@ -35,7 +35,7 @@ func TestHandleLogsStreamWS_UsesFollowStreamAndForwardsEntries(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.handleLogsStreamWS(w, r, "local.demo")
+		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
 	defer srv.Close()
 
@@ -76,7 +76,7 @@ func TestHandleLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.handleLogsStreamWS(w, r, "local.demo")
+		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
 	defer srv.Close()
 
@@ -108,7 +108,7 @@ func TestHandleLogsStreamWS_StreamingErrorReturnsErrorEvent(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.handleLogsStreamWS(w, r, "local.demo")
+		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
 	defer srv.Close()
 
@@ -132,7 +132,7 @@ func TestHandleLogsStreamWS_StreamingErrorReturnsErrorEvent(t *testing.T) {
 func TestHandleSystemLogsStreamWS_StreamsDaemonLogs(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
-	logFile := filepath.Join(cfg.LogDiskDirectory, "iofog-agent.0.log")
+	logFile := filepath.Join(cfg.LogDiskDirectory, "edgelet.0.log")
 	if err := os.WriteFile(logFile, []byte("2026-05-17 00:00:01.000 [info] boot\n"), 0o600); err != nil {
 		t.Fatalf("failed to write log file: %v", err)
 	}

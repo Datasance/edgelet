@@ -3,6 +3,8 @@ package models
 import (
 	"strings"
 	"time"
+
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 // LocalDeployedMicroservice represents a microservice deployed by LocalAPI/CLI (not controller-managed).
@@ -34,7 +36,7 @@ func (m *LocalDeployedMicroservice) NormalizeDefaults() {
 		return
 	}
 	if strings.TrimSpace(m.ApplicationName) == "" {
-		m.ApplicationName = "local"
+		m.ApplicationName = workloadmeta.LocalDeployApplicationName
 	}
 	if strings.TrimSpace(m.DesiredState) == "" {
 		m.DesiredState = "running"

@@ -24,7 +24,7 @@ const (
 	// MountPath is the in-container projection path for serviceaccount material.
 	MountPath                      = "/var/run/secrets/edgelet.iofog.org/serviceaccount"
 	serviceAccountTokenTTL         = time.Hour
-	serviceAccountTypePrefix       = "datasance.com~serviceaccount"
+	serviceAccountTypePrefix       = "edgelet.iofog.org~serviceaccount"
 	defaultServiceAccountVolumeKey = "default"
 	bindMountDirMode               = 0755
 	bindMountFileMode              = 0644

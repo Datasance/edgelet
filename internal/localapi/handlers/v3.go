@@ -800,7 +800,7 @@ func (h *V3Handler) HandleSystemControllerCert(w http.ResponseWriter, r *http.Re
 	cfg := config.GetInstance()
 	certPath := strings.TrimSpace(cfg.ControllerCert)
 	if certPath == "" {
-		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "controllerCert path is not configured; use iofog-agent config -ac <path>", nil)
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "controllerCert path is not configured; use edgelet config -ac <path>", nil)
 		return
 	}
 	certDir := filepath.Dir(certPath)

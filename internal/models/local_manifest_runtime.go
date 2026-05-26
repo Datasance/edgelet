@@ -11,7 +11,7 @@ import (
 func BuildMicroserviceFromLocalManifest(doc *LocalDeployManifest, deploymentID, image string) *Microservice {
 	ms := NewMicroservice(deploymentID, image)
 	ms.MicroserviceName = doc.Metadata.Name
-	ms.ApplicationName = workloadmeta.LocalApplicationName
+	ms.ApplicationName = workloadmeta.LocalDeployApplicationName
 	ms.Labels = cloneManifestLabels(doc.Metadata.Labels)
 	ms.RegistryID = 2
 	ms.HostNetworkMode = doc.Spec.Container.HostNetworkMode

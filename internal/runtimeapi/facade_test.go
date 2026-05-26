@@ -310,7 +310,7 @@ func TestFacadeListRuntimeMicroservices_DoesNotDuplicateLocalUUIDAsManaged(t *te
 
 	local := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-dup-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",
@@ -382,8 +382,8 @@ func TestFacadeApplyLocalManifest_NormalizesLocalLifecycleFields(t *testing.T) {
 	}
 
 	item := items[0]
-	if item.ApplicationName != "local" {
-		t.Fatalf("expected application_name local, got %q", item.ApplicationName)
+	if item.ApplicationName != "edgelet" {
+		t.Fatalf("expected application_name edgelet, got %q", item.ApplicationName)
 	}
 	if item.DesiredState != "running" {
 		t.Fatalf("expected desired_state running, got %q", item.DesiredState)
@@ -405,7 +405,7 @@ func TestResolveMicroserviceID_LocalDottedSelector(t *testing.T) {
 
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-uuid-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",
@@ -416,7 +416,7 @@ func TestResolveMicroserviceID_LocalDottedSelector(t *testing.T) {
 		t.Fatalf("failed to upsert local deployment: %v", err)
 	}
 
-	id, err := f.ResolveMicroserviceID("local.router")
+	id, err := f.ResolveMicroserviceID("edgelet.router")
 	if err != nil {
 		t.Fatalf("expected dotted local selector to resolve, got: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestResolveMicroserviceID_LocalDottedSelectorDuplicateRejected(t *testing.T
 	items := []*models.LocalDeployedMicroservice{
 		{
 			LocalUUID:        "local-uuid-1",
-			ApplicationName:  "local",
+			ApplicationName:  "edgelet",
 			MicroserviceName: "router",
 			SourceName:       "local-cli",
 			ManifestYAML:     "kind: Microservice",
@@ -444,7 +444,7 @@ func TestResolveMicroserviceID_LocalDottedSelectorDuplicateRejected(t *testing.T
 		},
 		{
 			LocalUUID:        "local-uuid-2",
-			ApplicationName:  "local",
+			ApplicationName:  "edgelet",
 			MicroserviceName: "router",
 			SourceName:       "local-cli",
 			ManifestYAML:     "kind: Microservice",
@@ -459,7 +459,7 @@ func TestResolveMicroserviceID_LocalDottedSelectorDuplicateRejected(t *testing.T
 		t.Fatalf("expected duplicate local dotted selector insert to fail")
 	}
 
-	id, err := f.ResolveMicroserviceID("local.router")
+	id, err := f.ResolveMicroserviceID("edgelet.router")
 	if err != nil {
 		t.Fatalf("expected local dotted selector to still resolve existing entry, got: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestFacadeStartRuntimeMicroservice_LocalPersistsDesiredState(t *testing.T) 
 
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-start-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     testLocalManifestYAML(),
@@ -557,7 +557,7 @@ func TestFacadeStopRuntimeMicroservice_LocalPersistsDesiredState(t *testing.T) {
 
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-stop-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     testLocalManifestYAML(),
@@ -749,7 +749,7 @@ handler: edgelet
 
 	ms := &models.LocalDeployedMicroservice{
 		LocalUUID:        "11111111-1111-1111-1111-111111111111",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "runtime-edgelet-ms",
 		SourceName:       "local-cli",
 		ManifestYAML: `apiVersion: edgelet.iofog.org/v1
