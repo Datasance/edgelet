@@ -3,7 +3,7 @@
 
 set -e
 
-BINARY=${1:-"./build/iofog-agentd"}
+BINARY=${1:-"./build/edgelet"}
 PROFILE_OUTPUT=${2:-"build/profile.out"}
 PROFILE_DURATION=${3:-30}
 

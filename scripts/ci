@@ -30,7 +30,12 @@ for _arch in "${_arch_list[@]}"; do
   ARCH="${_arch}" ./scripts/download
   ARCH="${_arch}" ./scripts/build-embedded
   ARCH="${_arch}" ./scripts/package-data
-  ARCH="${_arch}" ./scripts/build-edgelet
+  _embed_count=$(find pkg/data/embed -name '*.tar.zst' 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_embed_count}" -ne 1 ]; then
+    echo "ERROR: expected 1 embed bundle before build, found ${_embed_count}" >&2
+    exit 1
+  fi
+  ARCH="${_arch}" EDGELET_CI_ARCHES="${_arch}" ./scripts/build-edgelet
 done
 
 echo "Running unit tests (linux)..."

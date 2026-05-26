@@ -40,6 +40,7 @@ case ${OS} in
 esac
 
 mkdir -p build/bin build/images
+ROOT="$(pwd)"
 
 if [ "${ARCH}" = armv7l ] || [ "${ARCH}" = arm ]; then
   export GOARCH=arm
@@ -49,27 +50,20 @@ fi
 INSTALLBIN="$(pwd)/build/bin"
 
 # ── CNI multicall (bridge, host-local, loopback, portmap) ───────────────────
-if [ ! -x "${INSTALLBIN}/cni${BINARY_POSTFIX}" ]; then
-  echo "Building CNI multicall"
+echo "Building CNI multicall (Edgelet 4-plugin set) for ${OS}/${GOARCH:-${ARCH}}"
+(
   TMPDIR=$(mktemp -d)
-  trap 'rm -rf "${TMPDIR}"' EXIT
   WORKDIR="${TMPDIR}/src/github.com/containernetworking/plugins"
   git clone --single-branch --depth=1 --branch="${VERSION_CNIPLUGINS}" \
     https://github.com/rancher/plugins.git "${WORKDIR}"
   cd "${WORKDIR}"
   rm -rf plugins/meta/flannel
-  git clone --single-branch --depth=1 --branch="${VERSION_FLANNEL_PLUGIN}" \
-    https://github.com/flannel-io/cni-plugin.git plugins/meta/flannel
-  sed -i '' 's/package main/package flannel/; s/func main/func Main/' plugins/meta/flannel/*.go 2>/dev/null || \
-    sed -i 's/package main/package flannel/; s/func main/func Main/' plugins/meta/flannel/*.go
+  cp "${ROOT}/scripts/cni-main_linux.go" main_linux.go
   GO111MODULE=off GOPATH="${TMPDIR}" CGO_ENABLED=0 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" \
     "${GO}" build -tags "${TAGS}" -gcflags="all=${GCFLAGS}" \
     -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
     -o "${INSTALLBIN}/cni${BINARY_POSTFIX}"
-  cd - >/dev/null
-  trap - EXIT
-  rm -rf "${TMPDIR}"
-fi
+)
 
 for plugin in bridge host-local loopback portmap; do
   rm -f "${INSTALLBIN}/${plugin}${BINARY_POSTFIX}"

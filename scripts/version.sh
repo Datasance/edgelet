@@ -22,7 +22,6 @@ if [ -z "${VERSION_CONTAINERD}" ]; then
 fi
 
 VERSION_CNIPLUGINS="v1.9.1-k3s1"
-VERSION_FLANNEL_PLUGIN="v1.9.0-flannel1"
 VERSION_CRUN="1.27.1"
 VERSION_PAUSE="portainer/pause:latest"
 
