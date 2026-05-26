@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: Edgelet LocalAPI
+  title: Edgelet API
   version: 1.0.0
   description: >
-    LocalAPI v1 baseline for Edgelet daemon and CLI.
+    Edgelet API v1 baseline for Edgelet daemon and CLI.
     Canonical namespace is /v1. Any path/schema/auth deviation must be
     explicitly approved before implementation.
 servers:

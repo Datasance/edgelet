@@ -91,7 +91,7 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Suppress interactive progress output")
 	cmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Verbose logging")
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "Debug logging")
-	cmd.PersistentFlags().StringVar(&socket, "socket", "", "LocalAPI unix socket path")
+	cmd.PersistentFlags().StringVar(&socket, "socket", "", "Edgelet API unix socket path")
 	cmd.PersistentFlags().StringVar(&timeout, "timeout", "", "Request timeout")
 	cmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color and interactive UX")
 	cmd.Flags().BoolVar(&showVersion, "version", false, "Print CLI and daemon version")
