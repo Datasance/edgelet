@@ -14,17 +14,18 @@ graceful_stop_timeout_seconds="${GRACEFUL_STOP_TIMEOUT_SECONDS:-45}"
 crash_recovery_timeout_seconds="${CRASH_RECOVERY_TIMEOUT_SECONDS:-130}"
 
 forbidden_pattern='text file busy|etxtbsy|Start request repeated too quickly'
-shim_pattern='containerd-shim-.*-address /run/iofog-agent/containerd.sock'
+shim_pattern='containerd-shim-.*-address /run/edgelet/containerd.sock'
 
-mkdir -p /etc/iofog-agent
-cp "packaging/iofog-agent/etc/iofog-agent/config_full.yaml" "/etc/iofog-agent/config.yaml"
-cp "packaging/iofog-agent/etc/iofog-agent/cert_new.crt" "/etc/iofog-agent/cert.crt"
+mkdir -p /etc/edgelet
+cp "packaging/edgelet/etc/edgelet/config_full.yaml" "/etc/edgelet/config.yaml"
+cp "packaging/edgelet/etc/edgelet/cert_new.crt" "/etc/edgelet/cert.crt"
 
-echo "==> [PR6 local gate] building full daemon + cli"
-make build-daemon-full build-cli
+echo "==> [PR6 local gate] embed pipeline + edgelet full build"
+make deps
+make build-edgelet-full
 
-if [[ ! -x "./build/iofog-agentd" || ! -x "./build/iofog-agent" ]]; then
-  echo "ERROR: missing build artifacts"
+if [[ ! -x "./build/edgelet" ]]; then
+  echo "ERROR: missing build/edgelet after build"
   exit 1
 fi
 
@@ -35,7 +36,7 @@ wait_until_ready() {
     if ! kill -0 "${daemon_pid}" 2>/dev/null; then
       return 1
     fi
-    if ./build/iofog-agent system status >/dev/null 2>&1; then
+    if ./build/edgelet system status >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -50,7 +51,7 @@ wait_dns_probe_ready() {
       # shellcheck disable=SC1091
       source /tmp/pr6-local-dns-uuids.env
     fi
-    if [[ -n "${DNS_A_UUID:-}" ]] && ./build/iofog-agent ms exec "${DNS_A_UUID}" -- nslookup local.local-chaos-dns-b >/dev/null 2>&1; then
+    if [[ -n "${DNS_A_UUID:-}" ]] && ./build/edgelet ms exec "${DNS_A_UUID}" -- nslookup edgelet.local-chaos-dns-b >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
@@ -60,7 +61,7 @@ wait_dns_probe_ready() {
 
 ensure_dns_probe_manifests() {
   cat >/tmp/local-chaos-dns-a.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-chaos-dns-a
@@ -80,7 +81,7 @@ spec:
 EOF
 
   cat >/tmp/local-chaos-dns-b.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-chaos-dns-b
@@ -111,12 +112,11 @@ run_dns_chaos_probe_burst() {
     return 1
   fi
   for _ in $(seq 1 "${loops}"); do
-    if ! ./build/iofog-agent ms exec "${DNS_A_UUID}" -- nslookup local.local-chaos-dns-b >/dev/null 2>&1; then
+    if ! ./build/edgelet ms exec "${DNS_A_UUID}" -- nslookup edgelet.local-chaos-dns-b >/dev/null 2>&1; then
       failures=$((failures + 1))
     fi
     sleep 1
   done
-  # allow transient startup/restart misses, but sustained failures fail the gate
   if (( failures > 2 )); then
     return 1
   fi
@@ -126,7 +126,7 @@ run_dns_chaos_probe_burst() {
 discover_dns_probe_uuids() {
   local deadline=$((SECONDS + 60))
   while (( SECONDS < deadline )); do
-    ps_out="$(./build/iofog-agent ms ls || true)"
+    ps_out="$(./build/edgelet ms ls || true)"
     dns_a_uuid="$(echo "${ps_out}" | awk '$3=="local-chaos-dns-a"{print $1; exit}')"
     dns_b_uuid="$(echo "${ps_out}" | awk '$3=="local-chaos-dns-b"{print $1; exit}')"
     if [[ -n "${dns_a_uuid}" && -n "${dns_b_uuid}" ]]; then
@@ -157,7 +157,7 @@ stop_daemon() {
 
 assert_no_runtime_orphans() {
   local scope="$1"
-  if pgrep -af -- "--iofog-containerd-child" >/tmp/pr5-local-child-orphans.txt 2>&1; then
+  if pgrep -af -- "--edgelet-containerd-child" >/tmp/pr5-local-child-orphans.txt 2>&1; then
     echo "ERROR: orphan runtime child ${scope}"
     cat /tmp/pr5-local-child-orphans.txt
     exit 1
@@ -173,7 +173,7 @@ echo "==> [PR6 local gate] restart storm (${cycles} cycles)"
 dns_assets_created=0
 for i in $(seq 1 "${cycles}"); do
   log_file="/tmp/pr5-local-restart-${i}.log"
-  ./build/iofog-agentd start >"${log_file}" 2>&1 &
+  ./build/edgelet daemon >"${log_file}" 2>&1 &
   daemon_pid=$!
 
   if ! wait_until_ready "${daemon_pid}"; then
@@ -184,8 +184,8 @@ for i in $(seq 1 "${cycles}"); do
 
   if [[ "${dns_assets_created}" -eq 0 ]]; then
     ensure_dns_probe_manifests
-    ./build/iofog-agent deploy -f /tmp/local-chaos-dns-a.yaml >/dev/null 2>&1 || true
-    ./build/iofog-agent deploy -f /tmp/local-chaos-dns-b.yaml >/dev/null 2>&1 || true
+    ./build/edgelet deploy -f /tmp/local-chaos-dns-a.yaml >/dev/null 2>&1 || true
+    ./build/edgelet deploy -f /tmp/local-chaos-dns-b.yaml >/dev/null 2>&1 || true
     if ! discover_dns_probe_uuids; then
       echo "ERROR: could not discover DNS probe UUID selectors"
       stop_daemon "${daemon_pid}" || true
@@ -206,7 +206,7 @@ for i in $(seq 1 "${cycles}"); do
     exit 1
   fi
 
-  if ! ./build/iofog-agent system status | grep -q 'dnsHealth'; then
+  if ! ./build/edgelet system status | grep -q 'dnsHealth'; then
     echo "ERROR: DNS health field missing from system status in cycle ${i}"
     stop_daemon "${daemon_pid}" || true
     exit 1
@@ -231,7 +231,7 @@ done
 
 echo "==> [PR6 local gate] crash injection"
 crash_log="/tmp/pr5-local-crash.log"
-./build/iofog-agentd start >"${crash_log}" 2>&1 &
+./build/edgelet daemon >"${crash_log}" 2>&1 &
 daemon_pid=$!
 
 if ! wait_until_ready "${daemon_pid}"; then
@@ -252,7 +252,7 @@ if ! run_dns_chaos_probe_burst 8; then
   exit 1
 fi
 
-child_pid="$(pgrep -P "${daemon_pid}" -f -- "--iofog-containerd-child" | head -n1 || true)"
+child_pid="$(pgrep -P "${daemon_pid}" -f -- "--edgelet-containerd-child" | head -n1 || true)"
 if [[ -z "${child_pid}" ]]; then
   echo "ERROR: could not locate runtime child for crash injection"
   stop_daemon "${daemon_pid}" || true
@@ -276,9 +276,8 @@ fi
 
 assert_no_runtime_orphans "after crash injection"
 
-# Restart once more and verify DNS converges after crash event.
 post_crash_log="/tmp/pr5-local-post-crash.log"
-./build/iofog-agentd start >"${post_crash_log}" 2>&1 &
+./build/edgelet daemon >"${post_crash_log}" 2>&1 &
 post_pid=$!
 if ! wait_until_ready "${post_pid}"; then
   echo "ERROR: daemon not ready after crash-restart recovery"

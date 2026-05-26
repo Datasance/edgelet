@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test/embedded/run-all.sh
 #
-# Master test runner for the iofog embedded-containerd integration tests.
+# Master test runner for the edgelet embedded-containerd integration tests.
 # Runs the full pipeline: setup → build → VM start → install → test → (stop).
 #
 # Usage:
@@ -71,7 +71,7 @@ done
 ###############################################################################
 echo ""
 echo -e "${_BOLD}======================================================================${_RESET}"
-echo -e "${_BOLD}  ioFog Embedded Containerd — Full Integration Test Suite${_RESET}"
+echo -e "${_BOLD}  Edgelet Embedded Containerd — Full Integration Test Suite${_RESET}"
 echo -e "${_BOLD}  Host: $(uname -s)/${HOST_ARCH}   Target: linux/${TARGET_ARCH}   VM: ${VM_NAME}${_RESET}"
 echo -e "${_BOLD}======================================================================${_RESET}"
 echo ""
@@ -110,9 +110,9 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
     "${SCRIPT_DIR}/build.sh" --arch="${TARGET_ARCH}"
 else
     log_info "Skipping build (--skip-build)"
-    DAEMON_BIN="${REPO_ROOT}/build/iofog-agentd-linux-${TARGET_ARCH}"
-    [[ -f "${DAEMON_BIN}" ]] || \
-        die "No pre-built binary at ${DAEMON_BIN}. Remove --skip-build to build."
+    EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}-full"
+    [[ -f "${EDGELET_BIN}" ]] || \
+        die "No pre-built binary at ${EDGELET_BIN}. Remove --skip-build to build."
 fi
 
 ###############################################################################

@@ -8,15 +8,16 @@ startup_settle_seconds="${STARTUP_SETTLE_SECONDS:-8}"
 
 echo "==> PR1 runtime loop validation (cycles=${cycles})"
 
-mkdir -p /etc/iofog-agent
-cp "packaging/iofog-agent/etc/iofog-agent/config_full.yaml" "/etc/iofog-agent/config.yaml"
-cp "packaging/iofog-agent/etc/iofog-agent/cert_new.crt" "/etc/iofog-agent/cert.crt"
+mkdir -p /etc/edgelet
+cp "packaging/edgelet/etc/edgelet/config_full.yaml" "/etc/edgelet/config.yaml"
+cp "packaging/edgelet/etc/edgelet/cert_new.crt" "/etc/edgelet/cert.crt"
 
-echo "==> Building full daemon (embedded containerd child-process flavor)"
-make build-daemon-full
+echo "==> Embed pipeline + edgelet full build"
+make deps
+make build-edgelet-full
 
-if [[ ! -x "./build/iofog-agentd" ]]; then
-  echo "ERROR: build/iofog-agentd not found after build"
+if [[ ! -x "./build/edgelet" ]]; then
+  echo "ERROR: build/edgelet not found after build"
   exit 1
 fi
 
@@ -24,9 +25,9 @@ success_cycles=0
 
 for i in $(seq 1 "${cycles}"); do
   log_file="/tmp/pr1-runtime-loop-${i}.log"
-  echo "==> Cycle ${i}/${cycles}: starting daemon"
+  echo "==> Cycle ${i}/${cycles}: starting edgelet daemon"
 
-  "./build/iofog-agentd" start >"${log_file}" 2>&1 &
+  "./build/edgelet" daemon >"${log_file}" 2>&1 &
   daemon_pid=$!
   echo "    daemon pid=${daemon_pid}, log=${log_file}"
 
@@ -36,7 +37,7 @@ for i in $(seq 1 "${cycles}"); do
     if ! kill -0 "${daemon_pid}" 2>/dev/null; then
       break
     fi
-    if pgrep -P "${daemon_pid}" -f -- "--iofog-containerd-child" >/dev/null 2>&1; then
+    if pgrep -P "${daemon_pid}" -f -- "--edgelet-containerd-child" >/dev/null 2>&1; then
       child_seen=1
       break
     fi
@@ -52,11 +53,9 @@ for i in $(seq 1 "${cycles}"); do
     exit 1
   fi
 
-  # Give the daemon time to finish startup and install full signal handling.
   sleep "${startup_settle_seconds}"
 
-  # PR6 lightweight smoke: when LocalAPI is reachable, DNS status/metrics should be visible.
-  if ./build/iofog-agent system status >/tmp/pr1-runtime-status-${i}.txt 2>/dev/null; then
+  if ./build/edgelet system status >/tmp/pr1-runtime-status-${i}.txt 2>/dev/null; then
     if ! grep -q "dnsHealth" "/tmp/pr1-runtime-status-${i}.txt"; then
       echo "ERROR: cycle ${i} missing dnsHealth in system status"
       kill -TERM "${daemon_pid}" || true
@@ -90,7 +89,6 @@ for i in $(seq 1 "${cycles}"); do
     exit 1
   fi
 
-  # Allow child reaping to complete.
   sleep 2
 
   if awk 'tolower($0) ~ /text file busy|etxtbsy/ {found=1} END {exit found ? 0 : 1}' "${log_file}"; then
@@ -99,7 +97,7 @@ for i in $(seq 1 "${cycles}"); do
     exit 1
   fi
 
-  if pgrep -af -- "--iofog-containerd-child" >/tmp/pr1-orphan-processes.txt 2>&1; then
+  if pgrep -af -- "--edgelet-containerd-child" >/tmp/pr1-orphan-processes.txt 2>&1; then
     echo "ERROR: orphan containerd child detected after cycle ${i}"
     cat /tmp/pr1-orphan-processes.txt
     exit 1

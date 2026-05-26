@@ -7,7 +7,7 @@
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
 #   Phase 3 — CNI network configuration
-#   Phase 4 — LocalAPI v3 + CLI microservice operations
+#   Phase 4 — LocalAPI v1 + CLI microservice operations
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
 #   Phase 7 — Chaos gates
@@ -34,7 +34,7 @@ U() { echo "$*" | limactl --tty=false shell "${VM_NAME}" -- bash; }
 
 echo ""
 echo "======================================================================"
-echo "  ioFog Embedded Containerd Integration Tests"
+echo "  Edgelet Embedded Containerd Integration Tests"
 echo "  VM: ${VM_NAME}"
 echo "======================================================================"
 
@@ -44,22 +44,22 @@ echo "======================================================================"
 log_step "Phase 1: Extracted embedded binaries"
 
 assert_ok "containerd-shim-runc-v2 extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/bin/containerd-shim-runc-v2"
+    R "test -x /var/lib/edgelet-containerd/bin/containerd-shim-runc-v2"
 
 assert_ok "crun extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/bin/crun"
+    R "test -x /var/lib/edgelet-containerd/bin/crun"
 
 assert_ok "CNI bridge plugin extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/cni/plugins/bridge"
+    R "test -x /var/lib/edgelet-containerd/cni/plugins/bridge"
 
 assert_ok "CNI host-local plugin extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/cni/plugins/host-local"
+    R "test -x /var/lib/edgelet-containerd/cni/plugins/host-local"
 
 assert_ok "CNI portmap plugin extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/cni/plugins/portmap"
+    R "test -x /var/lib/edgelet-containerd/cni/plugins/portmap"
 
 assert_ok "CNI loopback plugin extracted" \
-    R "test -x /var/lib/iofog-agent-containerd/cni/plugins/loopback"
+    R "test -x /var/lib/edgelet-containerd/cni/plugins/loopback"
 
 ###############################################################################
 # Phase 2 — containerd socket & health
@@ -67,19 +67,19 @@ assert_ok "CNI loopback plugin extracted" \
 log_step "Phase 2: containerd socket and health"
 
 assert_ok "containerd config.toml written" \
-    R "test -f /var/lib/iofog-agent-containerd/config.toml"
+    R "test -f /var/lib/edgelet-containerd/config.toml"
 
-assert_ok "containerd config has iofog socket" \
-    R "grep -q '/run/iofog-agent/containerd.sock' /var/lib/iofog-agent-containerd/config.toml"
+assert_ok "containerd config has edgelet socket" \
+    R "grep -q '/run/edgelet/containerd.sock' /var/lib/edgelet-containerd/config.toml"
 
 assert_ok "containerd socket exists" \
-    R "test -S /run/iofog-agent/containerd.sock"
+    R "test -S /run/edgelet/containerd.sock"
 
-assert_ok "iofog-agentd service is active" \
-    R "systemctl is-active iofog-agentd"
+assert_ok "edgelet service is active" \
+    R "systemctl is-active edgelet"
 
 assert_contains "system status endpoint is reachable" "iofogDaemon" \
-    R "iofog-agent system status"
+    R "edgelet system status"
 
 ###############################################################################
 # Phase 3 — CNI network configuration
@@ -87,62 +87,62 @@ assert_contains "system status endpoint is reachable" "iofogDaemon" \
 log_step "Phase 3: CNI network configuration"
 
 assert_ok "Canonical CNI conflist written at conf_dir root" \
-    R "test -f /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+    R "test -f /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
-assert_ok "Canonical CNI conflist has iofog network name" \
-    R "jq -e '.name == \"iofog\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has edgelet network name" \
+    R "jq -e '.name == \"edgelet\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has bridge plugin" \
-    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
-assert_ok "Canonical CNI conflist has bridge name iofog0" \
-    R "jq -e '.plugins[0].bridge == \"iofog0\"' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+assert_ok "Canonical CNI conflist has bridge name edgelet0" \
+    R "jq -e '.plugins[0].bridge == \"edgelet0\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has portmap plugin" \
-    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/iofog-agent-containerd/cni/conf/10-iofog.conflist"
+    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Local CNI conflist not active in single-bridge mode" \
-    R "test ! -f /var/lib/iofog-agent-containerd/cni/conf/local/11-iofog-local.conflist"
+    R "test ! -f /var/lib/edgelet-containerd/cni/conf/local/11-edgelet-local.conflist"
 
 assert_ok "Scope selector CNI conflist not active in single-bridge mode" \
-    R "test ! -f /var/lib/iofog-agent-containerd/cni/conf/00-iofog-scope.conflist"
+    R "test ! -f /var/lib/edgelet-containerd/cni/conf/00-edgelet-scope.conflist"
 
 assert_ok "Managed CNI symlink created in system CNI dir" \
-    R "test -L /etc/cni/net.d/10-iofog.conflist"
+    R "test -L /etc/cni/net.d/10-edgelet.conflist"
 
 assert_ok "Scope selector symlink removed in system CNI dir" \
-    R "test ! -L /etc/cni/net.d/00-iofog-scope.conflist"
+    R "test ! -L /etc/cni/net.d/00-edgelet-scope.conflist"
 
 assert_ok "Legacy local CNI symlink removed" \
-    R "test ! -L /etc/cni/net.d/11-iofog-local.conflist"
+    R "test ! -L /etc/cni/net.d/11-edgelet-local.conflist"
 
 assert_ok "containerd config keeps canonical crun runtime only" \
     R "set -e
-grep -q 'runtimes.crun]' /var/lib/iofog-agent-containerd/config.toml
-! grep -q 'runtimes.crun-local]' /var/lib/iofog-agent-containerd/config.toml"
+grep -q 'runtimes.crun]' /var/lib/edgelet-containerd/config.toml
+! grep -q 'runtimes.crun-local]' /var/lib/edgelet-containerd/config.toml"
 
 assert_ok "containerd config accepts iofog.network pod annotation" \
-    R "grep -q 'pod_annotations = \\[\"iofog.network\"\\]' /var/lib/iofog-agent-containerd/config.toml"
+    R "grep -q 'pod_annotations = \\[\"iofog.network\"\\]' /var/lib/edgelet-containerd/config.toml"
 
 ###############################################################################
-# Phase 4 — LocalAPI v3 + CLI microservice operations
+# Phase 4 — LocalAPI v1 + CLI microservice operations
 ###############################################################################
-log_step "Phase 4: LocalAPI v3 and CLI operations"
+log_step "Phase 4: LocalAPI v1 and CLI operations"
 
 assert_ok "ms ls is reachable (table or empty state)" \
     R "set -e
-out=\$(iofog-agent ms ls || true)
+out=\$(edgelet ms ls || true)
 echo \"\${out}\" | grep -Eq 'MICROSERVICENAME|No microservices found.'"
 
 assert_contains "auth whoami returns claims payload" "\"claims\"" \
-    R "iofog-agent auth whoami"
+    R "edgelet auth whoami"
 
 assert_ok "seed/list local registries before deploy tests" \
-    R "iofog-agent registry ls"
+    R "edgelet registry ls"
 
 assert_ok "create temporary local deploy manifest" \
     R "cat >/tmp/iofog-local-ms.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-test-ms
@@ -162,11 +162,11 @@ spec:
 EOF"
 
 assert_contains "deploy -f submits manifest via CLI" "microservice manifest applied successfully" \
-    R "iofog-agent deploy -f /tmp/iofog-local-ms.yaml"
+    R "edgelet deploy -f /tmp/iofog-local-ms.yaml"
 
 assert_ok "create DNS probe workload A manifest" \
     R "cat >/tmp/iofog-local-dns-a.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-dns-a
@@ -187,7 +187,7 @@ EOF"
 
 assert_ok "create DNS probe workload B manifest" \
     R "cat >/tmp/iofog-local-dns-b.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-dns-b
@@ -207,15 +207,15 @@ spec:
 EOF"
 
 assert_contains "deploy DNS probe workload A" "microservice manifest applied successfully" \
-    R "iofog-agent deploy -f /tmp/iofog-local-dns-a.yaml"
+    R "edgelet deploy -f /tmp/iofog-local-dns-a.yaml"
 
 assert_contains "deploy DNS probe workload B" "microservice manifest applied successfully" \
-    R "iofog-agent deploy -f /tmp/iofog-local-dns-b.yaml"
+    R "edgelet deploy -f /tmp/iofog-local-dns-b.yaml"
 
 assert_ok "discover DNS probe UUID selectors" \
     R "set -e
 for i in \$(seq 1 30); do
-  ps_out=\$(iofog-agent ms ls || true)
+  ps_out=\$(edgelet ms ls || true)
   dns_a_uuid=\$(echo \"\${ps_out}\" | awk '\$3==\"local-dns-a\"{print \$1; exit}')
   dns_b_uuid=\$(echo \"\${ps_out}\" | awk '\$3==\"local-dns-b\"{print \$1; exit}')
   if [ -n \"\${dns_a_uuid}\" ] && [ -n \"\${dns_b_uuid}\" ]; then
@@ -232,8 +232,8 @@ exit 1"
 assert_ok "local workloads are attached to canonical single-bridge CIDR (172.18.x.x)" \
     R "set -e
 source /tmp/pr6-dns-uuids.env
-inspect_a=\$(iofog-agent ms inspect \"\${DNS_A_UUID}\")
-inspect_b=\$(iofog-agent ms inspect \"\${DNS_B_UUID}\")
+inspect_a=\$(edgelet ms inspect \"\${DNS_A_UUID}\")
+inspect_b=\$(edgelet ms inspect \"\${DNS_B_UUID}\")
 echo \"\${inspect_a}\" | grep -Eq '\"iofog-ip\": \"172\\.18\\.'
 echo \"\${inspect_b}\" | grep -Eq '\"iofog-ip\": \"172\\.18\\.'"
 
@@ -241,7 +241,7 @@ assert_ok "local DNS probe resolves peer from inside container" \
     R "set -e
 source /tmp/pr6-dns-uuids.env
 for i in \$(seq 1 20); do
-  if iofog-agent ms exec \"\${DNS_A_UUID}\" -- nslookup local.local-dns-b >/dev/null 2>&1; then
+  if edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.local-dns-b >/dev/null 2>&1; then
     exit 0
   fi
   sleep 3
@@ -251,11 +251,11 @@ exit 1"
 assert_ok "reserved agent alias resolves from local workload" \
     R "set -e
 source /tmp/pr6-dns-uuids.env
-iofog-agent ms exec \"\${DNS_A_UUID}\" -- nslookup iofog.default.svc.bridge.local >/dev/null 2>&1"
+edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.default.svc.bridge.local >/dev/null 2>&1"
 
 assert_ok "status exposes DNS operability fields" \
     R "set -e
-out=\$(iofog-agent system status)
+out=\$(edgelet system status)
 echo \"\${out}\" | grep -q 'dnsHealth'
 echo \"\${out}\" | grep -q 'dnsScopeManagedListening'
 echo \"\${out}\" | grep -q 'dnsRateLimitEnabled'"
@@ -263,7 +263,7 @@ echo \"\${out}\" | grep -q 'dnsRateLimitEnabled'"
 assert_ok "metrics endpoint exposes DNS series" \
     R "set -e
 if command -v curl >/dev/null 2>&1; then
-  metrics=\$(curl -ksSf https://127.0.0.1:54321/metrics || curl --unix-socket /var/run/iofog-agentd.sock -sSf http://localhost/metrics)
+  metrics=\$(curl -ksSf https://127.0.0.1:54321/metrics || curl --unix-socket /var/run/edgelet.sock -sSf http://localhost/metrics)
   echo \"\${metrics}\" | grep -q 'iofog_dns_queries_total'
   echo \"\${metrics}\" | grep -q 'iofog_dns_forwarding_degraded'
   echo \"\${metrics}\" | grep -q 'iofog_dns_rate_limited_total'
@@ -277,17 +277,17 @@ source /tmp/pr6-dns-uuids.env
 orig_target=\$(readlink -f /etc/resolv.conf)
 cp -a \"\${orig_target}\" /tmp/resolv.conf.pr6.bak
 trap 'cat /tmp/resolv.conf.pr6.bak > \"\${orig_target}\"; rm -f /tmp/resolv.conf.pr6.bak' EXIT
-before=\$(iofog-agent system status)
+before=\$(edgelet system status)
 before_q=\$(echo \"\${before}\" | awk -F': ' '/dnsQueriesTotal/{print \$2}')
 before_succ=\$(echo \"\${before}\" | awk -F': ' '/dnsSuccessTotal/{print \$2}')
 before_ferr=\$(echo \"\${before}\" | awk -F': ' '/dnsForwardErrTotal/{print \$2}')
 before_srv=\$(echo \"\${before}\" | awk -F': ' '/dnsServFailTotal/{print \$2}')
 printf 'nameserver 203.0.113.1\noptions timeout:1 attempts:1\n' >\"\${orig_target}\"
 set +e
-iofog-agent ms exec \"\${DNS_A_UUID}\" -- nslookup example.com >/tmp/pr6-airgap-external.out 2>&1
-iofog-agent ms exec \"\${DNS_A_UUID}\" -- nslookup local.local-dns-b >/tmp/pr6-airgap-internal.out 2>&1
+edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup example.com >/tmp/pr6-airgap-external.out 2>&1
+edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.local-dns-b >/tmp/pr6-airgap-internal.out 2>&1
 set -e
-after=\$(iofog-agent system status)
+after=\$(edgelet system status)
 after_q=\$(echo \"\${after}\" | awk -F': ' '/dnsQueriesTotal/{print \$2}')
 after_succ=\$(echo \"\${after}\" | awk -F': ' '/dnsSuccessTotal/{print \$2}')
 after_ferr=\$(echo \"\${after}\" | awk -F': ' '/dnsForwardErrTotal/{print \$2}')
@@ -312,27 +312,27 @@ assert_ok "IP forwarding enabled" \
 
 # Check crun is functional
 assert_ok "crun is executable and reports version" \
-    R "/var/lib/iofog-agent-containerd/bin/crun --version"
+    R "/var/lib/edgelet-containerd/bin/crun --version"
 
 ###############################################################################
 # Phase 6 — CLI integration
 ###############################################################################
 log_step "Phase 6: CLI integration"
 
-assert_ok "iofog-agent binary is executable" \
-    R "test -x /usr/local/bin/iofog-agent"
+assert_ok "edgelet binary is executable" \
+    R "test -x /usr/local/bin/edgelet"
 
-# assert_contains "iofog-agent version returns version string" "ioFog" \
-#     R "iofog-agent version"
+# assert_contains "edgelet version returns version string" "ioFog" \
+#     R "edgelet version"
 
-assert_contains "system info shows containerEngine=iofog" "iofog" \
-    R "iofog-agent system info 2>/dev/null || iofog-agent system info"
+assert_contains "system info shows containerEngine=edgelet" "edgelet" \
+    R "edgelet system info 2>/dev/null || edgelet system info"
 
-# assert_ok "iofog-agent config containerEngine iofog accepted" \
-#     R "iofog-agent config -ce iofog"
+# assert_ok "edgelet config containerEngine iofog accepted" \
+#     R "edgelet config -ce iofog"
 
-# assert_contains "system info shows containerEngine=iofog" "iofog" \
-#     R "iofog-agent system info 2>/dev/null || iofog-agent system info"
+# assert_contains "system info shows containerEngine=edgelet" "iofog" \
+#     R "edgelet system info 2>/dev/null || edgelet system info"
 
 ###############################################################################
 # Phase 7 — Chaos gates (restart storm + crash injection)
@@ -343,10 +343,10 @@ assert_ok "restart storm converges across 10 systemctl restart cycles" \
     R "set -e
 for i in \$(seq 1 10); do
   start_ts=\$(date +%s)
-  systemctl restart iofog-agentd
+  systemctl restart edgelet
   ok=0
   for j in \$(seq 1 60); do
-    if systemctl is-active --quiet iofog-agentd && iofog-agent system status >/dev/null 2>&1; then
+    if systemctl is-active --quiet edgelet && edgelet system status >/dev/null 2>&1; then
       ok=1
       break
     fi
@@ -360,22 +360,22 @@ done"
 
 assert_ok "service leaves deactivating state after restart storm" \
     R "set -e
-sub_state=\$(systemctl show -p SubState --value iofog-agentd)
+sub_state=\$(systemctl show -p SubState --value edgelet)
 test \"\${sub_state}\" != \"deactivating\""
 
 assert_ok "journald has no forbidden startup signatures" \
     R "set -e
-! journalctl -u iofog-agentd -n 800 --no-pager | grep -Eqi 'text file busy|ETXTBSY|Start request repeated too quickly'"
+! journalctl -u edgelet -n 800 --no-pager | grep -Eqi 'text file busy|ETXTBSY|Start request repeated too quickly'"
 
 assert_ok "runtime child crash recovers within bounded window" \
     R "set -e
-old_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
+old_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
 test -n \"\${old_child}\"
 kill -9 \"\${old_child}\" || true
 ok=0
 for i in \$(seq 1 150); do
-  new_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
-  if [ -n \"\${new_child}\" ] && [ \"\${new_child}\" != \"\${old_child}\" ] && systemctl is-active --quiet iofog-agentd && iofog-agent system status >/dev/null 2>&1; then
+  new_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
+  if [ -n \"\${new_child}\" ] && [ \"\${new_child}\" != \"\${old_child}\" ] && systemctl is-active --quiet edgelet && edgelet system status >/dev/null 2>&1; then
     ok=1
     break
   fi
@@ -387,9 +387,9 @@ assert_ok "DNS convergence remains healthy after restart storm and crash recover
     R "set -e
 source /tmp/pr6-dns-uuids.env
 for i in \$(seq 1 10); do
-  iofog-agent ms exec \"\${DNS_A_UUID}\" -- nslookup local.local-dns-b >/dev/null 2>&1
+  edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.local-dns-b >/dev/null 2>&1
 done
-status=\$(iofog-agent system status)
+status=\$(edgelet system status)
 echo \"\${status}\" | grep -q 'dnsHealth: ready\\|dnsHealth: degraded'
 echo \"\${status}\" | grep -q 'dnsForwardErrTotal'"
 
@@ -429,32 +429,32 @@ test -x /usr/local/bin/containerd-shim-edgelet-v2"
 
 assert_ok "restart daemon once so startup runtime discovery picks up new shims" \
     R "set -e
-before_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
-systemctl restart iofog-agentd
+before_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
+systemctl restart edgelet
 ok=0
 for i in \$(seq 1 90); do
-  if systemctl is-active --quiet iofog-agentd &&
-     test -S /run/iofog-agent/containerd.sock &&
-     iofog-agent system status >/dev/null 2>&1; then
+  if systemctl is-active --quiet edgelet &&
+     test -S /run/edgelet/containerd.sock &&
+     edgelet system status >/dev/null 2>&1; then
     ok=1
     break
   fi
   sleep 1
 done
 test \"\${ok}\" -eq 1
-after_child=\$(pgrep -f -- '--iofog-containerd-child' | head -n1 || true)
+after_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
 test -n \"\${after_child}\"
 if [ -n \"\${before_child}\" ]; then
   test \"\${before_child}\" != \"\${after_child}\"
 fi
-grep -q 'runtimes.spin]' /var/lib/iofog-agent-containerd/config.toml
-grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-spin-v2\"' /var/lib/iofog-agent-containerd/config.toml
-grep -q 'runtimes.edgelet]' /var/lib/iofog-agent-containerd/config.toml
-grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-edgelet-v2\"' /var/lib/iofog-agent-containerd/config.toml"
+grep -q 'runtimes.spin]' /var/lib/edgelet-containerd/config.toml
+grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-spin-v2\"' /var/lib/edgelet-containerd/config.toml
+grep -q 'runtimes.edgelet]' /var/lib/edgelet-containerd/config.toml
+grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-edgelet-v2\"' /var/lib/edgelet-containerd/config.toml"
 
 assert_ok "create RuntimeClass manifest for spin" \
     R "cat >/tmp/runtimeclass-spin.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin
@@ -463,7 +463,7 @@ EOF"
 
 assert_ok "create RuntimeClass manifest for edgelet" \
     R "cat >/tmp/runtimeclass-edgelet.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: edgelet
@@ -471,10 +471,10 @@ handler: edgelet
 EOF"
 
 assert_contains "validate RuntimeClass spin manifest" "manifest is valid" \
-    R "iofog-agent deploy runtimeclass validate -f /tmp/runtimeclass-spin.yaml"
+    R "edgelet deploy runtimeclass validate -f /tmp/runtimeclass-spin.yaml"
 
 assert_contains "validate RuntimeClass edgelet manifest" "manifest is valid" \
-    R "iofog-agent deploy runtimeclass validate -f /tmp/runtimeclass-edgelet.yaml"
+    R "edgelet deploy runtimeclass validate -f /tmp/runtimeclass-edgelet.yaml"
 
 assert_ok "create RuntimeClass apply/delete operation helper" \
     R "cat >/tmp/runtimeclass-ops.sh <<'EOF'
@@ -483,10 +483,10 @@ set -euo pipefail
 
 runtimeclass_token_file() {
   for p in \
-    /etc/iofog-agent/local-api \
-    /var/lib/iofog-agent/local-api \
-    /var/lib/iofog-agent/.iofog-agent/local-api \
-    /root/.iofog-agent/local-api
+    /etc/edgelet/local-api \
+    /var/lib/edgelet/local-api \
+    /var/lib/edgelet/.edgelet/local-api \
+    /root/.edgelet/local-api
   do
     if [ -f \"\${p}\" ]; then
       echo \"\${p}\"
@@ -526,7 +526,7 @@ runtimeclass_api() {
 runtimeclass_wait_operation() {
   local kind=\"\${1}\"
   local operation_id=\"\${2}\"
-  local endpoint=\"/v3/deploy/runtimeclasses:\${kind}/\${operation_id}\"
+  local endpoint=\"/v1/deploy/runtimeclasses:\${kind}/\${operation_id}\"
   for i in \$(seq 1 120); do
     body=\$(runtimeclass_api GET \"\${endpoint}\")
     echo \"\${body}\" | jq -e '.success == true' >/dev/null
@@ -548,7 +548,7 @@ runtimeclass_apply_wait() {
   local response_file
   response_file=\$(mktemp)
   local http_code
-  http_code=\$(runtimeclass_api POST /v3/deploy/runtimeclasses:apply \
+  http_code=\$(runtimeclass_api POST /v1/deploy/runtimeclasses:apply \
     -F \"manifest=@\${manifest_path}\" \
     -w '%{http_code}' \
     -o \"\${response_file}\")
@@ -577,7 +577,7 @@ runtimeclass_delete_wait() {
   local response_file
   response_file=\$(mktemp)
   local http_code
-  http_code=\$(runtimeclass_api DELETE \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+  http_code=\$(runtimeclass_api DELETE \"/v1/deploy/runtimeclasses/\${runtime_name}\" \
     -w '%{http_code}' \
     -o \"\${response_file}\")
   local body
@@ -606,7 +606,7 @@ runtimeclass_delete_expect_in_use() {
   local response_file
   response_file=\$(mktemp)
   local http_code
-  http_code=\$(runtimeclass_api DELETE \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+  http_code=\$(runtimeclass_api DELETE \"/v1/deploy/runtimeclasses/\${runtime_name}\" \
     -w '%{http_code}' \
     -o \"\${response_file}\")
   local body
@@ -623,7 +623,7 @@ runtimeclass_expect_missing() {
   local response_file
   response_file=\$(mktemp)
   local http_code
-  http_code=\$(runtimeclass_api GET \"/v3/deploy/runtimeclasses/\${runtime_name}\" \
+  http_code=\$(runtimeclass_api GET \"/v1/deploy/runtimeclasses/\${runtime_name}\" \
     -w '%{http_code}' \
     -o \"\${response_file}\")
   local body
@@ -641,24 +641,24 @@ assert_ok "apply RuntimeClass spin succeeds without controlled containerd reconf
 source /tmp/runtimeclass-ops.sh
 since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-spin.yaml
-systemctl is-active --quiet iofog-agentd
-iofog-agent system status >/dev/null 2>&1
-! journalctl -u iofog-agentd --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
+systemctl is-active --quiet edgelet
+edgelet system status >/dev/null 2>&1
+! journalctl -u edgelet --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
 
 assert_ok "apply RuntimeClass edgelet succeeds without controlled containerd reconfigure" \
     R "set -e
 source /tmp/runtimeclass-ops.sh
 since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-edgelet.yaml
-systemctl is-active --quiet iofog-agentd
-iofog-agent system status >/dev/null 2>&1
-! journalctl -u iofog-agentd --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
+systemctl is-active --quiet edgelet
+edgelet system status >/dev/null 2>&1
+! journalctl -u edgelet --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
 
 assert_ok "availableRuntimes includes RuntimeClass canonical entries" \
     R "set -e
 ok=0
 for i in \$(seq 1 60); do
-  status=\$(iofog-agent system status || true)
+  status=\$(edgelet system status || true)
   if echo \"\${status}\" | grep -q 'availableRuntimes' &&
      echo \"\${status}\" | grep -q 'spin' &&
      echo \"\${status}\" | grep -q 'edgelet' &&
@@ -673,7 +673,7 @@ test \"\${ok}\" -eq 1"
 
 assert_ok "create runtime-pinned Spin workload manifest" \
     R "cat >/tmp/runtimeclass-ms-spin.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: runtime-spin-ms
@@ -698,7 +698,7 @@ EOF"
 
 assert_ok "create runtime-pinned Edgelet workload manifest" \
     R "cat >/tmp/runtimeclass-ms-edgelet.yaml <<'EOF'
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: runtime-edgelet-ms
@@ -716,15 +716,15 @@ spec:
 EOF"
 
 assert_contains "deploy runtime-pinned Spin workload" "microservice manifest applied successfully" \
-    R "iofog-agent deploy -f /tmp/runtimeclass-ms-spin.yaml"
+    R "edgelet deploy -f /tmp/runtimeclass-ms-spin.yaml"
 
 assert_contains "deploy runtime-pinned Edgelet workload" "microservice manifest applied successfully" \
-    R "iofog-agent deploy -f /tmp/runtimeclass-ms-edgelet.yaml"
+    R "edgelet deploy -f /tmp/runtimeclass-ms-edgelet.yaml"
 
 assert_ok "runtime-pinned Spin workload reaches running state" \
     R "set -e
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ls || true)
+  out=\$(edgelet ms ls || true)
   if echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
     exit 0
   fi
@@ -735,7 +735,7 @@ exit 1"
 assert_ok "runtime-pinned Edgelet workload reaches running state" \
     R "set -e
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ls || true)
+  out=\$(edgelet ms ls || true)
   if echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" && tolower(\$4)==\"running\" {found=1} END{exit(found?0:1)}'; then
     exit 0
   fi
@@ -757,7 +757,7 @@ test \"\${ok}\" -eq 1"
 
 assert_ok "DNS sanity after RuntimeClass apply exposes expected listener health fields" \
     R "set -e
-status=\$(iofog-agent system status)
+status=\$(edgelet system status)
 echo \"\${status}\" | grep -q 'dnsHealth:'
 echo \"\${status}\" | grep -q 'dnsScopeManagedListening'"
 
@@ -766,7 +766,7 @@ assert_ok "capture runtime-pinned workload UUIDs" \
 spin_uuid=''
 edgelet_uuid=''
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ls || true)
+  out=\$(edgelet ms ls || true)
   spin_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" {print \$1}' | head -n1)
   edgelet_uuid=\$(echo \"\${out}\" | awk '\$3==\"runtime-edgelet-ms\" {print \$1}' | head -n1)
   if [ -n \"\${spin_uuid}\" ] && [ -n \"\${edgelet_uuid}\" ]; then
@@ -787,11 +787,11 @@ runtimeclass_delete_expect_in_use spin \"\${RUNTIME_SPIN_UUID}\""
 assert_ok "remove runtime-pinned workloads before runtimeclass delete" \
     R "set -e
 source /tmp/runtimeclass-ms-uuids.env
-iofog-agent ms rm \"\${RUNTIME_SPIN_UUID}\" >/dev/null
-iofog-agent ms rm \"\${RUNTIME_EDGELET_UUID}\" >/dev/null
+edgelet ms rm \"\${RUNTIME_SPIN_UUID}\" >/dev/null
+edgelet ms rm \"\${RUNTIME_EDGELET_UUID}\" >/dev/null
 ok=0
 for i in \$(seq 1 60); do
-  out=\$(iofog-agent ms ls || true)
+  out=\$(edgelet ms ls || true)
   if ! echo \"\${out}\" | grep -q 'runtime-spin-ms' &&
      ! echo \"\${out}\" | grep -q 'runtime-edgelet-ms'; then
     ok=1

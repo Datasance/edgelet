@@ -1,7 +1,7 @@
 # Embedded Containerd Integration Tests
 
-End-to-end integration tests for `iofog-agentd` with the embedded containerd engine
-(`containerEngine: iofog`). All tests run inside a Lima Linux VM on macOS.
+End-to-end integration tests for **edgelet** with the embedded containerd engine
+(`containerEngine: edgelet`). All tests run inside a Lima Linux VM on macOS.
 
 ## Directory Structure
 
@@ -9,9 +9,9 @@ End-to-end integration tests for `iofog-agentd` with the embedded containerd eng
 test/embedded/
 ├── run-all.sh          # Master runner — setup → build → VM → install → test
 ├── setup.sh            # Install macOS prerequisites via Homebrew
-├── build.sh            # Cross-compile linux/arm64 (or amd64) **full**-flavor binaries (`*-full` suffix)
+├── build.sh            # Embed pipeline + cross-compile linux/arm64 (or amd64) full binary
 ├── vm-start.sh         # Create / start the Lima Ubuntu VM
-├── vm-install.sh       # Copy binaries + config into VM, start daemon
+├── vm-install.sh       # Copy edgelet + config into VM, start edgelet.service
 ├── vm-test.sh          # Run all test assertions inside VM
 ├── vm-stop.sh          # Stop (and optionally delete) the VM
 ├── lima-ubuntu.yaml    # Lima VM definition (Ubuntu 24.04, cgroups v2, overlayfs)
@@ -22,7 +22,7 @@ test/embedded/
 ## Quick Start
 
 ```bash
-# From the agent-go directory:
+# From the repository root:
 cd agent-go
 
 # Full pipeline (first run ~5-10 minutes including VM boot + image pull):
@@ -53,7 +53,7 @@ Installed automatically by `setup.sh`:
 ./test/embedded/run-all.sh [options]
 
   --skip-setup      Skip Homebrew prerequisite installation
-  --skip-build      Skip cross-compile (reuse build/iofog-agentd-linux-*)
+  --skip-build      Skip cross-compile (reuse build/edgelet-linux-*-full)
   --skip-start      Skip VM creation/start (VM must already be running)
   --delete-vm       Delete the VM after tests complete
   --vm-name=NAME    Lima VM name (default: iofog-test)
@@ -62,6 +62,17 @@ Installed automatically by `setup.sh`:
   --ci              CI mode — deletes VM on failure
 ```
 
+## Build pipeline
+
+`build.sh` uses the Plan 4 embed pipeline (no legacy `build/download-deps.sh`):
+
+1. `scripts/download`
+2. `scripts/build-embedded`
+3. `scripts/package-data`
+4. `scripts/build-edgelet`
+
+Output: **`build/edgelet-linux-<arch>-full`** — single multicall binary (CLI + daemon + containerd child on full linux).
+
 ## Test Phases
 
 | Phase | What is tested |
@@ -69,9 +80,9 @@ Installed automatically by `setup.sh`:
 | 1 | Extracted embedded binaries (shims, crun, CNI plugins) |
 | 2 | containerd socket, health check, `k8s.io` namespace |
 | 3 | Managed + local CNI conflists written, network names, bridge names, system symlinks |
-| 4 | LocalAPI v3 and CLI checks (`ms ls` table output, `auth whoami`, local `deploy -f`) |
+| 4 | LocalAPI v1 and CLI checks (`ms ls` table output, `auth whoami`, local `deploy -f`) |
 | 5 | Container run, IP forwarding, crun version |
-| 6 | CLI: `version`, `info` shows engine=iofog, `config -ce` switching, invalid engine rejected |
+| 6 | CLI: `version`, `info` shows engine=edgelet |
 | 7 | Chaos gates (restart storm + child crash recovery) |
 | 8 | RuntimeClass dual-shim flow (Spin + Edgelet), restart convergence, availableRuntimes, runtime-pinned workloads |
 
@@ -108,10 +119,10 @@ Coverage includes:
 # Just start the VM
 ./test/embedded/vm-start.sh
 
-# Just install agent in the VM
+# Just install edgelet in the VM
 ./test/embedded/vm-install.sh
 
-# Just run tests (VM must already have agent installed)
+# Just run tests (VM must already have edgelet installed)
 ./test/embedded/vm-test.sh
 
 # Stop the VM (keep data)
@@ -137,11 +148,25 @@ the test script against the same VM:
 limactl shell iofog-test
 
 # View daemon logs
-limactl shell iofog-test -- sudo journalctl -fu iofog-agentd
+limactl shell iofog-test -- sudo journalctl -fu edgelet
 
 # Direct containerd access via ctr
 limactl shell iofog-test -- sudo ctr \
-    --address /run/iofog-agent/containerd.sock \
-    --namespace iofog \
+    --address /run/edgelet/containerd.sock \
+    --namespace k8s.io \
     images list
 ```
+
+## Naming (Edgelet greenfield)
+
+| Item | Value |
+|---|---|
+| Binary | `edgelet` (single multicall) |
+| systemd unit | `edgelet.service` |
+| Data paths | `/var/lib/edgelet`, `/run/edgelet`, `/var/lib/edgelet-containerd` |
+| Config | `/etc/edgelet/config.yaml` |
+| `containerEngine` | `edgelet` |
+| Local API | `/v1/…` |
+| Deploy manifests | `apiVersion: edgelet.iofog.org/v1` |
+
+Pot controller REST remains **`/api/v3/…`** (unchanged).
