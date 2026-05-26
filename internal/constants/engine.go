@@ -2,9 +2,9 @@ package constants
 
 // Container engine type names used in config.yaml containerEngine field.
 const (
-	EngineDocker = "docker"
-	EnginePodman = "podman"
-	EngineEdgelet  = "edgelet"
+	EngineDocker  = "docker"
+	EnginePodman  = "podman"
+	EngineEdgelet = "edgelet"
 )
 
 // Edgelet embedded containerd — split across three path roots following Linux FHS

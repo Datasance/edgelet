@@ -96,7 +96,7 @@ func TestGetRuntimeHandler(t *testing.T) {
 		t.Fatal("host network forces crun")
 	}
 	ms.HostNetworkMode = false
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	ms.Runtime = nil
 	handler, err = ResolveRuntimeHandler(ms, nil)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestResolveRuntimeHandler_UsesCanonicalRuntimeNames(t *testing.T) {
 	}
 
 	local := models.NewMicroservice("u2", "img")
-	local.ApplicationName = "local"
+	local.ApplicationName = "edgelet"
 	local.Runtime = &runtime
 	handler, err = ResolveRuntimeHandler(local, runtimeClasses)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestResolveRuntimeHandler_RejectsUnknownRuntimeClass(t *testing.T) {
 
 func TestPodSandboxConfigFromMicroserviceSetsNetworkAnnotation(t *testing.T) {
 	ms := models.NewMicroservice("u1", "img")
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	cfg := PodSandboxConfigFromMicroservice(ms, "127.0.0.1", "/tmp/logs", "node-1")
 	if cfg.Annotations[AnnotationIofogNetwork] != "edgelet" {
 		t.Fatalf("expected local annotation iofog in single-bridge mode, got %q", cfg.Annotations[AnnotationIofogNetwork])
@@ -174,7 +174,7 @@ func TestPodSandboxConfigFromMicroserviceSetsNetworkAnnotation(t *testing.T) {
 
 func TestSelectCNINetworkForMicroservice_RuntimeIndependent(t *testing.T) {
 	ms := models.NewMicroservice("u3", "img")
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	requestedRuntime := "edgelet"
 	ms.Runtime = &requestedRuntime
 
@@ -223,7 +223,7 @@ func TestPodSandboxConfigFromMicroserviceUsesCanonicalLabels(t *testing.T) {
 func TestContainerConfigFromMicroserviceUsesCanonicalLabels(t *testing.T) {
 	ms := models.NewMicroservice("u2", "img")
 	ms.MicroserviceName = "svc2"
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	ms.HostNetworkMode = false
 
 	cfg, err := ContainerConfigFromMicroservice(ms, "127.0.0.1", []string{}, "0.log", "", "", "sandbox-123", "node-1")

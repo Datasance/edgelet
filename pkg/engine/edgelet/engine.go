@@ -34,7 +34,7 @@ import (
 	"github.com/containerd/errdefs"
 	tuypeurl "github.com/containerd/typeurl/v2"
 	"github.com/datasance/edgelet/internal/dnsresolver"
-	"github.com/datasance/edgelet/pkg/engine/iofog/cri"
+	"github.com/datasance/edgelet/pkg/engine/edgelet/cri"
 	"github.com/nxadm/tail"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -62,7 +62,7 @@ const (
 	resolvDir = "/run/edgelet/resolv"
 )
 
-var log = logging.NewModuleLogger("IofogEngine")
+var log = logging.NewModuleLogger("EdgeletEngine")
 
 // pendingExec holds the information needed to start a containerd exec process.
 // It is stored between CreateExecSession (which validates the container and builds

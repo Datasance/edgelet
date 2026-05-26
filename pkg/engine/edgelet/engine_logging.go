@@ -11,7 +11,7 @@ import (
 
 const (
 	edgeletEngineName    = "edgelet"
-	iofogRuntimeModule = "IofogEngine"
+	edgeletRuntimeModule = "EdgeletEngine"
 )
 
 func (e *Engine) runtimeLogCtx() context.Context {
@@ -30,7 +30,7 @@ func (e *Engine) emitRuntime(ev runtimeops.RuntimeEvent) {
 		ev.Engine = edgeletEngineName
 	}
 	if ev.Module == "" {
-		ev.Module = iofogRuntimeModule
+		ev.Module = edgeletRuntimeModule
 	}
 	runtimeops.Emit(e.runtimeLogCtx(), ev)
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/pkg/engine"
 	dockerengine "github.com/datasance/edgelet/pkg/engine/docker"
-	iofogengine "github.com/datasance/edgelet/pkg/engine/iofog"
+	edgeletengine "github.com/datasance/edgelet/pkg/engine/edgelet"
 	podmanengine "github.com/datasance/edgelet/pkg/engine/podman"
 )
 
@@ -26,7 +26,7 @@ func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.Cont
 
 	case constants.EngineEdgelet:
 		warnIfExternalRuntimePresent()
-		return iofogengine.New(cfg.LogDir), nil
+		return edgeletengine.New(cfg.LogDir), nil
 
 	default:
 		return nil, fmt.Errorf("unknown container engine type %q: must be one of docker, podman, iofog", engineType)

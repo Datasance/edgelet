@@ -33,7 +33,7 @@ func TestCreateContainer_RejectsUnknownRuntimeBeforeCRI(t *testing.T) {
 
 func TestDNSScopeFromMicroservice_UsesResolvedScope(t *testing.T) {
 	ms := models.NewMicroservice("ms-2", "busybox:latest")
-	ms.ApplicationName = "local"
+	ms.ApplicationName = "edgelet"
 	ms.HostNetworkMode = false
 	if got := dnsScopeFromMicroservice(ms); got != dnsresolver.ScopeLocal {
 		t.Fatalf("expected local dns scope, got %q", got)
