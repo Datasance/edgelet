@@ -7,7 +7,7 @@ import (
 	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
-// LocalDeployedMicroservice represents a microservice deployed by LocalAPI/CLI (not controller-managed).
+// LocalDeployedMicroservice represents a microservice deployed by EdgeletAPI/CLI (not controller-managed).
 type LocalDeployedMicroservice struct {
 	LocalUUID          string
 	ApplicationName    string

@@ -1,6 +1,6 @@
 package models
 
-// ServiceAccountToken represents persisted token metadata for LocalAPI v3.
+// ServiceAccountToken represents persisted token metadata for EdgeletAPI v3.
 type ServiceAccountToken struct {
 	ID                 string
 	TokenUse           string

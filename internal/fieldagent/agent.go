@@ -215,9 +215,9 @@ func (fa *FieldAgent) Start() error {
 		})
 	}
 
-	// Keep local-api token file in sync with current provisioning state.
-	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
-		return fmt.Errorf("failed to reconcile local-api JWT token: %w", err)
+	// Keep edgelet-api token file in sync with current provisioning state.
+	if err := auth.EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("failed to reconcile edgelet-api JWT token: %w", err)
 	}
 
 	// Ping controller (matching Java: line 1980)
@@ -612,8 +612,8 @@ func (fa *FieldAgent) Provision(key string) error {
 	// Reset JWT manager to use new credentials
 	// IMPORTANT: Reset AFTER config is saved so JWT manager can reload from updated config
 	auth.GetJWTManager().Reset()
-	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
-		return fmt.Errorf("provisioning succeeded but failed to rotate local-api JWT: %w", err)
+	if err := auth.EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("provisioning succeeded but failed to rotate edgelet-api JWT: %w", err)
 	}
 
 	// Recreate API client with new credentials (matching Java: orchestrator.update() after provisioning)
@@ -839,8 +839,8 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		}()
 	}()
 
-	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
-		return fmt.Errorf("deprovisioning succeeded but failed to rotate local-api JWT: %w", err)
+	if err := auth.EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		return fmt.Errorf("deprovisioning succeeded but failed to rotate edgelet-api JWT: %w", err)
 	}
 
 	if configUpdated {
@@ -1058,9 +1058,9 @@ func (fa *FieldAgent) Update() error {
 	fa.mu.Lock()
 	auth.GetJWTManager().Reset()
 	fa.mu.Unlock()
-	if err := auth.EnsureLocalAPITokenForCurrentState(); err != nil {
-		logging.LogError(moduleName, "Failed to reconcile local-api JWT token during update", err)
-		return fmt.Errorf("failed to reconcile local-api JWT token during update: %w", err)
+	if err := auth.EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		logging.LogError(moduleName, "Failed to reconcile edgelet-api JWT token during update", err)
+		return fmt.Errorf("failed to reconcile edgelet-api JWT token during update: %w", err)
 	}
 
 	// Recreate the API client and post fog config asynchronously so that the

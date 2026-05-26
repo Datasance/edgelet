@@ -218,9 +218,9 @@ func (m *Manager) rotateForMicroservice(cfg *config.Config, ms *models.Microserv
 	}
 
 	projectionDir := m.ProjectionDir(ms.MicroserviceUUID)
-	caPEM, caErr := auth.ReadLocalAPICACertPEM()
+	caPEM, caErr := auth.ReadEdgeletAPICACertPEM()
 	if caErr != nil {
-		return fmt.Errorf("failed to read localapi CA: %w", caErr)
+		return fmt.Errorf("failed to read edgeletapi CA: %w", caErr)
 	}
 	if err := m.writeProjectionAtomic(projectionDir, token, caPEM); err != nil {
 		return err

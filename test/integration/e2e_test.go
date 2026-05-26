@@ -118,7 +118,7 @@ func TestMultiModuleInteraction(t *testing.T) {
 	}
 
 	// This test would verify that modules can communicate properly
-	// For example: FieldAgent -> ProcessManager, MessageBus -> LocalAPI, etc.
+	// For example: FieldAgent -> ProcessManager, MessageBus -> EdgeletAPI, etc.
 
 	configPath := utils.ConfigYAMLPath
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

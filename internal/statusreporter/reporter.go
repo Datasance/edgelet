@@ -38,7 +38,7 @@ type StatusReporter struct {
 	fieldAgentStatus                 *models.FieldAgentStatus
 	statusReporterStatus             *models.StatusReporterStatus
 	processManagerStatus             *models.ProcessManagerStatus
-	localAPIStatus                   *models.LocalAPIStatus
+	localAPIStatus                   *models.EdgeletAPIStatus
 	sshProxyManagerStatus            *models.SSHProxyManagerStatus
 	volumeMountManagerStatus         *models.VolumeMountManagerStatus
 
@@ -108,7 +108,7 @@ func GetInstance() *StatusReporter {
 			fieldAgentStatus:                 models.NewFieldAgentStatus(),
 			statusReporterStatus:             models.NewStatusReporterStatus(),
 			processManagerStatus:             models.NewProcessManagerStatus(),
-			localAPIStatus:                   models.NewLocalAPIStatus(),
+			localAPIStatus:                   models.NewEdgeletAPIStatus(),
 			sshProxyManagerStatus:            models.NewSSHProxyManagerStatus(),
 			volumeMountManagerStatus:         models.NewVolumeMountManagerStatus(),
 		}
@@ -407,7 +407,7 @@ func (sr *StatusReporter) GetProcessManagerStatus() *models.ProcessManagerStatus
 }
 
 // GetLocalAPIStatus returns the local API status
-func (sr *StatusReporter) GetLocalAPIStatus() *models.LocalAPIStatus {
+func (sr *StatusReporter) GetLocalAPIStatus() *models.EdgeletAPIStatus {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	return sr.localAPIStatus
@@ -494,7 +494,7 @@ func (sr *StatusReporter) PruneProcessManagerStatus(predicate func(uuid string, 
 }
 
 // UpdateLocalAPIStatus updates the local API status securely
-func (sr *StatusReporter) UpdateLocalAPIStatus(fn func(*models.LocalAPIStatus)) {
+func (sr *StatusReporter) UpdateLocalAPIStatus(fn func(*models.EdgeletAPIStatus)) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	sr.statusReporterStatus.SetLastUpdate(time.Now().UnixMilli())

@@ -969,9 +969,9 @@ func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 	case TaskActionCreateExec:
 		if ms != nil {
 			// Exec session creation would create an interactive exec session
-			// This requires WebSocket support and is typically handled by the LocalAPI
+			// This requires WebSocket support and is typically handled by the EdgeletAPI
 			// For now, log that exec was requested
-			pm.logger.Infof("Exec session requested for microservice %s (handled by LocalAPI)", ms.MicroserviceUUID)
+			pm.logger.Infof("Exec session requested for microservice %s (handled by EdgeletAPI)", ms.MicroserviceUUID)
 		}
 	default:
 		pm.logger.Warnf("Unknown task action: %s", task.Action)
@@ -1967,7 +1967,7 @@ func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *eng
 		entries: make([]collectedLogLine, 0),
 		done:    make(chan struct{}),
 	}
-	sessionID := fmt.Sprintf("localapi-log-%d", time.Now().UnixNano())
+	sessionID := fmt.Sprintf("edgeletapi-log-%d", time.Now().UnixNano())
 	if err := pm.engine.TailContainerLogs(container.ID, sessionID, microserviceUUID, handler, cfg); err != nil {
 		return nil, err
 	}
@@ -2006,7 +2006,7 @@ func (pm *ProcessManager) StreamMicroserviceLogs(microserviceUUID string, cfg *e
 	if container == nil {
 		return fmt.Errorf("container not found for microservice: %s", microserviceUUID)
 	}
-	sessionID := fmt.Sprintf("localapi-log-stream-%d", time.Now().UnixNano())
+	sessionID := fmt.Sprintf("edgeletapi-log-stream-%d", time.Now().UnixNano())
 	return pm.engine.TailContainerLogs(container.ID, sessionID, microserviceUUID, handler, cfg)
 }
 

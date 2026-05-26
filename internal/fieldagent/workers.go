@@ -356,16 +356,16 @@ func (fa *FieldAgent) localAPITokenRotationWorker() {
 		case <-timer.C:
 			token, err := auth.GetLocalTokenManager().LoadToken()
 			if err != nil {
-				if reconcileErr := auth.EnsureLocalAPITokenForCurrentState(); reconcileErr != nil {
-					logging.LogWarn(moduleName, fmt.Sprintf("local-api token reconcile failed: %v", reconcileErr))
+				if reconcileErr := auth.EnsureEdgeletAPITokenForCurrentState(); reconcileErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("edgelet-api token reconcile failed: %v", reconcileErr))
 				}
 				timer.Reset(localAPITokenRotationInterval)
 				continue
 			}
-			rotate, err := auth.ShouldRotateLocalAPIToken(token, time.Now())
+			rotate, err := auth.ShouldRotateEdgeletAPIToken(token, time.Now())
 			if err != nil || rotate {
-				if reconcileErr := auth.EnsureLocalAPITokenForCurrentState(); reconcileErr != nil {
-					logging.LogWarn(moduleName, fmt.Sprintf("local-api token rotation failed: %v", reconcileErr))
+				if reconcileErr := auth.EnsureEdgeletAPITokenForCurrentState(); reconcileErr != nil {
+					logging.LogWarn(moduleName, fmt.Sprintf("edgelet-api token rotation failed: %v", reconcileErr))
 				}
 			}
 			timer.Reset(localAPITokenRotationInterval)
