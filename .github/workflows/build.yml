@@ -78,18 +78,20 @@ jobs:
           GOARM: ${{ matrix.arm }}
         run: |
           mkdir -p build
-          CGO_ENABLED=0 go build -trimpath \
-            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w" \
-            -o build/iofog-agent-${{ matrix.os }}-${{ matrix.arch }} ./cmd/iofog-agent
-          CGO_ENABLED=0 go build -trimpath \
-            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w" \
-            -o build/iofog-agentd-${{ matrix.os }}-${{ matrix.arch }} ./cmd/iofog-agentd
+          CGO_ENABLED=0 go build -trimpath -tags lite \
+            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w -X github.com/datasance/edgelet/internal/buildmeta.Flavor=lite" \
+            -o build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-lite ./cmd/edgelet
+          CGO_ENABLED=1 go build -trimpath -tags "cgo full" \
+            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w -X github.com/datasance/edgelet/internal/buildmeta.Flavor=full" \
+            -o build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-full ./cmd/edgelet
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
-          path: agent-go/build/iofog-agent*-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            agent-go/build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-lite
+            agent-go/build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-full
 
   docker:
     name: Build Docker Image

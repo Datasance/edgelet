@@ -7,7 +7,7 @@
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
 #   Phase 3 — CNI network configuration
-#   Phase 4 — LocalAPI v1 + CLI microservice operations
+#   Phase 4 — EdgeletAPI v1 + CLI microservice operations
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
 #   Phase 7 — Chaos gates
@@ -127,7 +127,7 @@ assert_ok "containerd config accepts iofog.network pod annotation" \
 ###############################################################################
 # Phase 4 — LocalAPI v1 + CLI microservice operations
 ###############################################################################
-log_step "Phase 4: LocalAPI v1 and CLI operations"
+log_step "Phase 4: EdgeletAPI v1 and CLI operations"
 
 assert_ok "ms ls is reachable (table or empty state)" \
     R "set -e
@@ -482,17 +482,10 @@ assert_ok "create RuntimeClass apply/delete operation helper" \
 set -euo pipefail
 
 runtimeclass_token_file() {
-  for p in \
-    /etc/edgelet/local-api \
-    /var/lib/edgelet/local-api \
-    /var/lib/edgelet/.edgelet/local-api \
-    /root/.edgelet/local-api
-  do
-    if [ -f \"\${p}\" ]; then
-      echo \"\${p}\"
-      return 0
-    fi
-  done
+  if [ -f /etc/edgelet/edgelet-api ]; then
+    echo /etc/edgelet/edgelet-api
+    return 0
+  fi
   return 1
 }
 

@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- EdgeletAPI code rename: Go packages, auth/PKI paths, CLI client symbols, and CI gates aligned with `.cursor/edgelet/NAMING.md` (HTTP routes remain `/v1/...`).
 - Bare **`edgelet`** invokes the operator CLI (help banner); start the daemon explicitly with **`edgelet daemon`** or **`systemctl start edgelet`** (`ExecStart=…/edgelet daemon` in systemd/packaging).
+- Documentation migration: obsolete root docs replaced by `docs/edgelet/` tree (architecture, deployment, EdgeletAPI v1, CLI migration); root `README.md` and hand-written CLI docs updated for Edgelet terminology.
 
 ## [1.0.0-edgelet] — TBD (proposed)
 

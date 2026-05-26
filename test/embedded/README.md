@@ -56,7 +56,7 @@ Installed automatically by `setup.sh`:
   --skip-build      Skip cross-compile (reuse build/edgelet-linux-*-full)
   --skip-start      Skip VM creation/start (VM must already be running)
   --delete-vm       Delete the VM after tests complete
-  --vm-name=NAME    Lima VM name (default: iofog-test)
+  --vm-name=NAME    Lima VM name (default: edgelet-test)
   --arch=ARCH       Target Linux arch: arm64 | amd64 (default: auto-detect from host)
   --timeout=N       Seconds to wait for VM readiness (default: 300)
   --ci              CI mode — deletes VM on failure
@@ -80,7 +80,7 @@ Output: **`build/edgelet-linux-<arch>-full`** — single multicall binary (CLI +
 | 1 | Extracted embedded binaries (shims, crun, CNI plugins) |
 | 2 | containerd socket, health check, `k8s.io` namespace |
 | 3 | Managed + local CNI conflists written, network names, bridge names, system symlinks |
-| 4 | LocalAPI v1 and CLI checks (`ms ls` table output, `auth whoami`, local `deploy -f`) |
+| 4 | EdgeletAPI v1 and CLI checks (`ms ls` table output, `auth whoami`, local `deploy -f`) |
 | 5 | Container run, IP forwarding, crun version |
 | 6 | CLI: `version`, `info` shows engine=edgelet |
 | 7 | Chaos gates (restart storm + child crash recovery) |
@@ -138,20 +138,20 @@ If the desktop app is running with the Lima VM already active, you can run
 the test script against the same VM:
 
 ```bash
-./test/embedded/vm-test.sh --vm-name=iofog
+./test/embedded/vm-test.sh --vm-name=edgelet
 ```
 
 ## Connecting to the VM directly
 
 ```bash
 # Open a shell
-limactl shell iofog-test
+limactl shell edgelet-test
 
 # View daemon logs
-limactl shell iofog-test -- sudo journalctl -fu edgelet
+limactl shell edgelet-test -- sudo journalctl -fu edgelet
 
 # Direct containerd access via ctr
-limactl shell iofog-test -- sudo ctr \
+limactl shell edgelet-test -- sudo ctr \
     --address /run/edgelet/containerd.sock \
     --namespace k8s.io \
     images list
@@ -166,7 +166,7 @@ limactl shell iofog-test -- sudo ctr \
 | Data paths | `/var/lib/edgelet`, `/run/edgelet`, `/var/lib/edgelet-containerd` |
 | Config | `/etc/edgelet/config.yaml` |
 | `containerEngine` | `edgelet` |
-| Local API | `/v1/…` |
+| Edgelet API | `/v1/…` |
 | Deploy manifests | `apiVersion: edgelet.iofog.org/v1` |
 
 Pot controller REST remains **`/api/v3/…`** (unchanged).

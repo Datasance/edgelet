@@ -4,7 +4,7 @@ Authentication operations
 
 ### Synopsis
 
-Inspect and manage LocalAPI authentication tokens.
+Inspect and manage EdgeletAPI authentication tokens.
 
 Subcommands: whoami, tokens, revoke.
 

@@ -4,7 +4,7 @@ Deploy a local manifest
 
 ### Synopsis
 
-Apply or validate a local microservice, registry, or runtimeclass manifest via LocalAPI v1.
+Apply or validate a local microservice, registry, or runtimeclass manifest via EdgeletAPI v1.
 
 Manifest kind is auto-detected from the YAML file.
 

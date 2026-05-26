@@ -72,6 +72,11 @@ jobs:
       - name: CLI help regression
         run: make cli-help-check
 
+      - name: EdgeletAPI v1 QA gates
+        run: |
+          chmod +x scripts/edgelet-api-v1-gates.sh
+          ./scripts/edgelet-api-v1-gates.sh
+
       - name: Check formatting
         run: |
           go fmt ./...

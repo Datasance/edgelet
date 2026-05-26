@@ -38,13 +38,13 @@ jobs:
           ## Downloads
 
           ### Binaries
-          - Linux AMD64: \`iofog-agent-linux-amd64\`, \`iofog-agentd-linux-amd64\`
-          - Linux ARM64: \`iofog-agent-linux-arm64\`, \`iofog-agentd-linux-arm64\`
-          - Linux ARMv7: \`iofog-agent-linux-arm\`, \`iofog-agentd-linux-arm\`
+          - Linux AMD64: \`edgelet-linux-amd64-full\`, \`edgelet-linux-amd64-lite\`
+          - Linux ARM64: \`edgelet-linux-arm64-full\`, \`edgelet-linux-arm64-lite\`
+          - Linux ARMv7: \`edgelet-linux-arm-lite\`
 
           ### Packages
-          - DEB: \`iofog-agent_${{ steps.version.outputs.version }}_amd64.deb\`
-          - RPM: \`iofog-agent-${{ steps.version.outputs.version }}-1.x86_64.rpm\`
+          - DEB: \`edgelet_${{ steps.version.outputs.version }}_amd64.deb\`
+          - RPM: \`edgelet-${{ steps.version.outputs.version }}-1.x86_64.rpm\`
 
           ### Docker
           \`\`\`bash

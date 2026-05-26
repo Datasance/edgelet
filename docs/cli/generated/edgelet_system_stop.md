@@ -6,7 +6,7 @@ Gracefully stop the daemon
 
 Gracefully stop the ioFog Agent daemon (edgelet).
 
-WARNING: Stopping the daemon disables LocalAPI until the daemon is started again
+WARNING: Stopping the daemon disables EdgeletAPI until the daemon is started again
 (edgelet or systemctl start edgelet).
 
 ```
