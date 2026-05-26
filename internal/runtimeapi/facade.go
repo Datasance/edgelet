@@ -1352,6 +1352,12 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 	}
 	hostIP := network.GetInstance().GetCurrentIPAddress()
 
+	localItem.LastStartAttemptAt = time.Now().Unix()
+	if err := f.UpsertLocalDeployment(localItem); err != nil {
+		logging.LogWarn(runtimeAPIModuleName, fmt.Sprintf("local deploy persist start attempt failed deploymentId=%s err=%v", deploymentID, err))
+		return "", nil, err
+	}
+
 	containerID, launchErr := processmanager.GetInstance().LaunchLocalMicroserviceWithProgress(localMS, registry, hostIP, func(stage string, message string) {
 		emitDeployProgress(progress, stage, message)
 	})

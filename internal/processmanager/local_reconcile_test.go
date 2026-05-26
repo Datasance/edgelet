@@ -2,13 +2,141 @@ package processmanager
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/pkg/engine"
 )
+
+func TestLocalDeploymentLaunchInFlight(t *testing.T) {
+	now := time.Now().Unix()
+	inFlight := &models.LocalDeployedMicroservice{
+		LocalUUID:          "local-apply",
+		RuntimeState:       "starting",
+		State:              "starting",
+		Generation:         2,
+		ObservedGeneration: 0,
+		LastTransitionAt:   now,
+	}
+	if !localDeploymentLaunchInFlight(inFlight, now) {
+		t.Fatal("expected apply-owned starting deployment to be in-flight")
+	}
+
+	observed := *inFlight
+	observed.ObservedGeneration = 2
+	if localDeploymentLaunchInFlight(&observed, now) {
+		t.Fatal("expected observed generation to clear in-flight state")
+	}
+
+	stale := *inFlight
+	stale.LastStartAttemptAt = now - int64(localLaunchInFlightStaleTimeout.Seconds()) - 1
+	if localDeploymentLaunchInFlight(&stale, now) {
+		t.Fatal("expected stale starting deployment to allow reconcile retry")
+	}
+}
+
+func TestReconcileLocalDesiredRunning_SkipsLaunchWhenApplyInFlight(t *testing.T) {
+	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
+	now := time.Now().Unix()
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:          "local-apply",
+		RuntimeState:       "starting",
+		State:              "starting",
+		DesiredState:       "running",
+		Generation:         1,
+		ObservedGeneration: 0,
+		LastTransitionAt:   now,
+	}
+	launchCalled := false
+	pm.launchLocalDeploymentFn = func(*models.LocalDeployedMicroservice, int64) {
+		launchCalled = true
+	}
+
+	pm.reconcileLocalDesiredRunning(item, nil, now)
+
+	if launchCalled {
+		t.Fatal("expected reconcile to skip launch while CLI apply is in-flight")
+	}
+}
+
+func TestReconcileLocalDesiredRunning_LaunchesWhenNotInFlight(t *testing.T) {
+	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
+	now := time.Now().Unix()
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:    "local-retry",
+		RuntimeState: "failed",
+		State:        "failed",
+		DesiredState: "running",
+		Generation:   1,
+	}
+	launchCalled := false
+	pm.launchLocalDeploymentFn = func(*models.LocalDeployedMicroservice, int64) {
+		launchCalled = true
+	}
+
+	pm.reconcileLocalDesiredRunning(item, nil, now)
+
+	if !launchCalled {
+		t.Fatal("expected reconcile to launch when deployment is not in-flight")
+	}
+}
+
+type serialLocalLaunchEngine struct {
+	lifecycleTestEngine
+	inCreate      int32
+	maxConcurrent int32
+}
+
+func (e *serialLocalLaunchEngine) CreateContainer(ms *models.Microservice, _ string) (string, error) {
+	current := atomic.AddInt32(&e.inCreate, 1)
+	for {
+		prev := atomic.LoadInt32(&e.maxConcurrent)
+		if current <= prev || atomic.CompareAndSwapInt32(&e.maxConcurrent, prev, current) {
+			break
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+	atomic.AddInt32(&e.inCreate, -1)
+	return "cid-" + ms.MicroserviceUUID, nil
+}
+
+func TestLaunchLocalMicroserviceWithProgress_SerializesConcurrentLaunchSameUUID(t *testing.T) {
+	eng := &serialLocalLaunchEngine{}
+	pm := &ProcessManager{
+		logger: logging.NewModuleLogger("test-process-manager"),
+		engine: eng,
+	}
+	ms := &models.Microservice{
+		MicroserviceUUID: "12939b01-550f-48be-b8ac-2bade1eb19aa",
+		ImageName:        "busybox:latest",
+	}
+	reg := models.NewRegistry(2, "from_cache", true, "", "", "")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = pm.LaunchLocalMicroserviceWithProgress(ms, reg, "127.0.0.1", nil)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d launch failed: %v", i, err)
+		}
+	}
+	if got := atomic.LoadInt32(&eng.maxConcurrent); got != 1 {
+		t.Fatalf("expected max concurrent create=1 for same UUID, got %d", got)
+	}
+}
 
 func TestBumpLocalFailureMarksStuckAfterThreshold(t *testing.T) {
 	pm := &ProcessManager{}
