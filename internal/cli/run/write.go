@@ -6,11 +6,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/output"
 )
 
-const daemonUnavailableMessage = "ioFog Agent daemon is not running. Start it with `iofog-agentd` or `systemctl start iofog-agentd`."
+const daemonUnavailableMessage = "Edgelet daemon is not running. Start it with `edgelet daemon` or `systemctl start edgelet`."
 
 // RequireDaemon returns DAEMON_UNAVAILABLE when the daemon is unreachable.
 func RequireDaemon(client V3Client) error {

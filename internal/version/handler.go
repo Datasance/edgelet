@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
 	moduleName              = "Version Handler"
-	packageName             = "iofog-agent"
+	packageName             = "edgelet"
 	maxRestartingTimeout    = "60"
 	getLinuxDistributionCmd = "grep = /etc/os-release | awk -F\"[=]\" '{print $2}' | sed -n 1p"
 )
@@ -67,7 +67,7 @@ func GetInstance() *Handler {
 // init initializes the version handler
 func (h *Handler) init() {
 	// Check if running in container
-	iofogDaemon := os.Getenv("IOFOG_DAEMON")
+	iofogDaemon := os.Getenv("EDGELET_DAEMON")
 	if strings.ToLower(iofogDaemon) == "container" {
 		h.distributionName = "container"
 		h.packageManager = &ContainerPackageManager{}
@@ -171,7 +171,7 @@ func (a *AptPackageManager) GetScript(command VersionCommand) string {
 }
 
 func (a *AptPackageManager) getDevVersion() (string, error) {
-	cmd := fmt.Sprintf("(apt-cache policy %s-dev && apt-cache policy %s) | grep -A1 ^iofog | awk '$2 ~ /^[0-9]/ {print a}{a=$0}' | sed -e 's/iofog-agent\\(.*\\):/\\1/'", packageName, packageName)
+	cmd := fmt.Sprintf("(apt-cache policy %s-dev && apt-cache policy %s) | grep -A1 ^iofog | awk '$2 ~ /^[0-9]/ {print a}{a=$0}' | sed -e 's/edgelet\\(.*\\):/\\1/'", packageName, packageName)
 	stdout, _, _ := utils.ExecuteCommand(cmd)
 	if stdout == "" {
 		return "", nil
@@ -244,7 +244,7 @@ func (d *DnfPackageManager) GetScript(command VersionCommand) string {
 }
 
 func (d *DnfPackageManager) getDevVersion() (string, error) {
-	cmd := fmt.Sprintf("(dnf --showduplicates list installed %s-dev && dnf --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/iofog-agent\\(.*\\).noarch/\\1/'", packageName, packageName)
+	cmd := fmt.Sprintf("(dnf --showduplicates list installed %s-dev && dnf --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/edgelet\\(.*\\).noarch/\\1/'", packageName, packageName)
 	stdout, _, _ := utils.ExecuteCommand(cmd)
 	if stdout == "" {
 		return "", nil
@@ -317,7 +317,7 @@ func (y *YumPackageManager) GetScript(command VersionCommand) string {
 }
 
 func (y *YumPackageManager) getDevVersion() (string, error) {
-	cmd := fmt.Sprintf("(yum --showduplicates list installed %s-dev && yum --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/iofog-agent\\(.*\\).noarch/\\1/'", packageName, packageName)
+	cmd := fmt.Sprintf("(yum --showduplicates list installed %s-dev && yum --showduplicates list installed %s) | grep iofog | awk '{print $1}' | sed -e 's/edgelet\\(.*\\).noarch/\\1/'", packageName, packageName)
 	stdout, _, _ := utils.ExecuteCommand(cmd)
 	if stdout == "" {
 		return "", nil
@@ -330,7 +330,7 @@ func (y *YumPackageManager) getDevVersion() (string, error) {
 type ContainerPackageManager struct{}
 
 func (c *ContainerPackageManager) GetInstalledVersion() (string, error) {
-	cmd := "iofog-agent version | grep -oP 'Agent\\s+\\K[0-9]+(\\.[0-9]+){2,3}(?=\\s|$)'"
+	cmd := "edgelet version | grep -oP 'Agent\\s+\\K[0-9]+(\\.[0-9]+){2,3}(?=\\s|$)'"
 	stdout, _, err := utils.ExecuteCommand(cmd)
 	if err != nil || stdout == "" {
 		return "", err
@@ -421,7 +421,7 @@ func (h *Handler) ChangeVersion(actionData map[string]interface{}) error {
 	logging.LogInfo(moduleName, "Start performing change version operation, received from ioFog controller")
 
 	// Check if running in container
-	iofogDaemon := os.Getenv("IOFOG_DAEMON")
+	iofogDaemon := os.Getenv("EDGELET_DAEMON")
 	if strings.ToLower(iofogDaemon) == "container" {
 		logging.LogWarn(moduleName, "IoFog Agent daemon is running inside container, please upgrade/rollback version via `potctl`")
 		return nil
@@ -491,7 +491,7 @@ func (h *Handler) isValidChangeVersionOperation(command VersionCommand) bool {
 func (h *Handler) IsReadyToUpgrade() bool {
 	logging.LogDebug(moduleName, "Checking if ready to upgrade")
 
-	iofogDaemon := os.Getenv("IOFOG_DAEMON")
+	iofogDaemon := os.Getenv("EDGELET_DAEMON")
 	isContainer := strings.ToLower(iofogDaemon) == "container"
 
 	var isReady bool

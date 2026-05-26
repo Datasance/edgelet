@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/dnsresolver"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/dnsresolver"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
@@ -22,7 +22,7 @@ type StatusHandler struct {
 	// StatusReporter is accessed via singleton
 }
 
-// HandleStatus handles GET /v3/system/status
+// HandleStatus handles GET /v1/system/status
 func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(statusHandlerModuleName, "Handle status Api Handler call")
 

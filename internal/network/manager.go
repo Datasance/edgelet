@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/docker"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/docker"
 )
 
 const (

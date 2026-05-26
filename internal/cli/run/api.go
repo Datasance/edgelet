@@ -1,8 +1,8 @@
 package run
 
-import "github.com/eclipse-iofog/agent/internal/cli/client"
+import "github.com/datasance/edgelet/internal/cli/client"
 
-// V3Client is the LocalAPI v3 client surface used by CLI commands.
+// V3Client is the LocalAPI v1 client surface used by CLI commands.
 type V3Client interface {
 	RequestV3(method, path string, requestBody interface{}) (map[string]interface{}, error)
 	RequestV3MultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error)

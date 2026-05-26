@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/domain/deploy"
-	"github.com/eclipse-iofog/agent/internal/cli/domain/image"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/domain/deploy"
+	"github.com/datasance/edgelet/internal/cli/domain/image"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -27,13 +27,13 @@ func newDeployCommand() *cobra.Command {
 			if len(args) > 0 {
 				switch args[0] {
 				case "apply", "validate", "registry", "registries", "runtimeclass", "runtimeclasses":
-					return run.NewCLIError(run.CodeInvalidArgument, "unknown deploy arguments; use: iofog-agent deploy -f <manifest.yaml> [--dry-run]", nil)
+					return run.NewCLIError(run.CodeInvalidArgument, "unknown deploy arguments; use: edgelet deploy -f <manifest.yaml> [--dry-run]", nil)
 				default:
 					return run.NewCLIError(run.CodeInvalidArgument, "unknown deploy argument "+args[0], nil)
 				}
 			}
 			if manifestPath == "" {
-				return run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent deploy -f <manifest.yaml> [--sourceName <name>] [--dry-run]", nil)
+				return run.NewCLIError(run.CodeInvalidArgument, "usage: edgelet deploy -f <manifest.yaml> [--sourceName <name>] [--dry-run]", nil)
 			}
 			if appCtx == nil {
 				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)

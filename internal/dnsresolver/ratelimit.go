@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
@@ -131,14 +131,14 @@ func (r *Resolver) ensureGuardrailsInitialized() {
 
 func (r *Resolver) applyGuardrailConfigFromEnvLocked() {
 	enabled := true
-	if raw := strings.TrimSpace(os.Getenv("IOFOG_DNS_RATE_LIMIT_ENABLED")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("EDGELET_DNS_RATE_LIMIT_ENABLED")); raw != "" {
 		enabled = !strings.EqualFold(raw, "false")
 	}
 
-	rps := parseIntWithDefault("IOFOG_DNS_RATE_LIMIT_RPS", defaultRateLimitRPS)
-	burst := parseIntWithDefault("IOFOG_DNS_RATE_LIMIT_BURST", defaultRateLimitBurst)
-	maxReqBytes := parseIntWithDefault("IOFOG_DNS_MAX_REQUEST_BYTES", defaultMaxRequestBytes)
-	maxQNameBytes := parseIntWithDefault("IOFOG_DNS_MAX_QNAME_BYTES", defaultMaxQNameBytes)
+	rps := parseIntWithDefault("EDGELET_DNS_RATE_LIMIT_RPS", defaultRateLimitRPS)
+	burst := parseIntWithDefault("EDGELET_DNS_RATE_LIMIT_BURST", defaultRateLimitBurst)
+	maxReqBytes := parseIntWithDefault("EDGELET_DNS_MAX_REQUEST_BYTES", defaultMaxRequestBytes)
+	maxQNameBytes := parseIntWithDefault("EDGELET_DNS_MAX_QNAME_BYTES", defaultMaxQNameBytes)
 	r.rateLimitEnabled = enabled
 	r.rateLimitRPS = rps
 	r.rateLimitBurst = burst

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const bannerMarker = "Datasance PoT ioFog Agent"
+const bannerMarker = "Edgelet"
 
 func TestBanner_BareCommandOnce(t *testing.T) {
 	client := &fakeClient{running: true}
@@ -66,7 +66,7 @@ func TestBanner_CommandNoBanner(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]interface{}{
-			"GET /v3/system/status": {"iofogDaemon": "running"},
+			"GET /v1/system/status": {"iofogDaemon": "running"},
 		},
 	}
 	_, stderr, code := runCLI(t, client, "system", "status")

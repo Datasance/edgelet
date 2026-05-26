@@ -4,7 +4,7 @@ import "testing"
 
 func validLocalRegistryManifest() *LocalRegistryManifest {
 	return &LocalRegistryManifest{
-		APIVersion: "iofog.org/v3",
+		APIVersion: "edgelet.iofog.org/v1",
 		Kind:       "Registry",
 		Spec: struct {
 			URL       string `yaml:"url" json:"url"`

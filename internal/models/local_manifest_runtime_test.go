@@ -3,15 +3,15 @@ package models
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 func TestBuildMicroserviceFromLocalManifestUsesLocalApplicationScope(t *testing.T) {
 	doc := validLocalDeployManifestForTest("local-svc")
 	ms := BuildMicroserviceFromLocalManifest(doc, "dep-1", "nginx:latest")
 
-	if ms.ApplicationName != workloadmeta.LocalApplicationName {
-		t.Fatalf("expected application %q, got %q", workloadmeta.LocalApplicationName, ms.ApplicationName)
+	if ms.ApplicationName != workloadmeta.LocalDeployApplicationName {
+		t.Fatalf("expected application %q, got %q", workloadmeta.LocalDeployApplicationName, ms.ApplicationName)
 	}
 
 	if got := workloadmeta.ResolveScope(ms.ApplicationName, ms.HostNetworkMode); got != workloadmeta.ScopeLocal {

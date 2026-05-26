@@ -8,7 +8,7 @@ import (
 // ErrHumanOutputWritten marks failures whose human-mode message was already printed to stderr.
 var ErrHumanOutputWritten = errors.New("cli: human output already written")
 
-// Error codes aligned with LocalAPI v3 and CLI exit mapping.
+// Error codes aligned with LocalAPI v1 and CLI exit mapping.
 const (
 	CodeInvalidArgument   = "INVALID_ARGUMENT"
 	CodeUnauthorized      = "UNAUTHORIZED"

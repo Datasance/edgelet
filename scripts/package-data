@@ -1,0 +1,62 @@
+#!/bin/bash
+set -e -x
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+case ${OS} in
+  linux)
+    ;;
+  darwin)
+    OS=linux
+    ;;
+  *)
+    echo "[ERROR] unsupported OS for package-data: ${OS}" >&2
+    exit 1
+    ;;
+esac
+
+if [ ! -d build/bin ] || [ ! -f build/images/pause.tar.gz ]; then
+  echo "ERROR: run scripts/build-embedded first" >&2
+  exit 1
+fi
+
+rm -rf build/stage build/out
+mkdir -p build/stage/bin build/stage/images build/out
+mkdir -p pkg/data/embed
+
+cp -a build/bin/. build/stage/bin/
+cp build/images/pause.tar.gz build/stage/images/
+
+(
+  set +x
+  cd build/stage/bin
+  find . -not -path '*/\.*' -type f -exec sha256sum {} \; | sed -e 's| \./| |' | sort -k2 >.sha256sums
+  (
+    for f in $(find . -type l); do
+      echo "${f#./}" "$(readlink "${f}")"
+    done
+  ) | sort >.links
+  set -x
+)
+
+OUT_TAR="build/out/data-${OS}-${ARCH}.tar"
+if tar --version 2>/dev/null | grep -qi gnu; then
+  tar --sort=name --mtime=@0 -C build/stage -cvf "${OUT_TAR}" bin images
+else
+  (
+    cd build/stage
+    find bin images \( -type f -o -type l \) | LC_ALL=C sort > ../filelist.txt
+    tar -cf "../out/data-${OS}-${ARCH}.tar" -T ../filelist.txt
+    rm -f ../filelist.txt
+  )
+fi
+zstd --no-progress -T0 -16 -f --long=25 --rm "${OUT_TAR}" -o "${OUT_TAR}.zst"
+
+HASH=$(sha256sum "${OUT_TAR}.zst" | awk '{print $1}')
+find pkg/data/embed -mindepth 1 ! -name '.empty' -delete 2>/dev/null || true
+echo "Cleared previous embed bundles for ARCH=${ARCH}"
+cp "${OUT_TAR}.zst" "pkg/data/embed/${HASH}.tar.zst"
+
+echo "Packaged pkg/data/embed/${HASH}.tar.zst ($(stat -f '%z bytes' "${OUT_TAR}.zst" 2>/dev/null || stat -c '%s bytes' "${OUT_TAR}.zst"))"

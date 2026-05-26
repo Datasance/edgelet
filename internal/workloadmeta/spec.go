@@ -3,13 +3,13 @@ package workloadmeta
 import "strings"
 
 const (
-	ManagedByValue = "iofog-agent"
+	ManagedByValue = "edgelet"
 )
 
 const (
-	RuntimeEngineDocker = "docker"
-	RuntimeEnginePodman = "podman"
-	RuntimeEngineIofog  = "iofog"
+	RuntimeEngineDocker  = "docker"
+	RuntimeEnginePodman  = "podman"
+	RuntimeEngineEdgelet = "edgelet"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 )
 
 const (
-	LocalApplicationName = "local"
+	LocalDeployApplicationName = "edgelet"
 )
 
 const (
@@ -33,26 +33,26 @@ const (
 	LabelAppPartOf    = "app.kubernetes.io/part-of"
 	LabelAppManagedBy = "app.kubernetes.io/managed-by"
 
-	LabelMicroserviceUID = "iofog.org/microservice-uid"
-	LabelNodeUID         = "iofog.org/node-uid"
-	LabelScope           = "iofog.org/scope"
-	LabelRuntimeEngine   = "iofog.org/runtime-engine"
-	LabelRole            = "iofog.org/role"
+	LabelMicroserviceUID = "edgelet.iofog.org/microservice-uid"
+	LabelNodeUID         = "edgelet.iofog.org/node-uid"
+	LabelScope           = "edgelet.iofog.org/scope"
+	LabelRuntimeEngine   = "edgelet.iofog.org/runtime-engine"
+	LabelRole            = "edgelet.iofog.org/role"
 
-	LabelSystem      = "iofog.org/system"
-	LabelHostNetwork = "iofog.org/host-network"
-	LabelSandboxID   = "iofog.org/sandbox-id"
-	LabelHealthcheck = "iofog.org/healthcheck"
+	LabelSystem      = "edgelet.iofog.org/system"
+	LabelHostNetwork = "edgelet.iofog.org/host-network"
+	LabelSandboxID   = "edgelet.iofog.org/sandbox-id"
+	LabelHealthcheck = "edgelet.iofog.org/healthcheck"
 )
 
 const (
-	EnvMicroserviceUID  = "IOFOG_MICROSERVICE_UID"
-	EnvMicroserviceName = "IOFOG_MICROSERVICE_NAME"
-	EnvApplicationName  = "IOFOG_APPLICATION_NAME"
-	EnvNodeUID          = "IOFOG_NODE_UID"
-	EnvScope            = "IOFOG_SCOPE"
-	EnvRuntimeEngine    = "IOFOG_RUNTIME_ENGINE"
-	EnvRole             = "IOFOG_ROLE"
+	EnvMicroserviceUID  = "EDGELET_MICROSERVICE_UID"
+	EnvMicroserviceName = "EDGELET_MICROSERVICE_NAME"
+	EnvApplicationName  = "EDGELET_APPLICATION_NAME"
+	EnvNodeUID          = "EDGELET_NODE_UID"
+	EnvScope            = "EDGELET_SCOPE"
+	EnvRuntimeEngine    = "EDGELET_RUNTIME_ENGINE"
+	EnvRole             = "EDGELET_ROLE"
 	EnvTimeZone         = "TZ"
 )
 
@@ -139,7 +139,7 @@ func RoleFromMicroservice(isRouter, isNats bool) string {
 }
 
 func IsLocalApplication(application string) bool {
-	return strings.EqualFold(strings.TrimSpace(application), LocalApplicationName)
+	return strings.EqualFold(strings.TrimSpace(application), LocalDeployApplicationName)
 }
 
 func ResolveScope(application string, hostNetwork bool) string {

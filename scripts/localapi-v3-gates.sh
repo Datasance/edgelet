@@ -14,6 +14,6 @@ echo "[gate] runtime-api"
 go test ./internal/localapi ./internal/runtimeapi
 
 echo "[gate] cli"
-go test ./internal/cli ./cmd/iofog-agent
+go test ./internal/cli ./cmd/edgelet
 
 echo "LocalAPI v3 QA gates passed."

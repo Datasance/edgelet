@@ -3,7 +3,7 @@ package provision
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // DeprovisionResult carries deprovision outcome.
@@ -29,7 +29,7 @@ func Deprovision(client run.V3Client, req DeprovisionRequest) (*DeprovisionResul
 	if scope != "all" && scope != "local" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "--scope requires all|local", nil)
 	}
-	path := "/v3/system/provision"
+	path := "/v1/system/provision"
 	if scope != "all" {
 		path += "?scope=" + scope
 	}

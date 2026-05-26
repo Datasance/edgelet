@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/datasance/edgelet/internal/workloadmeta"
+)
 
 func TestLocalDeployedMicroserviceNormalizeDefaults(t *testing.T) {
 	item := &LocalDeployedMicroservice{
@@ -14,8 +18,8 @@ func TestLocalDeployedMicroserviceNormalizeDefaults(t *testing.T) {
 
 	item.NormalizeDefaults()
 
-	if item.ApplicationName != "local" {
-		t.Fatalf("expected application_name local, got %q", item.ApplicationName)
+	if item.ApplicationName != workloadmeta.LocalDeployApplicationName {
+		t.Fatalf("expected application_name %q, got %q", workloadmeta.LocalDeployApplicationName, item.ApplicationName)
 	}
 	if item.DesiredState != "running" {
 		t.Fatalf("expected desired_state running, got %q", item.DesiredState)

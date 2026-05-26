@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func TestGetStatusReport_IncludesAvailableNetworkInterfacesAfterSystemTotalCPU(t *testing.T) {
@@ -77,13 +77,13 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
 		t.Fatalf("expected podman runtime list, got: %v", runtimes)
 	}
 
-	runtimes = getAvailableRuntimesForEngine("iofog", false)
+	runtimes = getAvailableRuntimesForEngine("edgelet", false)
 	if strings.Join(runtimes, ",") != "crun" {
 		t.Fatalf("expected baseline iofog runtimes on non-full flavor, got: %v", runtimes)
 	}
 
 	buildmeta.Flavor = buildmeta.FlavorFull
-	runtimes = getAvailableRuntimesForEngine("iofog", true)
+	runtimes = getAvailableRuntimesForEngine("edgelet", true)
 	if strings.Join(runtimes, ",") != "crun,edgelet,spin" {
 		t.Fatalf("expected full flavor iofog runtimes with runtime classes, got: %v", runtimes)
 	}

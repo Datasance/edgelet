@@ -1,6 +1,6 @@
-# LocalAPI v3 Error Codes
+# LocalAPI v1 Error Codes
 
-Stable LocalAPI v3 error taxonomy for CLI and API consumers.
+Stable LocalAPI v1 error taxonomy for CLI and API consumers.
 
 ## Codes
 
@@ -49,8 +49,8 @@ When RuntimeClass endpoints are called outside supported mode (`full` + `contain
 
 ## RuntimeClass operation polling semantics
 
-- `GET /v3/deploy/runtimeclasses:apply/{operationId}`
-- `GET /v3/deploy/runtimeclasses:delete/{operationId}`
+- `GET /v1/deploy/runtimeclasses:apply/{operationId}`
+- `GET /v1/deploy/runtimeclasses:delete/{operationId}`
 
 For known operations, polling always returns HTTP `200` with `success=true`.
 Terminal operation failure is represented as:

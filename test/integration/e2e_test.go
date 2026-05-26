@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/supervisor"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/supervisor"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 // TestAgentStartup tests full agent startup sequence

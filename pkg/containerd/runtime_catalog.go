@@ -1,4 +1,4 @@
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"errors"

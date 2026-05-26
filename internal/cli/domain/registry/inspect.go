@@ -3,8 +3,8 @@ package registry
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // InspectResult carries registry inspect outcome.
@@ -22,7 +22,7 @@ func Inspect(client run.V3Client, id string, passwordPlain bool) (*InspectResult
 	if id == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "registry id is required", nil)
 	}
-	item, err := client.RequestV3("GET", "/v3/deploy/registries/"+id, nil)
+	item, err := client.RequestV3("GET", "/v1/deploy/registries/"+id, nil)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}

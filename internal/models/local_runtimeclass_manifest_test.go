@@ -8,7 +8,7 @@ import (
 func validLocalRuntimeClassManifestForTest(t *testing.T) *LocalRuntimeClassManifest {
 	t.Helper()
 	doc := &LocalRuntimeClassManifest{
-		APIVersion: "iofog.org/v3",
+		APIVersion: "edgelet.iofog.org/v1",
 		Kind:       "RuntimeClass",
 		Handler:    "spin",
 	}

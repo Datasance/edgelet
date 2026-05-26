@@ -1,4 +1,4 @@
-# LocalAPI v3 QA Gates
+# LocalAPI v1 QA Gates
 
 This document defines execution gates for a strict v3-only LocalAPI surface.
 

@@ -3,8 +3,8 @@ package provision
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // Result carries provision outcome.
@@ -22,7 +22,7 @@ func Provision(client run.V3Client, key string) (*Result, error) {
 	if key == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "provision command requires a provisioning key", nil)
 	}
-	result, err := client.RequestV3("POST", "/v3/system/provision", map[string]string{"provisioningKey": key})
+	result, err := client.RequestV3("POST", "/v1/system/provision", map[string]string{"provisioningKey": key})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
@@ -31,7 +31,7 @@ func Provision(client run.V3Client, key string) (*Result, error) {
 		agentUUID = output.MapValueAsString(result, "iofogUuid")
 	}
 	if agentUUID == "<unknown>" {
-		infoResult, infoErr := client.RequestV3("GET", "/v3/system/info", nil)
+		infoResult, infoErr := client.RequestV3("GET", "/v1/system/info", nil)
 		if infoErr == nil {
 			agentUUID = output.MapValueAsString(infoResult, "iofogUuid")
 		}

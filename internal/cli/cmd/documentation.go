@@ -63,7 +63,7 @@ func generateManPages(root *cobra.Command, outputDir string) error {
 		return err
 	}
 	header := &doc.GenManHeader{
-		Title:   "IOFOG-AGENT",
+		Title:   "EDGELET",
 		Section: "1",
 	}
 	return doc.GenManTree(root, header, outputDir)

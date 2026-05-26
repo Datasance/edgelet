@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
@@ -42,7 +42,7 @@ func NewServer(port int) *Server {
 	router := NewRouter()
 
 	addr := fmt.Sprintf(":%d", port)
-	unixPath := filepath.Join(utils.VarRun, "iofog-agentd.sock")
+	unixPath := filepath.Join(utils.VarRun, "edgelet.sock")
 
 	return &Server{
 		router:           router,

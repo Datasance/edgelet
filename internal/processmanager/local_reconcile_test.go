@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 func TestBumpLocalFailureMarksStuckAfterThreshold(t *testing.T) {
@@ -217,7 +217,7 @@ func openLocalReconcileTestDB(t *testing.T) {
 }
 
 func minimalLocalManifestYAML() string {
-	return `apiVersion: datasance.com/v3
+	return `apiVersion: edgelet.iofog.org/v1
 kind: Microservice
 metadata:
   name: local-ms

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 	"github.com/docker/docker/api/types/events"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
 )
 
 const dockerEngineName = "docker"

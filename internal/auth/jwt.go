@@ -14,20 +14,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
 	moduleName                      = "JWT Manager"
 	jwtExpiration                   = 10 * time.Minute
-	jwtIssuer                       = "https://iofog.default.svc.bridge.local"
-	jwtAudience                     = "https://iofog.default.svc.bridge.local"
-	localAPIAudience                = "iofog-agent://localapi/v3"
-	serviceAccountAudience          = "https://iofog.default.svc.bridge.local"
-	edgeGuardAudience               = "iofog-agent://edgeguard/v1"
+	jwtIssuer                       = "https://edgelet.default.svc.bridge.local"
+	jwtAudience                     = "https://edgelet.default.svc.bridge.local"
+	localAPIAudience                = "edgelet://localapi/v1"
+	serviceAccountAudience          = "https://edgelet.default.svc.bridge.local"
+	edgeGuardAudience               = "edgelet://edgeguard/v1"
 	tokenUseController              = "controller"
 	tokenUseLocalAPI                = "localapi"
 	tokenUseServiceAccount          = "serviceaccount"

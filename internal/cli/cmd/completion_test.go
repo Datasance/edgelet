@@ -19,7 +19,7 @@ func TestCompletionBashGeneratesValidScript(t *testing.T) {
 	if !strings.Contains(out, "bash completion") && !strings.Contains(out, "complete -F") && !strings.Contains(out, "complete -o") {
 		t.Fatalf("expected bash completion script markers, got: %q", truncate(out, 200))
 	}
-	if !strings.Contains(out, "iofog-agent") {
+	if !strings.Contains(out, "edgelet") {
 		t.Fatalf("expected program name in completion script")
 	}
 }

@@ -9,8 +9,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 FLAVOR="${FLAVOR:-full}"
-echo "Building ioFog Agent (FLAVOR=${FLAVOR})..."
-make build "FLAVOR=${FLAVOR}"
+echo "Building Edgelet (FLAVOR=${FLAVOR})..."
+make build-edgelet "FLAVOR=${FLAVOR}"
 
 echo "Build complete!"
 echo "Binaries:"

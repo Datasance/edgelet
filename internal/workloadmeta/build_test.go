@@ -6,7 +6,7 @@ func TestBuildLabelsCanonicalAndProtected(t *testing.T) {
 	in := BuildInput{
 		MicroserviceUUID: "ms-1",
 		MicroserviceName: "video-analyzer",
-		ApplicationName:  "local",
+		ApplicationName:  LocalDeployApplicationName,
 		NodeUUID:         "node-1",
 		RuntimeEngine:    "DOCKER",
 		IsRouter:         true,
@@ -15,10 +15,10 @@ func TestBuildLabelsCanonicalAndProtected(t *testing.T) {
 		IsSystem:         true,
 		SandboxID:        "sandbox-1",
 		UserLabels: map[string]string{
-			"custom.label":               "ok",
-			LabelMicroserviceUID:         "override-disallowed",
-			"APP.KUBERNETES.IO/NAME":     "override-disallowed",
-			"  iofog.org/runtime-engine": "override-disallowed",
+			"custom.label":                       "ok",
+			LabelMicroserviceUID:                 "override-disallowed",
+			"APP.KUBERNETES.IO/NAME":             "override-disallowed",
+			"  edgelet.iofog.org/runtime-engine": "override-disallowed",
 		},
 	}
 
@@ -116,7 +116,7 @@ func TestBuildEnvInjectTZWhenMissing(t *testing.T) {
 		MicroserviceName: "svc",
 		ApplicationName:  "app",
 		NodeUUID:         "node-3",
-		RuntimeEngine:    "iofog",
+		RuntimeEngine:    "edgelet",
 		TimeZone:         "",
 		UserEnv: map[string]string{
 			"USER_B": "b",

@@ -3,9 +3,10 @@ package cmd
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/branding"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -15,18 +16,20 @@ var (
 	newClient = run.DefaultClientFactory
 )
 
-const banner = "\n" +
-	"  _        __                                     _   \n" +
-	" (_)      / _|                                   | |  \n" +
-	"  _  ___ | |_ ___   __ _    __ _  __ _  ___ _ __ | |_ \n" +
-	" | |/ _ \\|  _/ _ \\ / _` |  / _` |/ _` |/ _ \\ '_ \\| __|\n" +
-	" | | (_) | || (_) | (_| | | (_| | (_| |  __/ | | | |_ \n" +
-	" |_|\\___/|_| \\___/ \\__, |  \\__,_| \\__, |\\___|_| |_|\\__|\n" +
-	"                    __/ |         __/ |               \n" +
-	"                   |___/         |___/                \n\n" +
-	"  Datasance PoT ioFog Agent\n" +
+const banner = "\n" + branding.EdgeletANSIShadow + "\n" +
+	"  Edgelet\n" +
 	"  Command Line Interface\n" +
 	"  =====================\n"
+
+// ShouldRunCLI reports whether argv should dispatch to the operator CLI instead
+// of the daemon supervisor. Daemon-only invocation is "edgelet daemon"
+// (used by systemd and service scripts).
+func ShouldRunCLI(args []string) bool {
+	if len(args) <= 1 {
+		return true
+	}
+	return args[1] != "daemon"
+}
 
 // Execute runs the Cobra command tree and returns a process exit code.
 func Execute() int {
@@ -51,8 +54,8 @@ func newRootCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:           "iofog-agent",
-		Short:         "Local CLI for the ioFog Agent daemon",
+		Use:           "edgelet",
+		Short:         "Local CLI for the Edgelet daemon",
 		Long:          rootLongHelp(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -96,6 +99,7 @@ func newRootCommand() *cobra.Command {
 	cmd.SetHelpTemplate(cliHelpTemplate)
 	cmd.SetHelpFunc(printCommandHelp)
 
+	cmd.AddCommand(newVersionCommand())
 	cmd.AddCommand(newDeployCommand())
 	cmd.AddCommand(newSystemCommand())
 	cmd.AddCommand(newMSCommand())
@@ -106,11 +110,11 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newProvisionCommand())
 	cmd.AddCommand(newDeprovisionCommand())
 	cmd.AddCommand(newConfigCommand())
-	cmd.AddCommand(newDeprecatedTopLevelCommand("cert", "use `iofog-agent config cert` instead of top-level cert"))
-	cmd.AddCommand(newDeprecatedTopLevelCommand("switch", "use `iofog-agent config switch` instead of top-level switch"))
-	cmd.AddCommand(newDeprecatedTopLevelCommand("start", "top-level start is removed; start the daemon with iofog-agentd or systemctl start iofog-agentd"))
-	cmd.AddCommand(newDeprecatedTopLevelCommand("stop", "use `iofog-agent system stop` instead of top-level stop"))
-	cmd.AddCommand(newDeprecatedTopLevelCommand("prune", "use `iofog-agent system prune` instead of top-level prune"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("cert", "use `edgelet config cert` instead of top-level cert"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("switch", "use `edgelet config switch` instead of top-level switch"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("start", "top-level start is removed; start the daemon with `edgelet daemon` or `systemctl start edgelet`"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("stop", "use `edgelet system stop` instead of top-level stop"))
+	cmd.AddCommand(newDeprecatedTopLevelCommand("prune", "use `edgelet system prune` instead of top-level prune"))
 
 	cmd.AddCommand(newCompletionCommand(cmd))
 	cmd.AddCommand(newDocumentationCommand(cmd))
@@ -119,7 +123,17 @@ func newRootCommand() *cobra.Command {
 }
 
 func rootLongHelp() string {
-	return strings.TrimSpace(`Local CLI for the ioFog Agent daemon.
+	return strings.TrimSpace(`Local CLI for the Edgelet daemon.
 
-Use "iofog-agent <command> --help" for command-specific usage.`)
+Use "edgelet <command> --help" for command-specific usage.`)
+}
+
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print edgelet version",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runLocalVersion(contextOrBootstrap())
+		},
+	}
 }

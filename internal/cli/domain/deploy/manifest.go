@@ -48,13 +48,13 @@ func DetectManifestKind(path string) (string, error) {
 }
 
 func (t Target) validatePath() string {
-	return "/v3/deploy/" + string(t) + ":validate"
+	return "/v1/deploy/" + string(t) + ":validate"
 }
 
 func (t Target) applyPath() string {
-	return "/v3/deploy/" + string(t) + ":apply"
+	return "/v1/deploy/" + string(t) + ":apply"
 }
 
 func (t Target) applyStatusPath(operationID string) string {
-	return "/v3/deploy/" + string(t) + ":apply/" + operationID
+	return "/v1/deploy/" + string(t) + ":apply/" + operationID
 }

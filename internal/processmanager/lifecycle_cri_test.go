@@ -4,11 +4,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 type resolverTestMSM struct {
@@ -209,7 +209,7 @@ func TestRestartMicroservice_CRI_Recreates(t *testing.T) {
 	}
 	ms := models.NewMicroservice("ms-cri", "nginx:latest")
 	ms.RegistryID = 1
-	pm := newCRILifecyclePM(t, eng, "iofog", ms)
+	pm := newCRILifecyclePM(t, eng, "edgelet", ms)
 
 	if err := pm.RestartMicroservice("ms-cri"); err != nil {
 		t.Fatalf("RestartMicroservice: %v", err)
@@ -238,7 +238,7 @@ func TestRestartMicroservice_CRI_StopFailure(t *testing.T) {
 	}
 	ms := models.NewMicroservice("ms-stop-fail", "nginx:latest")
 	ms.RegistryID = 1
-	pm := newCRILifecyclePM(t, eng, "iofog", ms)
+	pm := newCRILifecyclePM(t, eng, "edgelet", ms)
 
 	err := pm.RestartMicroservice("ms-stop-fail")
 	if err == nil {
@@ -292,7 +292,7 @@ func TestStartMicroservice_CRI_Exited(t *testing.T) {
 	}
 	ms := models.NewMicroservice("ms-cri-exited", "nginx:latest")
 	ms.RegistryID = 1
-	pm := newCRILifecyclePM(t, eng, "iofog", ms)
+	pm := newCRILifecyclePM(t, eng, "edgelet", ms)
 
 	if err := pm.StartMicroservice("ms-cri-exited"); err != nil {
 		t.Fatalf("StartMicroservice: %v", err)
@@ -320,7 +320,7 @@ func TestStartMicroservice_CRI_NonRestartableFallback(t *testing.T) {
 	}
 	ms := models.NewMicroservice("ms-cri-fallback", "nginx:latest")
 	ms.RegistryID = 1
-	pm := newCRILifecyclePM(t, eng, "iofog", ms)
+	pm := newCRILifecyclePM(t, eng, "edgelet", ms)
 
 	if err := pm.StartMicroservice("ms-cri-fallback"); err != nil {
 		t.Fatalf("StartMicroservice: %v", err)
@@ -348,7 +348,7 @@ func TestStartMicroservice_AlreadyRunning(t *testing.T) {
 	}
 	ms := models.NewMicroservice("ms-running", "nginx:latest")
 	ms.RegistryID = 1
-	pm := newCRILifecyclePM(t, eng, "iofog", ms)
+	pm := newCRILifecyclePM(t, eng, "edgelet", ms)
 
 	if err := pm.StartMicroservice("ms-running"); err != nil {
 		t.Fatalf("StartMicroservice: %v", err)
@@ -363,7 +363,7 @@ func TestStartMicroservice_NoContainer(t *testing.T) {
 	eng := &criLifecycleEngine{}
 	pm := &ProcessManager{
 		engine:     eng,
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger("test-process-manager"),
 		microserviceManager: &criLifecycleMSM{
 			ms:               models.NewMicroservice("ms-missing", "nginx:latest"),
@@ -371,7 +371,7 @@ func TestStartMicroservice_NoContainer(t *testing.T) {
 		},
 	}
 	pm.microserviceManager.(*criLifecycleMSM).ms.RegistryID = 1
-	pm.containerManager = NewContainerManager(eng, pm.microserviceManager, "iofog")
+	pm.containerManager = NewContainerManager(eng, pm.microserviceManager, "edgelet")
 
 	if err := pm.StartMicroservice("ms-missing"); err != nil {
 		t.Fatalf("StartMicroservice: %v", err)
@@ -407,10 +407,10 @@ func TestRestartMicroservice_UpdatesLocalDB(t *testing.T) {
 	}
 	pm := &ProcessManager{
 		engine:     eng,
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger("test-process-manager"),
 	}
-	pm.containerManager = NewContainerManager(eng, &lifecycleTestMSM{registry: &models.Registry{URL: "from_cache"}}, "iofog")
+	pm.containerManager = NewContainerManager(eng, &lifecycleTestMSM{registry: &models.Registry{URL: "from_cache"}}, "edgelet")
 
 	if err := pm.RestartMicroservice("local-db"); err != nil {
 		t.Fatalf("RestartMicroservice: %v", err)

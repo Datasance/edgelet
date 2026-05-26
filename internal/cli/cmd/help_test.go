@@ -47,7 +47,7 @@ func TestHelp_ConfigShowsExamples(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "iofog-agent config --controller-url") {
+	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "edgelet config --controller-url") {
 		t.Fatalf("expected config Examples in help stdout, got stdout=%q", stdout)
 	}
 }
@@ -58,11 +58,25 @@ func TestHelp_RootShowsLongAndBanner(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "Local CLI for the ioFog Agent daemon") {
+	if !strings.Contains(stdout, "Local CLI for the Edgelet daemon") {
 		t.Fatalf("expected root Long in help stdout, got stdout=%q", stdout)
 	}
 	if strings.Count(stderr, bannerMarker) != 1 {
 		t.Fatalf("expected banner once on root --help, got %d in stderr=%q", strings.Count(stderr, bannerMarker), stderr)
+	}
+}
+
+func TestHelp_BareInvocationShowsRootHelp(t *testing.T) {
+	client := &fakeClient{running: true}
+	stdout, stderr, code := runCLI(t, client)
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "Local CLI for the Edgelet daemon") {
+		t.Fatalf("expected root Long on bare invocation, got stdout=%q", stdout)
+	}
+	if strings.Count(stderr, bannerMarker) != 1 {
+		t.Fatalf("expected banner once on bare invocation, got %d in stderr=%q", strings.Count(stderr, bannerMarker), stderr)
 	}
 }
 
@@ -223,7 +237,7 @@ func TestHelp_CompletionShowsLongAndExamples(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Generate shell completion scripts",
-		"/etc/bash_completion.d/iofog-agent",
+		"/etc/bash_completion.d/edgelet",
 		"Examples:",
 		"completion bash",
 		"completion fish",
@@ -240,7 +254,7 @@ func TestHelp_CompletionBashShowsInstallExample(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "bash_completion.d/iofog-agent") {
+	if !strings.Contains(stdout, "Examples:") || !strings.Contains(stdout, "bash_completion.d/edgelet") {
 		t.Fatalf("expected bash install example in help, got stdout=%q", stdout)
 	}
 }

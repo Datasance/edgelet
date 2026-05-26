@@ -98,7 +98,7 @@ var (
 
 // Path constants
 var (
-	WindowsIOFogPath     = getEnvOrDefault("IOFOG_PATH", "./")
+	WindowsEdgeletPath   = getEnvOrDefault("EDGELET_PATH", "./")
 	VarRun               = getVarRunPath()
 	ConfigDir            = getConfigDir()
 	LocalAPITokenPath    = ConfigDir + "local-api"
@@ -108,9 +108,9 @@ var (
 
 // System constants
 const (
-	OSGroup                        = "iofog-agent"
-	IOFogDockerContainerNamePrefix = "iofog_"
-	MicroserviceFile               = "microservices.json"
+	OSGroup                          = "edgelet"
+	EdgeletDockerContainerNamePrefix = "edgelet_"
+	MicroserviceFile                 = "microservices.json"
 )
 
 // Event constants
@@ -148,16 +148,16 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 func getVarRunPath() string {
 	if isWindows() {
-		return SNAPCommon + "./var/run/iofog-agent"
+		return SNAPCommon + "./var/run/edgelet"
 	}
-	return SNAPCommon + "/var/run/iofog-agent"
+	return SNAPCommon + "/var/run/edgelet"
 }
 
 func getConfigDir() string {
 	if isWindows() {
-		return WindowsIOFogPath
+		return WindowsEdgeletPath
 	}
-	return SNAPCommon + "/etc/iofog-agent/"
+	return SNAPCommon + "/etc/edgelet/"
 }
 
 // GetConfigDir returns the config directory (can be called dynamically)

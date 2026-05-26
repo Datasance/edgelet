@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/proxy"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/version"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/proxy"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/version"
 )
 
 // processChanges processes changes from the controller

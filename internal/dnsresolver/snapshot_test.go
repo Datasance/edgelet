@@ -89,7 +89,7 @@ func TestApplySnapshotRebuildsIndexDeterministically(t *testing.T) {
 		},
 		{
 			UUID:        "ms-2",
-			Application: "local",
+			Application: "edgelet",
 			Name:        "svc",
 			Scope:       ScopeLocal,
 			IP:          "10.0.1.2",
@@ -110,8 +110,8 @@ func TestApplySnapshotRebuildsIndexDeterministically(t *testing.T) {
 	if _, ok := r.index[ScopeManaged]["app.svc"]; !ok {
 		t.Fatalf("expected managed alias app.svc")
 	}
-	if _, ok := r.index[ScopeLocal]["local.svc"]; !ok {
-		t.Fatalf("expected local alias local.svc")
+	if _, ok := r.index[ScopeLocal]["edgelet.svc"]; !ok {
+		t.Fatalf("expected local alias edgelet.svc")
 	}
 }
 

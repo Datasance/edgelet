@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/pkg/docker"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/pkg/docker"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 // Engine implements engine.ContainerEngine using the Docker daemon.
@@ -304,7 +304,7 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 // --- Network ---
 
 func (e *Engine) EnsureNetwork(_ string) error {
-	// The Docker client always ensures the "iofog" bridge network exists on Init.
+	// The Docker client always ensures the "edgelet" bridge network exists on Init.
 	return nil
 }
 

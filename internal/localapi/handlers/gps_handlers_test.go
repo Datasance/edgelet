@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 func TestHandleSystemGPSPost_SetsManualModeAndPersistsCoordinates(t *testing.T) {
@@ -27,7 +27,7 @@ func TestHandleSystemGPSPost_SetsManualModeAndPersistsCoordinates(t *testing.T) 
 	})
 
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/gps", bytes.NewBufferString(`{"lat":"41.0151","lon":"28.9795"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/gps", bytes.NewBufferString(`{"lat":"41.0151","lon":"28.9795"}`))
 	rec := httptest.NewRecorder()
 	handler.HandleSystemGPS(rec, req)
 
@@ -51,7 +51,7 @@ func TestHandleSystemGPSPost_SetsManualModeAndPersistsCoordinates(t *testing.T) 
 func TestHandleSystemGPSPost_RejectsOutOfRangeLatitude(t *testing.T) {
 	_ = setupConfigForGPSTests(t)
 	handler := NewV3Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v3/system/gps", bytes.NewBufferString(`{"lat":"95","lon":"28.9"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/gps", bytes.NewBufferString(`{"lat":"95","lon":"28.9"}`))
 	rec := httptest.NewRecorder()
 	handler.HandleSystemGPS(rec, req)
 

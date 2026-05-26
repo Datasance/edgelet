@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/constants"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 // ValidateConfig validates the configuration
@@ -101,19 +101,19 @@ func ValidateConfig(cfg *Config) error {
 		}
 	}
 	if buildmeta.IsFull() {
-		if eng != constants.EngineIofog {
-			errors = append(errors, fmt.Sprintf("this agent build (flavor=full) requires containerEngine: iofog (got %q)", cfg.ContainerEngine))
+		if eng != constants.EngineEdgelet {
+			errors = append(errors, fmt.Sprintf("this agent build (flavor=full) requires containerEngine: edgelet (got %q)", cfg.ContainerEngine))
 		}
 	}
-	if eng != constants.EngineDocker && eng != constants.EnginePodman && eng != constants.EngineIofog {
-		errors = append(errors, "containerEngine must be one of: docker, podman, iofog")
+	if eng != constants.EngineDocker && eng != constants.EnginePodman && eng != constants.EngineEdgelet {
+		errors = append(errors, "containerEngine must be one of: docker, podman, edgelet")
 	}
 
 	// dockerUrl rules per engine
-	if eng == constants.EngineIofog {
-		want := constants.IofogEngineDockerURL()
+	if eng == constants.EngineEdgelet {
+		want := constants.EdgeletEngineDockerURL()
 		if cfg.DockerURL != want {
-			errors = append(errors, fmt.Sprintf("dockerUrl for containerEngine iofog must be %q (got %q)", want, cfg.DockerURL))
+			errors = append(errors, fmt.Sprintf("dockerUrl for containerEngine edgelet must be %q (got %q)", want, cfg.DockerURL))
 		}
 	}
 	if eng == constants.EnginePodman && strings.TrimSpace(cfg.DockerURL) == "" {

@@ -7,7 +7,7 @@ import (
 
 func validLocalDeployManifestForTest(name string) *LocalDeployManifest {
 	doc := &LocalDeployManifest{}
-	doc.APIVersion = "datasance.com/v3"
+	doc.APIVersion = "edgelet.iofog.org/v1"
 	doc.Kind = "Microservice"
 	doc.Metadata.Name = name
 	doc.Spec.Images.X86 = "nginx:latest"

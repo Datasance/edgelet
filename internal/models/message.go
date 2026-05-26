@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/eclipse-iofog/agent/internal/utils/bytesutil"
+	"github.com/datasance/edgelet/internal/utils/bytesutil"
 )
 
 const (

@@ -12,7 +12,7 @@ import (
 var _ io.WriteCloser = (*RotatingWriter)(nil)
 
 // RotatingWriter implements io.WriteCloser with file rotation
-// It maintains iofog-agent.0.log as the active file and rotates to .1.log, .2.log, etc.
+// It maintains edgelet.0.log as the active file and rotates to .1.log, .2.log, etc.
 type RotatingWriter struct {
 	mu          sync.Mutex
 	dir         string

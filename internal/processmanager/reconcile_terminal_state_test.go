@@ -3,7 +3,7 @@ package processmanager
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func TestParseCRIReasonAndExitCode(t *testing.T) {

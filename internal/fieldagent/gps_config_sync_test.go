@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 func TestPostGPSConfig_SendsConfigGPSPayload(t *testing.T) {

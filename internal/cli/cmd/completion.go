@@ -9,26 +9,26 @@ import (
 )
 
 func completionCommandLong() string {
-	return strings.TrimSpace(`Generate shell completion scripts for iofog-agent.
+	return strings.TrimSpace(`Generate shell completion scripts for edgelet.
 
 Install the script for your shell, then start a new session or source the file.
 
 bash:
-  iofog-agent completion bash | sudo tee /etc/bash_completion.d/iofog-agent
+  edgelet completion bash | sudo tee /etc/bash_completion.d/edgelet
 
 zsh:
-  iofog-agent completion zsh > "${fpath[1]}/_iofog-agent"
+  edgelet completion zsh > "${fpath[1]}/_edgelet"
 
 fish:
-  iofog-agent completion fish > ~/.config/fish/completions/iofog-agent.fish
+  edgelet completion fish > ~/.config/fish/completions/edgelet.fish
 
 Regenerate the packaged bash script with: make cli-completion`)
 }
 
 func completionCommandExamples() string {
-	return strings.TrimSpace(`iofog-agent completion bash
-  iofog-agent completion zsh
-  iofog-agent completion fish`)
+	return strings.TrimSpace(`edgelet completion bash
+  edgelet completion zsh
+  edgelet completion fish`)
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {
@@ -59,11 +59,11 @@ func newShellCompletionCommand(root *cobra.Command, shell string, gen func(w io.
 	var example string
 	switch shell {
 	case "bash":
-		example = "iofog-agent completion bash | sudo tee /etc/bash_completion.d/iofog-agent"
+		example = "edgelet completion bash | sudo tee /etc/bash_completion.d/edgelet"
 	case "zsh":
-		example = `iofog-agent completion zsh > "${fpath[1]}/_iofog-agent"`
+		example = `edgelet completion zsh > "${fpath[1]}/_edgelet"`
 	case "fish":
-		example = "iofog-agent completion fish > ~/.config/fish/completions/iofog-agent.fish"
+		example = "edgelet completion fish > ~/.config/fish/completions/edgelet.fish"
 	}
 
 	return &cobra.Command{

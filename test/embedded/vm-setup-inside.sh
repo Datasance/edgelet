@@ -6,58 +6,50 @@
 # avoiding all SSH quoting/escaping issues with complex commands.
 #
 # Arguments (positional):
-#   $1  DAEMON_BIN   — path to iofog-agentd binary (same path as on Mac via Lima mount)
-#   $2  CLI_BIN      — path to iofog-agent binary
-#   $3  CONFIG_SRC   — path to config_new.yaml
-#   $4  CERT_SRC     — path to cert_new.crt
+#   $1  EDGELET_BIN  — path to edgelet binary (staged via scp)
+#   $2  CONFIG_SRC   — path to config_new.yaml
+#   $3  CERT_SRC     — path to cert_new.crt
 #
 # Do NOT call this script directly; use vm-install.sh.
 
 set -euo pipefail
 
-DAEMON_BIN="$1"
-CLI_BIN="$2"
-CONFIG_SRC="$3"
-CERT_SRC="$4"
+EDGELET_BIN="$1"
+CONFIG_SRC="$2"
+CERT_SRC="$3"
 
-
-echo "[vm-setup] Stopping any existing iofog-agentd..."
-# Use full binary path to avoid pkill self-match.
-# Avoid 'systemctl stop' on a non-existent service (waits 45s on Ubuntu 24.04).
-if systemctl is-active --quiet iofog-agentd 2>/dev/null; then
-    systemctl stop iofog-agentd 2>/dev/null || true
+echo "[vm-setup] Stopping any existing edgelet..."
+if systemctl is-active --quiet edgelet 2>/dev/null; then
+    systemctl stop edgelet 2>/dev/null || true
 fi
-pkill -f '/usr/local/bin/iofog-agentd' 2>/dev/null || true
+pkill -f '/usr/local/bin/edgelet' 2>/dev/null || true
 sleep 1
 
-echo "[vm-setup] Copying binaries..."
-cp "${DAEMON_BIN}" /usr/local/bin/iofog-agentd
-chmod 755 /usr/local/bin/iofog-agentd
-cp "${CLI_BIN}" /usr/local/bin/iofog-agent
-chmod 755 /usr/local/bin/iofog-agent
-ls -l /usr/local/bin/iofog-agentd
+echo "[vm-setup] Copying edgelet binary..."
+cp "${EDGELET_BIN}" /usr/local/bin/edgelet
+chmod 755 /usr/local/bin/edgelet
+ls -l /usr/local/bin/edgelet
 
 echo "[vm-setup] Creating directories..."
-mkdir -p /etc/iofog-agent
-mkdir -p /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-agent
-mkdir -p /var/lib/iofog-agent-containerd
-chmod 750 /etc/iofog-agent /var/lib/iofog-agent /var/log/iofog-agent /run/iofog-agent /var/lib/iofog-agent-containerd
+mkdir -p /etc/edgelet
+mkdir -p /var/lib/edgelet /var/log/edgelet /run/edgelet
+mkdir -p /var/lib/edgelet-containerd
+chmod 750 /etc/edgelet /var/lib/edgelet /var/log/edgelet /run/edgelet /var/lib/edgelet-containerd
 
 echo "[vm-setup] Writing config..."
-cp "${CONFIG_SRC}" /etc/iofog-agent/config.yaml
-cp "${CERT_SRC}" /etc/iofog-agent/cert.crt
-chmod 640 /etc/iofog-agent/cert.crt
-sed -i 's/containerEngine: .*/containerEngine: "iofog"/' /etc/iofog-agent/config.yaml
-echo "  containerEngine = iofog set"
+cp "${CONFIG_SRC}" /etc/edgelet/config.yaml
+cp "${CERT_SRC}" /etc/edgelet/cert.crt
+chmod 640 /etc/edgelet/cert.crt
+echo "  containerEngine = edgelet (from config template)"
 
 echo "[vm-setup] Generating local-api token..."
-head -c 32 /dev/urandom | base64 | tr -d '=+/' | head -c 32 > /etc/iofog-agent/local-api
+head -c 32 /dev/urandom | base64 | tr -d '=+/' | head -c 32 > /etc/edgelet/local-api
 
 echo "[vm-setup] Installing systemd service..."
-cat > /etc/systemd/system/iofog-agentd.service << 'UNIT'
+cat > /etc/systemd/system/edgelet.service << 'UNIT'
 [Unit]
-Description=ioFog Agent Daemon (embedded containerd)
-Documentation=https://docs.datasance.com
+Description=Edgelet daemon (embedded containerd)
+Documentation=https://github.com/datasance/edgelet
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=300
@@ -65,7 +57,7 @@ StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iofog-agentd start
+ExecStart=/usr/local/bin/edgelet daemon
 Restart=always
 RestartSec=2s
 TimeoutStopSec=120s
@@ -74,15 +66,13 @@ KillSignal=SIGTERM
 SendSIGKILL=yes
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=iofog-agentd
+SyslogIdentifier=edgelet
 
 # Embedded containerd needs full root capabilities:
 # CAP_CHOWN/CAP_FOWNER for overlayfs layer extraction (lchown file ownership)
 # CAP_SYS_ADMIN for mount(), overlay filesystems, namespaces
 # CAP_NET_ADMIN for CNI bridge network creation
 # CAP_MKNOD for device nodes inside containers
-# Removing CapabilityBoundingSet restriction — a limited bounding set prevents
-# even root from using capabilities not listed, breaking overlayfs extraction.
 NoNewPrivileges=no
 
 [Install]
@@ -90,17 +80,17 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable iofog-agentd
+systemctl enable edgelet
 
-echo "[vm-setup] Starting iofog-agentd..."
-systemctl start iofog-agentd
+echo "[vm-setup] Starting edgelet..."
+systemctl start edgelet
 
 echo "[vm-setup] Waiting for containerd socket (up to 60s)..."
 elapsed=0
-while [[ ! -S /run/iofog-agent/containerd.sock ]]; do
+while [[ ! -S /run/edgelet/containerd.sock ]]; do
     if (( elapsed >= 60 )); then
         echo "[vm-setup] ERROR: containerd socket not ready after 60s. Daemon logs:"
-        journalctl -u iofog-agentd -n 40 --no-pager || true
+        journalctl -u edgelet -n 40 --no-pager || true
         exit 1
     fi
     echo -n "."
@@ -109,28 +99,4 @@ while [[ ! -S /run/iofog-agent/containerd.sock ]]; do
 done
 echo ""
 echo "[vm-setup] containerd socket is ready."
-
-###############################################################################
-# Install matching ctr binary (v2.1.5) so test scripts can talk to our
-# embedded containerd without version-mismatch "unknown service streaming" errors.
-###############################################################################
-# CONTAINERD_VER="2.1.5"
-# ARCH="$(uname -m)"
-# [[ "${ARCH}" == "aarch64" ]] && CTR_ARCH="arm64" || CTR_ARCH="amd64"
-# CTR_URL="https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-${CTR_ARCH}.tar.gz"
-
-# if ctr --version 2>/dev/null | grep -q "${CONTAINERD_VER}"; then
-#     echo "[vm-setup] ctr ${CONTAINERD_VER} already installed."
-# else
-#     echo "[vm-setup] Installing ctr ${CONTAINERD_VER} (matching embedded containerd)..."
-#     TMP_CTR="$(mktemp -d)"
-#     curl -fsSL "${CTR_URL}" | tar -xzf - -C "${TMP_CTR}" bin/ctr
-#     mv "${TMP_CTR}/bin/ctr" /usr/local/bin/ctr-iofog
-#     chmod 755 /usr/local/bin/ctr-iofog
-#     rm -rf "${TMP_CTR}"
-#     # Symlink as 'ctr' only if no same-version system ctr exists
-#     ln -sf /usr/local/bin/ctr-iofog /usr/local/bin/ctr
-#     echo "[vm-setup] ctr installed at /usr/local/bin/ctr -> ctr-iofog (${CONTAINERD_VER})"
-# fi
-
 echo "[vm-setup] Done."

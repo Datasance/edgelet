@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/gps"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/network"
-	"github.com/eclipse-iofog/agent/internal/serviceaccount"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/version"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/gps"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/serviceaccount"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/version"
 )
 
 // workerFreq returns a non-zero duration, falling back to the default if the

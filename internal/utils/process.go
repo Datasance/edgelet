@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
-	pidFileName = "iofog-agentd.pid"
+	pidFileName = "edgelet.pid"
 	// PIDFileName is the exported name for the PID file
 	PIDFileName = pidFileName
 )

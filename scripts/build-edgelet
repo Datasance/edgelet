@@ -1,0 +1,128 @@
+#!/bin/bash
+# Build edgelet multicall binaries (lite + full) for release/CI.
+# Usage:
+#   ARCH=amd64 ./scripts/build-edgelet              # host/default arch
+#   EDGELET_CI_ARCHES=amd64,arm64 ./scripts/build-edgelet
+# Optional ops-only static linking (RFC R9 — not a separate release name):
+#   STATIC_BUILD=true ARCH=amd64 ./scripts/build-edgelet
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+GO=${GO-go}
+VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
+BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+
+PKG=github.com/datasance/edgelet
+LDFLAGS_BASE="-s -w \
+  -X main.version=${VERSION} \
+  -X main.buildTime=${BUILD_TIME} \
+  -X main.gitCommit=${GIT_COMMIT} \
+  -X ${PKG}/internal/cli/cmd.Version=${VERSION} \
+  -X ${PKG}/internal/cli/cmd.BuildTime=${BUILD_TIME} \
+  -X ${PKG}/internal/cli/cmd.GitCommit=${GIT_COMMIT}"
+
+STATIC_LDFLAGS=""
+STATIC_TAGS=""
+if [ "${STATIC_BUILD}" = "true" ]; then
+  STATIC_LDFLAGS=' -extldflags "-static -lm -ldl -lz -lpthread"'
+  STATIC_TAGS="static_build"
+fi
+
+mkdir -p build dist
+
+cc_for_arch() {
+  _target="$1"
+  _host=$(uname -m)
+  case "${_target}" in
+    amd64)
+      if [ "${_host}" = "x86_64" ]; then
+        echo "${CC:-gcc}"
+      else
+        echo "${CC:-x86_64-linux-gnu-gcc}"
+      fi
+      ;;
+    arm64)
+      if [ "${_host}" = "aarch64" ]; then
+        echo "${CC:-gcc}"
+      else
+        echo "${CC:-aarch64-linux-gnu-gcc}"
+      fi
+      ;;
+    arm) echo "${CC:-arm-linux-gnueabihf-gcc}" ;;
+    riscv64) echo "${CC:-riscv64-linux-gnu-gcc}" ;;
+    *) echo "ERROR: unsupported ARCH ${_target}" >&2; return 1 ;;
+  esac
+}
+
+build_flavor() {
+  _arch="$1"
+  _flavor="$2"
+  _goarch="$_arch"
+  _goarm=""
+  _cc=""
+  _out="build/edgelet-linux-${_arch}-${_flavor}"
+
+  case "${_arch}" in
+    arm)
+      _goarch=arm
+      _goarm=7
+      ;;
+    amd64|arm64|riscv64)
+      ;;
+    *)
+      echo "ERROR: unsupported ARCH ${_arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=${_flavor}${STATIC_LDFLAGS}"
+
+  if [ "${_flavor}" = lite ]; then
+    echo "Building edgelet lite linux/${_arch} -> ${_out}"
+    CGO_ENABLED=0 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" \
+      "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "lite ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+    return 0
+  fi
+
+  _cc=$(cc_for_arch "${_arch}")
+  echo "Building edgelet full linux/${_arch} (CC=${_cc}) -> ${_out}"
+  CGO_ENABLED=1 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" CC="${_cc}" \
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "cgo full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+}
+
+build_desktop_lite() {
+  _goos="$1"
+  _goarch="$2"
+  _goarm="${3:-}"
+  _suffix="${_goos}-${_goarch}"
+  if [ -n "${_goarm}" ]; then
+    _suffix="${_goos}-${_goarch}v${_goarm}"
+  fi
+  _out="build/edgelet-${_suffix}-lite"
+  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=lite${STATIC_LDFLAGS}"
+  echo "Building edgelet lite ${_goos}/${_goarch} -> ${_out}"
+  CGO_ENABLED=0 GOOS="${_goos}" GOARCH="${_goarch}" GOARM="${_goarm}" \
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "lite ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+}
+
+ARCHES="${EDGELET_CI_ARCHES:-${ARCH:-amd64}}"
+IFS=',' read -r -a _arch_list <<< "${ARCHES}"
+for _arch in "${_arch_list[@]}"; do
+  _arch=$(echo "${_arch}" | tr -d ' ')
+  [ -n "${_arch}" ] || continue
+  build_flavor "${_arch}" lite
+  build_flavor "${_arch}" full
+done
+
+if [ "${EDGELET_DESKTOP_LITE:-}" = "true" ]; then
+  build_desktop_lite darwin amd64
+  build_desktop_lite darwin arm64
+  build_desktop_lite windows amd64
+fi
+
+echo "build-edgelet complete"

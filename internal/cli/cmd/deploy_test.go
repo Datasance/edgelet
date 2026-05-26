@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 func writeTestManifest(t *testing.T) string {

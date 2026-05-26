@@ -1,4 +1,4 @@
-apiVersion: datasance.com/v3
+apiVersion: edgelet.iofog.org/v1
 kind: Registry
 spec:
   url: quay.io

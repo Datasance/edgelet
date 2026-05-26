@@ -1,9 +1,9 @@
 package image
 
 import (
-	"github.com/eclipse-iofog/agent/internal/cli/domain/prune"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/prune"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 // PruneResult carries image prune outcome.
@@ -12,7 +12,7 @@ type PruneResult struct {
 	Data  map[string]interface{}
 }
 
-const imagePruneUsage = "usage: iofog-agent image prune [dangling]"
+const imagePruneUsage = "usage: edgelet image prune [dangling]"
 
 // Prune removes dangling images.
 func Prune(client run.V3Client, args []string) (*PruneResult, error) {
@@ -23,7 +23,7 @@ func Prune(client run.V3Client, args []string) (*PruneResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := "/v3/images:prune"
+	path := "/v1/images:prune"
 	if mode != "" {
 		path += "?mode=" + mode
 	}

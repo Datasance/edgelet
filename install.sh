@@ -1,14 +1,14 @@
 #!/bin/sh
-# install.sh — ioFog Agent universal installer (tarball-only)
+# install.sh — Edgelet greenfield installer (tarball-only)
 #
 # Usage:
 #   curl -fsSL ... | sudo sh -s -- --flavor=full
-#   sudo sh install.sh --flavor=full [--version=vX.Y.Z]
-#   sudo sh install.sh --airgap --tarball-path=/path/to/iofog-agent-...-full.tar.gz
-#   sudo sh install.sh --upgrade [--version=vX.Y.Z]
-#   sudo sh install.sh --rollback [--airgap --tarball-path=...]
+#   sudo ./install.sh --flavor=full [--version=vX.Y.Z]
+#   sudo ./install.sh --airgap --tarball-path=dist/edgelet-linux-amd64-full.tar.gz
+#   sudo ./install.sh --flavor=lite --container-engine=docker
 #
-# Default: --flavor=full (embedded containerd / iofog engine build)
+# Linux gates (CI / VM): systemctl status edgelet
+# macOS dev for embed CI: make ci-docker  (runs scripts/ci in Docker)
 
 set -e
 
@@ -19,11 +19,14 @@ require_root() {
     [ "$(id -u)" -eq 0 ] || die "This script must be run as root. Try: sudo $0 $*"
 }
 
-BACKUP_DIR="/var/backups/iofog-agent"
-# POSIX key=value files (no JSON, no python3)
+BACKUP_DIR="/var/backups/edgelet"
 RECEIPT_FILE="${BACKUP_DIR}/install-receipt"
 PREVIOUS_FILE="${BACKUP_DIR}/previous-release"
-GITHUB_REPO="datasance/agent"
+GITHUB_REPO="${EDGELET_GITHUB_REPO:-datasance/edgelet}"
+UNIT_NAME="edgelet"
+BINARY_PATH="/usr/local/bin/edgelet"
+CONFIG_DIR="/etc/edgelet"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 
 detect_arch() {
     MACHINE=$(uname -m)
@@ -36,35 +39,15 @@ detect_arch() {
     esac
 }
 
-detect_libc() {
-    if [ -f /lib/ld-musl-*.so.1 ] || [ -f /usr/lib/ld-musl-*.so.1 ]; then
-        echo "musl"
-    else
-        echo "glibc"
-    fi
-}
-
 detect_init() {
     if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
         echo "systemd"
     elif command -v openrc >/dev/null 2>&1 || [ -f /sbin/openrc ]; then
         echo "openrc"
-    elif [ -f /sbin/init ] && /sbin/init --version 2>/dev/null | grep -q upstart; then
-        echo "upstart"
-    elif [ -d /etc/s6 ] || command -v s6-svc >/dev/null 2>&1; then
-        echo "s6"
-    elif command -v runit >/dev/null 2>&1 || [ -d /etc/runit ]; then
-        echo "runit"
-    elif [ -d /etc/init.d ]; then
-        echo "sysvinit"
     else
         echo "unknown"
     fi
 }
-
-# ── optional checksum (airgap) ────────────────────────────────────────────────
-EXPECTED_SHA256=""
-CHECKSUM_FILE=""
 
 verify_tarball_checksum() {
     _tar="$1"
@@ -78,7 +61,6 @@ verify_tarball_checksum() {
     fi
 }
 
-# ── Key=value metadata (POSIX sh; one line per key; value may contain '=') ─────
 kv_get() {
     _file="$1" _key="$2"
     [ -f "$_file" ] || { echo ""; return 0; }
@@ -111,19 +93,24 @@ write_previous_release() {
 }
 
 # ── argument parsing ──────────────────────────────────────────────────────────
-IOFOG_VERSION="${IOFOG_VERSION:-latest}"
-IOFOG_FLAVOR="${IOFOG_FLAVOR:-full}"
+EDGELET_VERSION="${EDGELET_VERSION:-latest}"
+EDGELET_FLAVOR="${EDGELET_FLAVOR:-full}"
 CONTAINER_ENGINE=""
 ACTION="install"
 AIRGAP=false
 TARBALL_PATH=""
 FORCE_CONFIG=false
+NON_INTERACTIVE=false
+CONTROLLER_URL=""
+PROVISION_KEY=""
+ARCH_OVERRIDE=""
 BIN_PATH_LEGACY=""
 
 for arg in "$@"; do
     case "${arg}" in
-        --version=*)          IOFOG_VERSION="${arg#*=}" ;;
-        --flavor=*)           IOFOG_FLAVOR="${arg#*=}" ;;
+        --version=*)          EDGELET_VERSION="${arg#*=}" ;;
+        --flavor=*)           EDGELET_FLAVOR="${arg#*=}" ;;
+        --arch=*)             ARCH_OVERRIDE="${arg#*=}" ;;
         --container-engine=*) CONTAINER_ENGINE="${arg#*=}" ;;
         --bin-path=*)         BIN_PATH_LEGACY="${arg#*=}" ;;
         --tarball-path=*)     TARBALL_PATH="${arg#*=}" ;;
@@ -133,25 +120,30 @@ for arg in "$@"; do
         --upgrade)            ACTION="upgrade" ;;
         --rollback)           ACTION="rollback" ;;
         --force-config)       FORCE_CONFIG=true ;;
+        --non-interactive)    NON_INTERACTIVE=true ;;
+        --controller-url=*)   CONTROLLER_URL="${arg#*=}" ;;
+        --provision-key=*)    PROVISION_KEY="${arg#*=}" ;;
         --help|-h)
             cat <<EOF
 Usage: $0 [options]
 
 Options:
-  --flavor=full|lite         Build flavor (default: full). full = embedded containerd; lite = docker/podman only.
+  --flavor=full|lite         Build flavor (default: full)
   --version=VERSION          Release tag (default: latest)
-  --container-engine=ENGINE  For lite: docker or podman (default: docker). Ignored for full (always iofog).
+  --arch=ARCH                Override auto-detected arch (amd64, arm64, arm, riscv64)
+  --container-engine=ENGINE  Lite only: docker or podman (default: docker)
   --airgap                   Do not download; use --tarball-path
-  --tarball-path=PATH        Local tarball (.tar.gz)
-  --bin-path=PATH            Alias for --tarball-path (legacy)
-  --checksum-path=PATH       Optional sha256sum file for verification
-  --expected-sha256=HASH     Optional expected SHA256 of tarball
-  --upgrade                  Upgrade existing install (writes previous-release)
-  --rollback                 Roll back using previous-release metadata file
-  --force-config             Replace config on upgrade/rollback (default: preserve / restore)
+  --tarball-path=PATH        Local edgelet-*.tar.gz
+  --checksum-path=PATH       Optional sha256sum manifest
+  --expected-sha256=HASH     Optional tarball SHA256
+  --upgrade / --rollback     In-place upgrade or rollback (same flavor)
+  --force-config             Replace config on upgrade/rollback
+  --non-interactive          Pot-oriented: no prompts
+  --controller-url=URL       Optional: write controllerUrl into new config
+  --provision-key=KEY        Optional: run edgelet provision after install
 
 Environment:
-  IOFOG_VERSION   IOFOG_FLAVOR
+  EDGELET_VERSION  EDGELET_FLAVOR  EDGELET_GITHUB_REPO
 EOF
             exit 0 ;;
         *) die "Unknown option: ${arg} (use --help)" ;;
@@ -165,63 +157,71 @@ if [ "$AIRGAP" = true ] && [ -z "$TARBALL_PATH" ]; then
 fi
 
 if [ "$ACTION" != "rollback" ]; then
-    case "$IOFOG_FLAVOR" in
+    case "$EDGELET_FLAVOR" in
         full|lite) ;;
         *) die "Invalid --flavor (use full or lite)" ;;
     esac
 
-    # Default engine for lite
     if [ -z "$CONTAINER_ENGINE" ]; then
-        if [ "$IOFOG_FLAVOR" = "full" ]; then
-            CONTAINER_ENGINE="iofog"
+        if [ "$EDGELET_FLAVOR" = "full" ]; then
+            CONTAINER_ENGINE="edgelet"
         else
             CONTAINER_ENGINE="docker"
         fi
     fi
 
-    if [ "$IOFOG_FLAVOR" = "full" ] && [ "$CONTAINER_ENGINE" != "iofog" ]; then
-        die "full flavor requires containerEngine iofog (embedded containerd)"
+    if [ "$EDGELET_FLAVOR" = "full" ] && [ "$CONTAINER_ENGINE" != "edgelet" ]; then
+        die "full flavor requires containerEngine edgelet (embedded containerd)"
     fi
-    if [ "$IOFOG_FLAVOR" = "lite" ] && [ "$CONTAINER_ENGINE" = "iofog" ]; then
-        die "lite flavor cannot use iofog engine; use full flavor"
+    if [ "$EDGELET_FLAVOR" = "lite" ] && [ "$CONTAINER_ENGINE" = "edgelet" ]; then
+        die "lite flavor cannot use edgelet engine; use --flavor=full"
     fi
 fi
 
 require_root
 
-ARCH=$(detect_arch)
-LIBC=$(detect_libc)
+ARCH="${ARCH_OVERRIDE:-$(detect_arch)}"
 INIT=$(detect_init)
 
 info "Architecture : ${ARCH}"
-info "Libc         : ${LIBC}"
 info "Init system  : ${INIT}"
 if [ "$ACTION" != "rollback" ]; then
-    info "Flavor       : ${IOFOG_FLAVOR}"
+    info "Flavor       : ${EDGELET_FLAVOR}"
 fi
 info "Action       : ${ACTION}"
 
-ARCH_SUFFIX="${ARCH}"
-if [ "${LIBC}" = "musl" ] && { [ "${ARCH}" = "amd64" ] || [ "${ARCH}" = "arm64" ]; }; then
-    ARCH_SUFFIX="${ARCH}-musl"
-fi
+tarball_name_for() {
+    _ver="$1"
+    _arch="$2"
+    _fl="$3"
+    echo "edgelet-${_ver}-linux-${_arch}-${_fl}.tar.gz"
+}
 
-TARBALL_BASENAME="iofog-agent-${IOFOG_VERSION}-linux-${ARCH_SUFFIX}-${IOFOG_FLAVOR}.tar.gz"
+resolve_tarball_basename() {
+    _ver="$1"
+    _arch="$2"
+    _fl="$3"
+    if [ "$AIRGAP" = true ] && [ -n "$TARBALL_PATH" ]; then
+        basename "$TARBALL_PATH"
+        return 0
+    fi
+    tarball_name_for "$_ver" "$_arch" "$_fl"
+}
+
+TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}" "${EDGELET_FLAVOR}")
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "${TMPDIR}"' EXIT
 
-# ── resolve version for remote download ───────────────────────────────────────
-if [ "$AIRGAP" = false ] && [ "$IOFOG_VERSION" = "latest" ] && [ "$ACTION" != "rollback" ]; then
+if [ "$AIRGAP" = false ] && [ "$EDGELET_VERSION" = "latest" ] && [ "$ACTION" != "rollback" ]; then
     info "Fetching latest release tag..."
-    IOFOG_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+    EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
         | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-    [ -n "${IOFOG_VERSION}" ] || die "Failed to determine latest version"
-    TARBALL_BASENAME="iofog-agent-${IOFOG_VERSION}-linux-${ARCH_SUFFIX}-${IOFOG_FLAVOR}.tar.gz"
+    [ -n "${EDGELET_VERSION}" ] || die "Failed to determine latest version"
+    TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}" "${EDGELET_FLAVOR}")
 fi
 
-info "Version: ${IOFOG_VERSION}"
+info "Version: ${EDGELET_VERSION}"
 
-# ── download or use local tarball ─────────────────────────────────────────────
 download_or_copy_tarball() {
     _dest="$1"
     if [ "$AIRGAP" = true ]; then
@@ -229,10 +229,15 @@ download_or_copy_tarball() {
         verify_tarball_checksum "$TARBALL_PATH"
         cp "$TARBALL_PATH" "$_dest"
         info "Using local archive: ${TARBALL_PATH}"
-    else
-        _url="https://github.com/${GITHUB_REPO}/releases/download/${IOFOG_VERSION}/${TARBALL_BASENAME}"
-        info "Downloading ${_url} ..."
-        curl -fsSL -o "$_dest" "$_url" || die "Failed to download ${_url}"
+        return 0
+    fi
+    _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${TARBALL_BASENAME}"
+    info "Downloading ${_url} ..."
+    if ! curl -fsSL -o "$_dest" "$_url"; then
+        _alt="edgelet-linux-${ARCH}-${EDGELET_FLAVOR}.tar.gz"
+        _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${_alt}"
+        info "Retrying ${_url} ..."
+        curl -fsSL -o "$_dest" "$_url" || die "Failed to download release tarball"
     fi
 }
 
@@ -242,25 +247,27 @@ extract_tarball() {
     tar -xzf "$_tg" -C "${TMPDIR}"
 }
 
-install_binaries() {
-    install -m 755 "${TMPDIR}/iofog-agent"  /usr/local/bin/iofog-agent
-    install -m 755 "${TMPDIR}/iofog-agentd" /usr/local/bin/iofog-agentd
-    info "Binaries installed to /usr/local/bin/"
+install_binary() {
+    if [ ! -f "${TMPDIR}/edgelet" ]; then
+        die "Tarball missing edgelet binary"
+    fi
+    install -m 755 "${TMPDIR}/edgelet" "${BINARY_PATH}"
+    info "Installed ${BINARY_PATH}"
 }
 
 install_cli_completion() {
-    if ! command -v iofog-agent >/dev/null 2>&1; then
+    if ! command -v edgelet >/dev/null 2>&1; then
         return 0
     fi
     if [ -d /etc/bash_completion.d ]; then
-        if iofog-agent completion bash >/etc/bash_completion.d/iofog-agent 2>/dev/null; then
-            chmod 644 /etc/bash_completion.d/iofog-agent
-            info "Bash completion installed to /etc/bash_completion.d/iofog-agent"
+        if edgelet completion bash >/etc/bash_completion.d/edgelet 2>/dev/null; then
+            chmod 644 /etc/bash_completion.d/edgelet
+            info "Bash completion installed to /etc/bash_completion.d/edgelet"
             return 0
         fi
     fi
-    if [ -f packaging/iofog-agent/etc/bash_completion.d/iofog-agent ]; then
-        install -m 644 packaging/iofog-agent/etc/bash_completion.d/iofog-agent /etc/bash_completion.d/iofog-agent 2>/dev/null || true
+    if [ -f packaging/edgelet/etc/bash_completion.d/edgelet ]; then
+        install -m 644 packaging/edgelet/etc/bash_completion.d/edgelet /etc/bash_completion.d/edgelet 2>/dev/null || true
     fi
 }
 
@@ -268,83 +275,64 @@ default_docker_url_for_engine() {
     case "$1" in
         docker) echo "unix:///var/run/docker.sock" ;;
         podman) echo "unix:///run/podman/podman.sock" ;;
-        iofog)  echo "unix:///run/iofog-agent/containerd.sock" ;;
+        edgelet) echo "unix:///run/edgelet/containerd.sock" ;;
         *) die "Unsupported engine: $1" ;;
     esac
 }
 
 write_default_config_if_missing() {
-    if [ ! -f /etc/iofog-agent/config.yaml ]; then
+    if [ ! -f "$CONFIG_FILE" ]; then
         _du=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
-        cat >/etc/iofog-agent/config.yaml <<YAML
+        _ctrl="${CONTROLLER_URL:-http://localhost:54421/api/v3/}"
+        cat >"$CONFIG_FILE" <<YAML
 currentProfile: production
 profiles:
   production:
+    controllerUrl: "${_ctrl}"
     containerEngine: ${CONTAINER_ENGINE}
     dockerUrl: ${_du}
-    diskDirectory: /var/lib/iofog-agent/
-    logDirectory: /var/log/iofog-agent/
+    diskDirectory: /var/lib/edgelet/
+    logDiskDirectory: /var/log/edgelet/
     logLevel: INFO
 YAML
-        info "Default config installed at /etc/iofog-agent/config.yaml"
+        chmod 640 "$CONFIG_FILE"
+        info "Default config installed at ${CONFIG_FILE}"
     else
-        info "Existing config preserved at /etc/iofog-agent/config.yaml"
+        info "Existing config preserved at ${CONFIG_FILE}"
     fi
 }
 
 install_dirs() {
-    mkdir -p /etc/iofog-agent
-    chmod 750 /etc/iofog-agent
-    mkdir -p /var/log/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent \
-        "$BACKUP_DIR" /var/lib/iofog-agent-containerd
-    chmod 750 /var/log/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent \
-        "$BACKUP_DIR" /var/lib/iofog-agent-containerd 2>/dev/null || true
+    mkdir -p "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet /run/edgelet \
+        /var/lib/edgelet-containerd "$BACKUP_DIR"
+    chmod 750 "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet 2>/dev/null || true
 }
 
-# ── init: stop/start helpers ──────────────────────────────────────────────────
-stop_agent_service() {
+stop_edgelet_service() {
     case "${INIT}" in
-        systemd)
-            systemctl stop iofog-agentd 2>/dev/null || true
-            ;;
-        openrc)
-            rc-service iofog-agentd stop 2>/dev/null || true
-            ;;
-        sysvinit)
-            /etc/init.d/iofog-agentd stop 2>/dev/null || true
-            ;;
-        upstart)
-            initctl stop iofog-agentd 2>/dev/null || true
-            ;;
-        *)
-            pkill -f "iofog-agentd" 2>/dev/null || true
-            ;;
+        systemd) systemctl stop "${UNIT_NAME}" 2>/dev/null || true ;;
+        openrc) rc-service "${UNIT_NAME}" stop 2>/dev/null || true ;;
+        *) pkill -f "${BINARY_PATH}" 2>/dev/null || true ;;
     esac
 }
 
-start_agent_service() {
+start_edgelet_service() {
     case "${INIT}" in
         systemd)
             systemctl daemon-reload 2>/dev/null || true
-            systemctl enable iofog-agentd 2>/dev/null || true
-            systemctl start iofog-agentd 2>/dev/null || true
+            systemctl enable "${UNIT_NAME}" 2>/dev/null || true
+            systemctl restart "${UNIT_NAME}" 2>/dev/null || true
             ;;
         openrc)
-            rc-service iofog-agentd start 2>/dev/null || true
-            ;;
-        sysvinit)
-            /etc/init.d/iofog-agentd start 2>/dev/null || true
-            ;;
-        upstart)
-            initctl start iofog-agentd 2>/dev/null || true
+            rc-update add "${UNIT_NAME}" default 2>/dev/null || true
+            rc-service "${UNIT_NAME}" start 2>/dev/null || true
             ;;
         *)
-            nohup /usr/local/bin/iofog-agentd daemon >/var/log/iofog-agentd.log 2>&1 &
+            nohup "${BINARY_PATH}" daemon >/var/log/edgelet/daemon.log 2>&1 &
             ;;
     esac
 }
 
-# ── systemd unit ─────────────────────────────────────────────────────────────
 install_systemd() {
     _full="$1"
     _eng="$2"
@@ -359,49 +347,15 @@ install_systemd() {
             _after="network-online.target podman.socket"
             _wants="Wants=podman.socket"
             ;;
-        iofog)
-            _after="network-online.target"
-            ;;
     esac
 
-    if [ "$_full" = "true" ]; then
-        cat >/etc/systemd/system/iofog-agentd.service <<EOF
-[Unit]
-Description=ioFog Agent Daemon (full / embedded containerd)
-${_wants}
-After=${_after}
-StartLimitIntervalSec=300
-StartLimitBurst=20
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/iofog-agentd start
-Restart=always
-RestartSec=2s
-StandardOutput=journal
-StandardError=journal
-LimitNOFILE=65536
-TimeoutStopSec=120
-KillMode=control-group
-KillSignal=SIGTERM
-SendSIGKILL=yes
-NoNewPrivileges=no
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/lib/iofog-agent-containerd /run/iofog-agent /var/log/iofog-agent /var/backups/iofog-agent
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_CHROOT CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_DAC_READ_SEARCH
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-LockPersonality=true
-MemoryDenyWriteExecute=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    if [ -f packaging/systemd/edgelet.service ] && [ "$_full" = "true" ] && [ "$_eng" = "edgelet" ]; then
+        cp packaging/systemd/edgelet.service "/etc/systemd/system/${UNIT_NAME}.service"
     else
-        cat >/etc/systemd/system/iofog-agentd.service <<EOF
+        cat >"/etc/systemd/system/${UNIT_NAME}.service" <<EOF
 [Unit]
-Description=ioFog Agent Daemon (lite)
+Description=Edgelet daemon
+Documentation=https://github.com/datasance/edgelet
 ${_wants}
 After=${_after}
 StartLimitIntervalSec=300
@@ -409,306 +363,172 @@ StartLimitBurst=20
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iofog-agentd start
+ExecStart=${BINARY_PATH} daemon
 Restart=always
 RestartSec=2s
+TimeoutStopSec=120s
+KillMode=control-group
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=edgelet
 LimitNOFILE=65536
-TimeoutStopSec=120
-KillMode=control-group
-KillSignal=SIGTERM
-SendSIGKILL=yes
-NoNewPrivileges=true
+NoNewPrivileges=$([ "$_full" = true ] && echo no || echo true)
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/iofog-agent /var/lib/iofog-agent /var/run/iofog-agent /var/log/iofog-agent /var/backups/iofog-agent
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_CHROOT CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_DAC_READ_SEARCH
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-LockPersonality=true
+ReadWritePaths=${CONFIG_DIR} /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet ${BACKUP_DIR}
 
 [Install]
 WantedBy=multi-user.target
 EOF
     fi
     systemctl daemon-reload
-    systemctl enable iofog-agentd
-    systemctl restart iofog-agentd
-    info "systemd service installed and started."
+    systemctl enable "${UNIT_NAME}"
+    systemctl restart "${UNIT_NAME}"
+    info "systemd unit ${UNIT_NAME}.service installed and started."
 }
 
-install_openrc() {
-    cat >/etc/init.d/iofog-agentd <<'EOF'
-#!/sbin/openrc-run
-description="ioFog Agent Daemon"
-command="/usr/local/bin/iofog-agentd"
-command_args="daemon"
-command_background=true
-pidfile="/run/iofog-agentd.pid"
-EOF
-    chmod +x /etc/init.d/iofog-agentd
-    rc-update add iofog-agentd default
-    rc-service iofog-agentd start
-    info "OpenRC service installed and started."
-}
-
-install_sysvinit() {
-    cat >/etc/init.d/iofog-agentd <<'EOF'
-#!/bin/sh
-### BEGIN INIT INFO
-# Provides:          iofog-agentd
-# Required-Start:    $network
-# Required-Stop:     $network
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: ioFog Agent Daemon
-### END INIT INFO
-
-DAEMON=/usr/local/bin/iofog-agentd
-PIDFILE=/var/run/iofog-agentd.pid
-
-case "$1" in
-  start)
-    start-stop-daemon --start --background --make-pidfile --pidfile $PIDFILE \
-      --exec $DAEMON -- daemon ;;
-  stop)
-    start-stop-daemon --stop --pidfile $PIDFILE ;;
-  restart)
-    $0 stop; $0 start ;;
-  status)
-    if [ -f $PIDFILE ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
-      echo "iofog-agentd is running"
-    else
-      echo "iofog-agentd is not running"
-    fi ;;
-  *)
-    echo "Usage: $0 {start|stop|restart|status}" ;;
-esac
-EOF
-    chmod +x /etc/init.d/iofog-agentd
-    update-rc.d iofog-agentd defaults 2>/dev/null || true
-    /etc/init.d/iofog-agentd start
-    info "SysV init service installed and started."
-}
-
-install_upstart() {
-    cat >/etc/init/iofog-agentd.conf <<'EOF'
-description "ioFog Agent Daemon"
-start on runlevel [2345]
-stop on runlevel [016]
-respawn
-exec /usr/local/bin/iofog-agentd daemon
-EOF
-    initctl reload-configuration 2>/dev/null || true
-    initctl start iofog-agentd
-    info "Upstart service installed and started."
-}
-
-install_s6() {
-    SVCDIR=/etc/s6/iofog-agentd
-    mkdir -p "${SVCDIR}"
-    cat >"${SVCDIR}/run" <<'EOF'
-#!/bin/execlineb -P
-/usr/local/bin/iofog-agentd daemon
-EOF
-    chmod +x "${SVCDIR}/run"
-    ln -sf "${SVCDIR}" /var/run/s6/services/iofog-agentd 2>/dev/null || true
-    s6-svscanctl -a /var/run/s6/services 2>/dev/null || true
-    info "s6 service installed."
-}
-
-install_runit() {
-    SVCDIR=/etc/runit/iofog-agentd
-    mkdir -p "${SVCDIR}"
-    cat >"${SVCDIR}/run" <<'EOF'
-#!/bin/sh
-exec /usr/local/bin/iofog-agentd daemon
-EOF
-    chmod +x "${SVCDIR}/run"
-    ln -sf "${SVCDIR}" /var/service/iofog-agentd 2>/dev/null || \
-        ln -sf "${SVCDIR}" /service/iofog-agentd 2>/dev/null || true
-    info "runit service installed."
-}
-
-install_service_for_init() {
+install_service() {
     _is_full="$1"
     case "${INIT}" in
-        systemd)   install_systemd "$_is_full" "$CONTAINER_ENGINE" ;;
-        openrc)    install_openrc ;;
-        sysvinit)  install_sysvinit ;;
-        upstart)   install_upstart ;;
-        s6)        install_s6 ;;
-        runit)     install_runit ;;
+        systemd) install_systemd "$_is_full" "$CONTAINER_ENGINE" ;;
         *)
-            info "Unknown init system. Starting iofog-agentd in background."
-            nohup /usr/local/bin/iofog-agentd daemon >/var/log/iofog-agentd.log 2>&1 &
+            info "Non-systemd init: starting edgelet in background."
+            start_edgelet_service
             ;;
     esac
 }
 
-# ── source URL for receipt ────────────────────────────────────────────────────
 compute_source_url() {
     if [ "$AIRGAP" = true ]; then
-        # file:/// absolute path
         _real="$(cd "$(dirname "$TARBALL_PATH")" && pwd)/$(basename "$TARBALL_PATH")"
         echo "file://${_real}"
     else
-        echo "https://github.com/${GITHUB_REPO}/releases/download/${IOFOG_VERSION}/${TARBALL_BASENAME}"
+        echo "https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${TARBALL_BASENAME}"
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# rollback
-# ═══════════════════════════════════════════════════════════════════════════════
+maybe_provision() {
+    if [ -z "$PROVISION_KEY" ]; then
+        return 0
+    fi
+    if ! command -v edgelet >/dev/null 2>&1; then
+        die "edgelet binary not found for provision"
+    fi
+    info "Running edgelet provision..."
+    if [ "$NON_INTERACTIVE" = true ]; then
+        edgelet --quiet provision "$PROVISION_KEY" || die "provision failed"
+    else
+        edgelet provision "$PROVISION_KEY" || die "provision failed"
+    fi
+}
+
+# ── rollback ──────────────────────────────────────────────────────────────────
 if [ "$ACTION" = "rollback" ]; then
-    [ -f "$PREVIOUS_FILE" ] || die "No ${PREVIOUS_FILE} found. Cannot rollback."
+    [ -f "$PREVIOUS_FILE" ] || die "No ${PREVIOUS_FILE} found."
     _pv=$(kv_get "$PREVIOUS_FILE" "previous_version")
     _pf=$(kv_get "$PREVIOUS_FILE" "previous_flavor")
     _purl=$(kv_get "$PREVIOUS_FILE" "previous_download_url")
     _cfgbak=$(kv_get "$PREVIOUS_FILE" "config_backup_path")
-    [ -n "$_pv" ] || die "previous_version missing or empty in ${PREVIOUS_FILE}"
-    [ -n "$_pf" ] || die "previous_flavor missing or empty in ${PREVIOUS_FILE}"
-    IOFOG_FLAVOR="$_pf"
-    IOFOG_VERSION="$_pv"
-    TARBALL_BASENAME="iofog-agent-${IOFOG_VERSION}-linux-${ARCH_SUFFIX}-${IOFOG_FLAVOR}.tar.gz"
-    CONTAINER_ENGINE="iofog"
-    [ "$IOFOG_FLAVOR" = "lite" ] && CONTAINER_ENGINE="docker"
-
-    stop_agent_service
-
+    EDGELET_FLAVOR="$_pf"
+    EDGELET_VERSION="$_pv"
+    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH" "$EDGELET_FLAVOR")
+    CONTAINER_ENGINE="edgelet"
+    [ "$EDGELET_FLAVOR" = "lite" ] && CONTAINER_ENGINE="docker"
+    stop_edgelet_service
     _tg="${TMPDIR}/rollback.tar.gz"
     if [ "$AIRGAP" = true ]; then
         [ -n "$TARBALL_PATH" ] || die "rollback with --airgap requires --tarball-path"
         verify_tarball_checksum "$TARBALL_PATH"
         cp "$TARBALL_PATH" "$_tg"
     else
-        case "$_purl" in
-            http://*|https://*)
-                info "Downloading rollback from ${_purl}"
-                curl -fsSL -o "$_tg" "$_purl" || die "Failed to download ${_purl}"
-                ;;
-            file://*)
-                _fp=$(echo "$_purl" | sed 's|^file://||')
-                [ -f "$_fp" ] || die "Rollback file not found: $_fp"
-                cp "$_fp" "$_tg"
-                ;;
-            *)
-                die "Cannot rollback online: unsupported previous_download_url (use --airgap --tarball-path)"
-                ;;
-        esac
+        curl -fsSL -o "$_tg" "$_purl" || die "Failed to download rollback tarball"
     fi
-
     extract_tarball "$_tg"
-    install_binaries
+    install_binary
     install_dirs
-
     if [ "$FORCE_CONFIG" != true ] && [ -f "$_cfgbak" ]; then
-        install -m 640 "$_cfgbak" /etc/iofog-agent/config.yaml
-        info "Restored config from ${_cfgbak}"
+        install -m 640 "$_cfgbak" "$CONFIG_FILE"
     fi
-
     _is_full="false"
-    [ "$IOFOG_FLAVOR" = "full" ] && _is_full="true"
-    install_service_for_init "$_is_full"
-
-    _src="$_purl"
-    write_install_receipt "$IOFOG_VERSION" "$IOFOG_FLAVOR" "$_src"
-
-    info "Rollback to ${IOFOG_VERSION} (${IOFOG_FLAVOR}) complete."
+    [ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
+    install_service "$_is_full"
+    write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$_purl"
+    info "Rollback to ${EDGELET_VERSION} (${EDGELET_FLAVOR}) complete."
     exit 0
 fi
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# upgrade
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── upgrade ───────────────────────────────────────────────────────────────────
 if [ "$ACTION" = "upgrade" ]; then
-    [ -f /usr/local/bin/iofog-agentd ] || die "Agent not installed; run install first"
-    [ -f "$RECEIPT_FILE" ] || die "Missing ${RECEIPT_FILE}; cannot determine current version"
-
+    [ -f "$BINARY_PATH" ] || die "Edgelet not installed; run install first"
+    [ -f "$RECEIPT_FILE" ] || die "Missing ${RECEIPT_FILE}"
     _cur_ver=$(kv_get "$RECEIPT_FILE" "installed_version")
     _cur_fl=$(kv_get "$RECEIPT_FILE" "flavor")
     _cur_src=$(kv_get "$RECEIPT_FILE" "source_url")
-
-    [ -n "$_cur_ver" ] || die "installed_version missing or empty in ${RECEIPT_FILE}"
-    [ -n "$_cur_fl" ] || die "flavor missing or empty in ${RECEIPT_FILE}"
-
-    [ "$_cur_fl" = "$IOFOG_FLAVOR" ] || die "Flavor mismatch: installed ${_cur_fl}, requested ${IOFOG_FLAVOR}"
-
-    if [ "$IOFOG_VERSION" = "latest" ] || [ -z "$IOFOG_VERSION" ]; then
-        IOFOG_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+    [ "$_cur_fl" = "$EDGELET_FLAVOR" ] || die "Flavor mismatch: installed ${_cur_fl}, requested ${EDGELET_FLAVOR}"
+    if [ "$EDGELET_VERSION" = "latest" ]; then
+        EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
             | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
     fi
-    TARBALL_BASENAME="iofog-agent-${IOFOG_VERSION}-linux-${ARCH_SUFFIX}-${IOFOG_FLAVOR}.tar.gz"
-
+    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH" "$EDGELET_FLAVOR")
     _cfg_backup="${BACKUP_DIR}/config.yaml.$(date +%Y%m%d%H%M%S)"
-    cp /etc/iofog-agent/config.yaml "$_cfg_backup" 2>/dev/null || true
-
+    cp "$CONFIG_FILE" "$_cfg_backup" 2>/dev/null || true
     write_previous_release "$_cur_ver" "$_cur_fl" "$_cur_src" "$_cfg_backup"
-
-    stop_agent_service
-
+    stop_edgelet_service
     _tg="${TMPDIR}/upgrade.tar.gz"
     download_or_copy_tarball "$_tg"
     extract_tarball "$_tg"
-    install_binaries
+    install_binary
     install_dirs
-
     if [ "$FORCE_CONFIG" = true ]; then
-        rm -f /etc/iofog-agent/config.yaml
+        rm -f "$CONFIG_FILE"
         write_default_config_if_missing
     fi
-
-    _src=$(compute_source_url)
-    write_install_receipt "$IOFOG_VERSION" "$IOFOG_FLAVOR" "$_src"
-
+    write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$(compute_source_url)"
     _is_full="false"
-    [ "$IOFOG_FLAVOR" = "full" ] && _is_full="true"
-    install_service_for_init "$_is_full"
-
-    info "Upgrade to ${IOFOG_VERSION} complete."
+    [ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
+    install_service "$_is_full"
+    maybe_provision
+    info "Upgrade to ${EDGELET_VERSION} complete."
     exit 0
 fi
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# fresh install
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── fresh install ─────────────────────────────────────────────────────────────
 _tg="${TMPDIR}/${TARBALL_BASENAME}"
 download_or_copy_tarball "$_tg"
 extract_tarball "$_tg"
 install_dirs
-install_binaries
+install_binary
 
-if [ -f "${TMPDIR}/config.yaml.sample" ] && [ ! -f /etc/iofog-agent/config.yaml ]; then
-    install -m 640 "${TMPDIR}/config.yaml.sample" /etc/iofog-agent/config.yaml
+if [ -f "${TMPDIR}/config.yaml.sample" ] && [ ! -f "$CONFIG_FILE" ]; then
+    install -m 640 "${TMPDIR}/config.yaml.sample" "$CONFIG_FILE"
     info "Sample config installed from tarball"
 else
     write_default_config_if_missing
 fi
 
-if command -v sed >/dev/null 2>&1 && grep -q "containerEngine" /etc/iofog-agent/config.yaml 2>/dev/null; then
-    sed -i "s|containerEngine:.*|containerEngine: ${CONTAINER_ENGINE}|" /etc/iofog-agent/config.yaml
-fi
-_durl=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
-if command -v sed >/dev/null 2>&1 && grep -q "dockerUrl" /etc/iofog-agent/config.yaml 2>/dev/null; then
-    sed -i "s|dockerUrl:.*|dockerUrl: ${_durl}|" /etc/iofog-agent/config.yaml
+if command -v sed >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
+    sed -i "s|containerEngine:.*|containerEngine: ${CONTAINER_ENGINE}|" "$CONFIG_FILE" 2>/dev/null || true
+    _durl=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
+    sed -i "s|dockerUrl:.*|dockerUrl: ${_durl}|" "$CONFIG_FILE" 2>/dev/null || true
+    if [ -n "$CONTROLLER_URL" ]; then
+        sed -i "s|controllerUrl:.*|controllerUrl: \"${CONTROLLER_URL}\"|" "$CONFIG_FILE" 2>/dev/null || true
+    fi
 fi
 
-_src=$(compute_source_url)
-write_install_receipt "$IOFOG_VERSION" "$IOFOG_FLAVOR" "$_src"
-
+write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$(compute_source_url)"
 _is_full="false"
-[ "$IOFOG_FLAVOR" = "full" ] && _is_full="true"
-install_service_for_init "$_is_full"
+[ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
+install_service "$_is_full"
 install_cli_completion
+maybe_provision
 
 info ""
-info "iofog-agent ${IOFOG_VERSION} (${IOFOG_FLAVOR}) installed successfully."
-info "  CLI    : /usr/local/bin/iofog-agent"
-info "  Daemon : /usr/local/bin/iofog-agentd"
-info "  Config : /etc/iofog-agent/config.yaml"
+info "edgelet ${EDGELET_VERSION} (${EDGELET_FLAVOR}) installed successfully."
+info "  Binary : ${BINARY_PATH}"
+info "  Unit   : ${UNIT_NAME}.service"
+info "  Config : ${CONFIG_FILE}"
+info "  Data   : /var/lib/edgelet/"
 info ""
-info "To check status: iofog-agent system status"
-info "To provision:    iofog-agent provision <provisioning-key>"
-info "Shell completion: source /etc/bash_completion.d/iofog-agent (bash)"
-info ""
+info "Check status: edgelet system status"
+info "Provision:    edgelet provision <key>"

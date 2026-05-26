@@ -63,7 +63,7 @@ iofog-agent completion bash >> ~/.bashrc
 iofog-agent completion zsh >> ~/.zshrc
 
 # Fish
-iofog-agent completion fish > ~/.config/fish/completions/iofog-agent.fish
+iofog-agent completion fish > ~/.config/fish/completions/edgelet.fish
 ```
 
 Packaged installs via `install.sh` drop a generated script at `/etc/bash_completion.d/iofog-agent` when the directory exists.

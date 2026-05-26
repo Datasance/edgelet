@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/output"
 )
 
 // FormatValidateHuman renders validate endpoint output.
@@ -116,12 +116,12 @@ func FormatRuntimeClassInProgress(operationID, status, stage string) string {
 	stage = normalizeStage(stage)
 	if stage != "" {
 		return fmt.Sprintf(
-			"runtimeclass apply is still in progress (operationId=%s status=%s stage=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+			"runtimeclass apply is still in progress (operationId=%s status=%s stage=%s)\npoll endpoint: GET /v1/deploy/runtimeclasses:apply/%s",
 			operationID, status, stage, operationID,
 		)
 	}
 	return fmt.Sprintf(
-		"runtimeclass apply is still in progress (operationId=%s status=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+		"runtimeclass apply is still in progress (operationId=%s status=%s)\npoll endpoint: GET /v1/deploy/runtimeclasses:apply/%s",
 		operationID, status, operationID,
 	)
 }

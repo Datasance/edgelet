@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 const runtimeClassApplyPollTimeout = 90 * time.Second
@@ -43,7 +43,7 @@ func Execute(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req Reque
 		return nil, run.NewCLIError(run.CodeInternal, "localapi client is nil", nil)
 	}
 	if strings.TrimSpace(req.ManifestPath) == "" {
-		return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: iofog-agent deploy -f <manifest.yaml>", nil)
+		return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: edgelet deploy -f <manifest.yaml>", nil)
 	}
 
 	target, err := DetectTargetFromManifest(req.ManifestPath)

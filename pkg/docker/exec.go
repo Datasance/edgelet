@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (

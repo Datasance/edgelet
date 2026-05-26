@@ -11,7 +11,7 @@ Subcommands: whoami, tokens, revoke.`)
 
 // CommandExamples returns auth command examples for Cobra.
 func CommandExamples() string {
-	return strings.TrimSpace(`iofog-agent auth whoami -o json
-  iofog-agent auth tokens -o json
-  iofog-agent auth revoke <jti>`)
+	return strings.TrimSpace(`edgelet auth whoami -o json
+  edgelet auth tokens -o json
+  edgelet auth revoke <jti>`)
 }

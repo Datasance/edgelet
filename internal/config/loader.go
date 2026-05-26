@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"gopkg.in/yaml.v3"
 )
 
@@ -129,12 +129,12 @@ func loadConfigValues(cfg *Config) {
 	// privateKey durability moved to SQLite; keep runtime value empty until FieldAgent hydrates from DB.
 	cfg.PrivateKey = ""
 	cfg.ControllerURL = getProp("controllerUrl", "http://localhost:54421/api/v3/")
-	cfg.ControllerCert = getProp("controllerCert", "/etc/iofog-agent/cert.crt")
+	cfg.ControllerCert = getProp("controllerCert", "/etc/edgelet/cert.crt")
 	cfg.NetworkInterface = getProp("networkInterface", "dynamic")
-	cfg.ContainerEngine = getProp("containerEngine", "iofog")
-	cfg.DockerURL = getProp("dockerUrl", "unix:///run/iofog-agent/containerd.sock")
-	cfg.DiskDirectory = getProp("diskDirectory", "/var/lib/iofog-agent/")
-	cfg.LogDiskDirectory = getProp("logDiskDirectory", "/var/log/iofog-agent/")
+	cfg.ContainerEngine = getProp("containerEngine", "edgelet")
+	cfg.DockerURL = getProp("dockerUrl", "unix:///run/edgelet/containerd.sock")
+	cfg.DiskDirectory = getProp("diskDirectory", "/var/lib/edgelet/")
+	cfg.LogDiskDirectory = getProp("logDiskDirectory", "/var/log/edgelet/")
 	cfg.LogLevel = strings.ToUpper(getProp("logLevel", "INFO"))
 	cfg.GPSDevice = getProp("gpsDevice", "/dev/ttyUSB0")
 	cfg.GPSMode = strings.ToLower(strings.TrimSpace(getProp("gpsMode", "auto")))
@@ -142,7 +142,7 @@ func loadConfigValues(cfg *Config) {
 	cfg.Arch = getProp("arch", "auto")
 	cfg.Namespace = getProp("namespace", "default")
 	cfg.TimeZone = getProp("timeZone", "Europe/Istanbul")
-	// HWSignature removed - now stored in separate file: /etc/iofog-agent/agent-{uuid}.jwt
+	// HWSignature removed - now stored in separate file: /etc/edgelet/agent-{uuid}.jwt
 	// This prevents triggering SIGHUP/reload when signature is updated
 	// cfg.HWSignature = getProp("hwSignature", "")
 
@@ -222,15 +222,15 @@ func createDefaultYamlConfigForLoader() *models.YamlConfig {
 	// Create default profile with default values
 	defaultProfile := models.NewProfileConfig()
 	defaultProfile.SetProperty("controllerUrl", "http://localhost:54421/api/v3/")
-	defaultProfile.SetProperty("controllerCert", "/etc/iofog-agent/cert.crt")
+	defaultProfile.SetProperty("controllerCert", "/etc/edgelet/cert.crt")
 	defaultProfile.SetProperty("networkInterface", "dynamic")
-	defaultProfile.SetProperty("containerEngine", "iofog")
-	defaultProfile.SetProperty("dockerUrl", "unix:///run/iofog-agent/containerd.sock")
-	defaultProfile.SetProperty("diskDirectory", "/var/lib/iofog-agent/")
+	defaultProfile.SetProperty("containerEngine", "edgelet")
+	defaultProfile.SetProperty("dockerUrl", "unix:///run/edgelet/containerd.sock")
+	defaultProfile.SetProperty("diskDirectory", "/var/lib/edgelet/")
 	defaultProfile.SetProperty("diskLimit", "10")
 	defaultProfile.SetProperty("memoryLimit", "4096")
 	defaultProfile.SetProperty("cpuLimit", "80")
-	defaultProfile.SetProperty("logDirectory", "/var/log/iofog-agent/")
+	defaultProfile.SetProperty("logDirectory", "/var/log/edgelet/")
 	defaultProfile.SetProperty("logLimit", "10")
 	defaultProfile.SetProperty("logFileCount", "10")
 	defaultProfile.SetProperty("logLevel", "INFO")

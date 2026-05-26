@@ -12,7 +12,7 @@ func TestJSONFormatterGoldenRoundTrip(t *testing.T) {
 			"pid":     float64(1234),
 		},
 		"engine": map[string]any{
-			"type":    "iofog",
+			"type":    "edgelet",
 			"healthy": true,
 		},
 	}

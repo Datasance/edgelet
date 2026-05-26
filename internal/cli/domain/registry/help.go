@@ -11,8 +11,8 @@ Subcommands: ls, inspect, rm.`)
 
 // CommandExamples returns registry command examples for Cobra.
 func CommandExamples() string {
-	return strings.TrimSpace(`iofog-agent registry ls -o json
-  iofog-agent registry inspect <id>
-  iofog-agent registry inspect <id> --password-plain
-  iofog-agent registry rm <id>`)
+	return strings.TrimSpace(`edgelet registry ls -o json
+  edgelet registry inspect <id>
+  edgelet registry inspect <id> --password-plain
+  edgelet registry rm <id>`)
 }

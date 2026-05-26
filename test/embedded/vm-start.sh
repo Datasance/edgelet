@@ -116,7 +116,7 @@ log_info "cgroup filesystem type: ${CGROUP_VER}"
 if [[ "${CGROUP_VER}" == "cgroup2fs" ]]; then
     log_ok "cgroups v2 (unified hierarchy)"
 else
-    log_warn "cgroups v1 detected — iofog-agentd will still work but cgroups v2 is preferred"
+    log_warn "cgroups v1 detected — edgelet will still work but cgroups v2 is preferred"
 fi
 
 ###############################################################################

@@ -64,7 +64,7 @@ func (h *testLogHandler) OnError(sessionID string, err error) {
 
 func TestLocalLogReader_ReadTailLines_PreservesEmptyLines(t *testing.T) {
 	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "iofog-agent.0.log")
+	logFile := filepath.Join(tmpDir, "edgelet.0.log")
 	content := "line1\n\nline3\n"
 	if err := os.WriteFile(logFile, []byte(content), 0o600); err != nil {
 		t.Fatalf("failed to write test log file: %v", err)

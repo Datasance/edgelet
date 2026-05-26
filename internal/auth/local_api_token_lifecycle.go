@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -19,7 +19,7 @@ const (
 	bootstrapLocalAPITTL     = 10 * time.Minute
 )
 
-// EnsureLocalAPITokenForCurrentState reconciles /etc/iofog-agent/local-api token contents.
+// EnsureLocalAPITokenForCurrentState reconciles /etc/edgelet/local-api token contents.
 // - Unprovisioned: unsigned bootstrap JWT
 // - Provisioned: signed Ed25519 JWT
 func EnsureLocalAPITokenForCurrentState() error {
@@ -44,7 +44,7 @@ func EnsureLocalAPITokenForCurrentState() error {
 	}
 
 	extraClaims := map[string]interface{}{
-		"iofog.org": map[string]interface{}{
+		"edgelet.iofog.org": map[string]interface{}{
 			"rules": map[string]interface{}{
 				"*": []interface{}{"*"},
 			},
@@ -74,7 +74,7 @@ func GenerateBootstrapLocalAPIJWT(ttl time.Duration) (string, error) {
 		"iat":      now.Unix(),
 		"nbf":      now.Unix(),
 		"tokenUse": tokenUseLocalAPI,
-		"iofog.org": map[string]interface{}{
+		"edgelet.iofog.org": map[string]interface{}{
 			"rules": map[string]interface{}{
 				"*": []interface{}{"*"},
 			},

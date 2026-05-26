@@ -1,7 +1,7 @@
 package processmanager
 
 import (
-	"github.com/eclipse-iofog/agent/internal/models"
+	"github.com/datasance/edgelet/internal/models"
 )
 
 // MicroserviceManagerInterface defines the interface for microservice management

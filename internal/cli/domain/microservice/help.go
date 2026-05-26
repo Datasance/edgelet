@@ -11,11 +11,11 @@ Subcommands: ls, inspect, logs, exec, start, stop, restart, kill, rm.`)
 
 // CommandExamples returns ms command examples for Cobra.
 func CommandExamples() string {
-	return strings.TrimSpace(`iofog-agent ms ls -o json
-  iofog-agent ms ls --source local
-  iofog-agent ms inspect <uuid>
-  iofog-agent ms logs <uuid> --follow
-  iofog-agent ms exec <uuid> -- /bin/sh`)
+	return strings.TrimSpace(`edgelet ms ls -o json
+  edgelet ms ls --source local
+  edgelet ms inspect <uuid>
+  edgelet ms logs <uuid> --follow
+  edgelet ms exec <uuid> -- /bin/sh`)
 }
 
 // KillCommandLong returns help for ms kill.

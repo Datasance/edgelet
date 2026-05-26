@@ -3,7 +3,7 @@ package fieldagent
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/config"
+	"github.com/datasance/edgelet/internal/config"
 )
 
 func TestShouldPostFogConfigAfterUpdateFollowsReloadState(t *testing.T) {

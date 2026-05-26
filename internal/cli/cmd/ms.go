@@ -3,9 +3,9 @@ package cmd
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/domain/microservice"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/domain/microservice"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ func newMSCommand() *cobra.Command {
 			Use:    "ps",
 			Hidden: true,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return run.NewCLIError(run.CodeInvalidArgument, "unknown ms subcommand \"ps\"; use \"iofog-agent ms ls\"", nil)
+				return run.NewCLIError(run.CodeInvalidArgument, "unknown ms subcommand \"ps\"; use \"edgelet ms ls\"", nil)
 			},
 		},
 		newMSInspectCommand(),
@@ -164,12 +164,12 @@ func runMSList(cmd *cobra.Command, args []string) error {
 	if source != "managed" && source != "local" && source != "all" {
 		return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|all", nil)
 	}
-	path := "/v3/ms?source=" + source
+	path := "/v1/ms?source=" + source
 	data, err := appCtx.Client.RequestV3("GET", path, nil)
 	if err != nil {
 		return run.MapAPIError(err)
 	}
-	return run.WriteRouteData(appCtx, "/v3/ms", data)
+	return run.WriteRouteData(appCtx, "/v1/ms", data)
 }
 
 func runMSInspect(cmd *cobra.Command, args []string) error {
@@ -183,7 +183,7 @@ func runMSInspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return run.NewCLIError(run.CodeInternal, err.Error(), err)
 	}
-	path := "/v3/ms/" + args[0]
+	path := "/v1/ms/" + args[0]
 	if summary {
 		path += "?summary=true"
 	}

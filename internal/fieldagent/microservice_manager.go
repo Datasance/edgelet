@@ -1,9 +1,9 @@
 package fieldagent
 
 import (
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/processmanager"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 // Ensure FieldAgent implements MicroserviceManagerInterface

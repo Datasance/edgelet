@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/constants"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestBuildProvisionRequestBody_LiteDocker(t *testing.T) {
@@ -50,7 +50,7 @@ func TestBuildProvisionRequestBody_FullIofog(t *testing.T) {
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
 	originalArch := cfg.Arch
-	cfg.ContainerEngine = constants.EngineIofog
+	cfg.ContainerEngine = constants.EngineEdgelet
 	cfg.Arch = "arm64"
 	t.Cleanup(func() {
 		cfg.ContainerEngine = originalEngine
@@ -64,7 +64,7 @@ func TestBuildProvisionRequestBody_FullIofog(t *testing.T) {
 	if body["type"] != 2 {
 		t.Fatalf("type=%v", body["type"])
 	}
-	if body["engine"] != constants.EngineIofog {
+	if body["engine"] != constants.EngineEdgelet {
 		t.Fatalf("engine=%v", body["engine"])
 	}
 	if body["flavor"] != buildmeta.FlavorFull {
@@ -79,12 +79,12 @@ func TestBuildProvisionRequestBody_RejectsInvalidEngineForFlavor(t *testing.T) {
 
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
-	cfg.ContainerEngine = constants.EngineIofog
+	cfg.ContainerEngine = constants.EngineEdgelet
 	t.Cleanup(func() { cfg.ContainerEngine = originalEngine })
 
 	_, err := buildProvisionRequestBody("bad-key")
 	if err == nil {
-		t.Fatal("expected error for iofog engine on lite flavor")
+		t.Fatal("expected error for edgelet engine on lite flavor")
 	}
 	if !strings.Contains(err.Error(), "provisioning blocked") {
 		t.Fatalf("unexpected error: %v", err)

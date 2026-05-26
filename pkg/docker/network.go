@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	iofogNetworkName = "iofog"
+	edgeletNetworkName = "edgelet"
 )
 
 // resolveIofogBridgeNetworkName centralizes the scope->network mapping policy
@@ -19,24 +19,24 @@ const (
 func resolveIofogBridgeNetworkName(applicationName string, hostNetwork bool) string {
 	_ = applicationName // Application scope is metadata-only in single-bridge mode.
 	_ = hostNetwork
-	return iofogNetworkName
+	return edgeletNetworkName
 }
 
-// ensureIoFogNetworkExists ensures the fixed "iofog" bridge network exists.
+// ensureEdgeletNetworkExists ensures the fixed "edgelet" bridge network exists.
 // Must NOT be called while c.mu is held — use ensureNetworkLockFree instead.
-func (c *Client) ensureIoFogNetworkExists() error {
+func (c *Client) ensureEdgeletNetworkExists() error {
 	c.mu.RLock()
 	cli := c.client
 	baseCtx := c.ctx
 	c.mu.RUnlock()
 
-	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName)
+	return c.ensureNamedNetworkLockFree(cli, baseCtx, edgeletNetworkName)
 }
 
 // ensureNetworkLockFree is the mutex-free implementation; used when the caller
 // already holds c.mu (e.g. inside initDockerClient).
 func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Context) error {
-	return c.ensureNamedNetworkLockFree(cli, baseCtx, iofogNetworkName)
+	return c.ensureNamedNetworkLockFree(cli, baseCtx, edgeletNetworkName)
 }
 
 func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.Context, networkName string) error {
@@ -55,15 +55,15 @@ func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.
 	}
 
 	if len(networks) > 0 {
-		c.logger.Debugf("IoFog network \"%s\" already exists", networkName)
+		c.logger.Debugf("Edgelet network \"%s\" already exists", networkName)
 		return nil
 	}
 
-	c.logger.Infof("Creating IoFog network \"%s\"", networkName)
+	c.logger.Infof("Creating Edgelet network \"%s\"", networkName)
 	_, err = cli.NetworkCreate(ctx, networkName, types.NetworkCreate{
 		Driver: "bridge",
 		Labels: map[string]string{
-			"iofog": "true",
+			"edgelet": "true",
 		},
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.
 		return fmt.Errorf("failed to create network: %w", err)
 	}
 
-	c.logger.Infof("Successfully created IoFog network \"%s\"", networkName)
+	c.logger.Infof("Successfully created Edgelet network \"%s\"", networkName)
 	return nil
 }
 

@@ -4,10 +4,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/domain/logs"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/domain/logs"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 )
 
 const logsHumanOnlyMsg = "logs output supports human format only"
@@ -17,7 +17,7 @@ func FetchLogs(ctx *run.CLIContext, api client.V3API, opts logs.Options) error {
 	if ctx != nil && ctx.Format.IsStructured() {
 		return run.NewCLIError(run.CodeInvalidArgument, logsHumanOnlyMsg, nil)
 	}
-	path := "/v3/system/logs?tailLines=" + url.QueryEscape(opts.Tail)
+	path := "/v1/system/logs?tailLines=" + url.QueryEscape(opts.Tail)
 	if opts.Since != "" {
 		path += "&since=" + url.QueryEscape(opts.Since)
 	}

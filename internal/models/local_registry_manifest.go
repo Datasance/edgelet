@@ -32,9 +32,9 @@ func (m *LocalRegistryManifest) Validate() error {
 		return fmt.Errorf("kind must be Registry")
 	}
 	switch strings.TrimSpace(m.APIVersion) {
-	case "datasance.com/v3", "iofog.org/v3":
+	case "edgelet.iofog.org/v1":
 	default:
-		return fmt.Errorf("apiVersion must be datasance.com/v3 or iofog.org/v3")
+		return fmt.Errorf("apiVersion must be edgelet.iofog.org/v1")
 	}
 	if strings.TrimSpace(m.Spec.URL) == "" {
 		return fmt.Errorf("spec.url is required")

@@ -1,0 +1,150 @@
+# /********************************************************************************
+#  * Copyright (c) 2023 Datasance Teknoloji A.S.
+#  *
+#  * This program and the accompanying materials are made available under the
+#  * terms of the Eclipse Public License v. 2.0 which is available at
+#  * http://www.eclipse.org/legal/epl-2.0
+#  *
+#  * SPDX-License-Identifier: EPL-2.0
+#  ********************************************************************************/
+#
+# IOFog Agent Configuration
+# This file contains all configuration profiles in a single YAML file
+
+currentProfile: default  # default | development | production
+
+profiles:
+  default:
+    controllerUrl: "http://localhost:54421/api/v3/"
+    iofogUuid: ""
+    secureMode: "off"
+    devMode: "off"
+    controllerCert: "/etc/edgelet/cert.crt"
+    arch: "auto"
+    networkInterface: "dynamic"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    diskConsumptionLimit: "10"
+    diskDirectory: "/var/lib/edgelet/"
+    memoryConsumptionLimit: "4096"
+    processorConsumptionLimit: "80.0"
+    logDiskConsumptionLimit: "10.0"
+    logDiskDirectory: "/var/log/edgelet/"
+    logFileCount: "10"
+    logLevel: "INFO"
+    statusFrequency: "30"
+    getChangesFreq: "60"
+    scanDevicesFreq: "60"
+    gps: "auto"
+    gpsCoordinates: "0,0"
+    gpsDevice: ""
+    gpsScanFrequency: "60"
+    isolatedDockerContainer: "off"
+    edgeGuardFreq: "0"
+    dockerPruningFrequency: "0"
+    availableDiskThreshold: "20"
+    upgradeScanFrequency: "24"
+    timeZone: ""
+    namespace: "default"
+
+  development:
+    controllerUrl: "http://localhost:51121/api/v3/"
+    iofogUuid: ""
+    secureMode: "off"
+    devMode: "on"
+    controllerCert: "/etc/edgelet/cert.crt"
+    arch: "auto"
+    networkInterface: "dynamic"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    diskConsumptionLimit: "10"
+    diskDirectory: "/var/lib/edgelet/"
+    memoryConsumptionLimit: "4096"
+    processorConsumptionLimit: "80.0"
+    logDiskConsumptionLimit: "10.0"
+    logDiskDirectory: "/var/log/edgelet/"
+    logFileCount: "10"
+    logLevel: "INFO"
+    statusFrequency: "30"
+    getChangesFreq: "60"
+    scanDevicesFreq: "60"
+    gps: "auto"
+    gpsCoordinates: "0,0"
+    gpsDevice: ""
+    gpsScanFrequency: "60"
+    isolatedDockerContainer: "off"
+    edgeGuardFreq: "0"
+    dockerPruningFrequency: "0"
+    availableDiskThreshold: "20"
+    upgradeScanFrequency: "24"
+    timeZone: ""
+    namespace: "default"
+
+  production:
+    controllerUrl: "http://localhost:54421/api/v3/"
+    iofogUuid: ""
+    secureMode: "on"
+    devMode: "off"
+    controllerCert: "/etc/edgelet/cert.crt"
+    arch: "auto"
+    networkInterface: "dynamic"
+    # containerEngine selects the container runtime.
+    # Supported values:
+    #   docker  — use Docker daemon (requires Docker installed on host).
+    #             dockerUrl specifies the socket path.
+    #   podman  — use Podman daemon via its Docker-compatible API.
+    #             dockerUrl is used as the Podman socket path; if empty,
+    #             the default Podman socket is auto-detected.
+    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #             dockerUrl is ignored; the daemon always connects to its private
+    #             socket at /run/edgelet/containerd.sock.
+    #             Persistent data lives in /var/lib/edgelet-containerd/ and
+    #             is NOT counted against diskDirectory/diskConsumptionLimit.
+    containerEngine: "edgelet"
+    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    diskConsumptionLimit: "10"
+    diskDirectory: "/var/lib/edgelet/"
+    memoryConsumptionLimit: "4096"
+    processorConsumptionLimit: "80.0"
+    logDiskConsumptionLimit: "10.0"
+    logDiskDirectory: "/var/log/edgelet/"
+    logFileCount: "10"
+    logLevel: "INFO"
+    statusFrequency: "30"
+    getChangesFreq: "60"
+    scanDevicesFreq: "60"
+    gps: "auto"
+    gpsCoordinates: "0,0"
+    gpsDevice: ""
+    gpsScanFrequency: "60"
+    isolatedDockerContainer: "off"
+    edgeGuardFreq: "0"
+    dockerPruningFrequency: "0"
+    availableDiskThreshold: "20"
+    upgradeScanFrequency: "24"
+    timeZone: ""
+    namespace: "default"

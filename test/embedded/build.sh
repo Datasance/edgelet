@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # test/embedded/build.sh
 #
-# Downloads all embedded binary dependencies and cross-compiles iofog-agentd
-# for the Linux target that will run inside the Lima VM.
+# Runs the Plan 4 embed pipeline and cross-compiles the edgelet multicall binary
+# (full flavor) for the Linux target that will run inside the Lima VM.
 #
-# Outputs:
-#   agent-go/build/iofog-agent-linux-<arch>
-#   agent-go/build/iofog-agentd-linux-<arch>
+# Output:
+#   build/edgelet-linux-<arch>-full
 #
 # Usage:
 #   ./test/embedded/build.sh [--arch=arm64|amd64]
@@ -34,112 +33,36 @@ for arg in "$@"; do
     esac
 done
 
-log_step "Building iofog-agentd for linux/${TARGET_ARCH}"
+log_step "Building edgelet (full) for linux/${TARGET_ARCH}"
 log_info "Repository root: ${REPO_ROOT}"
 log_info "Target arch: ${TARGET_ARCH}"
 
-###############################################################################
-# Step 1: Download embedded deps
-###############################################################################
-log_step "Downloading embedded binary dependencies"
 cd "${REPO_ROOT}"
-
-DEPS_SCRIPT="./build/download-deps.sh"
-if [[ ! -x "${DEPS_SCRIPT}" ]]; then
-    chmod +x "${DEPS_SCRIPT}"
-fi
-
-"${DEPS_SCRIPT}" --arch="${TARGET_ARCH}"
-log_ok "Embedded dependencies downloaded"
+chmod +x scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet 2>/dev/null || true
 
 ###############################################################################
-# Step 2: Select cross-compiler
+# Step 1: Plan 4 embed pipeline (download → build-embedded → package-data)
 ###############################################################################
-select_cc() {
-    local arch="$1"
-    # Prefer messense toolchains, fall back to Ubuntu cross-compilers
-    for candidate in \
-        "${arch}-unknown-linux-gnu-gcc" \
-        "${arch}-linux-gnu-gcc" \
-        "${arch}-linux-musl-gcc"; do
-        if command -v "${candidate}" &>/dev/null; then
-            echo "${candidate}"
-            return
-        fi
-    done
-    # Special case arm64 alias
-    if [[ "${arch}" == "arm64" ]]; then
-        for candidate in \
-            "aarch64-unknown-linux-gnu-gcc" \
-            "aarch64-linux-gnu-gcc" \
-            "aarch64-linux-musl-gcc"; do
-            if command -v "${candidate}" &>/dev/null; then
-                echo "${candidate}"
-                return
-            fi
-        done
-    fi
-    echo ""
-}
+log_step "Embed pipeline: download → build-embedded → package-data"
+ARCH="${TARGET_ARCH}" ./scripts/download
+ARCH="${TARGET_ARCH}" ./scripts/build-embedded
+ARCH="${TARGET_ARCH}" ./scripts/package-data
+log_ok "Embedded zstd bundle packaged"
 
 ###############################################################################
-# Version / ldflags (full flavor; embedded tests require iofog engine)
+# Step 2: Cross-compile edgelet full binary
 ###############################################################################
-VERSION="$(cd "${REPO_ROOT}" && git describe --tags --always --dirty 2>/dev/null || echo dev)"
-BUILD_TIME="$(date -u '+%Y-%m-%d_%H:%M:%S')"
-GIT_COMMIT="$(cd "${REPO_ROOT}" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-LDFLAGS_CLI="-s -w -X github.com/eclipse-iofog/agent/internal/cli/cmd.Version=${VERSION} -X github.com/eclipse-iofog/agent/internal/cli/cmd.BuildTime=${BUILD_TIME} -X github.com/eclipse-iofog/agent/internal/cli/cmd.GitCommit=${GIT_COMMIT}"
-LDFLAGS_DAEMON="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT} \
--X github.com/eclipse-iofog/agent/internal/buildmeta.Flavor=full"
+log_step "Cross-compiling edgelet multicall (full flavor, CGO=1)"
+ARCH="${TARGET_ARCH}" ./scripts/build-edgelet
 
-###############################################################################
-# Step 3: Build CLI (CGO not required)
-###############################################################################
-log_step "Building iofog-agent CLI (full flavor metadata)"
-mkdir -p "${REPO_ROOT}/build"
+EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}-full"
+[[ -f "${EDGELET_BIN}" ]] || die "Expected binary not found: ${EDGELET_BIN}"
 
-CGO_ENABLED=0 GOOS=linux GOARCH="${TARGET_ARCH}" \
-    go build \
-    -trimpath \
-    -ldflags "${LDFLAGS_CLI}" \
-    -o "${REPO_ROOT}/build/iofog-agent-linux-${TARGET_ARCH}-full" \
-    "${REPO_ROOT}/cmd/iofog-agent"
-
-log_ok "CLI binary: build/iofog-agent-linux-${TARGET_ARCH}-full"
-
-###############################################################################
-# Step 4: Build daemon (CGO=1, needs cross-compiler)
-###############################################################################
-log_step "Building iofog-agentd daemon (embedded containerd, CGO=1, full flavor)"
-
-# Resolve cross-compiler — map Go arch names to GNU triplet prefixes
-GOARCH_FOR_CC="${TARGET_ARCH}"
-[[ "${TARGET_ARCH}" == "arm64" ]] && GOARCH_FOR_CC="aarch64"
-[[ "${TARGET_ARCH}" == "amd64" ]] && GOARCH_FOR_CC="x86_64"
-
-CC="$(select_cc "${GOARCH_FOR_CC}")"
-if [[ -z "${CC}" ]]; then
-    log_warn "No cross-compiler found for ${TARGET_ARCH}."
-    log_warn "Install with: brew install messense/macos-cross-toolchains/${GOARCH_FOR_CC}-unknown-linux-gnu"
-    log_warn "Falling back to native compiler (only works if host=Linux)"
-    CC="gcc"
-fi
-log_info "Using C compiler: ${CC}"
-
-CGO_ENABLED=1 GOOS=linux GOARCH="${TARGET_ARCH}" CC="${CC}" \
-    go build \
-    -trimpath \
-    -ldflags "${LDFLAGS_DAEMON} -extldflags '-static'" \
-    -tags "cgo osusergo netgo" \
-    -o "${REPO_ROOT}/build/iofog-agentd-linux-${TARGET_ARCH}-full" \
-    "${REPO_ROOT}/cmd/iofog-agentd"
-
-log_ok "Daemon binary: build/iofog-agentd-linux-${TARGET_ARCH}-full"
+log_ok "Binary: build/edgelet-linux-${TARGET_ARCH}-full"
 
 ###############################################################################
 # Done
 ###############################################################################
 log_success "Build complete for linux/${TARGET_ARCH} (full flavor)"
 echo ""
-echo "  CLI:    build/iofog-agent-linux-${TARGET_ARCH}-full"
-echo "  Daemon: build/iofog-agentd-linux-${TARGET_ARCH}-full"
+echo "  Binary: build/edgelet-linux-${TARGET_ARCH}-full"

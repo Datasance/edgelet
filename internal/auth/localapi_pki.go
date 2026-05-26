@@ -13,14 +13,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 const (
 	localAPICACertFilename     = "localapi-ca.crt"
 	localAPIServerCertFilename = "localapi-server.crt"
 	localAPIServerKeyFilename  = "localapi-server.key"
-	localAPIServerDNSName      = "iofog.default.svc.bridge.local"
+	localAPIServerDNSName      = "edgelet.default.svc.bridge.local"
 )
 
 func LocalAPIPKIPaths() (caPath, certPath, keyPath string) {
@@ -66,8 +66,8 @@ func generateLocalAPIPKI(caPath, certPath, keyPath string) error {
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			CommonName:   "iofog-agent-localapi-ca",
-			Organization: []string{"iofog-agent"},
+			CommonName:   "edgelet-localapi-ca",
+			Organization: []string{"edgelet"},
 		},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
@@ -88,7 +88,7 @@ func generateLocalAPIPKI(caPath, certPath, keyPath string) error {
 		SerialNumber: big.NewInt(time.Now().UnixNano() + 1),
 		Subject: pkix.Name{
 			CommonName:   localAPIServerDNSName,
-			Organization: []string{"iofog-agent"},
+			Organization: []string{"edgelet"},
 		},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(3 * 365 * 24 * time.Hour),

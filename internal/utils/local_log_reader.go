@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
 	localLogReaderModuleName = "LocalLogReader"
-	logFilePattern           = "iofog-agent.%d.log"
-	latestLogFile            = "iofog-agent.0.log"
+	logFilePattern           = "edgelet.%d.log"
+	latestLogFile            = "edgelet.0.log"
 )
 
 // LocalLogHandler is the interface for handling log lines

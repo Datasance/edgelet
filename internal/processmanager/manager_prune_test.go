@@ -4,12 +4,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/statusreporter"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 type pruneTestMicroserviceManager struct {
@@ -96,7 +96,7 @@ func TestPruneStaleProcessManagerStatuses_KeepsManagedLocalAndRuntimeOwned(t *te
 
 	local := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-1",
-		ApplicationName:  "local",
+		ApplicationName:  "edgelet",
 		MicroserviceName: "router",
 		SourceName:       "local-cli",
 		ManifestYAML:     "kind: Microservice",

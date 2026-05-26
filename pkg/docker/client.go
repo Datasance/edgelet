@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/docker/docker/client"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
 )
 
 const (
@@ -86,7 +86,7 @@ func (c *Client) initDockerClient() error {
 
 	c.client = cli
 
-	// Ensure "iofog" bridge network exists before returning — matches Java's synchronous
+	// Ensure "edgelet" bridge network exists before returning — matches Java's synchronous
 	// call in initDockerClient(). Use the lock-free variant because c.mu is already
 	// held by Init() / ReInit(); calling ensureIoFogNetworkExists() here would deadlock.
 	if err := c.ensureNetworkLockFree(cli, c.ctx); err != nil {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/client"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/client"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 // PullRequest carries image pull options.
@@ -45,7 +45,7 @@ func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequ
 		payload["platform"] = req.Platform
 	}
 
-	startResult, err := api.RequestV3("POST", "/v3/images:pull", payload)
+	startResult, err := api.RequestV3("POST", "/v1/images:pull", payload)
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
@@ -65,7 +65,7 @@ func Pull(ctx context.Context, api run.V3Client, uiProgress *ui.UI, req PullRequ
 	}
 
 	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
-		return api.RequestV3("GET", "/v3/images:pull/"+operationID, nil)
+		return api.RequestV3("GET", "/v1/images:pull/"+operationID, nil)
 	}, progress)
 	if err != nil {
 		return nil, run.MapAPIError(err)

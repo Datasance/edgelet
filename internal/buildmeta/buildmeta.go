@@ -1,9 +1,13 @@
 // Package buildmeta holds compile-time build metadata (flavor, etc.).
+//
+// Build with exactly one flavor tag and matching link-time -X Flavor=…:
+//   - full:  -tags "cgo,full"  -X …/buildmeta.Flavor=full
+//   - lite:  -tags lite       -X …/buildmeta.Flavor=lite
 package buildmeta
 
 import "strings"
 
-// Flavor is set at link time: "lite" (docker/podman only) or "full" (embedded containerd / iofog engine).
+// Flavor is set at link time: "lite" (docker/podman only) or "full" (embedded containerd / edgelet engine).
 var Flavor = "lite"
 
 const (
@@ -24,7 +28,7 @@ func IsLite() bool {
 // AllowedEngines returns containerEngine values valid for this binary build.
 func AllowedEngines() []string {
 	if IsFull() {
-		return []string{"iofog"}
+		return []string{"edgelet"}
 	}
 	return []string{"docker", "podman"}
 }

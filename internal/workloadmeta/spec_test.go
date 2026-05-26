@@ -21,8 +21,8 @@ func TestScopeFromMicroservice(t *testing.T) {
 		hostNetwork bool
 		want        string
 	}{
-		{name: "local non-host network", application: "local", hostNetwork: false, want: ScopeLocal},
-		{name: "local host network", application: "local", hostNetwork: true, want: ScopeManaged},
+		{name: "local non-host network", application: LocalDeployApplicationName, hostNetwork: false, want: ScopeLocal},
+		{name: "local host network", application: LocalDeployApplicationName, hostNetwork: true, want: ScopeManaged},
 		{name: "managed app", application: "app", hostNetwork: false, want: ScopeManaged},
 	}
 
@@ -42,8 +42,8 @@ func TestResolveScope(t *testing.T) {
 		hostNetwork bool
 		want        string
 	}{
-		{name: "local deploy scope", application: LocalApplicationName, hostNetwork: false, want: ScopeLocal},
-		{name: "local host network bypass", application: LocalApplicationName, hostNetwork: true, want: ScopeManaged},
+		{name: "local deploy scope", application: LocalDeployApplicationName, hostNetwork: false, want: ScopeLocal},
+		{name: "local host network bypass", application: LocalDeployApplicationName, hostNetwork: true, want: ScopeManaged},
 		{name: "controller managed", application: "edge-app", hostNetwork: false, want: ScopeManaged},
 	}
 	for _, tt := range tests {
@@ -56,8 +56,8 @@ func TestResolveScope(t *testing.T) {
 }
 
 func TestIsLocalApplicationAndScope(t *testing.T) {
-	if !IsLocalApplication(" LOCAL ") {
-		t.Fatal("expected local application to be detected")
+	if !IsLocalApplication(" EDGELET ") {
+		t.Fatal("expected local-deploy application to be detected")
 	}
 	if IsLocalApplication("managed") {
 		t.Fatal("expected non-local application")

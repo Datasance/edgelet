@@ -2,7 +2,7 @@
 # test/embedded/setup.sh
 #
 # Checks and installs all macOS prerequisites needed to build and test
-# iofog-agentd with the embedded containerd engine inside a Lima VM.
+# edgeletd with the embedded containerd engine inside a Lima VM.
 #
 # Requirements installed via Homebrew:
 #   - lima          (lightweight Linux VM manager)

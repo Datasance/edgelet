@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 type pollFakeAPI struct {
@@ -64,6 +64,7 @@ func TestPollAsyncOperation_StageTerminalSuccess(t *testing.T) {
 }
 
 func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
+	clearInteractiveEnv(t)
 	api := &pollFakeAPI{
 		responses: []map[string]interface{}{
 			{"status": "running", "stage": "pulling"},
@@ -74,7 +75,7 @@ func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{ForceTTY: true})
 	spin := u.StartSpinner("Applying microservice manifest...")
 
-	_, _, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
+	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
 		return api.RequestV3("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
@@ -85,8 +86,44 @@ func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "applying microservice manifest") {
-		t.Fatalf("expected spinner output, got: %q", stderr.String())
+	if final["deploymentId"] != "dep-2" {
+		t.Fatalf("unexpected final payload: %#v", final)
+	}
+	if len(stages) != 1 || stages[0] != "pulling" {
+		t.Fatalf("expected stage pulling recorded, got: %#v", stages)
+	}
+	// Interactive spinner Stop() clears the line; only the clear sequence may remain.
+	if msg := stderr.String(); msg != "" && !strings.Contains(msg, "\r") {
+		t.Fatalf("expected empty or cleared stderr after spinner stop, got: %q", msg)
+	}
+}
+
+func TestPollAsyncOperation_StageSuffixNonInteractive(t *testing.T) {
+	t.Setenv("CI", "true")
+	api := &pollFakeAPI{
+		responses: []map[string]interface{}{
+			{"status": "running", "stage": "pulling"},
+			{"status": "succeeded", "deploymentId": "dep-3"},
+		},
+	}
+	var stderr strings.Builder
+	u := ui.NewWithWriters(nil, &stderr, ui.Options{})
+
+	_, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
+		return api.RequestV3("GET", "/status", nil)
+	}, PollProgress{
+		UI:             u,
+		StageFormatter: ui.FormatDeployStageLine,
+	})
+	if err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	if len(stages) != 1 || stages[0] != "pulling" {
+		t.Fatalf("expected stage pulling recorded, got: %#v", stages)
+	}
+	line := ui.FormatDeployStageLine("pulling")
+	if !strings.Contains(stderr.String(), line) {
+		t.Fatalf("expected stage line %q in stderr, got: %q", line, stderr.String())
 	}
 }
 

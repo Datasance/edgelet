@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/utils"
 )
 
 const (
@@ -32,7 +32,7 @@ type Client struct {
 	token          string
 }
 
-// V3APIError is a structured LocalAPI v3 error.
+// V3APIError is a structured LocalAPI v1 error.
 type V3APIError struct {
 	StatusCode int
 	Code       string
@@ -53,7 +53,7 @@ func (e *V3APIError) Error() string {
 func New() *Client {
 	return &Client{
 		baseURL:        localAPIBaseURL,
-		unixSocketPath: filepath.Join(utils.VarRun, "iofog-agentd.sock"),
+		unixSocketPath: filepath.Join(utils.VarRun, "edgelet.sock"),
 		token:          readAccessToken(),
 	}
 }
@@ -80,7 +80,7 @@ func (c *Client) IsDaemonRunning() bool {
 	}
 
 	// Fallback: try to connect to Local API via v3 status endpoint.
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.baseURL+"/v3/system/status", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.baseURL+"/v1/system/status", nil)
 	if err != nil {
 		return false
 	}
@@ -121,14 +121,14 @@ func isDaemonProcessPresent() bool {
 		if err != nil || len(cmdline) == 0 {
 			continue
 		}
-		if bytes.Contains(cmdline, []byte("iofog-agentd")) {
+		if bytes.Contains(cmdline, []byte("edgelet")) {
 			return true
 		}
 	}
 	return false
 }
 
-// RequestV3 sends a typed request to LocalAPI v3 and returns JSON response map when possible.
+// RequestV3 sends a typed request to LocalAPI v1 and returns JSON response map when possible.
 func (c *Client) RequestV3(method, path string, requestBody interface{}) (map[string]interface{}, error) {
 	url := c.baseURL + path
 

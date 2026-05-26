@@ -1,9 +1,9 @@
 //go:build !linux
 
-// Package iofogcontainerd is Linux-only. This stub allows the rest of the
+// Package edgeletcontainerdd is Linux-only. This stub allows the rest of the
 // codebase to reference the package types on non-Linux platforms (e.g. macOS
 // dev builds) without compilation errors.
-package iofogcontainerd
+package edgeletcontainerdd
 
 import (
 	"fmt"

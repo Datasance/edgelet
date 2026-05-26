@@ -7,9 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
-	"github.com/eclipse-iofog/agent/internal/cli/ui"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ func shouldPrintBanner(c *cobra.Command, args []string) bool {
 	if len(filterHelpArgs(args)) > 0 {
 		return false
 	}
-	return c.Name() == "iofog-agent" || c.Name() == "help"
+	return c.Name() == "edgelet" || c.Name() == "help"
 }
 
 func writeCommandError(err error) {
@@ -80,12 +81,25 @@ func contextOrBootstrap() *run.CLIContext {
 	return appCtx
 }
 
+func runLocalVersion(ctx *run.CLIContext) error {
+	ctx = contextOrBootstrap()
+	text := fmt.Sprintf(
+		"edgelet %s (build: %s, commit: %s)\n  build flavor: %s\n  allowed containerEngine: %s\n",
+		ctx.Version,
+		ctx.BuildTime,
+		ctx.GitCommit,
+		buildmeta.Flavor,
+		buildmeta.AllowedEnginesCSV(),
+	)
+	return run.WriteHuman(ctx, text)
+}
+
 func runVersion(ctx *run.CLIContext) error {
 	ctx = contextOrBootstrap()
 	if err := run.RequireDaemon(ctx.Client); err != nil {
 		return err
 	}
-	daemon, err := ctx.Client.RequestV3("GET", "/v3/system/version", nil)
+	daemon, err := ctx.Client.RequestV3("GET", "/v1/system/version", nil)
 	payload := output.BuildVersionPayload(ctx.Version, ctx.BuildTime, ctx.GitCommit, daemon, err)
 	if ctx.Format.IsStructured() {
 		return run.WriteValue(ctx, payload)

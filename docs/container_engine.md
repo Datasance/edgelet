@@ -87,7 +87,7 @@ func NewContainerEngine(engineType string) (engine.ContainerEngine, error) {
     case constants.PodmanContainerEngine:
         return podmanengine.New(), nil
     case constants.IofogContainerEngine:
-        return iofogengine.New(cfg.LogDir), nil
+        return edgeletengine.New(cfg.LogDir), nil
     default:
         return nil, fmt.Errorf("unknown engine: %s", engineType)
     }
@@ -195,7 +195,7 @@ Before the containerd service starts, `EnsureEmbeddedDependencies()` extracts bi
 |----------------|-------------|---------|
 | `crun` | `…/bin/crun` | OCI container runtime |
 | `containerd-shim-runc-v2` | `…/bin/` | Containerd shim for OCI runtime v2 (`io.containerd.runc.v2`) |
-| CNI plugins (`bridge`, `loopback`, `portmap`, `firewall`, `host-local`) | `…/bin/cni/` | Pod network setup |
+| CNI plugins (`bridge`, `loopback`, `portmap`, `host-local`) | `…/bin/cni/` | Pod network setup |
 | `pause.tar.gz` | `…/images/` | Pause image for pod sandboxes |
 
 For OCI workloads, the runtime executable is `crun`; the baseline handler name is `crun`,
@@ -209,7 +209,7 @@ sequenceDiagram
     participant Supervisor
     participant Embedded
     participant ContainerdService
-    participant IofogEngine
+    participant EdgeletEngine
 
     Supervisor->>Embedded: EnsureEmbeddedDependencies()
     Embedded->>Embedded: extract crun, shim, CNI, pause.tar.gz
@@ -220,11 +220,11 @@ sequenceDiagram
     ContainerdService->>ContainerdService: create k8s.io namespace
     ContainerdService->>ContainerdService: import pause.tar.gz image
     ContainerdService-->>Supervisor: ready
-    Supervisor->>IofogEngine: Init(EngineConfig)
-    IofogEngine->>IofogEngine: dial containerd client
-    IofogEngine->>IofogEngine: dial CRI gRPC client
-    IofogEngine->>IofogEngine: recoverState() from container labels
-    IofogEngine-->>Supervisor: ready
+    Supervisor->>EdgeletEngine: Init(EngineConfig)
+    EdgeletEngine->>EdgeletEngine: dial containerd client
+    EdgeletEngine->>EdgeletEngine: dial CRI gRPC client
+    EdgeletEngine->>EdgeletEngine: recoverState() from container labels
+    EdgeletEngine-->>Supervisor: ready
 ```
 
 ### CRI Pod Model
@@ -312,7 +312,7 @@ Important behavior:
 
 ```yaml
 kind: Microservice
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 metadata:
   name: gpu-worker
 spec:
@@ -442,7 +442,7 @@ RuntimeClass allows registering additional containerd runtime handlers without e
 ### Manifest shape (v1)
 
 ```yaml
-apiVersion: iofog.org/v3
+apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
   name: spin

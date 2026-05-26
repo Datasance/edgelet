@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
@@ -20,7 +20,7 @@ import (
 const (
 	controlHandlerModuleName = "Control WebSocket Handler"
 	requestIDHeader          = "X-Request-Id"
-	v3ControlPath            = "/v3/microservices/control"
+	v3ControlPath            = "/v1/microservices/control"
 )
 
 var (
@@ -214,7 +214,7 @@ func parseTokenMeta(token string) map[string]string {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(jti)))
 		meta["jtiHash"] = hex.EncodeToString(sum[:])
 	}
-	if iofog, ok := claims["iofog.org"].(map[string]interface{}); ok {
+	if iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{}); ok {
 		if microservice, ok := iofog["microservice"].(map[string]interface{}); ok {
 			if uuid, _ := microservice["uuid"].(string); strings.TrimSpace(uuid) != "" {
 				meta["microserviceUUID"] = strings.TrimSpace(uuid)
@@ -236,7 +236,7 @@ func tokenMetaFromClaims(claims jwt.MapClaims) map[string]string {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(jti)))
 		meta["jtiHash"] = hex.EncodeToString(sum[:])
 	}
-	if iofog, ok := claims["iofog.org"].(map[string]interface{}); ok {
+	if iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{}); ok {
 		if microservice, ok := iofog["microservice"].(map[string]interface{}); ok {
 			if uuid, _ := microservice["uuid"].(string); strings.TrimSpace(uuid) != "" {
 				meta["microserviceUUID"] = strings.TrimSpace(uuid)
@@ -268,7 +268,7 @@ func authorizeV3WebsocketClaims(claims jwt.MapClaims) bool {
 		return true
 	}
 
-	iofogRaw, ok := claims["iofog.org"].(map[string]interface{})
+	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]interface{})
 	if !ok {
 		return false
 	}
@@ -281,7 +281,7 @@ func authorizeV3WebsocketClaims(claims jwt.MapClaims) bool {
 		return false
 	}
 
-	apiGroups := []string{"agent.iofog.org/v3", "agent.datasance.com/v3"}
+	apiGroups := []string{"edgelet.iofog.org/v1", "edgelet.iofog.org/v1"}
 	for _, group := range apiGroups {
 		if groupRulesMatch(rulesRaw, group, "microservices/control/self", "get") {
 			return true

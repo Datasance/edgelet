@@ -3,7 +3,7 @@ package healthcheck
 import (
 	"testing"
 
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
+	"github.com/datasance/edgelet/internal/workloadmeta"
 )
 
 func TestParseHealthcheckFromLabels_UsesCanonicalKeyOnly(t *testing.T) {

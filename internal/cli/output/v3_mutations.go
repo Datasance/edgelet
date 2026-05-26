@@ -9,26 +9,26 @@ import (
 
 func formatMutationRoute(routePath string, result map[string]interface{}) string {
 	switch routePath {
-	case "/v3/system/config":
+	case "/v1/system/config":
 		return FormatConfigPatchResult(result)
-	case "/v3/system/controller/cert":
+	case "/v1/system/controller/cert":
 		return "controller certificate updated successfully"
-	case "/v3/system/config/switch":
+	case "/v1/system/config/switch":
 		return FormatSwitchResult(result)
-	case "/v3/images:pull":
+	case "/v1/images:pull":
 		return formatImagePullResult(result)
-	case "/v3/images:load":
+	case "/v1/images:load":
 		return formatImageLoadResult(result)
-	case "/v3/images:prune", "/v3/system/prune":
+	case "/v1/images:prune", "/v1/system/prune":
 		return formatImagePruneResult(result)
-	case "/v3/images:remove":
+	case "/v1/images:remove":
 		return formatImageRemoveResult(result)
-	case "/v3/deploy/microservices:validate", "/v3/deploy/registries:validate", "/v3/deploy/runtimeclasses:validate":
+	case "/v1/deploy/microservices:validate", "/v1/deploy/registries:validate", "/v1/deploy/runtimeclasses:validate":
 		return formatDeployValidateResult(result)
-	case "/v3/deploy/microservices:apply", "/v3/deploy/registries:apply", "/v3/deploy/runtimeclasses:apply":
+	case "/v1/deploy/microservices:apply", "/v1/deploy/registries:apply", "/v1/deploy/runtimeclasses:apply":
 		return formatDeployApplyResult(result)
 	default:
-		if strings.HasPrefix(routePath, "/v3/ms/") {
+		if strings.HasPrefix(routePath, "/v1/ms/") {
 			if strings.HasSuffix(routePath, "/start") || strings.HasSuffix(routePath, "/stop") ||
 				strings.HasSuffix(routePath, "/restart") || strings.HasSuffix(routePath, "/kill") {
 				return formatMSLifecycleResult(routePath, result)
@@ -39,12 +39,12 @@ func formatMutationRoute(routePath string, result map[string]interface{}) string
 				}
 			}
 		}
-		if strings.HasPrefix(routePath, "/v3/deploy/registries/") {
+		if strings.HasPrefix(routePath, "/v1/deploy/registries/") {
 			if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
 				return formatRegistryRemoveResult(result)
 			}
 		}
-		if strings.HasPrefix(routePath, "/v3/deploy/runtimeclasses/") {
+		if strings.HasPrefix(routePath, "/v1/deploy/runtimeclasses/") {
 			if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
 				return formatRuntimeClassRemoveResult(result)
 			}
@@ -54,7 +54,7 @@ func formatMutationRoute(routePath string, result map[string]interface{}) string
 	}
 }
 
-// FormatConfigPatchResult renders PATCH /v3/system/config output.
+// FormatConfigPatchResult renders PATCH /v1/system/config output.
 func FormatConfigPatchResult(result map[string]interface{}) string {
 	if len(result) == 0 {
 		return ""
@@ -392,12 +392,12 @@ func formatRuntimeClassApplyInProgress(operationID, status, stage string) string
 	stage = normalizeOperationStage(stage)
 	if stage != "" {
 		return fmt.Sprintf(
-			"runtimeclass apply is still in progress (operationId=%s status=%s stage=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+			"runtimeclass apply is still in progress (operationId=%s status=%s stage=%s)\npoll endpoint: GET /v1/deploy/runtimeclasses:apply/%s",
 			operationID, status, stage, operationID,
 		)
 	}
 	return fmt.Sprintf(
-		"runtimeclass apply is still in progress (operationId=%s status=%s)\npoll endpoint: GET /v3/deploy/runtimeclasses:apply/%s",
+		"runtimeclass apply is still in progress (operationId=%s status=%s)\npoll endpoint: GET /v1/deploy/runtimeclasses:apply/%s",
 		operationID, status, operationID,
 	)
 }

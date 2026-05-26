@@ -42,7 +42,7 @@ Docker integration uses the Docker Go SDK instead of docker-java, but maintains 
 cp /etc/iofog-agent/config.yaml /etc/iofog-agent/config.yaml.backup
 
 # Backup data
-cp -r /var/lib/iofog-agent /var/lib/iofog-agent.backup
+cp -r /var/lib/iofog-agent /var/lib/edgelet.backup
 ```
 
 ### 2. Stop Java Agent
@@ -171,7 +171,7 @@ If you encounter compatibility issues:
 
 1. Check API compatibility:
    ```bash
-   curl http://localhost:54321/api/v3/status
+   curl http://localhost:54321/api/v1/status
    ```
 
 2. Verify Docker integration:

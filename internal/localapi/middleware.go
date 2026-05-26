@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
+	"github.com/datasance/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -19,10 +19,10 @@ var (
 	isAuthorizedFn           = isAuthorized
 )
 
-// authMiddlewareV3 validates LocalAPI v3 JWTs.
+// authMiddlewareV1 validates LocalAPI v1 JWTs.
 // In unprovisioned mode, unsigned bootstrap JWTs are accepted.
 // In provisioned mode, unsigned JWTs are rejected and signed JWTs are required.
-func authMiddlewareV3(next http.HandlerFunc) http.HandlerFunc {
+func authMiddlewareV1(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {

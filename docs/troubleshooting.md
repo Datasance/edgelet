@@ -129,7 +129,7 @@ Common issues and solutions for the ioFog Agent.
 
 1. Test connectivity:
    ```bash
-   curl -v https://controller.example.com/api/v3/status
+   curl -v https://controller.example.com/api/v1/status
    ```
 
 2. Check DNS resolution:
@@ -174,7 +174,7 @@ Common issues and solutions for the ioFog Agent.
 
 4. Test locally:
    ```bash
-   curl http://localhost:54321/api/v3/status
+   curl http://localhost:54321/api/v1/status
    ```
 
 ## Configuration Issues
@@ -383,7 +383,7 @@ Common issues and solutions for the ioFog Agent.
 
 1. Check Message Bus status:
    ```bash
-   curl http://localhost:54321/api/v3/status/messagebus
+   curl http://localhost:54321/api/v1/status/messagebus
    ```
 
 2. Verify AMQP connection:

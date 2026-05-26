@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/auth"
-	"github.com/eclipse-iofog/agent/internal/config"
-	"github.com/eclipse-iofog/agent/internal/models"
-	"github.com/eclipse-iofog/agent/internal/store"
-	"github.com/eclipse-iofog/agent/internal/utils"
+	"github.com/datasance/edgelet/internal/auth"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/store"
+	"github.com/datasance/edgelet/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -50,7 +50,7 @@ func TestProjectionDir_UsesDedicatedServiceaccountsRoot(t *testing.T) {
 	utils.SNAPCommon = tmp
 
 	m := NewManager()
-	expected := filepath.Join(tmp, "volumes", "serviceaccounts", "ms-1", "datasance.com~serviceaccount", "default")
+	expected := filepath.Join(tmp, "volumes", "serviceaccounts", "ms-1", "edgelet.iofog.org~serviceaccount", "default")
 	if got := m.ProjectionDir("ms-1"); got != expected {
 		t.Fatalf("unexpected projection dir: got=%q want=%q", got, expected)
 	}
@@ -210,7 +210,7 @@ func TestReconcileManagedMicroservices_EmitsCanonicalRBACEnvelope(t *testing.T) 
 		Name: "default",
 		Rules: []models.ServiceAccountRule{
 			{
-				APIGroups: []string{"agent.datasance.com/v3"},
+				APIGroups: []string{"edgelet.iofog.org/v1"},
 				Resources: []string{"config"},
 				Verbs:     []string{"patch", "get"},
 			},
@@ -236,7 +236,7 @@ func TestReconcileManagedMicroservices_EmitsCanonicalRBACEnvelope(t *testing.T) 
 		t.Fatalf("failed to parse projected token: %v", err)
 	}
 	claims := token.Claims.(jwt.MapClaims)
-	iofog, ok := claims["iofog.org"].(map[string]interface{})
+	iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("missing iofog.org claims")
 	}

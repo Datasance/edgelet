@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/eclipse-iofog/agent/internal/buildmeta"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/version"
+	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/version"
 )
 
 const (
@@ -19,7 +19,7 @@ type VersionHandler struct {
 	// Version will be injected when available
 }
 
-// HandleVersion handles GET /v3/system/version.
+// HandleVersion handles GET /v1/system/version.
 func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	logging.LogDebug(versionHandlerModuleName, "Processing version request")
 

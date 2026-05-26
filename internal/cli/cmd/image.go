@@ -3,9 +3,9 @@ package cmd
 import (
 	"strings"
 
-	"github.com/eclipse-iofog/agent/internal/cli/domain/image"
-	"github.com/eclipse-iofog/agent/internal/cli/output"
-	"github.com/eclipse-iofog/agent/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/domain/image"
+	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ func newImageCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "ls",
 			Short: "List images",
-			RunE:  runGET("/v3/images"),
+			RunE:  runGET("/v1/images"),
 		},
 		newImagePullCommand(),
 		newImageLoadCommand(),
@@ -35,9 +35,9 @@ func newImageCommand() *cobra.Command {
 				Args:      cobra.MaximumNArgs(1),
 				ValidArgs: []string{"dangling"},
 				Example: strings.Join([]string{
-					"iofog-agent image prune",
-					"iofog-agent image prune dangling",
-					"iofog-agent image prune --mode dangling",
+					"edgelet image prune",
+					"edgelet image prune dangling",
+					"edgelet image prune --mode dangling",
 				}, "\n"),
 				RunE: runImagePrune,
 			}
@@ -78,7 +78,7 @@ func newImageLoadCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeHumanOrRoute(appCtx, "/v3/images:load", result.Human, result.Data)
+			return writeHumanOrRoute(appCtx, "/v1/images:load", result.Human, result.Data)
 		},
 	}
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to image tar archive")
@@ -116,10 +116,10 @@ func runImagePrune(cmd *cobra.Command, args []string) error {
 	}
 	human := strings.TrimSpace(result.Human)
 	if human == "" {
-		human = strings.TrimSpace(output.FormatV3Human("/v3/images:prune", result.Data))
+		human = strings.TrimSpace(output.FormatV3Human("/v1/images:prune", result.Data))
 	}
 	if human == "" {
-		return writeHumanOrRoute(appCtx, "/v3/images:prune", result.Human, result.Data)
+		return writeHumanOrRoute(appCtx, "/v1/images:prune", result.Human, result.Data)
 	}
 	return run.WriteHumanSuccess(appCtx, human)
 }
@@ -141,5 +141,5 @@ func runImageRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeHumanOrRoute(appCtx, "/v3/images:remove", result.Human, result.Data)
+	return writeHumanOrRoute(appCtx, "/v1/images:remove", result.Human, result.Data)
 }

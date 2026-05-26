@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/runtimeops"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
-	"github.com/eclipse-iofog/agent/internal/workloadmeta"
-	"github.com/eclipse-iofog/agent/pkg/engine"
+	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/datasance/edgelet/pkg/engine"
 )
 
 type drainTestEngine struct {
@@ -130,7 +130,7 @@ func TestDrainRuntimeForShutdown_SucceedsWithMultipleContainers(t *testing.T) {
 	events := captureEvents(t)
 	pm := &ProcessManager{
 		engine:     newDrainTestEngine("c1", "c2", "c3"),
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
 	}
 
@@ -166,7 +166,7 @@ func TestDrainRuntimeForShutdown_TimeoutHasSortedRemainingIDs(t *testing.T) {
 	eng.stopRemoves = false
 	pm := &ProcessManager{
 		engine:     eng,
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
 	}
 
@@ -210,7 +210,7 @@ func TestDrainRuntimeForShutdown_UsesBoundedConcurrency(t *testing.T) {
 	eng.stopDelay = 50 * time.Millisecond
 	pm := &ProcessManager{
 		engine:     eng,
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
 	}
 
@@ -230,7 +230,7 @@ func TestDrainRuntimeForShutdown_ZeroContainersFastPath(t *testing.T) {
 	events := captureEvents(t)
 	pm := &ProcessManager{
 		engine:     newDrainTestEngine(),
-		engineName: "iofog",
+		engineName: "edgelet",
 		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
 	}
 

@@ -11,8 +11,8 @@ The key is issued by the Controller when creating or enrolling an agent.`)
 
 // ProvisionExamples returns provision command examples for Cobra.
 func ProvisionExamples() string {
-	return strings.TrimSpace(`iofog-agent provision <provisioning-key>
-  iofog-agent -o json provision <provisioning-key>`)
+	return strings.TrimSpace(`edgelet provision <provisioning-key>
+  edgelet -o json provision <provisioning-key>`)
 }
 
 // DeprovisionLong returns the deprovision command introduction.
@@ -25,7 +25,7 @@ Use --keep-local or --scope local to preserve locally deployed microservices.`)
 
 // DeprovisionExamples returns deprovision command examples for Cobra.
 func DeprovisionExamples() string {
-	return strings.TrimSpace(`iofog-agent deprovision
-  iofog-agent deprovision --scope local
-  iofog-agent deprovision --keep-local`)
+	return strings.TrimSpace(`edgelet deprovision
+  edgelet deprovision --scope local
+  edgelet deprovision --keep-local`)
 }

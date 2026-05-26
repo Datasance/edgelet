@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/agent/internal/localapi/handlers"
-	"github.com/eclipse-iofog/agent/internal/utils"
-	"github.com/eclipse-iofog/agent/internal/utils/logging"
+	"github.com/datasance/edgelet/internal/localapi/handlers"
+	"github.com/datasance/edgelet/internal/utils"
+	"github.com/datasance/edgelet/internal/utils/logging"
 )
 
 const (
