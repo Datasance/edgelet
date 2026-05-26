@@ -255,6 +255,7 @@ func TestReconfigureRestartsService(t *testing.T) {
 	prevRetryDelay := containerdReconfigureRetryDelay
 	prevMaxAttempts := containerdReconfigureMaxAttempts
 	prevStabilityWindow := containerdReconfigureStabilityWindow
+	prevShutdownWait := containerdShutdownWaitTimeout
 	t.Cleanup(func() {
 		writeConfigForService = prevWriteConfig
 		findManagedShimPIDs = prevFinder
@@ -264,6 +265,7 @@ func TestReconfigureRestartsService(t *testing.T) {
 		containerdReconfigureRetryDelay = prevRetryDelay
 		containerdReconfigureMaxAttempts = prevMaxAttempts
 		containerdReconfigureStabilityWindow = prevStabilityWindow
+		containerdShutdownWaitTimeout = prevShutdownWait
 	})
 	writeConfigForService = func() error { return nil }
 	findManagedShimPIDs = func(_ string) ([]int, error) { return nil, nil }
@@ -273,9 +275,11 @@ func TestReconfigureRestartsService(t *testing.T) {
 	containerdReconfigureRetryDelay = 1 * time.Millisecond
 	containerdReconfigureMaxAttempts = 1
 	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+	containerdShutdownWaitTimeout = 1 * time.Millisecond
 
 	svc.runFn = func() error {
 		svc.readyOnce.Do(func() { close(svc.ready) })
+		<-svc.ctx.Done()
 		close(svc.done)
 		return nil
 	}
@@ -299,6 +303,7 @@ func TestReconfigureReturnsDeterministicRestartError(t *testing.T) {
 	prevRetryDelay := containerdReconfigureRetryDelay
 	prevMaxAttempts := containerdReconfigureMaxAttempts
 	prevStabilityWindow := containerdReconfigureStabilityWindow
+	prevShutdownWait := containerdShutdownWaitTimeout
 	t.Cleanup(func() {
 		writeConfigForService = prevWriteConfig
 		findManagedShimPIDs = prevFinder
@@ -308,6 +313,7 @@ func TestReconfigureReturnsDeterministicRestartError(t *testing.T) {
 		containerdReconfigureRetryDelay = prevRetryDelay
 		containerdReconfigureMaxAttempts = prevMaxAttempts
 		containerdReconfigureStabilityWindow = prevStabilityWindow
+		containerdShutdownWaitTimeout = prevShutdownWait
 	})
 	writeConfigForService = func() error { return nil }
 	findManagedShimPIDs = func(_ string) ([]int, error) { return nil, nil }
@@ -321,6 +327,7 @@ func TestReconfigureReturnsDeterministicRestartError(t *testing.T) {
 	containerdReconfigureRetryDelay = 1 * time.Millisecond
 	containerdReconfigureMaxAttempts = 1
 	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+	containerdShutdownWaitTimeout = 1 * time.Millisecond
 
 	svc.runFn = func() error {
 		return errors.New("synthetic restart failure")
@@ -352,6 +359,7 @@ func TestReconfigureRollbackPathWritesLKGAndSkipsEscalationOnRecoveredRuntime(t 
 	prevRetryDelay := containerdReconfigureRetryDelay
 	prevMaxAttempts := containerdReconfigureMaxAttempts
 	prevStabilityWindow := containerdReconfigureStabilityWindow
+	prevShutdownWait := containerdShutdownWaitTimeout
 	t.Cleanup(func() {
 		writeConfigForService = prevWriteConfig
 		findManagedShimPIDs = prevFinder
@@ -361,6 +369,7 @@ func TestReconfigureRollbackPathWritesLKGAndSkipsEscalationOnRecoveredRuntime(t 
 		containerdReconfigureRetryDelay = prevRetryDelay
 		containerdReconfigureMaxAttempts = prevMaxAttempts
 		containerdReconfigureStabilityWindow = prevStabilityWindow
+		containerdShutdownWaitTimeout = prevShutdownWait
 	})
 
 	writeConfigForService = func() error { return nil }
@@ -381,14 +390,17 @@ func TestReconfigureRollbackPathWritesLKGAndSkipsEscalationOnRecoveredRuntime(t 
 	containerdReconfigureRetryDelay = 1 * time.Millisecond
 	containerdReconfigureMaxAttempts = 1
 	containerdReconfigureStabilityWindow = 1 * time.Millisecond
+	containerdShutdownWaitTimeout = 1 * time.Millisecond
 
 	firstStart := true
 	svc.runFn = func() error {
 		if firstStart {
 			firstStart = false
+			close(svc.done)
 			return errors.New("synthetic start failure")
 		}
 		svc.readyOnce.Do(func() { close(svc.ready) })
+		<-svc.ctx.Done()
 		close(svc.done)
 		return nil
 	}
