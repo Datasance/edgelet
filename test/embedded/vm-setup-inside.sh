@@ -42,9 +42,6 @@ cp "${CERT_SRC}" /etc/edgelet/cert.crt
 chmod 640 /etc/edgelet/cert.crt
 echo "  containerEngine = edgelet (from config template)"
 
-echo "[vm-setup] Generating local-api token..."
-head -c 32 /dev/urandom | base64 | tr -d '=+/' | head -c 32 > /etc/edgelet/local-api
-
 echo "[vm-setup] Installing systemd service..."
 cat > /etc/systemd/system/edgelet.service << 'UNIT'
 [Unit]
