@@ -1,13 +1,13 @@
-# LocalAPI v1 Contract Freeze
+# EdgeletAPI v1 Contract Freeze
 
-This document freezes the LocalAPI v1 baseline used for implementation in this repository.
+This document freezes the EdgeletAPI v1 baseline used for implementation in this repository.
 
 ## Scope
 
 - Canonical route namespace: `/v1/...`
-- Baseline OpenAPI contract: `docs/localapi-v3-openapi.yaml`
+- Baseline OpenAPI contract: `docs/edgelet/edgelet-api-v1-openapi.yaml`
 - CLI must remain a thin transport client and should not implement daemon runtime logic.
-- RuntimeClass surface is part of v3 contract (`/v1/deploy/runtimeclasses*`) with full+iofog gating.
+- RuntimeClass surface is part of the v1 contract (`/v1/deploy/runtimeclasses*`) with full+edgelet gating.
 
 ## Locked Decisions
 
@@ -15,7 +15,7 @@ This document freezes the LocalAPI v1 baseline used for implementation in this r
    - Unix socket: `/run/edgelet/edgelet.sock`
    - HTTPS/WSS: `https://edgelet.default.svc.bridge.local`
 2. JWT mode:
-   - Unprovisioned: unsigned bootstrap JWT accepted across LocalAPI endpoints
+   - Unprovisioned: unsigned bootstrap JWT accepted across EdgeletAPI endpoints
    - Provisioned: unsigned JWT rejected globally; signed Ed25519 required
    - Deprovisioned: revert to bootstrap mode
 3. API-group claims mapping:
@@ -34,5 +34,5 @@ Implementation must pause and request explicit user confirmation before any of t
 
 ## Notes
 
-- LocalAPI contract is v3-only in this repository.
+- EdgeletAPI contract is v1-only in this repository.
 - This freeze document is intentionally policy-focused; detailed endpoint shapes remain in OpenAPI YAML.

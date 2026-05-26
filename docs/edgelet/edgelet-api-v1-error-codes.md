@@ -1,6 +1,6 @@
-# LocalAPI v1 Error Codes
+# EdgeletAPI v1 Error Codes
 
-Stable LocalAPI v1 error taxonomy for CLI and API consumers.
+Stable EdgeletAPI v1 error taxonomy for CLI and API consumers.
 
 ## Codes
 
@@ -24,11 +24,11 @@ Stable LocalAPI v1 error taxonomy for CLI and API consumers.
 
 ## RuntimeClass-specific deterministic reject
 
-When RuntimeClass endpoints are called outside supported mode (`full` + `containerEngine=iofog`), response is:
+When RuntimeClass endpoints are called outside supported mode (`full` + `containerEngine=edgelet`), response is:
 
 - HTTP: `400`
 - code: `INVALID_ARGUMENT`
-- message: `runtimeclass is supported only when containerEngine=iofog on full flavor builds`
+- message: `runtimeclass is supported only when containerEngine=edgelet on full flavor builds`
 
 ## RuntimeClass delete deterministic rejects
 

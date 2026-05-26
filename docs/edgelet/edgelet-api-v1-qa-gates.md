@@ -1,10 +1,10 @@
-# LocalAPI v1 QA Gates
+# EdgeletAPI v1 QA Gates
 
-This document defines execution gates for a strict v3-only LocalAPI surface.
+This document defines execution gates for a strict v1-only EdgeletAPI surface.
 
 ## Gate 0: Contract Freeze
 
-- `docs/localapi-v3-openapi.yaml` exists and is treated as immutable baseline.
+- `docs/edgelet-api-v1-openapi.yaml` exists and is treated as immutable baseline.
 - Any route/schema/auth delta requires explicit confirmation before merge.
 
 ## Gate 1: Invariants
@@ -14,7 +14,7 @@ This document defines execution gates for a strict v3-only LocalAPI surface.
 
 ## Gate 2: Transport/Auth
 
-- `go test ./internal/auth ./internal/localapi ./internal/serviceaccount`
+- `go test ./internal/auth ./internal/edgeletapi ./internal/serviceaccount`
 - Verifies bootstrap/provisioned JWT policy and serviceaccount projection writes.
 
 ## Gate 3: Storage
@@ -26,14 +26,14 @@ This document defines execution gates for a strict v3-only LocalAPI surface.
 
 ## Gate 4: Runtime API Binding
 
-- `go test ./internal/localapi ./internal/runtimeapi`
-- Validates v3 handler wiring through facade adapters without runtime-engine behavior changes.
+- `go test ./internal/edgeletapi ./internal/runtimeapi`
+- Validates EdgeletAPI handler wiring through facade adapters without runtime-engine behavior changes.
 
-## Gate 5: CLI v3 Migration
+## Gate 5: CLI EdgeletAPI migration
 
 Automated:
 
-- `go test ./internal/cli/... ./cmd/iofog-agent`
+- `go test ./internal/cli/... ./cmd/edgelet`
 - `make cli-docs-check` — generated docs under `docs/cli/` must match committed output
 - CLI smoke tests (in `internal/cli/cmd/smoke_test.go`):
   - `-o json` stdout is valid JSON (`system status`, `ms ls`)
@@ -44,22 +44,22 @@ Automated:
 Manual smoke (daemon running):
 
 ```bash
-iofog-agent system status
-iofog-agent system status -o json | jq .
-iofog-agent ms ls -o json | jq '.items'
-iofog-agent ms inspect <id>
-iofog-agent deploy -f <manifest.yaml>
-iofog-agent deploy -f <manifest.yaml> --dry-run
-iofog-agent auth whoami -o json | jq .
+edgelet system status
+edgelet system status -o json | jq .
+edgelet ms ls -o json | jq '.items'
+edgelet ms inspect <id>
+edgelet deploy -f <manifest.yaml>
+edgelet deploy -f <manifest.yaml> --dry-run
+edgelet auth whoami -o json | jq .
 ```
 
 Legacy must fail (exit non-zero):
 
 ```bash
-iofog-agent status
-iofog-agent ms ps
-iofog-agent deploy apply -f <manifest.yaml>
-iofog-agent config set foo bar
+edgelet status
+edgelet ms ps
+edgelet deploy apply -f <manifest.yaml>
+edgelet config set foo bar
 ```
 
 CLI reference: [docs/cli/README.md](cli/README.md)
@@ -67,7 +67,7 @@ CLI reference: [docs/cli/README.md](cli/README.md)
 ## Gate 6: Embedded Validation Without ctr
 
 - `test/embedded/vm-test.sh` must not install or invoke `ctr`.
-- Runtime checks must execute via `iofog-agent` CLI only.
+- Runtime checks must execute via `edgelet` CLI only.
 
 ## Gate 7: RuntimeClass dual-shim VM coverage (aarch64)
 
@@ -86,10 +86,10 @@ CLI reference: [docs/cli/README.md](cli/README.md)
 
 ## Rollout Controls
 
-- LocalAPI surface is v3-only; no route-level fallback to v2.
+- EdgeletAPI surface is v1-only; no route-level fallback to v2.
 - Promote changes only after all gates pass in CI.
 
 ## Rollback Strategy
 
-- Release-level rollback to prior v3-only release if critical regressions appear.
+- Release-level rollback to prior v1-only release if critical regressions appear.
 - Data safety: migrations are additive; no destructive schema changes in rollout phases.

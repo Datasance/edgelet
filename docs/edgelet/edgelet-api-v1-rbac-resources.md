@@ -1,6 +1,6 @@
-# LocalAPI V3 RBAC Resources and Verbs
+# EdgeletAPI v1 RBAC Resources and Verbs
 
-This document defines canonical LocalAPI v1 endpoint-to-RBAC mapping.
+This document defines canonical EdgeletAPI v1 endpoint-to-RBAC mapping.
 All mappings are deny-by-default: if a route is not explicitly mapped, authorization must fail.
 
 ## Canonical HTTP Method to Verb Mapping
@@ -48,7 +48,7 @@ Evaluator alias policy is canonical + alias tolerant:
 - Endpoint: `POST /v1/system/prune`
   - Resource: `system/prune`
   - Verb: `create`
-  - Compatibility note: top-level `iofog-agent prune` is removed; use `iofog-agent system prune` or `iofog-agent image prune`.
+  - Compatibility note: top-level `edgelet prune` is removed; use `edgelet system prune` or `edgelet image prune`.
 
 - Endpoint: `GET /v1/images`
   - Resource: `images`
