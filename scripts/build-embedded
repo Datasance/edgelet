@@ -58,7 +58,7 @@ echo "Building CNI multicall (Edgelet 4-plugin set) for ${OS}/${GOARCH:-${ARCH}}
     https://github.com/rancher/plugins.git "${WORKDIR}"
   cd "${WORKDIR}"
   rm -rf plugins/meta/flannel
-  cp "${ROOT}/scripts/cni-main_linux.go" main_linux.go
+  cp "${ROOT}/scripts/cni-main_linux.go.in" main_linux.go
   GO111MODULE=off GOPATH="${TMPDIR}" CGO_ENABLED=0 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" \
     "${GO}" build -tags "${TAGS}" -gcflags="all=${GCFLAGS}" \
     -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
