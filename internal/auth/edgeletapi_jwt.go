@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	localJWTModuleName = "Local API JWT"
+	edgeletAPIModuleName = "Edgelet API JWT"
 )
 
 // LocalJWTValidationResult captures parsed/validated token metadata.
@@ -18,10 +18,10 @@ type LocalJWTValidationResult struct {
 	Alg    string
 }
 
-// ValidateLocalJWT validates LocalAPI JWTs according to agent state:
+// ValidateEdgeletAPIJWT validates EdgeletAPI JWTs according to agent state:
 // - unprovisioned: unsigned bootstrap JWTs are accepted
 // - provisioned: unsigned JWTs are rejected and signed JWT is required
-func ValidateLocalJWT(tokenString string) (*LocalJWTValidationResult, error) {
+func ValidateEdgeletAPIJWT(tokenString string) (*LocalJWTValidationResult, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
 		return nil, errors.New("empty token")
@@ -47,7 +47,7 @@ func ValidateLocalJWT(tokenString string) (*LocalJWTValidationResult, error) {
 		if _, err := jm.ValidateJWT(tokenString); err != nil {
 			return nil, fmt.Errorf("signed JWT validation failed: %w", err)
 		}
-		if err := validateLocalAPITokenClaims(claims); err != nil {
+		if err := validateEdgeletAPITokenClaims(claims); err != nil {
 			return nil, err
 		}
 		return &LocalJWTValidationResult{Claims: claims, Alg: alg}, nil
@@ -56,11 +56,11 @@ func ValidateLocalJWT(tokenString string) (*LocalJWTValidationResult, error) {
 	if !strings.EqualFold(alg, "none") {
 		return nil, errors.New("only unsigned bootstrap JWT is allowed when unprovisioned")
 	}
-	if err := validateLocalAPITokenClaims(claims); err != nil {
+	if err := validateEdgeletAPITokenClaims(claims); err != nil {
 		return nil, err
 	}
-	if tokenUse, _ := claims["tokenUse"].(string); tokenUse != tokenUseLocalAPI {
-		return nil, errors.New("bootstrap mode only accepts localapi tokenUse")
+	if tokenUse, _ := claims["tokenUse"].(string); tokenUse != tokenUseEdgeletAPI {
+		return nil, errors.New("bootstrap mode only accepts edgeletapi tokenUse")
 	}
 	return &LocalJWTValidationResult{Claims: claims, Alg: alg}, nil
 }
@@ -87,17 +87,17 @@ func validateRequiredTemporalClaims(claims jwt.MapClaims) error {
 	return nil
 }
 
-func validateLocalAPITokenClaims(claims jwt.MapClaims) error {
+func validateEdgeletAPITokenClaims(claims jwt.MapClaims) error {
 	iss, _ := claims["iss"].(string)
 	if strings.TrimSpace(iss) != jwtIssuer {
 		return fmt.Errorf("invalid issuer")
 	}
 	tokenUse, _ := claims["tokenUse"].(string)
 	tokenUse = strings.TrimSpace(tokenUse)
-	if tokenUse != tokenUseLocalAPI && tokenUse != tokenUseServiceAccount {
+	if tokenUse != tokenUseEdgeletAPI && tokenUse != tokenUseServiceAccount {
 		return fmt.Errorf("invalid token use")
 	}
-	expectedAudience := localAPIAudience
+	expectedAudience := edgeletAPIAudience
 	if tokenUse == tokenUseServiceAccount {
 		expectedAudience = serviceAccountAudience
 	}

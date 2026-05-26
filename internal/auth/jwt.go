@@ -25,11 +25,11 @@ const (
 	jwtExpiration                   = 10 * time.Minute
 	jwtIssuer                       = "https://edgelet.default.svc.bridge.local"
 	jwtAudience                     = "https://edgelet.default.svc.bridge.local"
-	localAPIAudience                = "edgelet://localapi/v1"
+	edgeletAPIAudience                = "edgelet://edgeletapi/v1"
 	serviceAccountAudience          = "https://edgelet.default.svc.bridge.local"
 	edgeGuardAudience               = "edgelet://edgeguard/v1"
 	tokenUseController              = "controller"
-	tokenUseLocalAPI                = "localapi"
+	tokenUseEdgeletAPI                = "edgeletapi"
 	tokenUseServiceAccount          = "serviceaccount"
 	tokenUseEdgeGuard               = "edgeguard"
 	rotationLeadFractionDenominator = 5
@@ -217,8 +217,8 @@ func (j *JWTManager) GenerateControllerJWT(controllerAudience string, ttl time.D
 	return j.signPurposeJWTLocked(cfg.IOFogUUID, aud, ttl, tokenUseController, nil)
 }
 
-// GenerateLocalAPITokenJWT creates a provisioned local admin token.
-func (j *JWTManager) GenerateLocalAPITokenJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+// GenerateEdgeletAPITokenJWT creates a provisioned local admin token.
+func (j *JWTManager) GenerateEdgeletAPITokenJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	cfg, err := j.ensureProvisionedSignerLocked()
@@ -227,9 +227,9 @@ func (j *JWTManager) GenerateLocalAPITokenJWT(subject string, ttl time.Duration,
 	}
 	sub := strings.TrimSpace(subject)
 	if sub == "" {
-		sub = "system:localadmin:" + cfg.IOFogUUID
+		sub = "system:edgeletadmin:" + cfg.IOFogUUID
 	}
-	return j.signPurposeJWTLocked(sub, localAPIAudience, ttl, tokenUseLocalAPI, extraClaims)
+	return j.signPurposeJWTLocked(sub, edgeletAPIAudience, ttl, tokenUseEdgeletAPI, extraClaims)
 }
 
 // ValidateJWT validates a JWT token using the public key derived from the private key

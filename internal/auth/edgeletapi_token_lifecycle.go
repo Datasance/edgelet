@@ -15,17 +15,17 @@ import (
 )
 
 const (
-	bootstrapLocalAPISubject = "system:localadmin:bootstrap"
-	bootstrapLocalAPITTL     = 10 * time.Minute
+	bootstrapEdgeletAPISubject = "system:edgeletadmin:bootstrap"
+	bootstrapEdgeletAPITTL     = 10 * time.Minute
 )
 
-// EnsureLocalAPITokenForCurrentState reconciles /etc/edgelet/local-api token contents.
+// EnsureEdgeletAPITokenForCurrentState reconciles /etc/edgelet/edgelet-api token contents.
 // - Unprovisioned: unsigned bootstrap JWT
 // - Provisioned: signed Ed25519 JWT
-func EnsureLocalAPITokenForCurrentState() error {
+func EnsureEdgeletAPITokenForCurrentState() error {
 	tokenManager := GetLocalTokenManager()
 	if err := os.MkdirAll(utils.GetConfigDir(), 0700); err != nil {
-		return fmt.Errorf("failed to ensure config directory for local-api JWT: %w", err)
+		return fmt.Errorf("failed to ensure config directory for edgelet-api JWT: %w", err)
 	}
 
 	isProvisioned, err := hydrateProvisionedPrivateKeyFromDB()
@@ -33,12 +33,12 @@ func EnsureLocalAPITokenForCurrentState() error {
 		return fmt.Errorf("failed to resolve provisioning state from sqlite: %w", err)
 	}
 	if !isProvisioned {
-		token, err := GenerateBootstrapLocalAPIJWT(bootstrapLocalAPITTL)
+		token, err := GenerateBootstrapEdgeletAPIJWT(bootstrapEdgeletAPITTL)
 		if err != nil {
-			return fmt.Errorf("failed to generate bootstrap local-api JWT: %w", err)
+			return fmt.Errorf("failed to generate bootstrap edgelet-api JWT: %w", err)
 		}
 		if err := tokenManager.SaveToken(token); err != nil {
-			return fmt.Errorf("failed to save bootstrap local-api JWT: %w", err)
+			return fmt.Errorf("failed to save bootstrap edgelet-api JWT: %w", err)
 		}
 		return nil
 	}
@@ -50,30 +50,30 @@ func EnsureLocalAPITokenForCurrentState() error {
 			},
 		},
 	}
-	token, _, _, _, err := GetJWTManager().GenerateLocalAPITokenJWT("", bootstrapLocalAPITTL, extraClaims)
+	token, _, _, _, err := GetJWTManager().GenerateEdgeletAPITokenJWT("", bootstrapEdgeletAPITTL, extraClaims)
 	if err != nil {
-		return fmt.Errorf("failed to generate signed local-api JWT: %w", err)
+		return fmt.Errorf("failed to generate signed edgelet-api JWT: %w", err)
 	}
 	if err := tokenManager.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save signed local-api JWT: %w", err)
+		return fmt.Errorf("failed to save signed edgelet-api JWT: %w", err)
 	}
 	return nil
 }
 
-// GenerateBootstrapLocalAPIJWT creates an unsigned JWT for unprovisioned bootstrap mode.
-func GenerateBootstrapLocalAPIJWT(ttl time.Duration) (string, error) {
+// GenerateBootstrapEdgeletAPIJWT creates an unsigned JWT for unprovisioned bootstrap mode.
+func GenerateBootstrapEdgeletAPIJWT(ttl time.Duration) (string, error) {
 	if ttl <= 0 {
-		ttl = bootstrapLocalAPITTL
+		ttl = bootstrapEdgeletAPITTL
 	}
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"sub":      bootstrapLocalAPISubject,
+		"sub":      bootstrapEdgeletAPISubject,
 		"iss":      jwtIssuer,
-		"aud":      []string{localAPIAudience},
+		"aud":      []string{edgeletAPIAudience},
 		"exp":      now.Add(ttl).Unix(),
 		"iat":      now.Unix(),
 		"nbf":      now.Unix(),
-		"tokenUse": tokenUseLocalAPI,
+		"tokenUse": tokenUseEdgeletAPI,
 		"edgelet.iofog.org": map[string]interface{}{
 			"rules": map[string]interface{}{
 				"*": []interface{}{"*"},
@@ -110,9 +110,9 @@ func hydrateProvisionedPrivateKeyFromDB() (bool, error) {
 	return true, nil
 }
 
-// ShouldRotateLocalAPIToken returns true when token should be rotated
+// ShouldRotateEdgeletAPIToken returns true when token should be rotated
 // according to token lifetime policy.
-func ShouldRotateLocalAPIToken(tokenString string, now time.Time) (bool, error) {
+func ShouldRotateEdgeletAPIToken(tokenString string, now time.Time) (bool, error) {
 	claims, _, err := parseClaimsUnverified(strings.TrimSpace(tokenString))
 	if err != nil {
 		return true, err

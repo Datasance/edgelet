@@ -28,8 +28,8 @@ func TestEnsureLocalAPITokenForCurrentState_UnprovisionedWritesUnsignedJWT(t *te
 	localTokenManager := GetLocalTokenManager()
 	localTokenManager.Reset()
 
-	if err := EnsureLocalAPITokenForCurrentState(); err != nil {
-		t.Fatalf("failed to reconcile local-api token: %v", err)
+	if err := EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		t.Fatalf("failed to reconcile edgelet-api token: %v", err)
 	}
 
 	token, err := localTokenManager.LoadToken()
@@ -58,11 +58,11 @@ func TestEnsureLocalAPITokenForCurrentState_UnprovisionedWritesUnsignedJWT(t *te
 
 func TestShouldRotateLocalAPIToken(t *testing.T) {
 	now := time.Now()
-	token, err := GenerateBootstrapLocalAPIJWT(10 * time.Minute)
+	token, err := GenerateBootstrapEdgeletAPIJWT(10 * time.Minute)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
-	shouldRotate, err := ShouldRotateLocalAPIToken(token, now.Add(8*time.Minute))
+	shouldRotate, err := ShouldRotateEdgeletAPIToken(token, now.Add(8*time.Minute))
 	if err != nil {
 		t.Fatalf("rotation check failed: %v", err)
 	}
@@ -91,8 +91,8 @@ func TestEnsureLocalAPITokenForCurrentState_ProvisionedWritesSignedJWT(t *testin
 	localTokenManager := GetLocalTokenManager()
 	localTokenManager.Reset()
 
-	if err := EnsureLocalAPITokenForCurrentState(); err != nil {
-		t.Fatalf("failed to reconcile local-api token: %v", err)
+	if err := EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		t.Fatalf("failed to reconcile edgelet-api token: %v", err)
 	}
 
 	token, err := localTokenManager.LoadToken()
@@ -106,7 +106,7 @@ func TestEnsureLocalAPITokenForCurrentState_ProvisionedWritesSignedJWT(t *testin
 	if strings.EqualFold(alg, "none") {
 		t.Fatalf("expected signed JWT in provisioned mode, got alg=%s", alg)
 	}
-	if _, err := ValidateLocalJWT(strings.TrimSpace(token)); err != nil {
+	if _, err := ValidateEdgeletAPIJWT(strings.TrimSpace(token)); err != nil {
 		t.Fatalf("expected provisioned signed JWT to validate, got error: %v", err)
 	}
 }
@@ -131,8 +131,8 @@ func TestEnsureLocalAPITokenForCurrentState_ProvisionedWithEmptyConfigPrivateKey
 	localTokenManager := GetLocalTokenManager()
 	localTokenManager.Reset()
 
-	if err := EnsureLocalAPITokenForCurrentState(); err != nil {
-		t.Fatalf("failed to reconcile local-api token: %v", err)
+	if err := EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		t.Fatalf("failed to reconcile edgelet-api token: %v", err)
 	}
 
 	token, err := localTokenManager.LoadToken()
@@ -167,8 +167,8 @@ func TestEnsureLocalAPITokenForCurrentState_CreatesConfigDirectory(t *testing.T)
 	localTokenManager := GetLocalTokenManager()
 	localTokenManager.Reset()
 
-	if err := EnsureLocalAPITokenForCurrentState(); err != nil {
-		t.Fatalf("failed to reconcile local-api token with missing config dir: %v", err)
+	if err := EnsureEdgeletAPITokenForCurrentState(); err != nil {
+		t.Fatalf("failed to reconcile edgelet-api token with missing config dir: %v", err)
 	}
 
 	if _, err := os.Stat(cfgDir); err != nil {

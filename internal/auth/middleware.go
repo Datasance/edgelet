@@ -11,8 +11,8 @@ const (
 	middlewareModuleName = "Auth Middleware"
 )
 
-// LocalAPIAuthMiddleware creates middleware for validating local API tokens
-func LocalAPIAuthMiddleware(next http.Handler) http.Handler {
+// EdgeletAPIAuthMiddleware creates middleware for validating local API tokens
+func EdgeletAPIAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get token from Authorization header
 		authHeader := r.Header.Get("Authorization")

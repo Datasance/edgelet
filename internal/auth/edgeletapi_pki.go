@@ -17,33 +17,33 @@ import (
 )
 
 const (
-	localAPICACertFilename     = "localapi-ca.crt"
-	localAPIServerCertFilename = "localapi-server.crt"
-	localAPIServerKeyFilename  = "localapi-server.key"
-	localAPIServerDNSName      = "edgelet.default.svc.bridge.local"
+	edgeletapiCACertFilename     = "edgeletapi-ca.crt"
+	edgeletapiServerCertFilename = "edgeletapi-server.crt"
+	edgeletapiServerKeyFilename  = "edgeletapi-server.key"
+	edgeletapiServerDNSName      = "edgelet.default.svc.bridge.local"
 )
 
-func LocalAPIPKIPaths() (caPath, certPath, keyPath string) {
+func EdgeletAPIPKIPaths() (caPath, certPath, keyPath string) {
 	base := utils.GetConfigDir()
-	return filepath.Join(base, localAPICACertFilename), filepath.Join(base, localAPIServerCertFilename), filepath.Join(base, localAPIServerKeyFilename)
+	return filepath.Join(base, edgeletapiCACertFilename), filepath.Join(base, edgeletapiServerCertFilename), filepath.Join(base, edgeletapiServerKeyFilename)
 }
 
-func EnsureLocalAPIPKI() (string, string, string, error) {
-	caPath, certPath, keyPath := LocalAPIPKIPaths()
+func EnsureEdgeletAPIPKI() (string, string, string, error) {
+	caPath, certPath, keyPath := EdgeletAPIPKIPaths()
 	if err := os.MkdirAll(filepath.Dir(caPath), 0700); err != nil {
-		return "", "", "", fmt.Errorf("failed to ensure localapi pki directory: %w", err)
+		return "", "", "", fmt.Errorf("failed to ensure edgeletapi pki directory: %w", err)
 	}
 	if fileReadable(caPath) && fileReadable(certPath) && fileReadable(keyPath) {
 		return caPath, certPath, keyPath, nil
 	}
-	if err := generateLocalAPIPKI(caPath, certPath, keyPath); err != nil {
+	if err := generateEdgeletAPIPKI(caPath, certPath, keyPath); err != nil {
 		return "", "", "", err
 	}
 	return caPath, certPath, keyPath, nil
 }
 
-func ReadLocalAPICACertPEM() ([]byte, error) {
-	caPath, _, _, err := EnsureLocalAPIPKI()
+func ReadEdgeletAPICACertPEM() ([]byte, error) {
+	caPath, _, _, err := EnsureEdgeletAPIPKI()
 	if err != nil {
 		return nil, err
 	}
@@ -58,15 +58,15 @@ func fileReadable(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func generateLocalAPIPKI(caPath, certPath, keyPath string) error {
+func generateEdgeletAPIPKI(caPath, certPath, keyPath string) error {
 	caPub, caPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate localapi ca key: %w", err)
+		return fmt.Errorf("failed to generate edgeletapi ca key: %w", err)
 	}
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			CommonName:   "edgelet-localapi-ca",
+			CommonName:   "edgelet-api-ca",
 			Organization: []string{"edgelet"},
 		},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
@@ -77,17 +77,17 @@ func generateLocalAPIPKI(caPath, certPath, keyPath string) error {
 	}
 	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, caPub, caPriv)
 	if err != nil {
-		return fmt.Errorf("failed to create localapi ca cert: %w", err)
+		return fmt.Errorf("failed to create edgeletapi ca cert: %w", err)
 	}
 
 	srvPub, srvPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate localapi server key: %w", err)
+		return fmt.Errorf("failed to generate edgeletapi server key: %w", err)
 	}
 	srvTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano() + 1),
 		Subject: pkix.Name{
-			CommonName:   localAPIServerDNSName,
+			CommonName:   edgeletapiServerDNSName,
 			Organization: []string{"edgelet"},
 		},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
@@ -95,23 +95,23 @@ func generateLocalAPIPKI(caPath, certPath, keyPath string) error {
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{localAPIServerDNSName, "localhost"},
+		DNSNames:              []string{edgeletapiServerDNSName, "localhost"},
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 	}
 	caParsed, err := x509.ParseCertificate(caDER)
 	if err != nil {
-		return fmt.Errorf("failed to parse localapi ca cert: %w", err)
+		return fmt.Errorf("failed to parse edgeletapi ca cert: %w", err)
 	}
 	srvDER, err := x509.CreateCertificate(rand.Reader, srvTemplate, caParsed, srvPub, caPriv)
 	if err != nil {
-		return fmt.Errorf("failed to create localapi server cert: %w", err)
+		return fmt.Errorf("failed to create edgeletapi server cert: %w", err)
 	}
 
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 	srvPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srvDER})
 	keyPEM, err := x509.MarshalPKCS8PrivateKey(srvPriv)
 	if err != nil {
-		return fmt.Errorf("failed to marshal localapi server key: %w", err)
+		return fmt.Errorf("failed to marshal edgeletapi server key: %w", err)
 	}
 	srvKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyPEM})
 

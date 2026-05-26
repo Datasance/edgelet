@@ -38,10 +38,10 @@ func TestLocalTokenManager_SaveAndLoad(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	// Override the token path for testing
-	originalPath := utils.LocalAPITokenPath
-	utils.LocalAPITokenPath = tmpFile.Name()
+	originalPath := utils.EdgeletAPITokenPath
+	utils.EdgeletAPITokenPath = tmpFile.Name()
 	defer func() {
-		utils.LocalAPITokenPath = originalPath
+		utils.EdgeletAPITokenPath = originalPath
 	}()
 
 	manager := GetLocalTokenManager()
@@ -81,10 +81,10 @@ func TestLocalTokenManager_ValidateToken(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	// Override the token path for testing
-	originalPath := utils.LocalAPITokenPath
-	utils.LocalAPITokenPath = tmpFile.Name()
+	originalPath := utils.EdgeletAPITokenPath
+	utils.EdgeletAPITokenPath = tmpFile.Name()
 	defer func() {
-		utils.LocalAPITokenPath = originalPath
+		utils.EdgeletAPITokenPath = originalPath
 	}()
 
 	manager := GetLocalTokenManager()
@@ -122,10 +122,10 @@ func TestLocalTokenManager_LoadToken_FileNotExists(t *testing.T) {
 	os.Remove(tmpFile.Name()) // Remove it so it doesn't exist
 
 	// Override the token path for testing
-	originalPath := utils.LocalAPITokenPath
-	utils.LocalAPITokenPath = tmpFile.Name()
+	originalPath := utils.EdgeletAPITokenPath
+	utils.EdgeletAPITokenPath = tmpFile.Name()
 	defer func() {
-		utils.LocalAPITokenPath = originalPath
+		utils.EdgeletAPITokenPath = originalPath
 	}()
 
 	// Get a fresh manager instance by resetting

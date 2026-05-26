@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	localTokenModuleName = "Local API Token" // #nosec G101 -- logging module name, not a credential
+	edgeletAPITokenModuleName = "Edgelet API Token" // #nosec G101 -- logging module name, not a credential
 	tokenSize            = 32                // 32 bytes = 256 bits
 )
 
@@ -35,7 +35,7 @@ var (
 func GetLocalTokenManager() *LocalTokenManager {
 	localTokenOnce.Do(func() {
 		localTokenInstance = &LocalTokenManager{
-			path: utils.LocalAPITokenPath,
+			path: utils.EdgeletAPITokenPath,
 		}
 	})
 	// Update path in case it changed (useful for testing and dev environment)
@@ -43,7 +43,7 @@ func GetLocalTokenManager() *LocalTokenManager {
 	localTokenInstance.mu.Lock()
 	// Recalculate ConfigDir in case SNAP_COMMON changed (for dev environment)
 	configDir := utils.GetConfigDir()
-	localTokenInstance.path = configDir + "local-api"
+	localTokenInstance.path = configDir + "edgelet-api"
 	localTokenInstance.mu.Unlock()
 	return localTokenInstance
 }
@@ -104,7 +104,7 @@ func (ltm *LocalTokenManager) SaveToken(token string) error {
 	// Cache the token
 	ltm.token = token
 
-	logging.LogDebug(localTokenModuleName, "Token saved successfully")
+	logging.LogDebug(edgeletAPITokenModuleName, "Token saved successfully")
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (ltm *LocalTokenManager) GenerateAndSaveToken() (string, error) {
 func (ltm *LocalTokenManager) ValidateToken(providedToken string) bool {
 	storedToken, err := ltm.LoadToken()
 	if err != nil {
-		logging.LogError(localTokenModuleName, fmt.Sprintf("Failed to load token for validation from path: %s", ltm.path), err)
+		logging.LogError(edgeletAPITokenModuleName, fmt.Sprintf("Failed to load token for validation from path: %s", ltm.path), err)
 		return false
 	}
 
@@ -153,5 +153,5 @@ func (ltm *LocalTokenManager) Reset() {
 	defer ltm.mu.Unlock()
 	ltm.token = ""
 	// Update path in case it changed
-	ltm.path = utils.LocalAPITokenPath
+	ltm.path = utils.EdgeletAPITokenPath
 }

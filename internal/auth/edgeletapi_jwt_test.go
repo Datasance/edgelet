@@ -20,8 +20,8 @@ func bootstrapClaims() jwt.MapClaims {
 		"exp":      now + 300,
 		"jti":      "bootstrap-jti",
 		"iss":      jwtIssuer,
-		"aud":      []string{localAPIAudience},
-		"tokenUse": tokenUseLocalAPI,
+		"aud":      []string{edgeletAPIAudience},
+		"tokenUse": tokenUseEdgeletAPI,
 	}
 }
 
@@ -56,7 +56,7 @@ func TestValidateLocalJWT_UnprovisionedAllowsUnsignedBootstrapToken(t *testing.T
 		t.Fatalf("failed to sign unsigned bootstrap token: %v", err)
 	}
 
-	result, err := ValidateLocalJWT(tokenString)
+	result, err := ValidateEdgeletAPIJWT(tokenString)
 	if err != nil {
 		t.Fatalf("expected unsigned bootstrap token to be accepted while unprovisioned, got %v", err)
 	}
@@ -76,7 +76,7 @@ func TestValidateLocalJWT_UnprovisionedRejectsSignedToken(t *testing.T) {
 		t.Fatalf("failed to sign hs256 token: %v", err)
 	}
 
-	if _, err := ValidateLocalJWT(tokenString); err == nil {
+	if _, err := ValidateEdgeletAPIJWT(tokenString); err == nil {
 		t.Fatal("expected signed token rejection while unprovisioned")
 	}
 }
@@ -97,7 +97,7 @@ func TestValidateLocalJWT_ProvisionedRejectsUnsignedToken(t *testing.T) {
 		t.Fatalf("failed to sign unsigned token: %v", err)
 	}
 
-	if _, err := ValidateLocalJWT(tokenString); err == nil {
+	if _, err := ValidateEdgeletAPIJWT(tokenString); err == nil {
 		t.Fatal("expected unsigned token rejection while provisioned")
 	}
 }
@@ -115,12 +115,12 @@ func TestValidateLocalJWT_ProvisionedAcceptsSignedEd25519Token(t *testing.T) {
 	manager := GetJWTManager()
 	manager.Reset()
 
-	tokenString, _, _, _, err := manager.GenerateLocalAPITokenJWT("", 10*time.Minute, nil)
+	tokenString, _, _, _, err := manager.GenerateEdgeletAPITokenJWT("", 10*time.Minute, nil)
 	if err != nil {
 		t.Fatalf("failed to generate signed token: %v", err)
 	}
 
-	if _, err := ValidateLocalJWT(tokenString); err != nil {
+	if _, err := ValidateEdgeletAPIJWT(tokenString); err != nil {
 		t.Fatalf("expected signed token to be accepted while provisioned, got %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestValidateLocalJWT_ProvisionedRejectsInvalidIssuer(t *testing.T) {
 
 	manager := GetJWTManager()
 	manager.Reset()
-	tokenString, _, _, _, err := manager.GenerateLocalAPITokenJWT("", 10*time.Minute, nil)
+	tokenString, _, _, _, err := manager.GenerateEdgeletAPITokenJWT("", 10*time.Minute, nil)
 	if err != nil {
 		t.Fatalf("failed to generate signed token: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestValidateLocalJWT_ProvisionedRejectsInvalidIssuer(t *testing.T) {
 		t.Fatalf("failed to sign tampered token: %v", err)
 	}
 
-	if _, err := ValidateLocalJWT(tokenString); err == nil {
+	if _, err := ValidateEdgeletAPIJWT(tokenString); err == nil {
 		t.Fatal("expected invalid issuer rejection")
 	}
 }
