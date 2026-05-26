@@ -54,6 +54,7 @@ type ProcessManager struct {
 	recreateLocalDeploymentFn func(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error
 	getContainerStatusFn      func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
 	reconcileMonitorTick      uint64
+	localLaunchLocks          sync.Map // microservice UUID -> *sync.Mutex
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -645,6 +646,15 @@ func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeploye
 
 func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
 	if container == nil {
+		if localDeploymentLaunchInFlight(item, now) {
+			pm.logger.Debugf(
+				"Skipping local reconcile launch for %s: apply in-flight (generation=%d observed=%d)",
+				item.LocalUUID,
+				item.Generation,
+				item.ObservedGeneration,
+			)
+			return
+		}
 		pm.launchLocalDeploymentWithHook(item, now)
 		return
 	}
@@ -756,7 +766,12 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 		}
 	}
 
+	item.RuntimeState = "starting"
+	item.State = item.RuntimeState
 	item.LastStartAttemptAt = now
+	item.LastTransitionAt = now
+	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+
 	hostIP := network.GetInstance().GetCurrentIPAddress()
 	containerID, err := pm.LaunchLocalMicroservice(localMS, registry, hostIP)
 	if err != nil {
@@ -1880,6 +1895,12 @@ func (pm *ProcessManager) LaunchLocalMicroserviceWithProgress(ms *models.Microse
 	if ms == nil {
 		return "", fmt.Errorf("microservice is nil")
 	}
+	return pm.withLocalLaunchLock(ms.MicroserviceUUID, func() (string, error) {
+		return pm.launchLocalMicroserviceWithProgressLocked(ms, registry, hostIP, progress)
+	})
+}
+
+func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.Microservice, registry *models.Registry, hostIP string, progress LocalDeployProgressCallback) (string, error) {
 	if strings.TrimSpace(hostIP) == "" {
 		hostIP = network.GetInstance().GetCurrentIPAddress()
 	}
