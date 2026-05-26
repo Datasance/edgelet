@@ -84,7 +84,7 @@ Install paths:
 | Item | Path |
 |------|------|
 | Binary | `/usr/local/bin/edgelet` |
-| Unit | `edgelet.service` → `ExecStart=/usr/local/bin/edgelet` |
+| Unit | `edgelet.service` → `ExecStart=/usr/local/bin/edgelet daemon` |
 | Config | `/etc/edgelet/config.yaml` |
 | Data | `/var/lib/edgelet/` |
 | Backups | `/var/backups/edgelet/` |

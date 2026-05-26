@@ -141,7 +141,7 @@ User=root
 WantedBy=multi-user.target
 ```
 
-Save to `/etc/systemd/system/iofog-agent.service` and:
+Save to `/etc/systemd/system/edgelet.service` and:
 
 ```bash
 sudo systemctl daemon-reload
@@ -279,7 +279,7 @@ sudo yum update iofog-agent
 sudo systemctl stop iofog-agent
 
 # Backup
-sudo cp /usr/local/bin/iofog-agent /usr/local/bin/iofog-agent.backup
+sudo cp /usr/local/bin/iofog-agent /usr/local/bin/edgelet.backup
 
 # Install new binary
 sudo cp iofog-agent-linux-amd64 /usr/local/bin/iofog-agent
@@ -323,7 +323,7 @@ sudo rm /usr/local/bin/iofog-agent
 sudo rm /usr/local/bin/iofog-agentd
 
 # Remove service file
-sudo rm /etc/systemd/system/iofog-agent.service
+sudo rm /etc/systemd/system/edgelet.service
 sudo systemctl daemon-reload
 ```
 

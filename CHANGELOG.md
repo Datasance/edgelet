@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bare **`edgelet`** invokes the operator CLI (help banner); start the daemon explicitly with **`edgelet daemon`** or **`systemctl start edgelet`** (`ExecStart=…/edgelet daemon` in systemd/packaging).
+
+## [1.0.0-edgelet] — TBD (proposed)
+
+> **Plan 5 status (2026-05-26):** Not released — embed accumulation P0 fixed; amd64 full **+156 KiB** over 55 MiB budget; staging Pot sign-off pending. See `.cursor/edgelet/docs/05-verification.md`.
+
+### Fixed — embed packaging (Plan 5 P0)
+
+- **`scripts/package-data`:** Clear prior `pkg/data/embed/*.tar.zst` before installing the new bundle (prevents `go:embed embed/*` from accumulating multi-arch artifacts ~2× ELF size).
+- **`scripts/ci`:** Scope `EDGELET_CI_ARCHES="${_arch}"` per loop iteration; fail fast if embed dir does not contain exactly one `.tar.zst` before `build-edgelet`.
+
+### Known blockers (pre-release)
+
+- linux/amd64 full **57,831,896 B** (~55.15 MiB) — **+156 KiB** over RFC budget (arm64 **52,971,536 B** passes).
+- Staging Pot checklist (provision, volumeMounts/NATS, router+NATS MS) not yet signed off.
+- Embedded integration tests and air-gapped install smoke pending linux VM.
+
+### Added — Edgelet greenfield release (Plans 1–4)
+
+- Single **`edgelet`** multicall binary (CLI + daemon + `--edgelet-containerd-child` on full linux).
+- k3s-style zstd embed pipeline; release tarballs `edgelet-*-{full|lite}.tar.gz`.
+- Greenfield **`install.sh`** + **`edgelet.service`**; paths under `/var/lib/edgelet/`.
+- **`scripts/ci`** linux gate via Docker (`make ci-docker` on macOS).
+- Local API **`/v1/`**, RBAC **`edgelet.iofog.org/v1`**, deploy **`edgelet.iofog.org/v1`** manifests.
+- Pot field agent REST unchanged at **`/api/v3/…`**; full provision sends **`engine=edgelet`**.
+
+### Fixed — Plan 5 verification (uncommitted)
+
+- Makefile: lite builds inject **`FLAVOR=lite`** at link time (`build-edgelet-lite`, desktop lite targets).
+- `internal/config/config_test.go`: flavor-aware `containerEngine` validation in full CI runs.
+- `pkg/containerd/service_test.go`: reconfigure tests keep synthetic runtime alive through stability window.
+
 ### Added — Edgelet Plan 1 (Foundation)
 
 Greenfield rebrand from ioFog Agent to **Edgelet** (`github.com/datasance/edgelet`):

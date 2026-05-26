@@ -1,0 +1,44 @@
+## edgelet
+
+Local CLI for the Edgelet daemon
+
+### Synopsis
+
+Local CLI for the Edgelet daemon.
+
+Use "edgelet <command> --help" for command-specific usage.
+
+```
+edgelet [flags]
+```
+
+### Options
+
+```
+      --debug            Debug logging
+  -h, --help             help for edgelet
+      --no-color         Disable color and interactive UX
+  -o, --output string    Output format: human, json, yaml (default "human")
+      --quiet            Suppress interactive progress output
+      --socket string    LocalAPI unix socket path
+      --timeout string   Request timeout
+      --verbose          Verbose logging
+      --version          Print CLI and daemon version
+```
+
+### SEE ALSO
+
+* [edgelet auth](edgelet_auth.md)	 - Authentication operations
+* [edgelet completion](edgelet_completion.md)	 - Generate shell completion scripts
+* [edgelet config](edgelet_config.md)	 - Update agent configuration
+* [edgelet deploy](edgelet_deploy.md)	 - Deploy a local manifest
+* [edgelet deprovision](edgelet_deprovision.md)	 - Deprovision the agent
+* [edgelet image](edgelet_image.md)	 - Image operations
+* [edgelet ms](edgelet_ms.md)	 - Microservice operations
+* [edgelet provision](edgelet_provision.md)	 - Provision the agent
+* [edgelet registry](edgelet_registry.md)	 - Registry operations
+* [edgelet runtimeclass](edgelet_runtimeclass.md)	 - Runtime class operations
+* [edgelet system](edgelet_system.md)	 - System operations
+* [edgelet version](edgelet_version.md)	 - Print edgelet version
+
+

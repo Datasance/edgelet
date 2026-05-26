@@ -60,6 +60,9 @@ build: build-edgelet ## Build edgelet for FLAVOR (default: full)
 build-edgelet: build-edgelet-$(FLAVOR) ## Build edgelet multicall binary for FLAVOR
 
 build-edgelet-lite: ## Lite edgelet: CGO=0, docker|podman only
+	@$(MAKE) FLAVOR=lite _build-edgelet-lite-bin
+
+_build-edgelet-lite-bin:
 	@echo "Building edgelet lite..."
 	@mkdir -p build
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags lite -o $(EDGELET_BINARY) ./cmd/edgelet
@@ -76,6 +79,8 @@ build-cli: build-edgelet-lite ## (alias) Build edgelet lite profile
 cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
 	@mkdir -p docs/cli/generated
 	@$(CLI_BINARY) documentation generate md --output docs/cli/generated
+	@find ./docs/cli/generated -type f | xargs sed -i '' 's/.*Auto generated.*//g'
+	@find ./docs/cli/generated -type f | xargs sed -E -i '' 's/(command within \(default).*/\1 "default")/g'
 	@echo "Generated docs/cli/generated/"
 
 cli-docs-check: cli-docs ## Fail if docs/cli/ differs from committed generated output
@@ -133,10 +138,16 @@ build-linux-riscv64: ## Build lite+full edgelet for linux/riscv64
 build-all-archs: build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 ## Build all linux lite+full targets (no musl matrix)
 
 build-desktop-darwin-lite: ## Build lite edgelet for darwin amd64+arm64
+	@$(MAKE) FLAVOR=lite _build-desktop-darwin-lite
+
+_build-desktop-darwin-lite:
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-amd64-lite ./cmd/edgelet
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-arm64-lite ./cmd/edgelet
 
 build-desktop-windows-lite: ## Build lite edgelet for windows/amd64
+	@$(MAKE) FLAVOR=lite _build-desktop-windows-lite
+
+_build-desktop-windows-lite:
 	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-windows-amd64-lite.exe ./cmd/edgelet
 
 build-desktop-darwin: build-desktop-darwin-lite ## (alias) lite darwin builds
@@ -231,22 +242,22 @@ docker-build-dev: ## Build development Docker image
 	@docker build -t iofog-agent-go:dev -f Dockerfile.dev .
 	@echo "Docker image built: iofog-agent-go:dev"
 
-install: build ## Install binaries to system
-	@echo "Installing binaries..."
-	@sudo cp $(CLI_BINARY) /usr/local/bin/
-	@sudo cp $(DAEMON_BINARY) /usr/local/bin/
-	@echo "Binaries installed to /usr/local/bin/"
+install: build ## Install edgelet binary to system
+	@echo "Installing edgelet..."
+	@sudo cp $(EDGELET_BINARY) /usr/local/bin/edgelet
+	@sudo chmod +x /usr/local/bin/edgelet
+	@echo "Installed /usr/local/bin/edgelet"
 
 # Development environment variables
 DEV_DIR := $(shell pwd)/dev
-DEV_CONFIG_DIR := $(DEV_DIR)/etc/iofog-agent
-DEV_VAR_LIB := $(DEV_DIR)/var/lib/iofog-agent
-DEV_VAR_LOG := $(DEV_DIR)/var/log/iofog-agent
-DEV_VAR_RUN := $(DEV_DIR)/var/run/iofog-agent
-DEV_PID_FILE := $(DEV_VAR_RUN)/iofog-agentd.pid
+DEV_CONFIG_DIR := $(DEV_DIR)/etc/edgelet
+DEV_VAR_LIB := $(DEV_DIR)/var/lib/edgelet
+DEV_VAR_LOG := $(DEV_DIR)/var/log/edgelet
+DEV_VAR_RUN := $(DEV_DIR)/var/run/edgelet
+DEV_PID_FILE := $(DEV_VAR_RUN)/edgelet.pid
 DEV_CERT_FILE := $(DEV_CONFIG_DIR)/cert.crt
 
-install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev environment
+install-dev: build-edgelet-lite ## Install edgelet and setup local dev environment
 	@echo "Setting up local development environment..."
 	@echo ""
 	@# Create directory structure
@@ -256,12 +267,11 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 	@mkdir -p $(DEV_VAR_RUN)
 	@echo "✓ Created directory structure"
 	@echo ""
-	@# Install binaries to /usr/local/bin (already in PATH)
-	@echo "Installing binaries to /usr/local/bin..."
-	@sudo cp $(CLI_BINARY) /usr/local/bin/iofog-agent
-	@sudo cp $(DAEMON_BINARY) /usr/local/bin/iofog-agentd
-	@sudo chmod +x /usr/local/bin/iofog-agent /usr/local/bin/iofog-agentd
-	@echo "✓ Installed binaries to /usr/local/bin/"
+	@# Install edgelet multicall binary to /usr/local/bin (already in PATH)
+	@echo "Installing edgelet to /usr/local/bin..."
+	@sudo cp $(EDGELET_BINARY) /usr/local/bin/edgelet
+	@sudo chmod +x /usr/local/bin/edgelet
+	@echo "✓ Installed /usr/local/bin/edgelet"
 	@echo ""
 	@# Generate dev config.yaml if it doesn't exist
 	@if [ ! -f $(DEV_CONFIG_DIR)/config.yaml ]; then \
@@ -310,7 +320,7 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 	else \
 		echo "✓ Config file already exists at $(DEV_CONFIG_DIR)/config.yaml"; \
 	fi
-	@ cp packaging/iofog-agent/etc/iofog-agent/cert_new.crt $(DEV_CONFIG_DIR)/cert.crt
+	@cp packaging/edgelet/etc/edgelet/cert_new.crt $(DEV_CONFIG_DIR)/cert.crt
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  Local Development Environment Setup Complete!"
@@ -322,14 +332,14 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 	@echo "   Logs:       $(DEV_VAR_LOG)/"
 	@echo "   Runtime:    $(DEV_VAR_RUN)/"
 	@echo ""
-	@echo "✅ Binaries installed to /usr/local/bin/ (already in your PATH)"
+	@echo "✅ edgelet installed to /usr/local/bin/ (already in your PATH)"
 	@echo ""
-	@echo "🚀 To start the agent daemon:"
+	@echo "🚀 To start the edgelet daemon:"
 	@echo "   make start-dev"
 	@echo ""
 	@echo "   Or manually:"
 	@echo "   export SNAP_COMMON=$(DEV_DIR)"
-	@echo "   iofog-agentd"
+	@echo "   edgelet daemon"
 	@echo ""
 	@echo "📝 You can edit the config at: $(DEV_CONFIG_DIR)/config.yaml"
 	@echo "📋 View logs at: $(DEV_VAR_LOG)/"
@@ -342,17 +352,17 @@ install-dev: build-cli build-daemon-lite ## Install binaries and setup local dev
 	@echo "   source ~/.zshrc"
 	@echo ""
 	@echo "   Then you can use CLI commands directly:"
-	@echo "   iofog-agent system status"
-	@echo "   iofog-agent system info"
+	@echo "   edgelet system status"
+	@echo "   edgelet system info"
 	@echo ""
 
-start-dev: install-dev ## Start the agent daemon in development mode
-	@echo "Starting ioFog Agent daemon in development mode..."
+start-dev: install-dev ## Start the edgelet daemon in development mode
+	@echo "Starting edgelet daemon in development mode..."
 	@# Check if already running
 	@if [ -f $(DEV_PID_FILE) ]; then \
 		PID=$$(cat $(DEV_PID_FILE) 2>/dev/null); \
 		if ps -p $$PID > /dev/null 2>&1; then \
-			echo "⚠️  Agent daemon is already running (PID: $$PID)"; \
+			echo "⚠️  edgelet daemon is already running (PID: $$PID)"; \
 			echo "   Use 'make stop-dev' to stop it first"; \
 			exit 1; \
 		else \
@@ -362,42 +372,41 @@ start-dev: install-dev ## Start the agent daemon in development mode
 	fi
 	@# Start daemon in background
 	@export SNAP_COMMON=$(DEV_DIR); \
-	( nohup iofog-agentd > $(DEV_VAR_LOG)/daemon-startup.log 2>&1 & echo $$! > $(DEV_PID_FILE) ); \
+	( nohup edgelet daemon > $(DEV_VAR_LOG)/daemon-startup.log 2>&1 & echo $$! > $(DEV_PID_FILE) ); \
 	sleep 2; \
 	PID=$$(cat $(DEV_PID_FILE) 2>/dev/null); \
 	if [ -n "$$PID" ] && ps -p $$PID > /dev/null 2>&1; then \
-		echo "✓ Agent daemon started successfully (PID: $$PID)"; \
+		echo "✓ edgelet daemon started successfully (PID: $$PID)"; \
 		echo ""; \
 		echo "📋 View logs: tail -f $(DEV_VAR_LOG)/*.log"; \
 		echo "🛑 Stop daemon: make stop-dev"; \
-		echo "📊 Check status: ps aux | grep iofog-agentd"; \
+		echo "📊 Check status: ps aux | grep 'edgelet daemon'"; \
 		echo ""; \
 		echo "💡 Export SNAP_COMMON to use CLI commands directly:"; \
 		echo "   export SNAP_COMMON=$(DEV_DIR)"; \
-		echo "   iofog-agent system status"; \
+		echo "   edgelet system status"; \
 	else \
-		echo "❌ Failed to start agent daemon"; \
+		echo "❌ Failed to start edgelet daemon"; \
 		echo "   Check logs: $(DEV_VAR_LOG)/daemon-startup.log"; \
 		rm -f $(DEV_PID_FILE); \
 		exit 1; \
 	fi
 
-stop-dev: ## Stop the agent daemon in development mode
-	@echo "Stopping ioFog Agent daemon..."
+stop-dev: ## Stop the edgelet daemon in development mode
+	@echo "Stopping edgelet daemon..."
 	@if [ ! -f $(DEV_PID_FILE) ]; then \
 		echo "⚠️  PID file not found. Trying to find process..."; \
-		PID=$$(pgrep -f "iofog-agentd" | head -1); \
+		PID=$$(pgrep -f '[e]dgelet daemon' | head -1); \
 		if [ -z "$$PID" ]; then \
-			echo "✓ No running agent daemon found"; \
-			exit 0; \
-		else \
-			echo "   Found process with PID: $$PID"; \
-			kill $$PID 2>/dev/null || true; \
-			echo "✓ Stopped agent daemon (PID: $$PID)"; \
+			echo "✓ No running edgelet daemon found"; \
 			exit 0; \
 		fi; \
-	fi
-	@PID=$$(cat $(DEV_PID_FILE) 2>/dev/null); \
+		echo "   Found process with PID: $$PID"; \
+		kill $$PID 2>/dev/null || true; \
+		echo "✓ Stopped edgelet daemon (PID: $$PID)"; \
+		exit 0; \
+	fi; \
+	PID=$$(cat $(DEV_PID_FILE) 2>/dev/null); \
 	if [ -z "$$PID" ]; then \
 		echo "⚠️  PID file is empty"; \
 		rm -f $(DEV_PID_FILE); \
@@ -411,7 +420,7 @@ stop-dev: ## Stop the agent daemon in development mode
 			echo "⚠️  Process still running, force killing..."; \
 			kill -9 $$PID 2>/dev/null || true; \
 		fi; \
-		echo "✓ Stopped agent daemon (PID: $$PID)"; \
+		echo "✓ Stopped edgelet daemon (PID: $$PID)"; \
 	else \
 		echo "⚠️  Process $$PID not found (may have already stopped)"; \
 	fi; \
@@ -433,9 +442,9 @@ setup-dev-env: install-dev ## Setup development environment and export SNAP_COMM
 	@echo "  source ~/.zshrc"
 	@echo ""
 	@echo "After exporting, you can use CLI commands directly:"
-	@echo "  iofog-agent system status"
-	@echo "  iofog-agent system info"
-	@echo "  iofog-agent version"
+	@echo "  edgelet system status"
+	@echo "  edgelet system info"
+	@echo "  edgelet version"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""

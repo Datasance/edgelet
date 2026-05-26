@@ -71,7 +71,7 @@ Guards:
 Logical request (docs clarity):
 ```json
 {
-  "manifest": "apiVersion: iofog.org/v3\nkind: RuntimeClass\nmetadata:\n  name: spin\nhandler: spin\n",
+  "manifest": "apiVersion: edgelet.iofog.org/v1\nkind: RuntimeClass\nmetadata:\n  name: spin\nhandler: spin\n",
   "dryRun": false,
   "async": true
 }

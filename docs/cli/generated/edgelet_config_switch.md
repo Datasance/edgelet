@@ -1,0 +1,31 @@
+## edgelet config switch
+
+Switch configuration profile
+
+```
+edgelet config switch <dev|prod|def> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for switch
+```
+
+### Options inherited from parent commands
+
+```
+      --debug            Debug logging
+      --no-color         Disable color and interactive UX
+  -o, --output string    Output format: human, json, yaml (default "human")
+      --quiet            Suppress interactive progress output
+      --socket string    LocalAPI unix socket path
+      --timeout string   Request timeout
+      --verbose          Verbose logging
+```
+
+### SEE ALSO
+
+* [edgelet config](edgelet_config.md)	 - Update agent configuration
+
+

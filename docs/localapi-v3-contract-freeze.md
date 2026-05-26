@@ -12,14 +12,14 @@ This document freezes the LocalAPI v1 baseline used for implementation in this r
 ## Locked Decisions
 
 1. Dual transport:
-   - Unix socket: `/run/iofog-agent/iofog-agentd.sock`
-   - HTTPS/WSS: `https://iofog.default.svc.bridge.local`
+   - Unix socket: `/run/edgelet/edgelet.sock`
+   - HTTPS/WSS: `https://edgelet.default.svc.bridge.local`
 2. JWT mode:
    - Unprovisioned: unsigned bootstrap JWT accepted across LocalAPI endpoints
    - Provisioned: unsigned JWT rejected globally; signed Ed25519 required
    - Deprovisioned: revert to bootstrap mode
 3. API-group claims mapping:
-   - `agent.datasance.com/v3` and `agent.iofog.org/v3` rules under `iofog.org`
+   - `edgelet.iofog.org/v1` and `edgelet.datasance.com/v1` rules under `edgelet.iofog.org`
    - Other API groups passed raw under their group keys
 
 ## Change Control Rule

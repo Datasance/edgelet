@@ -112,7 +112,7 @@ Generate and install tab completion for your shell:
 ```bash
 iofog-agent completion bash | sudo tee /etc/bash_completion.d/iofog-agent
 iofog-agent completion zsh > "${fpath[1]}/_iofog-agent"
-iofog-agent completion fish > ~/.config/fish/completions/iofog-agent.fish
+iofog-agent completion fish > ~/.config/fish/completions/edgelet.fish
 ```
 
 See `iofog-agent completion --help` for details. Regenerate the packaged bash script with `make cli-completion`.

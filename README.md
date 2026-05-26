@@ -104,7 +104,7 @@ For OCI workloads, containerd continues to use `runtime_type = io.containerd.run
 
 Runtime extension is provided through LocalAPI v3 `RuntimeClass` manifests:
 
-- `apiVersion: iofog.org/v3` (also accepts `datasance.com/v3`)
+- `apiVersion: edgelet.iofog.org/v1` (also accepts `edgelet.datasance.com/v1`)
 - `kind: RuntimeClass`
 - top-level fields:
   - `metadata.name`
@@ -210,19 +210,26 @@ make lint GOLANGCI_LINT_VERSION=v1.64.4
 
 ## Local Development
 
+Mac and other non-Linux hosts use the **lite** flavor (`containerEngine: docker`).
+The single `edgelet` multicall binary handles CLI subcommands and `edgelet daemon`.
+
+If you previously used the legacy `iofog-agent` dev layout under `dev/etc/iofog-agent/`,
+remove the old `dev/` tree and run `make install-dev` again.
+
 ### Setup & Start
 
 ```bash
-make build install-dev start-dev
+make install-dev start-dev
 ```
 
-This builds both binaries, installs them to `/usr/local/bin/`, creates the local
-development directory tree under `dev/`, and starts the daemon.
+This builds `build/edgelet` (lite), installs it to `/usr/local/bin/edgelet`, creates
+the local development directory tree under `dev/` (`dev/etc/edgelet/`, `dev/var/lib/edgelet/`,
+`dev/var/log/edgelet/`, `dev/var/run/edgelet/`), and starts the daemon.
 
 ```bash
 export SNAP_COMMON=$(pwd)/dev
-iofog-agent system status
-iofog-agent system info
+edgelet system status
+edgelet system info
 ```
 
 CLI reference and migration guide: [docs/cli/README.md](docs/cli/README.md) ([output schemas](docs/cli/output-schemas.md), [migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md)).
@@ -230,7 +237,7 @@ CLI reference and migration guide: [docs/cli/README.md](docs/cli/README.md) ([ou
 ### Logs
 
 ```bash
-tail -f dev/var/log/iofog-agent/daemon-startup.log
+tail -f dev/var/log/edgelet/daemon-startup.log
 ```
 
 ### Stop
@@ -312,7 +319,7 @@ sudo sh uninstall.sh --remove-data # Also remove all data directories
 ### Development install
 
 ```bash
-make build install-dev start-dev   # full flavor; dev config uses iofog + embedded socket
+make install-dev start-dev   # lite flavor; dev config uses docker engine
 ```
 
 ## Version Information
