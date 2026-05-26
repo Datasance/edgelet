@@ -11,7 +11,7 @@ ioFog full flavor currently relies on static `/etc/hosts` and host `resolv.conf`
 
 ## Decision
 
-Adopt an embedded authoritative DNS subsystem inside `iofog-agentd` (Option A) for full flavor workloads.
+Adopt an embedded authoritative DNS subsystem inside `edgelet daemon` (Option A) for full flavor workloads.
 
 ## Decision drivers
 

@@ -36,7 +36,7 @@ Use this checklist after deploying the DB-backed Edge Guard + private key change
 - Verify in-memory auth is blocked (JWT generation returns not provisioned / blocked).
 
 ## Legacy File Check
-- Verify no new `/etc/iofog-agent/agent-*.jwt` files are created.
+- Verify no new `/etc/edgelet/agent-*.jwt` files are created.
 
 ## DB Failure Degradation
 - Simulate SQLite unavailability.

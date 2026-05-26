@@ -87,7 +87,7 @@ Operational procedures for full-flavor embedded DNS service discovery.
    - disable embedded DNS feature flag for impacted cohort (or revert to prior release bundle if flag not available),
    - preserve logs/metrics snapshots for postmortem.
 4. Verify rollback success within 15 minutes:
-   - `iofog-agent system status` shows expected non-regressed DNS health state,
+   - `edgelet system status` shows expected non-regressed DNS health state,
    - in-container probe for internal authoritative names succeeds,
    - `SERVFAIL`/error rates return below threshold windows.
 5. Keep canary frozen until root cause and forward fix are validated through PR6 script gates.

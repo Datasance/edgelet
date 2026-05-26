@@ -2,7 +2,7 @@
 
 ## Section A - Executive Summary
 
-ioFog full flavor needs Docker-like service discovery without introducing Kubernetes-style operational weight. The selected architecture is an embedded authoritative DNS subsystem inside `iofog-agentd`, designed for disconnected edge operation, deterministic behavior during runtime churn, and low resource footprint.
+Edgelet full flavor needs Docker-like service discovery without introducing Kubernetes-style operational weight. The selected architecture is an embedded authoritative DNS subsystem inside `edgelet daemon`, designed for disconnected edge operation, deterministic behavior during runtime churn, and low resource footprint.
 
 - Option A (embedded DNS) is selected as the primary architecture for full flavor.
 - Runtime truth comes from embedded containerd + CRI lifecycle state.

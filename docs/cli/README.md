@@ -1,28 +1,29 @@
-# iofog-agent CLI reference
+# edgelet CLI reference
 
-Operator-facing CLI for the Cobra-based `iofog-agent` command tree.
+Operator-facing CLI for the Cobra-based `edgelet` command tree.
 
 | Resource | Path |
 |----------|------|
-| Migration from legacy CLI | [migration-from-legacy-cli.md](migration-from-legacy-cli.md) |
+| Edgelet docs index | [../edgelet/README.md](../edgelet/README.md) |
+| Migration from legacy CLI | [../edgelet/migration-from-iofog-agent-cli.md](../edgelet/migration-from-iofog-agent-cli.md) |
 | JSON/YAML output shapes | [output-schemas.md](output-schemas.md) |
 | Generated per-command pages | [generated/](generated/) (`make cli-docs`) |
 
 ## Quick start
 
 ```bash
-# Runtime health (requires running iofog-agentd)
-iofog-agent system status
+# Runtime health (requires running edgelet daemon)
+edgelet system status
 
 # Structured output for automation
-iofog-agent system status -o json | jq .
-iofog-agent ms ls -o json | jq '.items[] | {uuid, name, state}'
+edgelet system status -o json | jq .
+edgelet ms ls -o json | jq '.items[] | {uuid, name, state}'
 
 # Apply a manifest (auto kind-detect)
-iofog-agent deploy -f microservice.yaml
+edgelet deploy -f microservice.yaml
 
 # Validate only
-iofog-agent deploy -f microservice.yaml --dry-run
+edgelet deploy -f microservice.yaml --dry-run
 ```
 
 ## Global flags
@@ -33,7 +34,7 @@ iofog-agent deploy -f microservice.yaml --dry-run
 | `--quiet` | Suppress progress/spinner output on stderr |
 | `--verbose` | Verbose logging |
 | `--debug` | Debug logging |
-| `--socket` | LocalAPI unix socket override |
+| `--socket` | EdgeletAPI unix socket override |
 | `--timeout` | Request timeout |
 | `--no-color` | Disable color and interactive UX |
 | `--version` | Print combined CLI + daemon version |
@@ -46,9 +47,9 @@ Environment variables respected by progress UX:
 | `CI=true` | Non-interactive progress even on a TTY |
 | `TERM=dumb` | Non-interactive output |
 
-Human-mode `deploy -f` and `config` show a spinner on stderr while the operation runs, then print a green `✔` success line on stderr (red `✘` when config keys are partially rejected). Structured `-o json` / `-o yaml` output remains on stdout only.
+Human-mode `deploy -f` and `config` show a spinner on stderr while the operation runs, then print a green success line on stderr (red on partial config rejection). Structured `-o json` / `-o yaml` output remains on stdout only.
 
-Partial config rejection (some keys accepted, some rejected) exits **2** with full accepted/rejected detail on stderr.
+Partial config rejection exits **2** with accepted/rejected detail on stderr.
 
 ## Exit codes
 
@@ -63,7 +64,7 @@ Partial config rejection (some keys accepted, some rejected) exits **2** with fu
 | 6 | Not implemented |
 | 10 | Daemon unavailable (`DAEMON_UNAVAILABLE`) |
 
-When the daemon is not running, commands that require LocalAPI exit **10** with guidance to start `iofog-agentd` or `systemctl start iofog-agentd`.
+When the daemon is not running, commands that require EdgeletAPI exit **10** with guidance to start `edgelet daemon` or `systemctl start edgelet`.
 
 Remote command exit codes from `ms exec` propagate directly (e.g. container exit 42 → CLI exit 42).
 
@@ -73,7 +74,7 @@ Remote command exit codes from `ms exec` propagate directly (e.g. container exit
 |-------|----------|
 | `system` | `status`, `info`, `version`, `reload`, `stop`, `logs`, `prune` |
 | `provision` / `deprovision` | top-level |
-| `config` | `--long-flag` / `--alias` flags (`--disk-limit-gib`, `--memory-limit-mib`, …), `config cert`, `config switch` |
+| `config` | `--long-flag` / `--alias` flags, `config cert`, `config switch` |
 | `ms` | `ls`, `inspect`, `logs`, `exec`, `start`, `stop`, `restart`, `kill`, `rm` |
 | `deploy` | `-f FILE [--dry-run] [--sourceName]` |
 | `registry` / `runtimeclass` / `image` | `ls`, `inspect`, `rm` (+ image `pull`, `load`, `prune`) |
@@ -82,47 +83,37 @@ Remote command exit codes from `ms exec` propagate directly (e.g. container exit
 ## Examples
 
 ```bash
-# Config read vs write
-iofog-agent system info                    # read configuration
-iofog-agent config --network-interface eth0
-iofog-agent config --n eth0 --cf 10        # short alias flags
-iofog-agent config cert <base64-encoded-cert-string>
-iofog-agent config switch prod
-iofog-agent -o json config --cf 10       # structured output on stdout
+edgelet system info
+edgelet config --network-interface eth0
+edgelet config cert <base64-encoded-cert-string>
+edgelet config switch prod
 
-# Microservice lifecycle
-iofog-agent ms ls -o json
-iofog-agent ms inspect <uuid>
-iofog-agent ms logs <uuid> --follow
-iofog-agent ms exec <uuid> -- /bin/sh
+edgelet ms ls -o json
+edgelet ms logs <uuid> --follow
+edgelet ms exec <uuid> -- /bin/sh
 
-# Registry / image
-iofog-agent registry ls -o json
-iofog-agent image pull docker.io/library/alpine:3.19
-iofog-agent image load -f /path/to/image.tar
+edgelet registry ls -o json
+edgelet image pull docker.io/library/alpine:3.19
 
-# Auth
-iofog-agent auth whoami -o json
+edgelet auth whoami -o json
 ```
 
 ## Shell completion
 
-Generate and install tab completion for your shell:
-
 ```bash
-iofog-agent completion bash | sudo tee /etc/bash_completion.d/iofog-agent
-iofog-agent completion zsh > "${fpath[1]}/_iofog-agent"
-iofog-agent completion fish > ~/.config/fish/completions/edgelet.fish
+edgelet completion bash | sudo tee /etc/bash_completion.d/edgelet
+edgelet completion zsh > "${fpath[1]}/_edgelet"
+edgelet completion fish > ~/.config/fish/completions/edgelet.fish
 ```
 
-See `iofog-agent completion --help` for details. Regenerate the packaged bash script with `make cli-completion`.
+Regenerate packaged bash completion with `make cli-completion`.
 
 ## Documentation maintenance
 
 ```bash
-make cli-docs              # regenerate docs/cli/generated/
-make cli-docs-check        # fail if generated docs drift from git
-make cli-help-check        # fail if CLI help regression tests fail
+make cli-docs
+make cli-docs-check
+make cli-help-check
 ```
 
-Hidden generator: `iofog-agent documentation generate md|man --output DIR`
+Hidden generator: `edgelet documentation generate md|man --output DIR`

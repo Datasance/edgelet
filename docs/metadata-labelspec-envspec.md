@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines the canonical container metadata contract for `iofog-agent`.
+This document defines the canonical container metadata contract for Edgelet.
 
 - Namespace: `iofog.org`
 - Runtime scope: Docker, Podman, embedded iofog/containerd
@@ -28,7 +28,7 @@ Container name prefix `iofog_` remains allowed for readability/debugging only an
 - `app.kubernetes.io/part-of`
   - Value: application name (`local` for local workloads)
 - `app.kubernetes.io/managed-by`
-  - Value: `iofog-agent`
+  - Value: `edgelet`
 - `iofog.org/microservice-uid`
   - Value: microservice UUID
 - `iofog.org/node-uid`
@@ -153,7 +153,7 @@ labels:
   app.kubernetes.io/name: "video-analyzer"
   app.kubernetes.io/instance: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   app.kubernetes.io/part-of: "smart-city"
-  app.kubernetes.io/managed-by: "iofog-agent"
+  app.kubernetes.io/managed-by: "edgelet"
   iofog.org/microservice-uid: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   iofog.org/node-uid: "node-123"
   iofog.org/scope: "managed"
@@ -179,7 +179,7 @@ labels:
   app.kubernetes.io/name: "video-analyzer"
   app.kubernetes.io/instance: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   app.kubernetes.io/part-of: "smart-city"
-  app.kubernetes.io/managed-by: "iofog-agent"
+  app.kubernetes.io/managed-by: "edgelet"
   iofog.org/microservice-uid: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   iofog.org/node-uid: "node-123"
   iofog.org/scope: "managed"
@@ -205,7 +205,7 @@ labels:
   app.kubernetes.io/name: "video-analyzer"
   app.kubernetes.io/instance: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   app.kubernetes.io/part-of: "smart-city"
-  app.kubernetes.io/managed-by: "iofog-agent"
+  app.kubernetes.io/managed-by: "edgelet"
   iofog.org/microservice-uid: "6f2f347f-a43b-43fb-9f72-2f6f47aa91be"
   iofog.org/node-uid: "node-123"
   iofog.org/scope: "managed"

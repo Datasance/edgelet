@@ -1,393 +1,175 @@
-# ioFog Agent — Go Implementation
+# Edgelet
 
 [![agent-go CI](https://github.com/datasance/agent/actions/workflows/agent-go.yml/badge.svg)](https://github.com/datasance/agent/actions/workflows/agent-go.yml)
 
-Go implementation of the ioFog Agent, migrated from Java. The agent provides edge-computing capabilities for the ioFog platform — managing microservice containers, communicating with the Controller, and reporting system status.
+Greenfield edge agent for the ioFog platform — single multicall `edgelet` binary (CLI + daemon + embedded containerd child on full/linux). Manages microservice containers, syncs with the Controller, and exposes the on-device **EdgeletAPI** for local administration.
 
-## Project Structure
+**Documentation:** [docs/edgelet/README.md](docs/edgelet/README.md)
+
+## Project structure
 
 ```
-agent-go/
-├── cmd/
-│   ├── iofog-agent/         # CLI entry point  (iofog-agent system status / …)
-│   └── iofog-agentd/        # Daemon entry point (embeds containerd when iofog engine)
-├── internal/                # Internal packages
-│   ├── auth/                # TLS / JWT / certificate management
-│   ├── buildmeta/           # Compile-time flavor (lite | full) for validation / version output
-│   ├── config/              # Configuration loading and persistence
-│   ├── constants/           # Shared constants (engine paths, network names)
-│   ├── embedded/            # Embedded binary assets and extraction logic
-│   ├── fieldagent/          # Controller communication and sync
-│   ├── localapi/            # Local HTTP/WebSocket API (port 54321)
-│   ├── models/              # Shared data models
-│   ├── network/             # Network interface management
-│   ├── processmanager/      # Container lifecycle and reconciliation
-│   ├── proxy/               # SSH tunnel / proxy management
-│   ├── resourceconsumption/ # CPU / memory / disk monitoring
-│   ├── statusreporter/      # Status aggregation and reporting
-│   ├── store/               # SQLite local storage
-│   └── volumemount/         # Secret / ConfigMap volume mounts
+.
+├── cmd/edgelet/             # Multicall entry (CLI, daemon, containerd child)
+├── internal/
+│   ├── auth/                # TLS / JWT / EdgeletAPI PKI
+│   ├── buildmeta/           # Compile-time flavor (lite | full)
+│   ├── edgeletapi/          # EdgeletAPI HTTP/WebSocket (:54321)
+│   ├── fieldagent/          # Controller communication
+│   ├── processmanager/      # Container reconciliation
+│   ├── store/               # SQLite persistence
+│   └── supervisor/          # Module orchestration
 ├── pkg/
-│   ├── containerd/          # In-process containerd service (iofog engine)
-│   ├── docker/              # Docker client wrapper (legacy, kept for pkg/engine/docker)
-│   └── engine/              # ContainerEngine interface + Docker/Podman/iofog adapters
-│       ├── engine.go        # ContainerEngine interface definition
-│       ├── factory.go       # NewContainerEngine() factory
-│       ├── docker/          # Docker adapter (wraps pkg/docker)
-│       ├── podman/          # Podman adapter (Docker-compatible socket)
-│       └── iofog/           # Embedded containerd adapter
-├── build/                   # Build scripts and Dockerfiles
-│   ├── download-deps.sh     # Downloads embedded binaries for all 6 targets
-│   └── containerd.Dockerfile # ARM32 cross-compile Dockerfile for containerd
-├── install.sh               # One-line installer with multi-init-system support
+│   ├── containerd/          # In-process containerd (edgelet engine)
+│   └── engine/              # ContainerEngine + docker/podman/edgelet adapters
+├── install.sh               # Tarball installer
 ├── uninstall.sh             # Clean uninstaller
-├── packaging/               # Default config template
-├── .golangci.yaml           # golangci-lint configuration
-├── go.mod                   # Go module definition
-├── Makefile                 # Build automation
-├── Dockerfile               # Production image
-└── Dockerfile.dev           # Development image (hot-reload)
+├── packaging/               # systemd unit, config templates
+└── docs/edgelet/            # Operator documentation
 ```
 
 ## Prerequisites
 
-| Tool        | Minimum version | Notes                              |
-|-------------|-----------------|-------------------------------------|
-| Go          | **1.24**        | Specified in `go.mod`              |
-| Make        | any             | GNU Make                           |
-| Docker / Podman | 26.10+     | Required for `docker`/`podman` engine modes |
-| golangci-lint | v1.64.4       | Auto-installed by `make lint`      |
-| gcc + musl cross-compilers | — | Required for `CGO_ENABLED=1` daemon builds |
+| Tool | Minimum version | Notes |
+|------|-----------------|-------|
+| Go | **1.24** | In `go.mod` |
+| Make | any | GNU Make |
+| Docker / Podman | 26.10+ | Lite flavor only |
+| golangci-lint | v1.64.4 | Auto-installed by `make lint` |
 
-For `iofog` (embedded) engine builds, install cross-compilers before building:
+For **full** (embedded) engine builds on Linux, install cross-compilers before building:
 
 ```bash
-# Ubuntu / Debian
 sudo apt-get install -y \
   gcc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-riscv64-linux-gnu \
   musl-tools musl-dev
 ```
 
-## Container Engine
+## Container engine
 
-There are two **build flavors** (set at compile time via `-ldflags`; see `internal/buildmeta`). The running config must match the binary:
+Two **build flavors** (compile-time via `internal/buildmeta`). Config must match the binary:
 
 | Build flavor | Allowed `containerEngine` | Notes |
 |--------------|----------------------------|--------|
-| **full** (default) | `iofog` only | CGO + embedded containerd; `dockerUrl` must be `unix:///run/iofog-agent/containerd.sock` |
-| **lite** | `docker` or `podman` only | CGO disabled; connect to host Docker/Podman socket |
+| **full** (default, linux) | `edgelet` only | CGO + embedded containerd |
+| **lite** | `docker` or `podman` | CGO disabled; external engine |
 
 | Value | Description |
 |-------|-------------|
-| `docker` | Host Docker daemon (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
-| `podman` | Host Podman (`dockerUrl` e.g. `unix:///run/podman/podman.sock`) |
-| `iofog` | Embedded containerd + crun + CNI — **full flavor only** |
+| `docker` | Host Docker (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
+| `podman` | Host Podman |
+| `edgelet` | Embedded containerd — **full flavor only** |
 
 ```yaml
 profiles:
   production:
-    containerEngine: iofog
-    dockerUrl: unix:///run/iofog-agent/containerd.sock   # required when engine is iofog
+    containerEngine: edgelet
+    dockerUrl: unix:///run/edgelet/containerd.sock
 ```
 
-### Embedded Engine (iofog)
-
-When `containerEngine: iofog` is selected, `iofog-agentd` starts an in-process containerd instance. No external container runtime is required. The binary bundles:
-
-- `containerd-shim-runc-v2` — OCI runtime shim
-- `crun` — low-level OCI container runtime
-- CNI plugins: `bridge`, `host-local`, `portmap`, `loopback`
-
-For OCI workloads, containerd continues to use `runtime_type = io.containerd.runc.v2` with `containerd-shim-runc-v2`; the baseline runtime handler is `crun`, which points to the `crun` binary.
-
-### RuntimeClass (full + iofog only)
-
-Runtime extension is provided through LocalAPI v3 `RuntimeClass` manifests:
-
-- `apiVersion: edgelet.iofog.org/v1` (also accepts `edgelet.datasance.com/v1`)
-- `kind: RuntimeClass`
-- top-level fields:
-  - `metadata.name`
-  - `handler`
-
-For each `metadata.name = x`, the agent registers one canonical runtime handler:
-
-- `x`
-
-Network scope (`managed` vs `local`) is selected independently via workload scope/CNI selection logic, not by synthesizing runtime handler variants.
-
-RuntimeClass API and CLI flows are available only when:
-
-- build flavor is `full`, and
-- `containerEngine=iofog`.
-
-For `docker`, `podman`, or `lite`, RuntimeClass endpoints reject with:
-`Error[INVALID_ARGUMENT]: runtimeclass is supported only when containerEngine=iofog on full flavor builds`.
-
-**Path layout** (isolated from any host Docker/Podman installation):
-
-| Path | Purpose |
-|------|---------|
-| `/var/lib/iofog-agent/` | User data (`diskDirectory`, subject to `diskConsumptionLimit`) |
-| `/var/lib/iofog-agent-containerd/` | Containerd images and snapshots (not counted against disk limit) |
-| `/run/iofog-agent/containerd.sock` | Ephemeral containerd socket |
-
-The `iofog` engine uses a private bridge network (`iofog0`, CIDR `172.18.0.0/16`) and never conflicts with existing Docker or Podman installations. A warning is logged if Docker/Podman sockets are detected.
+Details: [docs/edgelet/container-engine.md](docs/edgelet/container-engine.md)
 
 ## Building
 
-`FLAVOR` defaults to **`full`** (embedded containerd). Use **`lite`** for external Docker/Podman only.
-
 ```bash
 make build                 # CLI + daemon for FLAVOR (default: full)
-make build FLAVOR=lite     # lite daemon (CGO=0) + CLI with lite metadata
+make build FLAVOR=lite     # lite daemon + CLI
 
-make build-cli             # CLI only (honors FLAVOR= for buildmeta)
-make build-daemon          # Alias for build-daemon-$(FLAVOR)
-make build-daemon-lite     # Daemon only, CGO=0
-make build-daemon-full     # Daemon only, CGO=1 + embedded deps
+make build-cli
+make build-daemon-full     # CGO=1 + embedded deps
+make build-daemon-lite     # CGO=0
 ```
 
-### Embedded dependencies (full flavor)
+Cross-compilation (lite + full per arch):
 
 ```bash
-make deps ARCH=amd64      # Download containerd shims, crun, CNI, etc.
-make build-daemon-full    # Same as build-daemon-embedded (alias)
-```
-
-### Cross-compilation (all 6 arch targets, **lite + full** per target)
-
-Each target produces four binaries, e.g. `build/iofog-agent-linux-amd64-lite`, `...-full`, `iofog-agentd-linux-amd64-lite`, `...-full`.
-
-```bash
-make build-all-archs      # all arches: lite + full each
-make build-linux-amd64
-make build-linux-amd64-musl
-make build-linux-arm64
-make build-linux-arm64-musl
-make build-linux-arm
-make build-linux-riscv64
-```
-
-### Release tarballs + checksum manifests
-
-```bash
-make release-tarballs VERSION=v3.8.0   # requires prior build-all-archs; outputs under build/release/
-# SHA256SUMS-lite and SHA256SUMS-full
+make build-all-archs
+make release-tarballs VERSION=v1.0.0
 ```
 
 ## Testing
 
 ```bash
-make test             # Run all tests
-make test-unit        # Run unit tests only (go test -short)
-make test-coverage    # Run tests with HTML coverage report → build/coverage.html
-make benchmark        # Run benchmarks
+make test
+make test-unit
+make test-coverage
 ```
 
-Status output includes `availableRuntimes`:
+Embedded full-flavor integration (Lima VM on macOS): [test/embedded/README.md](test/embedded/README.md)
 
-- local status/CLI (`iofog-agent system status`) shows runtime availability for the active engine mode.
-- controller status payload also includes `availableRuntimes`; for `iofog` engine this list is canonical only.
+## Local development
 
-## Code Quality
-
-```bash
-make fmt              # Format code with gofmt
-make vet              # Run go vet
-make lint             # Run golangci-lint (auto-installs if absent)
-make lint-fix         # Run golangci-lint with --fix
-```
-
-`make lint` downloads the pinned binary (`v1.64.4`) to `$GOBIN` via the official
-install script the first time it is run — no manual installation required.
-
-To override the pinned version:
-
-```bash
-make lint GOLANGCI_LINT_VERSION=v1.64.4
-```
-
-## Local Development
-
-Mac and other non-Linux hosts use the **lite** flavor (`containerEngine: docker`).
-The single `edgelet` multicall binary handles CLI subcommands and `edgelet daemon`.
-
-If you previously used the legacy `iofog-agent` dev layout under `dev/etc/iofog-agent/`,
-remove the old `dev/` tree and run `make install-dev` again.
-
-### Setup & Start
+Non-Linux hosts use **lite** flavor (`containerEngine: docker`):
 
 ```bash
 make install-dev start-dev
-```
-
-This builds `build/edgelet` (lite), installs it to `/usr/local/bin/edgelet`, creates
-the local development directory tree under `dev/` (`dev/etc/edgelet/`, `dev/var/lib/edgelet/`,
-`dev/var/log/edgelet/`, `dev/var/run/edgelet/`), and starts the daemon.
-
-```bash
 export SNAP_COMMON=$(pwd)/dev
 edgelet system status
 edgelet system info
 ```
 
-CLI reference and migration guide: [docs/cli/README.md](docs/cli/README.md) ([output schemas](docs/cli/output-schemas.md), [migration-from-legacy-cli.md](docs/cli/migration-from-legacy-cli.md)).
-
-### Logs
-
-```bash
-tail -f dev/var/log/edgelet/daemon-startup.log
-```
-
-### Stop
+CLI reference: [docs/cli/README.md](docs/cli/README.md) · [output schemas](docs/cli/output-schemas.md) · [CLI migration](docs/edgelet/migration-from-iofog-agent-cli.md)
 
 ```bash
 make stop-dev
+tail -f dev/var/log/edgelet/daemon-startup.log
 ```
-
-## Docker
-
-```bash
-make docker-build      # Build production image (iofog-agent-go:latest)
-make docker-build-dev  # Build development image (iofog-agent-go:dev)
-```
-
-The production image is based on Alpine Linux, statically linked
-(`CGO_ENABLED=0`), and targets < 30 MB.
 
 ## Installation
 
-Distribution is **tarball + `install.sh` only** (no DEB/RPM in this product line). Default install flavor is **`full`**.
-
-Tarball names:
-
-`iofog-agent-<VERSION>-linux-<ARCH>[-musl]-<flavor>.tar.gz`  
-
-where `<flavor>` is `lite` or `full`.
-
-### Installer (from repo or release)
+Tarball + `install.sh` only (no DEB/RPM). Default flavor: **full**.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/datasance/agent/main/agent-go/install.sh | sudo sh -s -- --flavor=full
-# or after copying install.sh locally:
-sudo sh install.sh --flavor=full --version=v2.0.0
+curl -fsSL https://raw.githubusercontent.com/datasance/agent/main/install.sh | sudo sh -s -- --flavor=full
+sudo sh install.sh --flavor=full --tarball-path=edgelet-linux-amd64-full.tar.gz
 ```
 
-Common options:
-
-| Flag | Purpose |
-|------|---------|
-| `--flavor=full\|lite` | Must match the tarball (default: **full**) |
-| `--container-engine=docker\|podman` | For **lite** only; **full** always uses `iofog` |
-| `--airgap` | Do not download; requires `--tarball-path` |
-| `--tarball-path=PATH` | Local `.tar.gz` (offline) |
-| `--upgrade` / `--rollback` | In-place upgrade / rollback using metadata below |
-| `--expected-sha256` / `--checksum-path` | Optional verification for airgap tarballs |
-
-Supported init systems: **`systemd`**, **OpenRC**, **SysV init**, **s6**, **runit**, **upstart**.  
-On systemd, **Docker** pulls in `docker.service`; **Podman** uses **`podman.socket`**.
-
-### Metadata (no JSON, no Python)
-
-Under `/var/backups/iofog-agent/`:
-
-- **`install-receipt`** — `installed_version`, `flavor`, `source_url` (`https://...` or `file:///...`)
-- **`previous-release`** — written on `--upgrade`: previous version/flavor, download URL, config backup path
-
-Plain **key=value** lines (POSIX `sh`). See [`packaging/PACKAGING-STRUCTURE.md`](packaging/PACKAGING-STRUCTURE.md).
-
-Changing **lite ↔ full** on the same host is not supported; uninstall and reinstall the correct flavor.
-
-### Manual install from tarball
+Tarball names: `edgelet-<VERSION>-linux-<ARCH>-{full|lite}.tar.gz`
 
 ```bash
-curl -fsSL -O "https://github.com/datasance/agent/releases/download/vX.Y.Z/iofog-agent-vX.Y.Z-linux-amd64-full.tar.gz"
-tar -xzf iofog-agent-*-full.tar.gz
-sudo install -m 755 iofog-agent  /usr/local/bin/
-sudo install -m 755 iofog-agentd /usr/local/bin/
-# Prefer install.sh for config, service, and metadata.
+edgelet daemon                    # foreground
+systemctl start edgelet           # production
+edgelet provision                 # register with Controller
 ```
+
+Deployment guide: [docs/edgelet/deployment.md](docs/edgelet/deployment.md)
 
 ### Uninstall
 
 ```bash
-sudo sh uninstall.sh               # Remove binaries and service, keep data
-sudo sh uninstall.sh --remove-data # Also remove all data directories
+sudo sh uninstall.sh
+sudo sh uninstall.sh --remove-data
 ```
 
-### Development install
+## EdgeletAPI
+
+On-device operator API (daemon↔CLI):
+
+| Item | Value |
+|------|--------|
+| HTTPS | `https://127.0.0.1:54321` |
+| Routes | `/v1/...` |
+| CLI token | `/etc/edgelet/edgelet-api` |
+| TLS CA | `/etc/edgelet/edgeletapi-ca.crt` |
+
+Guide: [docs/edgelet/edgelet-api-v1.md](docs/edgelet/edgelet-api-v1.md) · OpenAPI: [docs/edgelet/edgelet-api-v1-openapi.yaml](docs/edgelet/edgelet-api-v1-openapi.yaml)
+
+Controller REST (field agent) remains `/api/v3/...` on the controller URL — separate from EdgeletAPI.
+
+## Code quality
 
 ```bash
-make install-dev start-dev   # lite flavor; dev config uses docker engine
+make fmt
+make vet
+make lint
 ```
 
-## Version Information
+## CI
 
-```bash
-iofog-agent version       # prints version, build flavor, allowed containerEngine set
-iofog-agentd version
-```
-
-## CI / CD
-
-| Workflow | Location | Purpose |
-|----------|----------|---------|
-| **agent-go** | [`.github/workflows/agent-go.yml`](../.github/workflows/agent-go.yml) (repo root) | On changes under `agent-go/`: build **lite + full** for linux `amd64`, `arm64`, `arm`, `riscv64`, run unit tests |
-
-Release packaging: `make build-all-archs` then `make release-tarballs VERSION=…` → per-flavor tarballs under `build/release/` plus **`SHA256SUMS-lite`** and **`SHA256SUMS-full`**.
-
-Build matrix (each arch emits **-lite** and **-full** binaries):
-
-| Target | GOOS/GOARCH | Libc | Notes |
-|--------|-------------|------|--------|
-| `amd64` | linux/amd64 | glibc | |
-| `amd64-musl` | linux/amd64 | musl (static daemon for full) | |
-| `arm64` | linux/arm64 | glibc | |
-| `arm64-musl` | linux/arm64 | musl | |
-| `arm` | linux/arm (armhf) | glibc | |
-| `riscv64` | linux/riscv64 | glibc | |
-
-## Migration Status
-
-✅ **Migration Complete** — all functionality from the Java daemon has been ported to Go.
-
-| Component | Status |
-|---|---|
-| Controller communication (Field Agent) | ✅ |
-| Process Manager (container reconciliation) | ✅ |
-| Local API (port 54321) | ✅ |
-| SQLite local storage | ✅ |
-| Volume mounts (Secrets / ConfigMaps) | ✅ |
-| Resource consumption monitoring | ✅ |
-| Network interface management | ✅ |
-| SSH proxy / tunnel | ✅ |
-| JWT authentication | ✅ |
-| TLS certificate management | ✅ |
-| Security hardening (gosec) | ✅ |
-| Tarball + `install.sh` (this repo) | ✅ |
-| Legacy DEB / RPM (Java line) | separate |
-
-## Performance vs Java
-
-| Metric | Go (docker/podman) | Go (iofog) | Java |
-|---|---|---|---|
-| Binary size | < 30 MB | ~80–120 MB (with embedded runtimes) | ~200 MB (+ JRE) |
-| Memory at idle | < 100 MB | ~150 MB (containerd overhead) | ~300 MB |
-| Startup time | < 2 s | ~4 s (containerd init) | ~5 s |
-| CPU at idle | < 1 % | < 1 % | ~2–3 % |
-
-The iofog binary is larger because it bundles containerd shims, crun, and CNI plugins. This is expected and intentional — the embedded engine requires no pre-installed container runtime on the host.
-
-## Security
-
-Static analysis runs on every CI build via `gosec` (integrated into `golangci-lint`).
-All `#nosec` suppressions carry a justification comment explaining why the rule
-is intentionally bypassed.
-
-## Contributing
-
-See `CONTRIBUTING.md` for contribution guidelines.
+| Workflow | Purpose |
+|----------|---------|
+| `.github/workflows/ci-go.yml` | Build lite + full, unit tests |
+| `.github/workflows/build.yml` | Release matrix |
 
 ## License
 

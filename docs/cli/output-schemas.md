@@ -1,8 +1,8 @@
-# iofog-agent CLI JSON output schemas
+# edgelet CLI JSON output schemas
 
-Structured output (`-o json` or `-o yaml`) emits the LocalAPI v1 **data** envelope contents directly (no extra CLI wrapper). Shapes below match golden fixtures in `internal/cli/output/testdata/golden/`.
+Structured output (`-o json` or `-o yaml`) emits the EdgeletAPI v1 **data** envelope contents directly (no extra CLI wrapper). Shapes below match golden fixtures in `internal/cli/output/testdata/golden/`.
 
-## `iofog-agent system status -o json`
+## `edgelet system status -o json`
 
 Route: `GET /v1/system/status`
 
@@ -31,7 +31,7 @@ Golden fixture (minimal subset):
 }
 ```
 
-## `iofog-agent ms ls -o json`
+## `edgelet ms ls -o json`
 
 Route: `GET /v1/ms`
 
@@ -51,27 +51,9 @@ Each `items[]` element:
 | `image` | string | Image reference |
 | `type` | string | Source/type label |
 
-Golden fixture:
+## `edgelet --version -o json` / `edgelet system version -o json`
 
-```json
-{
-  "items": [
-    {
-      "application": "local",
-      "containerId": "c1",
-      "image": "demo:latest",
-      "name": "demo",
-      "state": "running",
-      "type": "standard",
-      "uuid": "abc-123"
-    }
-  ]
-}
-```
-
-## `iofog-agent --version -o json` / `iofog-agent system version -o json`
-
-Combined CLI + daemon payload (see `output.BuildVersionPayload`):
+Combined CLI + daemon payload:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -85,7 +67,7 @@ Combined CLI + daemon payload (see `output.BuildVersionPayload`):
 | `daemon.allowedContainerEngine` | string | Allowed engines |
 | `daemon.error` | string | Present when daemon unreachable |
 
-## `iofog-agent deploy -f FILE -o json`
+## `edgelet deploy -f FILE -o json`
 
 Apply response includes async poll metadata:
 
@@ -110,9 +92,9 @@ Dry-run (`--dry-run`) returns validate payload:
 
 These reject or ignore `-o json|yaml`:
 
-- `iofog-agent ms logs --follow`
-- `iofog-agent ms exec`
-- `iofog-agent system logs --follow`
+- `edgelet ms logs --follow`
+- `edgelet ms exec`
+- `edgelet system logs --follow`
 
 ## Error shape (stderr, human)
 

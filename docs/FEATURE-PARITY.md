@@ -1,6 +1,6 @@
-# Feature Parity Checklist
+# Edgelet feature parity checklist
 
-This document tracks the migration of features from the Java implementation to the Go implementation.
+This document tracks feature parity for Edgelet (Go implementation) against the legacy Java agent.
 
 ## Core Features
 
@@ -36,7 +36,7 @@ This document tracks the migration of features from the Java implementation to t
 - [x] Message archiving
 - [x] Topic-based routing
 
-### Local API
+### EdgeletAPI
 - [x] REST API endpoints
 - [x] WebSocket support
 - [x] Authentication (JWT)
