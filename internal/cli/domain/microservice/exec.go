@@ -38,17 +38,16 @@ func Exec(c *client.Client, id string, command []string) error {
 	return nil
 }
 
-// ParseExecCommand extracts the command after a "--" separator.
+// ParseExecCommand extracts the remote command from ms exec args after the id.
+// When Cobra parses "exec <id> -- cmd...", it strips "--" before RunE, so any
+// remaining positional tokens are treated as the command.
 func ParseExecCommand(args []string) ([]string, error) {
-	command := make([]string, 0)
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--" {
-			command = append(command, args[i+1:]...)
-			break
+	for i, arg := range args {
+		if arg == "--" {
+			return args[i+1:], nil
 		}
-		return nil, run.NewCLIError(run.CodeInvalidArgument, "unknown flag "+args[i], nil)
 	}
-	return command, nil
+	return args, nil
 }
 
 // ParseExecArgs validates ms exec positional args.

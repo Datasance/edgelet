@@ -28,12 +28,7 @@ func newMSCommand() *cobra.Command {
 		},
 		newMSInspectCommand(),
 		newMSLogsCommand(),
-		&cobra.Command{
-			Use:   "exec <id> [-- command...]",
-			Short: "Execute a command in a microservice",
-			Args:  cobra.MinimumNArgs(1),
-			RunE:  runMSExec,
-		},
+		newMSExecCommand(),
 		newMSLifecycleCommand("start", "Start a microservice", "", microservice.Start),
 		newMSLifecycleCommand("stop", "Stop a microservice", "", microservice.Stop),
 		newMSLifecycleCommand("restart", "Restart a microservice", "", microservice.Restart),
@@ -66,6 +61,16 @@ func newMSInspectCommand() *cobra.Command {
 	cmd.Flags().Bool("summary", false, "Show summary output")
 	registerMSInspectCompletions(cmd)
 	return cmd
+}
+
+func newMSExecCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                "exec <id> [-- command...]",
+		Short:              "Execute a command in a microservice",
+		Args:               cobra.MinimumNArgs(1),
+		DisableFlagParsing: true,
+		RunE:               runMSExec,
+	}
 }
 
 func registerMSInspectCompletions(cmd *cobra.Command) {
