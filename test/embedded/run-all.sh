@@ -110,7 +110,7 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
     "${SCRIPT_DIR}/build.sh" --arch="${TARGET_ARCH}"
 else
     log_info "Skipping build (--skip-build)"
-    EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}-full"
+    EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}"
     [[ -f "${EDGELET_BIN}" ]] || \
         die "No pre-built binary at ${EDGELET_BIN}. Remove --skip-build to build."
 fi

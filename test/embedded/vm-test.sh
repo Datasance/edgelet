@@ -341,7 +341,10 @@ log_step "Phase 6: CLI integration"
 assert_ok "edgelet binary is executable" \
     R "test -x /usr/local/bin/edgelet"
 
-assert_contains "thin CLI version works without daemon extract" "build flavor: full" \
+assert_contains "thin CLI version shows embedded engine without daemon extract" "embedded engine: true" \
+    R "edgelet version"
+
+assert_contains "thin CLI version lists allowed containerEngine values" "allowed containerEngine: edgelet,docker,podman" \
     R "edgelet version"
 
 assert_contains "system info shows containerEngine=edgelet" "edgelet" \

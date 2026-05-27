@@ -9,7 +9,7 @@ End-to-end integration tests for **edgelet** with the embedded containerd engine
 test/embedded/
 ├── run-all.sh          # Master runner — setup → build → VM → install → test
 ├── setup.sh            # Install macOS prerequisites via Homebrew
-├── build.sh            # Embed pipeline + cross-compile linux/arm64 (or amd64) full binary
+├── build.sh            # Embed pipeline + cross-compile unified linux/arm64 (or amd64) binary
 ├── vm-start.sh         # Create / start the Lima Ubuntu VM
 ├── vm-install.sh       # Copy edgelet + config into VM, start edgelet.service
 ├── vm-test.sh          # Run all test assertions inside VM
@@ -53,7 +53,7 @@ Installed automatically by `setup.sh`:
 ./test/embedded/run-all.sh [options]
 
   --skip-setup      Skip Homebrew prerequisite installation
-  --skip-build      Skip cross-compile (reuse build/edgelet-linux-*-full)
+  --skip-build      Skip cross-compile (reuse build/edgelet-linux-*)
   --skip-start      Skip VM creation/start (VM must already be running)
   --delete-vm       Delete the VM after tests complete
   --vm-name=NAME    Lima VM name (default: edgelet-test)
@@ -72,7 +72,7 @@ Installed automatically by `setup.sh`:
 4. `scripts/package-data` — zstd tar with fat in `bin/edgelet`
 5. `scripts/build-edgelet` — thin wrapper embeds tar
 
-Output: **`build/edgelet-linux-<arch>-full`** — thin download binary (CLI + embed + `daemon` dispatch). Systemd `edgelet daemon` lazy-extracts and execs the fat runtime from `/var/lib/edgelet/data/current/bin/edgelet`.
+Output: **`build/edgelet-linux-<arch>`** — unified linux thin binary (CLI + embed + `daemon` dispatch). Systemd `edgelet daemon` lazy-extracts and execs the fat runtime from `/var/lib/edgelet/data/current/bin/edgelet`.
 
 ## Test Phases
 

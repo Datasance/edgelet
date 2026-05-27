@@ -20,9 +20,8 @@ mkdir -p /etc/edgelet
 cp "packaging/edgelet/etc/edgelet/config_full.yaml" "/etc/edgelet/config.yaml"
 cp "packaging/edgelet/etc/edgelet/cert_new.crt" "/etc/edgelet/cert.crt"
 
-echo "==> [PR6 local gate] embed pipeline + edgelet full build"
-make deps
-make build-edgelet-full
+echo "==> [PR6 local gate] embed pipeline + unified linux edgelet build"
+make build-edgelet-local
 
 if [[ ! -x "./build/edgelet" ]]; then
   echo "ERROR: missing build/edgelet after build"
