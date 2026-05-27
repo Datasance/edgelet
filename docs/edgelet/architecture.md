@@ -2,24 +2,24 @@
 
 ## Overview
 
-Edgelet is the edge agent for the ioFog platform. The **lite** flavor ships one monolithic ELF: operator CLI, supervisor daemon, and (on full linux only) a separate runtime path described below.
-
-The **full** flavor (linux only) uses a **two-layer** layout modeled on k3s:
+Edgelet is the edge agent for the ioFog platform. On **linux**, production ships a **two-layer** layout modeled on k3s:
 
 | Layer | Path | Role |
 |-------|------|------|
 | **Thin** | `/usr/local/bin/edgelet` | Download/OTA binary (`CGO=0`): `go:embed` zstd bundle, extract orchestration, **all operator CLI** (EdgeletAPI client), `version` / help |
 | **Fat** | `/var/lib/edgelet/data/current/bin/edgelet` | Runtime ELF (`CGO=1`): supervisor, field agent, process manager, EdgeletAPI server, in-process containerd; `--edgelet-containerd-child` |
 
-`edgelet daemon` (including systemd) starts at the **thin** entry, lazy-extracts the embedded bundle when needed, then `exec`s the **fat** binary with the same arguments. Operator commands (`edgelet ms …`, `edgelet deploy …`, etc.) run **in the thin process** and do not require extract.
+`edgelet daemon` (including systemd) starts at the **thin** entry. When `containerEngine: edgelet`, the thin process lazy-extracts the embedded bundle, then `exec`s the **fat** binary with the same arguments. Operator commands (`edgelet ms …`, `edgelet deploy …`, etc.) run **in the thin process** and do not require extract.
+
+On **darwin** and **windows**, Edgelet is a **single monolithic** ELF: CLI + daemon, no embed, no two-layer split. Only `docker` or `podman` engines are supported on desktop.
 
 The supervisor maintains bidirectional sync with the ioFog Controller, reconciles desired microservice state against a pluggable container engine, and exposes the on-device **EdgeletAPI** for local administration.
 
-All container operations go through a `ContainerEngine` interface (`docker`, `podman`, or embedded `edgelet` containerd). Full builds compile in the **edgelet** engine only; docker/podman packages are lite-only.
+All container operations go through a `ContainerEngine` interface (`edgelet`, `docker`, or `podman`). On linux, all three engines are linked into one binary; selection is **runtime** via `containerEngine` in config. On desktop, only docker/podman are allowed.
 
 ---
 
-## Full flavor — thin vs fat dispatch
+## Linux — thin vs fat dispatch
 
 ```mermaid
 flowchart LR
@@ -31,17 +31,18 @@ flowchart LR
 
   thin --> embed
   thin -->|"CLI subcommands"| api["EdgeletAPI client"]
-  thin -->|"edgelet daemon"| extract["extract if needed"]
+  thin -->|"edgelet daemon\n(engine=edgelet)"| extract["extract if needed"]
   extract --> data
   extract --> fat
   fat --> ctr
+  thin -->|"edgelet daemon\n(docker/podman)"| ext["external engine\n(no extract)"]
 ```
 
-**Lazy extract:** On first `edgelet daemon` after the thin binary is replaced (upgrade), the new embed hash unpacks to `/var/lib/edgelet/data/<hash>/`, verifies `bin/edgelet` (fat) and auxiliaries, then rotates `data/current` and `data/previous` symlinks. A later daemon start reuses `current` when the bundle is already ready.
+**Lazy extract:** On first `edgelet daemon` with `containerEngine: edgelet` after the thin binary is replaced (upgrade), the new embed hash unpacks to `/var/lib/edgelet/data/<hash>/`, verifies `bin/edgelet` (fat) and auxiliaries, then rotates `data/current` and `data/previous` symlinks.
+
+**External engines:** When `containerEngine` is `docker` or `podman`, the thin daemon does **not** extract the bundle; it connects to the host engine socket with boot-time retries.
 
 **Break-glass:** Operators may invoke the fat runtime directly, e.g. `/var/lib/edgelet/data/current/bin/edgelet daemon`, bypassing thin dispatch (useful for debugging; normal production path remains thin).
-
-**Lite:** Single `cmd/edgelet` binary — CLI + daemon, no embed, no two-layer split.
 
 ---
 
@@ -49,12 +50,12 @@ flowchart LR
 
 ```
 .
-├── cmd/edgelet/              # Thin entry (full linux): CLI + embed + daemon dispatch
-│                             # Monolithic entry (lite): CLI + daemon
-├── cmd/edgelet-server/       # Fat entry (full only): daemon + containerd child — not in PATH
+├── cmd/edgelet/              # Thin entry (linux): CLI + embed + daemon dispatch
+│                             # Monolithic entry (darwin/windows): CLI + daemon
+├── cmd/edgelet-server/       # Fat entry (linux only): daemon + containerd child — not in PATH
 ├── internal/
 │   ├── auth/                 # JWT, TLS, EdgeletAPI PKI and token lifecycle
-│   ├── buildmeta/            # Compile-time flavor (lite | full)
+│   ├── buildmeta/            # Platform capability (HasEmbeddedEngine, AllowedEngines)
 │   ├── config/               # YAML config load/save, SIGHUP reload
 │   ├── edgeletapi/           # EdgeletAPI HTTP/WebSocket server (:54321)
 │   ├── fieldagent/           # Controller communication and sync
@@ -67,9 +68,9 @@ flowchart LR
     ├── containerd/           # In-process containerd service (edgelet engine)
     └── engine/
         ├── engine.go         # ContainerEngine interface
-        ├── docker/           # Docker adapter
-        ├── podman/           # Podman adapter
-        └── edgelet/          # Embedded containerd adapter (full flavor)
+        ├── docker/           # Docker adapter (linux + desktop)
+        ├── podman/           # Podman adapter (linux + desktop)
+        └── edgelet/          # Embedded containerd adapter (linux only)
 ```
 
 ---
@@ -83,7 +84,7 @@ graph TD
     supervisor["Supervisor"]
     fieldagent["Field Agent"]
     processmanager["Process Manager"]
-    engine["ContainerEngine<br/>(docker / podman / edgelet)"]
+    engine["ContainerEngine<br/>(edgelet / docker / podman)"]
     embedded_containerd["Embedded containerd<br/>(edgelet engine only)"]
     edgeletapi["EdgeletAPI :54321"]
     store["SQLite Store"]
@@ -135,21 +136,20 @@ The field agent polls for configuration changes, loads microservices/registries/
 
 ---
 
-## Container engines
+## Container engines (by platform)
 
-| `containerEngine` | Build flavor | Description |
-|-------------------|--------------|-------------|
-| `edgelet` | **full** (linux) | Embedded containerd + crun + CNI; no host runtime required |
-| `docker` | **lite** | Host Docker socket |
-| `podman` | **lite** | Host Podman socket |
+| Platform | Allowed `containerEngine` | Default | Binary layout |
+|----------|---------------------------|---------|---------------|
+| **linux** | `edgelet`, `docker`, `podman` | `edgelet` | Thin + fat-in-tar when using `edgelet`; monolithic dispatch path for docker/podman |
+| **darwin / windows** | `docker`, `podman` | `docker` | Monolithic |
 
 See [container-engine.md](container-engine.md) for paths, CNI, and RuntimeClass shims.
 
 ---
 
-## DNS (full flavor)
+## DNS (embedded engine)
 
-Full-flavor deployments can run an embedded authoritative DNS subsystem for bridge-network service discovery. Operational runbook: [../embedded-dns-runbook.md](../embedded-dns-runbook.md).
+Linux deployments with `containerEngine: edgelet` can run an embedded authoritative DNS subsystem for bridge-network service discovery. Operational runbook: [../embedded-dns-runbook.md](../embedded-dns-runbook.md).
 
 Agent DNS name: `edgelet.default.svc.bridge.local`.
 

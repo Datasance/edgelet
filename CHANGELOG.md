@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Plan 7 — unified edgelet (drop full/lite):** Linux ships one binary per arch (`build/edgelet-linux-<arch>`) with runtime `containerEngine` selection (`edgelet`, `docker`, `podman`; default **`edgelet`**). Release tarballs renamed to **`edgelet-linux-<arch>.tar.gz`** (no `-full`/`-lite` suffix). `install.sh --flavor=` deprecated. Provision body sends `flavor: "edgelet"` with `engine` = configured value. Darwin/windows remain monolithic (docker/podman only).
 - **Plan 6 — full linux two-layer binary (k3s-style):** Download artifact is a **thin** `edgelet` (`CGO=0`, CLI + `go:embed` zstd bundle + `daemon` dispatch). Runtime (**fat**) lives in the tar as `bin/edgelet` and extracts to `/var/lib/edgelet/data/<hash>/` with `current` / `previous` symlinks. Systemd remains `ExecStart=/usr/local/bin/edgelet daemon`. Operator CLI does not require extract; `--edgelet-containerd-child` runs from the fat ELF only.
 - **Plan 6 — monolithic diet (full):** Docker/Podman engine packages build-tagged `lite` only; full factory accepts `containerEngine=edgelet` at compile time.
 - EdgeletAPI code rename: Go packages, auth/PKI paths, CLI client symbols, and CI gates aligned with `.cursor/edgelet/NAMING.md` (HTTP routes remain `/v1/...`).
@@ -34,14 +35,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Staging Pot checklist (provision, volumeMounts/NATS, router+NATS MS) not yet signed off.
 - Air-gapped `install.sh` smoke and some cross-arch daemon smokes pending linux VM (embedded IT green on primary arch).
 
-### Binary size (Plan 6 — thin full download gate)
+### Binary size (Plan 7 — unified linux thin gate)
+
+| Arch | Thin `edgelet-linux-*` (bytes) | ≤ 55 MiB |
+|------|-------------------------------|----------|
+| linux/amd64 | 32,690,338 | **yes** (~31.2 MiB) |
+| linux/arm64 | 29,753,506 | **yes** (~28.4 MiB) |
+
+Fat runtime ELF in tar (uncompressed, informational): amd64 **~50.5 MiB**, arm64 **~48.1 MiB** (Plan 6 reference). Desktop darwin/arm64: size gate n/a.
+
+### Breaking (Plan 7)
+
+- Linux release tarball names: `edgelet-linux-<arch>.tar.gz` replaces `edgelet-*-linux-<arch>-{full|lite}.tar.gz`.
+- Compile-time full/lite flavor removed; use `containerEngine` in config instead.
+- `install.sh --flavor=` ignored (deprecated).
+
+### Binary size (Plan 6 — thin full download gate, superseded paths)
 
 | Arch | Thin full (bytes) | ≤ 55 MiB |
 |------|-------------------|----------|
 | linux/amd64 | 32,448,674 | **yes** (~31.0 MiB) |
 | linux/arm64 | 29,491,362 | **yes** (~28.1 MiB) |
 
-Fat runtime ELF in tar (uncompressed): amd64 **50,489,304 B**, arm64 **47,230,392 B**. Lite monolithic unchanged (~29 / ~28 MiB).
+Fat runtime ELF in tar (uncompressed): amd64 **50,489,304 B**, arm64 **47,230,392 B**.
 
 ### Added — Edgelet greenfield release (Plans 1–4)
 
