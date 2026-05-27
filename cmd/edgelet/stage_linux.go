@@ -1,4 +1,4 @@
-//go:build linux && full && !cgo
+//go:build linux && !cgo
 
 package main
 
@@ -12,8 +12,8 @@ import (
 )
 
 func stageAndRunDaemon(args []string) error {
-	if _, err := data.ExtractBundle(""); err != nil {
-		return fmt.Errorf("extract embedded runtime: %w", err)
+	if err := data.EnsureExtracted(); err != nil {
+		return fmt.Errorf("prepare embedded runtime: %w", err)
 	}
 
 	fatPath, err := data.RuntimeBinary()

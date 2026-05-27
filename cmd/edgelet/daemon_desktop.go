@@ -1,4 +1,4 @@
-//go:build lite
+//go:build !linux
 
 package main
 
@@ -48,7 +48,7 @@ func runDaemon() {
 	cfg := config.GetInstance()
 
 	var prestarted *edgeletcontainerdd.Service
-	if buildmeta.IsFull() && cfg.ContainerEngine == constants.EngineEdgelet {
+	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()
 		if err != nil {

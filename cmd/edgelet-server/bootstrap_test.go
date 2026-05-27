@@ -1,12 +1,15 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
 type fakeContainerdService struct {
@@ -111,11 +114,38 @@ func TestStartEmbeddedContainerdWithRetryDeps_FailsAfterMaxAttempts(t *testing.T
 	if !strings.Contains(err.Error(), "did not become ready") {
 		t.Fatalf("expected max-attempt error, got: %v", err)
 	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("expected explicit error text, got: %v", err)
+	}
 	if attempt != containerdBootstrapMaxAttempts {
 		t.Fatalf("expected %d attempts, got %d", containerdBootstrapMaxAttempts, attempt)
 	}
 	expectedCleanupCalls := containerdBootstrapMaxAttempts // one pre-start + between retries
 	if cleanupCalls != expectedCleanupCalls {
 		t.Fatalf("expected cleanup calls=%d, got %d", expectedCleanupCalls, cleanupCalls)
+	}
+}
+
+func TestWrapBootstrapContainerdStartErr_NilSafe(t *testing.T) {
+	err := wrapBootstrapContainerdStartErr(nil)
+	if err == nil {
+		t.Fatal("expected error for nil input")
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("unexpected nil wrap artifact: %v", err)
+	}
+}
+
+func TestWrapBootstrapContainerdStartErr_ClassifiesSpawnFailure(t *testing.T) {
+	startErr := fmt.Errorf("%w: missing fat runtime", edgeletcontainerdd.ErrContainerdSpawnFailure)
+	err := wrapBootstrapContainerdStartErr(startErr)
+	if err == nil {
+		t.Fatal("expected wrapped error")
+	}
+	if !strings.Contains(err.Error(), "child spawn failed") {
+		t.Fatalf("expected spawn classification, got: %v", err)
+	}
+	if !errors.Is(err, edgeletcontainerdd.ErrContainerdSpawnFailure) {
+		t.Fatalf("expected spawn error in chain, got: %v", err)
 	}
 }

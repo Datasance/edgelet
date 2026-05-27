@@ -1,4 +1,4 @@
-//go:build lite
+//go:build !linux
 
 package main
 
@@ -9,5 +9,5 @@ import (
 )
 
 func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
-	return nil, fmt.Errorf("embedded containerd bootstrap is only available in full linux builds")
+	return nil, fmt.Errorf("embedded containerd bootstrap is only available on linux")
 }
