@@ -1,4 +1,4 @@
-//go:build !linux || !full
+//go:build !linux
 
 package data
 
@@ -9,7 +9,7 @@ func EmbeddedBundleHash() string {
 	return ""
 }
 
-// RuntimeBinary is unavailable on lite and non-linux builds.
+// RuntimeBinary is unavailable on non-linux builds.
 func RuntimeBinary() (string, error) {
-	return "", fmt.Errorf("embedded runtime not available in this build")
+	return "", fmt.Errorf("embedded runtime not available on this platform")
 }

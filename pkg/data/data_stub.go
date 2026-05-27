@@ -1,4 +1,4 @@
-//go:build !linux || !full || cgo
+//go:build !linux || cgo
 
 package data
 

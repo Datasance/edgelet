@@ -1,4 +1,4 @@
-//go:build linux && full
+//go:build linux && !cgo
 
 package data
 
@@ -57,6 +57,8 @@ func EnsureExtracted() error {
 	return nil
 }
 
+// getAssetAndDir returns the embedded zstd asset name and the authoritative bundle
+// directory data/<sha256-prefix>/ (k3s: dataDir/data/{hash}/ from the embed filename).
 func getAssetAndDir(dataDir string) (string, string, error) {
 	names := AssetNames()
 	if len(names) == 0 {
@@ -91,10 +93,96 @@ func resolveCurrentBundle(dataDir string) (string, error) {
 	return target, nil
 }
 
+func installedBundleHash(dataDir string) (string, error) {
+	dir, err := resolveCurrentBundle(dataDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(filepath.Clean(dir)), nil
+}
+
+// bundleHashMatchesInstalled reports whether the current symlink targets wantHash.
+// An empty wantHash means the running binary has no embedded bundle (tests/dev);
+// in that case any ready current bundle is accepted.
+func bundleHashMatchesInstalled(dataDir, wantHash string) bool {
+	if wantHash == "" {
+		return true
+	}
+	have, err := installedBundleHash(dataDir)
+	if err != nil {
+		return false
+	}
+	return have == wantHash
+}
+
+// promoteCurrentBundle rotates data/current into data/previous and symlinks current at dir
+// (authoritative embed-hash tree). Refreshes stable data/cni symlinks (k3s extract tail + sync).
+func promoteCurrentBundle(dataDir, dir string) error {
+	root, err := datadir.BundleRoot(dataDir)
+	if err != nil {
+		return err
+	}
+	currentSymlink := filepath.Join(root, "current")
+	if target, err := os.Readlink(currentSymlink); err == nil {
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(root, target)
+		}
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		if filepath.Clean(target) == filepath.Clean(absDir) {
+			return setupStableCNIDir(root, dir)
+		}
+	}
+
+	previousSymlink := filepath.Join(root, "previous")
+	if _, err := os.Lstat(currentSymlink); err == nil {
+		if err := os.Rename(currentSymlink, previousSymlink); err != nil {
+			return fmt.Errorf("rotate current symlink: %w", err)
+		}
+	}
+	if err := os.Symlink(dir, currentSymlink); err != nil {
+		return fmt.Errorf("create current symlink: %w", err)
+	}
+	return setupStableCNIDir(root, dir)
+}
+
+func logBundleHashMismatchIfNeeded(dataDir, wantHash string) {
+	if wantHash == "" {
+		return
+	}
+	have, err := installedBundleHash(dataDir)
+	if err != nil || have == wantHash {
+		return
+	}
+	dataLogger.Infof("Embedded bundle hash mismatch (installed=%s embedded=%s); re-extracting", have, wantHash)
+}
+
+// tryUseAuthoritativeBundle uses data/<embed-hash>/ when ready (k3s: Stat on hash dir, not current).
+// It synchronizes current/previous/cni to that tree and returns it for exec/runtime resolution.
+func tryUseAuthoritativeBundle(dataDir, wantHash, dir string) (string, bool, error) {
+	if !isBundleReady(dir) {
+		return "", false, nil
+	}
+	logBundleHashMismatchIfNeeded(dataDir, wantHash)
+	if err := promoteCurrentBundle(dataDir, dir); err != nil {
+		return "", false, err
+	}
+	setExtractDir(dir)
+	return dir, true, nil
+}
+
+// extract unpacks the embedded bundle when needed. Selection follows k3s: the running thin
+// binary's embed hash names the authoritative directory; data/current is updated on promote only.
 func extract(dataDir string) (string, error) {
-	if dir, err := resolveCurrentBundle(dataDir); err == nil {
-		setExtractDir(dir)
-		return dir, nil
+	wantHash := EmbeddedBundleHash()
+	if wantHash == "" {
+		if dir, err := resolveCurrentBundle(dataDir); err == nil {
+			setExtractDir(dir)
+			return dir, nil
+		}
+		return "", fmt.Errorf("no embedded data bundle found (run scripts/package-data before building full profile)")
 	}
 
 	asset, dir, err := getAssetAndDir(dataDir)
@@ -102,10 +190,13 @@ func extract(dataDir string) (string, error) {
 		return "", err
 	}
 
-	if isBundleReady(dir) {
-		setExtractDir(dir)
-		return dir, nil
+	if bundleDir, ok, err := tryUseAuthoritativeBundle(dataDir, wantHash, dir); err != nil {
+		return "", err
+	} else if ok {
+		return bundleDir, nil
 	}
+
+	logBundleHashMismatchIfNeeded(dataDir, wantHash)
 
 	root, err := datadir.BundleRoot(dataDir)
 	if err != nil {
@@ -123,9 +214,10 @@ func extract(dataDir string) (string, error) {
 	}
 	defer flock.Release(lock)
 
-	if isBundleReady(dir) {
-		setExtractDir(dir)
-		return dir, nil
+	if bundleDir, ok, err := tryUseAuthoritativeBundle(dataDir, wantHash, dir); err != nil {
+		return "", err
+	} else if ok {
+		return bundleDir, nil
 	}
 
 	dataLogger.Infof("Preparing data dir %s", dir)
@@ -151,22 +243,11 @@ func extract(dataDir string) (string, error) {
 		return "", fmt.Errorf("verify extracted bin: %w", err)
 	}
 
-	currentSymlink := filepath.Join(root, "current")
-	previousSymlink := filepath.Join(root, "previous")
-	if _, err := os.Lstat(currentSymlink); err == nil {
-		if err := os.Rename(currentSymlink, previousSymlink); err != nil {
-			return "", fmt.Errorf("rotate current symlink: %w", err)
-		}
-	}
-	if err := os.Symlink(dir, currentSymlink); err != nil {
-		return "", fmt.Errorf("create current symlink: %w", err)
-	}
-
 	if err := os.Rename(tempDest, dir); err != nil {
 		return "", fmt.Errorf("rename extracted bundle: %w", err)
 	}
 
-	if err := setupStableCNIDir(root, dir); err != nil {
+	if err := promoteCurrentBundle(dataDir, dir); err != nil {
 		return "", err
 	}
 
