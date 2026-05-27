@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/models"
 )
@@ -40,13 +39,11 @@ func TestGetStatusReport_IncludesAvailableRuntimes(t *testing.T) {
 	}
 }
 
-func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
+func TestGetAvailableRuntimes_DeterministicByEngineAndEmbeddedMode(t *testing.T) {
 	originalLister := listRuntimeClassesForStatus
 	originalExternal := listExternalRuntimesForStatus
 	originalCatalog := listCatalogRuntimesForStatus
 	t.Cleanup(func() {
-		buildmeta.Flavor = originalFlavor
 		listRuntimeClassesForStatus = originalLister
 		listExternalRuntimesForStatus = originalExternal
 		listCatalogRuntimesForStatus = originalCatalog
@@ -84,13 +81,12 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
 
 	runtimes = getAvailableRuntimesForEngine("edgelet", false)
 	if strings.Join(runtimes, ",") != "crun" {
-		t.Fatalf("expected baseline iofog runtimes on non-full flavor, got: %v", runtimes)
+		t.Fatalf("expected baseline edgelet runtimes without embedded mode, got: %v", runtimes)
 	}
 
-	buildmeta.Flavor = buildmeta.FlavorFull
 	runtimes = getAvailableRuntimesForEngine("edgelet", true)
 	if strings.Join(runtimes, ",") != "crun,edgelet,runc,spin" {
-		t.Fatalf("expected full flavor iofog runtimes with runtime classes and catalog, got: %v", runtimes)
+		t.Fatalf("expected embedded edgelet runtimes with runtime classes and catalog, got: %v", runtimes)
 	}
 }
 

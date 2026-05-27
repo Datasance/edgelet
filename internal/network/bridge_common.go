@@ -1,5 +1,3 @@
-//go:build lite || full
-
 package network
 
 import "github.com/datasance/edgelet/internal/constants"

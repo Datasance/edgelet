@@ -1,4 +1,3 @@
-//go:build lite
 
 // Package docker implements the ContainerEngine interface backed by the Docker daemon.
 // It wraps the existing pkg/docker client so all Docker-specific logic stays there;

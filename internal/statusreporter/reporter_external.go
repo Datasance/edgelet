@@ -1,4 +1,4 @@
-//go:build lite
+//go:build !linux || !cgo
 
 package statusreporter
 

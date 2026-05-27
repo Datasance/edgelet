@@ -1,4 +1,3 @@
-//go:build lite
 
 package docker
 

@@ -229,13 +229,17 @@ func GetAvailableRuntimes() []string {
 	if cfg == nil {
 		return []string{constants.EngineDocker}
 	}
-	return getAvailableRuntimesForEngine(strings.ToLower(strings.TrimSpace(cfg.ContainerEngine)), buildmeta.IsFull())
+	return getAvailableRuntimesForEngine(strings.ToLower(strings.TrimSpace(cfg.ContainerEngine)), embeddedEdgeletRuntimes(cfg.ContainerEngine))
 }
 
-func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string {
+func embeddedEdgeletRuntimes(engineName string) bool {
+	return buildmeta.HasEmbeddedEngine() && strings.EqualFold(strings.TrimSpace(engineName), constants.EngineEdgelet)
+}
+
+func getAvailableRuntimesForEngine(engineName string, embeddedEdgelet bool) []string {
 	switch engineName {
 	case constants.EnginePodman:
-		if !fullFlavor {
+		if !embeddedEdgelet {
 			if external, err := listExternalRuntimesForStatus(constants.EnginePodman); err == nil && len(external) > 0 {
 				return sortedUniqueStrings(external)
 			}
@@ -243,7 +247,7 @@ func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string 
 		return []string{constants.EnginePodman}
 	case constants.EngineEdgelet:
 		baseline := []string{"crun"}
-		if !fullFlavor {
+		if !embeddedEdgelet {
 			return baseline
 		}
 
@@ -282,7 +286,7 @@ func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string 
 		runtimes = append(runtimes, extras...)
 		return runtimes
 	case constants.EngineDocker:
-		if !fullFlavor {
+		if !embeddedEdgelet {
 			if external, err := listExternalRuntimesForStatus(constants.EngineDocker); err == nil && len(external) > 0 {
 				return sortedUniqueStrings(external)
 			}

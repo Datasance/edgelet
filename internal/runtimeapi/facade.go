@@ -1038,7 +1038,7 @@ func (f *Facade) DeleteLocalDeployment(id string) error {
 }
 
 func (f *Facade) ensureRuntimeClassSupported() error {
-	if !buildmeta.IsFull() || !strings.EqualFold(strings.TrimSpace(f.cfg.ContainerEngine), "edgelet") {
+	if !buildmeta.HasEmbeddedEngine() || !strings.EqualFold(strings.TrimSpace(f.cfg.ContainerEngine), "edgelet") {
 		return ErrRuntimeClassUnsupported
 	}
 	return nil

@@ -1,4 +1,4 @@
-//go:build lite
+//go:build linux
 
 package engines
 
@@ -13,7 +13,6 @@ import (
 )
 
 // NewContainerEngine constructs and returns the engine specified by engineType.
-// Valid values: "docker", "podman", "edgelet".
 func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
 	switch engineType {
 	case constants.EngineDocker:
@@ -27,7 +26,7 @@ func NewContainerEngine(engineType string, cfg engine.EngineConfig) (engine.Cont
 		return edgeletengine.New(cfg.LogDir), nil
 
 	default:
-		return nil, fmt.Errorf("unknown container engine type %q: must be one of docker, podman, edgelet", engineType)
+		return nil, fmt.Errorf("unknown container engine type %q: must be one of edgelet, docker, podman", engineType)
 	}
 }
 
