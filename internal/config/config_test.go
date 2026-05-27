@@ -62,7 +62,7 @@ func TestValidateConfig(t *testing.T) {
 	cfg.DeviceScanFrequency = 60
 	cfg.EdgeGuardFrequency = 0
 	cfg.GPSScanFrequency = 60
-	if buildmeta.IsFull() {
+	if buildmeta.HasEmbeddedEngine() {
 		cfg.ContainerEngine = constants.EngineEdgelet
 		cfg.DockerURL = constants.EdgeletEngineDockerURL()
 	} else {
