@@ -1,3 +1,5 @@
+//go:build lite
+
 package main
 
 import (
@@ -16,12 +18,6 @@ import (
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
-)
-
-var (
-	version   = "dev"
-	buildTime = "unknown"
-	gitCommit = "unknown"
 )
 
 func runDaemon() {

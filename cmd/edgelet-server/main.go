@@ -1,10 +1,11 @@
+//go:build linux && full
+
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/datasance/edgelet/internal/cli/cmd"
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
@@ -16,7 +17,6 @@ func main() {
 		}
 	}()
 
-	// 1. Containerd child mode — no config load.
 	if handled, err := edgeletcontainerdd.MaybeRunChildProcess(os.Args); handled {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Embedded containerd child failed: %v\n", err)
@@ -25,11 +25,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 2. Operator CLI subcommands.
-	if cmd.ShouldRunCLI(os.Args) {
-		os.Exit(cmd.Execute())
+	if len(os.Args) > 1 && os.Args[1] != "daemon" {
+		fmt.Fprintf(os.Stderr, "fat runtime only supports `edgelet daemon` and --edgelet-containerd-child\n")
+		os.Exit(1)
 	}
 
-	// 3. Default: daemon supervisor.
 	runDaemon()
 }
