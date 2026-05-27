@@ -12,7 +12,7 @@ Edgelet supports multiple container runtimes through a single `ContainerEngine` 
 | `docker` | **lite** | Host Docker (`dockerUrl`, e.g. `unix:///var/run/docker.sock`) |
 | `podman` | **lite** | Host Podman socket |
 
-Factory: `internal/engines/factory.go` — invalid pairings fail at startup validation.
+Factory: `internal/engines/factory_full.go` (full) / `factory_lite.go` (lite) — invalid pairings fail at **compile** time (full excludes docker/podman packages) and at **config** validation on lite.
 
 ```yaml
 profiles:
@@ -29,8 +29,12 @@ Isolated from host Docker/Podman installations:
 
 | Path | Purpose |
 |------|---------|
+| `/usr/local/bin/edgelet` | **Thin** download binary (full): CLI + embed; systemd entry |
+| `/var/lib/edgelet/data/current/bin/edgelet` | **Fat** runtime ELF (full): daemon + in-process containerd |
+| `/var/lib/edgelet/data/current/bin/` | Shim (`containerd-shim-runc-v2`), `crun`, CNI multicall + symlinks |
+| `/var/lib/edgelet/data/current` / `previous` | Symlinks to active / prior extracted bundle directories |
 | `/var/lib/edgelet/` | User data (`diskDirectory`) |
-| `/var/lib/edgelet-containerd/` | Containerd images, snapshots, CNI |
+| `/var/lib/edgelet-containerd/` | Containerd images, snapshots, CNI state |
 | `/run/edgelet/containerd.sock` | Containerd API socket |
 | `/run/edgelet/edgelet.sock` | EdgeletAPI Unix socket |
 
@@ -40,7 +44,9 @@ Private bridge network: `edgelet0` (CIDR `172.18.0.0/16`). Container name prefix
 
 ## Embedded containerd (full flavor)
 
-When `containerEngine: edgelet`, `edgelet daemon` starts in-process containerd. Bundled runtimes:
+When `containerEngine: edgelet`, production starts via **`/usr/local/bin/edgelet daemon`** (thin). The thin process extracts the zstd bundle when needed, then execs **`/var/lib/edgelet/data/current/bin/edgelet daemon`** (fat). The fat binary runs the supervisor and in-process containerd. The containerd child process is spawned with `--edgelet-containerd-child` from the **fat** path only (not from the thin wrapper).
+
+Bundled runtimes (inside the extracted `bin/` directory):
 
 - `containerd-shim-runc-v2` — OCI shim
 - `crun` — default low-level runtime

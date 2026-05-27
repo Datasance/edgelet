@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test/embedded/build.sh
 #
-# Runs the Plan 4 embed pipeline and cross-compiles the edgelet multicall binary
-# (full flavor) for the Linux target that will run inside the Lima VM.
+# Runs the Plan 6 two-layer embed pipeline and cross-compiles the thin full
+# edgelet binary for the Linux target that will run inside the Lima VM.
 #
 # Output:
 #   build/edgelet-linux-<arch>-full
@@ -41,19 +41,20 @@ cd "${REPO_ROOT}"
 chmod +x scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet 2>/dev/null || true
 
 ###############################################################################
-# Step 1: Plan 4 embed pipeline (download → build-embedded → package-data)
+# Step 1: Plan 6 embed pipeline (download → build-embedded → fat → package-data)
 ###############################################################################
-log_step "Embed pipeline: download → build-embedded → package-data"
+log_step "Embed pipeline: download → build-embedded → fat → package-data"
 ARCH="${TARGET_ARCH}" ./scripts/download
 ARCH="${TARGET_ARCH}" ./scripts/build-embedded
+ARCH="${TARGET_ARCH}" ./scripts/build-edgelet fat
 ARCH="${TARGET_ARCH}" ./scripts/package-data
-log_ok "Embedded zstd bundle packaged"
+log_ok "Embedded zstd bundle packaged (fat runtime in bin/edgelet)"
 
 ###############################################################################
-# Step 2: Cross-compile edgelet full binary
+# Step 2: Cross-compile thin full wrapper (CGO=0, embeds zstd tar)
 ###############################################################################
-log_step "Cross-compiling edgelet multicall (full flavor, CGO=1)"
-ARCH="${TARGET_ARCH}" ./scripts/build-edgelet
+log_step "Cross-compiling edgelet thin full wrapper (CGO=0)"
+ARCH="${TARGET_ARCH}" EDGELET_CI_ARCHES="${TARGET_ARCH}" ./scripts/build-edgelet
 
 EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}-full"
 [[ -f "${EDGELET_BIN}" ]] || die "Expected binary not found: ${EDGELET_BIN}"

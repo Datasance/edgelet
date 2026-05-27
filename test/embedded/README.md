@@ -64,14 +64,15 @@ Installed automatically by `setup.sh`:
 
 ## Build pipeline
 
-`build.sh` uses the Plan 4 embed pipeline (no legacy `build/download-deps.sh`):
+`build.sh` uses the Plan 6 two-layer embed pipeline:
 
 1. `scripts/download`
 2. `scripts/build-embedded`
-3. `scripts/package-data`
-4. `scripts/build-edgelet`
+3. `scripts/build-edgelet fat` — fat runtime → `build/bin/edgelet`
+4. `scripts/package-data` — zstd tar with fat in `bin/edgelet`
+5. `scripts/build-edgelet` — thin wrapper embeds tar
 
-Output: **`build/edgelet-linux-<arch>-full`** — single multicall binary (CLI + daemon + containerd child on full linux).
+Output: **`build/edgelet-linux-<arch>-full`** — thin download binary (CLI + embed + `daemon` dispatch). Systemd `edgelet daemon` lazy-extracts and execs the fat runtime from `/var/lib/edgelet/data/current/bin/edgelet`.
 
 ## Test Phases
 

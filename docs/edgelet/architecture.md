@@ -2,9 +2,46 @@
 
 ## Overview
 
-Edgelet is the edge agent for the ioFog platform. A single multicall binary (`edgelet`) provides the operator CLI and the supervisor daemon (`edgelet daemon`). The supervisor maintains bidirectional sync with the ioFog Controller, reconciles desired microservice state against a pluggable container engine, and exposes the on-device **EdgeletAPI** for local administration.
+Edgelet is the edge agent for the ioFog platform. The **lite** flavor ships one monolithic ELF: operator CLI, supervisor daemon, and (on full linux only) a separate runtime path described below.
 
-All container operations go through a `ContainerEngine` interface (`docker`, `podman`, or embedded `edgelet` containerd).
+The **full** flavor (linux only) uses a **two-layer** layout modeled on k3s:
+
+| Layer | Path | Role |
+|-------|------|------|
+| **Thin** | `/usr/local/bin/edgelet` | Download/OTA binary (`CGO=0`): `go:embed` zstd bundle, extract orchestration, **all operator CLI** (EdgeletAPI client), `version` / help |
+| **Fat** | `/var/lib/edgelet/data/current/bin/edgelet` | Runtime ELF (`CGO=1`): supervisor, field agent, process manager, EdgeletAPI server, in-process containerd; `--edgelet-containerd-child` |
+
+`edgelet daemon` (including systemd) starts at the **thin** entry, lazy-extracts the embedded bundle when needed, then `exec`s the **fat** binary with the same arguments. Operator commands (`edgelet ms …`, `edgelet deploy …`, etc.) run **in the thin process** and do not require extract.
+
+The supervisor maintains bidirectional sync with the ioFog Controller, reconciles desired microservice state against a pluggable container engine, and exposes the on-device **EdgeletAPI** for local administration.
+
+All container operations go through a `ContainerEngine` interface (`docker`, `podman`, or embedded `edgelet` containerd). Full builds compile in the **edgelet** engine only; docker/podman packages are lite-only.
+
+---
+
+## Full flavor — thin vs fat dispatch
+
+```mermaid
+flowchart LR
+  thin["/usr/local/bin/edgelet\n(thin)"]
+  embed["go:embed\n*.tar.zst"]
+  data["/var/lib/edgelet/data/hash/"]
+  fat["data/current/bin/edgelet\n(fat)"]
+  ctr["containerd in-process\n+ --edgelet-containerd-child"]
+
+  thin --> embed
+  thin -->|"CLI subcommands"| api["EdgeletAPI client"]
+  thin -->|"edgelet daemon"| extract["extract if needed"]
+  extract --> data
+  extract --> fat
+  fat --> ctr
+```
+
+**Lazy extract:** On first `edgelet daemon` after the thin binary is replaced (upgrade), the new embed hash unpacks to `/var/lib/edgelet/data/<hash>/`, verifies `bin/edgelet` (fat) and auxiliaries, then rotates `data/current` and `data/previous` symlinks. A later daemon start reuses `current` when the bundle is already ready.
+
+**Break-glass:** Operators may invoke the fat runtime directly, e.g. `/var/lib/edgelet/data/current/bin/edgelet daemon`, bypassing thin dispatch (useful for debugging; normal production path remains thin).
+
+**Lite:** Single `cmd/edgelet` binary — CLI + daemon, no embed, no two-layer split.
 
 ---
 
@@ -12,7 +49,9 @@ All container operations go through a `ContainerEngine` interface (`docker`, `po
 
 ```
 .
-├── cmd/edgelet/              # Multicall entry (CLI + daemon + containerd child)
+├── cmd/edgelet/              # Thin entry (full linux): CLI + embed + daemon dispatch
+│                             # Monolithic entry (lite): CLI + daemon
+├── cmd/edgelet-server/       # Fat entry (full only): daemon + containerd child — not in PATH
 ├── internal/
 │   ├── auth/                 # JWT, TLS, EdgeletAPI PKI and token lifecycle
 │   ├── buildmeta/            # Compile-time flavor (lite | full)
@@ -39,7 +78,8 @@ All container operations go through a `ContainerEngine` interface (`docker`, `po
 
 ```mermaid
 graph TD
-    main["edgelet daemon"]
+    thin["edgelet daemon\n(thin exec)"]
+    main["fat edgelet daemon"]
     supervisor["Supervisor"]
     fieldagent["Field Agent"]
     processmanager["Process Manager"]
@@ -49,6 +89,7 @@ graph TD
     store["SQLite Store"]
     config["Config"]
 
+    thin --> main
     main --> supervisor
     supervisor --> store
     supervisor --> fieldagent
@@ -122,6 +163,9 @@ Agent DNS name: `edgelet.default.svc.bridge.local`.
 | `/etc/edgelet/edgelet-api` | EdgeletAPI CLI bearer token (auto-created) |
 | `/etc/edgelet/edgeletapi-*.crt/key` | EdgeletAPI TLS PKI |
 | `/var/lib/edgelet/` | User data, volume mounts, SQLite |
+| `/var/lib/edgelet/data/<hash>/` | Extracted zstd bundle (fat `bin/edgelet`, shim, crun, CNI, pause image) |
+| `/var/lib/edgelet/data/current` | Symlink → active `<hash>/` directory |
+| `/var/lib/edgelet/data/previous` | Symlink → prior bundle (rollback reference) |
 | `/var/lib/edgelet-containerd/` | Containerd state (edgelet engine) |
 | `/var/run/edgelet/` | Runtime sockets and PID files |
 | `/var/log/edgelet/` | Rotated daemon logs |

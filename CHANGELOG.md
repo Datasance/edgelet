@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Plan 6 — full linux two-layer binary (k3s-style):** Download artifact is a **thin** `edgelet` (`CGO=0`, CLI + `go:embed` zstd bundle + `daemon` dispatch). Runtime (**fat**) lives in the tar as `bin/edgelet` and extracts to `/var/lib/edgelet/data/<hash>/` with `current` / `previous` symlinks. Systemd remains `ExecStart=/usr/local/bin/edgelet daemon`. Operator CLI does not require extract; `--edgelet-containerd-child` runs from the fat ELF only.
+- **Plan 6 — monolithic diet (full):** Docker/Podman engine packages build-tagged `lite` only; full factory accepts `containerEngine=edgelet` at compile time.
 - EdgeletAPI code rename: Go packages, auth/PKI paths, CLI client symbols, and CI gates aligned with `.cursor/edgelet/NAMING.md` (HTTP routes remain `/v1/...`).
 - Bare **`edgelet`** invokes the operator CLI (help banner); start the daemon explicitly with **`edgelet daemon`** or **`systemctl start edgelet`** (`ExecStart=…/edgelet daemon` in systemd/packaging).
 - Documentation migration: obsolete root docs replaced by `docs/edgelet/` tree (architecture, deployment, EdgeletAPI v1, CLI migration); root `README.md` and hand-written CLI docs updated for Edgelet terminology.
 
+### Added
+
+- **`cmd/edgelet-server`:** Fat full-linux entry (supervisor, field agent, EdgeletAPI server, in-process containerd).
+- **`scripts/check-containerd-fork.sh`:** CI guard that `go list -m` resolves containerd to `github.com/k3s-io/containerd/v2 v2.2.3-k3s1`.
+
 ## [1.0.0-edgelet] — TBD (proposed)
 
-> **Plan 5 status (2026-05-26):** Not released — embed accumulation P0 fixed; amd64 full **+156 KiB** over 55 MiB budget; staging Pot sign-off pending. See `.cursor/edgelet/docs/05-verification.md`.
+> **Plan 5 status (2026-05-27):** Binary size gate **PASS** after Plan 6 (thin full ≤ 55 MiB amd64/arm64). Pot staging sign-off and some install/OTA smokes still pending. See `.cursor/edgelet/docs/05-verification.md`.
 
 ### Fixed — embed packaging (Plan 5 P0)
 
@@ -24,13 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known blockers (pre-release)
 
-- linux/amd64 full **57,831,896 B** (~55.15 MiB) — **+156 KiB** over RFC budget (arm64 **52,971,536 B** passes).
 - Staging Pot checklist (provision, volumeMounts/NATS, router+NATS MS) not yet signed off.
-- Embedded integration tests and air-gapped install smoke pending linux VM.
+- Air-gapped `install.sh` smoke and some cross-arch daemon smokes pending linux VM (embedded IT green on primary arch).
+
+### Binary size (Plan 6 — thin full download gate)
+
+| Arch | Thin full (bytes) | ≤ 55 MiB |
+|------|-------------------|----------|
+| linux/amd64 | 32,448,674 | **yes** (~31.0 MiB) |
+| linux/arm64 | 29,491,362 | **yes** (~28.1 MiB) |
+
+Fat runtime ELF in tar (uncompressed): amd64 **50,489,304 B**, arm64 **47,230,392 B**. Lite monolithic unchanged (~29 / ~28 MiB).
 
 ### Added — Edgelet greenfield release (Plans 1–4)
 
-- Single **`edgelet`** multicall binary (CLI + daemon + `--edgelet-containerd-child` on full linux).
+- **`edgelet`** multicall: thin wrapper + extracted fat runtime on full linux; monolithic on lite; `--edgelet-containerd-child` on fat full linux.
 - k3s-style zstd embed pipeline; release tarballs `edgelet-*-{full|lite}.tar.gz`.
 - Greenfield **`install.sh`** + **`edgelet.service`**; paths under `/var/lib/edgelet/`.
 - **`scripts/ci`** linux gate via Docker (`make ci-docker` on macOS).

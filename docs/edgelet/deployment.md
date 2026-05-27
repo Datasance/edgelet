@@ -37,14 +37,26 @@ Packaging details: [../../packaging/PACKAGING-STRUCTURE.md](../../packaging/PACK
 
 ## Daemon and systemd
 
-The single `edgelet` binary handles CLI subcommands and the supervisor:
+Production **full** flavor uses the **thin** binary as the systemd entry point. The unit never invokes the fat runtime path directly.
 
 ```bash
-edgelet daemon          # foreground (debug)
-systemctl start edgelet # production (systemd)
+edgelet daemon          # thin: extract if needed → exec fat … daemon
+systemctl start edgelet # ExecStart=/usr/local/bin/edgelet daemon
 ```
 
 Unit file: `packaging/systemd/edgelet.service` — `ExecStart=/usr/local/bin/edgelet daemon`.
+
+On first start (or after upgrading the thin binary), `edgelet daemon` **lazy-extracts** the embedded zstd bundle into `/var/lib/edgelet/data/<sha256-prefix>/`, verifies contents, and updates `data/current` (retaining `data/previous` for the prior hash). Subsequent starts skip re-extract when `current` already points at a ready bundle.
+
+**Operator CLI** (`edgelet ms`, `edgelet deploy`, `edgelet version`, …) runs in the **thin** process and does **not** trigger extract.
+
+**Break-glass:** Run the fat runtime directly when debugging extract or dispatch issues:
+
+```bash
+/var/lib/edgelet/data/current/bin/edgelet daemon
+```
+
+**Lite** flavor: one monolithic `/usr/local/bin/edgelet` — CLI and daemon in the same ELF; no data-dir extract.
 
 ---
 
@@ -52,10 +64,10 @@ Unit file: `packaging/systemd/edgelet.service` — `ExecStart=/usr/local/bin/edg
 
 Set at **compile time** via `internal/buildmeta`. The running config must match the binary.
 
-| Flavor | `containerEngine` | Notes |
-|--------|-------------------|--------|
-| **full** | `edgelet` only | CGO + embedded containerd; linux only |
-| **lite** | `docker` or `podman` | CGO disabled; linux, darwin, windows |
+| Flavor | `containerEngine` | Binary layout | Notes |
+|--------|-------------------|---------------|--------|
+| **full** | `edgelet` only | Thin OTA binary + fat runtime in embed tar | Thin `CGO=0` ≤ 55 MiB gate; fat in `/var/lib/edgelet/data/current/bin/edgelet`; linux only |
+| **lite** | `docker` or `podman` | Monolithic ELF | `CGO=0`; linux, darwin, windows |
 
 Verify flavor:
 
@@ -65,6 +77,12 @@ edgelet system version -o json | jq .daemon.flavor
 ```
 
 Changing **lite ↔ full** on the same host is not supported; uninstall and reinstall the correct flavor.
+
+### OTA upgrade (full, thin binary)
+
+Fleet OTA for **full** typically replaces only `/usr/local/bin/edgelet` (thin) and restarts `edgelet.service`. The new thin embed carries a new bundle hash; the first `edgelet daemon` after restart extracts into `/var/lib/edgelet/data/<new-hash>/` and rotates `current` / `previous`. Prior extracted trees may remain on disk until pruned manually.
+
+`install.sh` tarball layout is unchanged in Plan 6; see packaging docs for install/upgrade flags. Greenfield reinstall is required when migrating from pre–Plan 6 single-ELF full layouts.
 
 ---
 

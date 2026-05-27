@@ -91,6 +91,9 @@ func runLocalVersion(ctx *run.CLIContext) error {
 		buildmeta.Flavor,
 		buildmeta.AllowedEnginesCSV(),
 	)
+	if ctx.Verbose {
+		text += formatVerboseVersionDetails()
+	}
 	return run.WriteHuman(ctx, text)
 }
 
