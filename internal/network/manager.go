@@ -13,7 +13,6 @@ import (
 
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/docker"
 )
 
 const (
@@ -343,8 +342,8 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 		}
 	}
 
-	// Get Docker bridge interface name (with timeout, matching Java)
-	dockerBridgeInterfaceName := m.getDockerBridgeInterfaceName()
+	// Get CNI bridge interface name (same on full and lite).
+	cniBridgeInterfaceName := m.getCNIBridgeInterfaceName()
 
 	// Get all network interfaces
 	interfaces, err := net.Interfaces()
@@ -352,14 +351,13 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 		return nil, fmt.Errorf("failed to get network interfaces: %w", err)
 	}
 
-	var dockerBridgeInterface *net.Interface
+	var cniBridgeInterface *net.Interface
 
-	// First pass: find interfaces that can connect to controller
-	// Skip Docker bridge on first pass (matching Java logic)
+	// First pass: find interfaces that can connect to controller.
+	// Skip the container bridge on first pass (matching Java logic).
 	for _, iface := range interfaces {
-		// Skip Docker bridge interface on first pass
-		if dockerBridgeInterfaceName != "" && iface.Name == dockerBridgeInterfaceName {
-			dockerBridgeInterface = &iface
+		if cniBridgeInterfaceName != "" && iface.Name == cniBridgeInterfaceName {
+			cniBridgeInterface = &iface
 			continue
 		}
 
@@ -379,11 +377,11 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 		}
 	}
 
-	// If no interface found and Docker bridge exists, try it without connection check
-	if dockerBridgeInterface != nil {
-		connectedAddr := m.getConnectedAddress(parsedURL, controllerHost, controllerPort, dockerBridgeInterface, false)
+	// If no interface found and the CNI bridge exists, try it without connection check.
+	if cniBridgeInterface != nil {
+		connectedAddr := m.getConnectedAddress(parsedURL, controllerHost, controllerPort, cniBridgeInterface, false)
 		if connectedAddr != nil {
-			logging.LogInfo(moduleName, fmt.Sprintf("Using Docker bridge interface: %s with address: %s", dockerBridgeInterface.Name, connectedAddr.Address.String()))
+			logging.LogInfo(moduleName, fmt.Sprintf("Using CNI bridge interface: %s with address: %s", cniBridgeInterface.Name, connectedAddr.Address.String()))
 			return connectedAddr, nil
 		}
 	}
@@ -460,44 +458,6 @@ func (m *Manager) testConnection(localIP net.IP, controllerHost, controllerPort 
 		logging.LogWarn(moduleName, fmt.Sprintf("Failed to close test connection: %v", err))
 	}
 	return true
-}
-
-// getDockerBridgeInterfaceName gets the Docker bridge interface name with timeout
-// Matches Java: setDockerBridgeInterfaceName() with 1 second timeout
-func (m *Manager) getDockerBridgeInterfaceName() string {
-	// Use a channel to get result with timeout
-	resultChan := make(chan string, 1)
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Error getting Docker bridge name: %v", r))
-				resultChan <- ""
-			}
-		}()
-
-		dockerClient := docker.GetInstance()
-		if dockerClient == nil {
-			resultChan <- ""
-			return
-		}
-
-		bridgeName, err := dockerClient.GetDockerBridgeName()
-		if err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Unable to set Docker Bridge Interface Name: %v", err))
-			resultChan <- ""
-			return
-		}
-		resultChan <- bridgeName
-	}()
-
-	select {
-	case bridgeName := <-resultChan:
-		return bridgeName
-	case <-time.After(1 * time.Second):
-		logging.LogWarn(moduleName, "Timeout getting Docker bridge interface name")
-		return ""
-	}
 }
 
 // extractHostFromURL extracts the host from a URL (fallback method)

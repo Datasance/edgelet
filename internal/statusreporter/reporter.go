@@ -2,7 +2,6 @@ package statusreporter
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -17,7 +16,6 @@ import (
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/docker/docker/client"
 )
 
 const (
@@ -59,42 +57,6 @@ var listRuntimeClassesForStatus = func() ([]*models.LocalRuntimeClass, error) {
 		return nil, nil
 	}
 	return db.ListLocalRuntimeClasses()
-}
-
-var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
-	cfg := config.GetInstance()
-	if cfg == nil {
-		return nil, errors.New("config is not initialized")
-	}
-
-	opts := []client.Opt{
-		client.WithHost(strings.TrimSpace(cfg.DockerURL)),
-		client.WithAPIVersionNegotiation(),
-	}
-	if strings.TrimSpace(cfg.DockerAPIVersion) != "" {
-		opts = append(opts, client.WithVersion(strings.TrimSpace(cfg.DockerAPIVersion)))
-	}
-	cli, err := client.NewClientWithOpts(opts...)
-	if err != nil {
-		return nil, err
-	}
-	defer cli.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	info, err := cli.Info(ctx)
-	if err != nil {
-		return nil, err
-	}
-	runtimes := make([]string, 0, len(info.Runtimes))
-	for runtimeName := range info.Runtimes {
-		runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))
-		if runtimeName == "" {
-			continue
-		}
-		runtimes = append(runtimes, runtimeName)
-	}
-	return sortedUniqueStrings(runtimes), nil
 }
 
 // GetInstance returns the singleton StatusReporter instance
@@ -273,8 +235,10 @@ func GetAvailableRuntimes() []string {
 func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string {
 	switch engineName {
 	case constants.EnginePodman:
-		if external, err := listExternalRuntimesForStatus(constants.EnginePodman); err == nil && len(external) > 0 {
-			return sortedUniqueStrings(external)
+		if !fullFlavor {
+			if external, err := listExternalRuntimesForStatus(constants.EnginePodman); err == nil && len(external) > 0 {
+				return sortedUniqueStrings(external)
+			}
 		}
 		return []string{constants.EnginePodman}
 	case constants.EngineEdgelet:
@@ -296,6 +260,13 @@ func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string 
 				}
 			}
 		}
+		for _, handler := range listCatalogRuntimesForStatus() {
+			handler = strings.TrimSpace(handler)
+			if handler == "" {
+				continue
+			}
+			extrasMap[handler] = struct{}{}
+		}
 
 		extras := make([]string, 0, len(extrasMap))
 		for runtimeName := range extrasMap {
@@ -311,8 +282,10 @@ func getAvailableRuntimesForEngine(engineName string, fullFlavor bool) []string 
 		runtimes = append(runtimes, extras...)
 		return runtimes
 	case constants.EngineDocker:
-		if external, err := listExternalRuntimesForStatus(constants.EngineDocker); err == nil && len(external) > 0 {
-			return sortedUniqueStrings(external)
+		if !fullFlavor {
+			if external, err := listExternalRuntimesForStatus(constants.EngineDocker); err == nil && len(external) > 0 {
+				return sortedUniqueStrings(external)
+			}
 		}
 		return []string{constants.EngineDocker}
 	default:

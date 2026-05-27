@@ -44,10 +44,12 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
 	originalFlavor := buildmeta.Flavor
 	originalLister := listRuntimeClassesForStatus
 	originalExternal := listExternalRuntimesForStatus
+	originalCatalog := listCatalogRuntimesForStatus
 	t.Cleanup(func() {
 		buildmeta.Flavor = originalFlavor
 		listRuntimeClassesForStatus = originalLister
 		listExternalRuntimesForStatus = originalExternal
+		listCatalogRuntimesForStatus = originalCatalog
 	})
 
 	listExternalRuntimesForStatus = func(engineName string) ([]string, error) {
@@ -65,6 +67,9 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
 			{Name: "edgelet", RuntimeName: "edgelet"},
 			{Name: "spin", RuntimeName: "spin"},
 		}, nil
+	}
+	listCatalogRuntimesForStatus = func() []string {
+		return []string{"spin", "runc"}
 	}
 
 	runtimes := getAvailableRuntimesForEngine("docker", false)
@@ -84,8 +89,8 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndFlavor(t *testing.T) {
 
 	buildmeta.Flavor = buildmeta.FlavorFull
 	runtimes = getAvailableRuntimesForEngine("edgelet", true)
-	if strings.Join(runtimes, ",") != "crun,edgelet,spin" {
-		t.Fatalf("expected full flavor iofog runtimes with runtime classes, got: %v", runtimes)
+	if strings.Join(runtimes, ",") != "crun,edgelet,runc,spin" {
+		t.Fatalf("expected full flavor iofog runtimes with runtime classes and catalog, got: %v", runtimes)
 	}
 }
 
