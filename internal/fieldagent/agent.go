@@ -1007,8 +1007,11 @@ func (fa *FieldAgent) clearLiteRuntimeArtifactsOnDeprovision(preserveLocal bool,
 	if preserveLocal {
 		return
 	}
-	if !buildmeta.IsLite() {
-		return
+	if buildmeta.HasEmbeddedEngine() {
+		engineType := strings.ToLower(strings.TrimSpace(fa.config.ContainerEngine))
+		if engineType == constants.EngineEdgelet {
+			return
+		}
 	}
 	engineType := strings.ToLower(strings.TrimSpace(fa.config.ContainerEngine))
 	if engineType != constants.EngineDocker && engineType != constants.EnginePodman {

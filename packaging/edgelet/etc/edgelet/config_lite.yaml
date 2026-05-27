@@ -1,5 +1,4 @@
-# Example profile for **lite** tarball (docker or podman only; no embedded containerd).
-# Use with install.sh --flavor=lite --container-engine=docker|podman
+# Example profile for external engine mode (docker or podman).
 currentProfile: production
 profiles:
   production:

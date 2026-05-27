@@ -15,9 +15,9 @@ func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {
 	f := NewFacade()
 	cfg := config.GetInstance()
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	if err := f.db.Open(t.TempDir()); err != nil {
 		t.Fatalf("failed to open test db: %v", err)

@@ -38,9 +38,8 @@ jobs:
           ## Downloads
 
           ### Binaries
-          - Linux AMD64: \`edgelet-linux-amd64-full\`, \`edgelet-linux-amd64-lite\`
-          - Linux ARM64: \`edgelet-linux-arm64-full\`, \`edgelet-linux-arm64-lite\`
-          - Linux ARMv7: \`edgelet-linux-arm-lite\`
+          - Linux: \`edgelet-linux-amd64.tar.gz\`, \`edgelet-linux-arm64.tar.gz\`
+          - Desktop: \`edgelet-darwin-arm64.tar.gz\`, \`edgelet-windows-amd64.tar.gz\`
 
           ### Packages
           - DEB: \`edgelet_${{ steps.version.outputs.version }}_amd64.deb\`

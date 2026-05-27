@@ -84,13 +84,16 @@ func contextOrBootstrap() *run.CLIContext {
 func runLocalVersion(ctx *run.CLIContext) error {
 	ctx = contextOrBootstrap()
 	text := fmt.Sprintf(
-		"edgelet %s (build: %s, commit: %s)\n  build flavor: %s\n  allowed containerEngine: %s\n",
+		"edgelet %s (build: %s, commit: %s)\n  embedded engine: %t\n  allowed containerEngine: %s\n",
 		ctx.Version,
 		ctx.BuildTime,
 		ctx.GitCommit,
-		buildmeta.Flavor,
+		buildmeta.HasEmbeddedEngine(),
 		buildmeta.AllowedEnginesCSV(),
 	)
+	if ctx.Verbose {
+		text += formatVerboseVersionDetails()
+	}
 	return run.WriteHuman(ctx, text)
 }
 

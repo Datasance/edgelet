@@ -2,12 +2,13 @@
 
 ## Overview
 
-Edgelet uses **tarball-only** distribution with two **flavors** per Linux architecture (RFC R20):
+Edgelet uses **tarball-only** distribution. **Linux** ships one unified artifact per architecture; **darwin/windows** ship a monolithic desktop binary.
 
-| Flavor | Build | `containerEngine` | Notes |
-|--------|-------|-------------------|--------|
-| **full** | `cgo,full` embedded containerd | `edgelet` | `dockerUrl` → `unix:///run/edgelet/containerd.sock` |
-| **lite** | `lite`, CGO=0 | `docker` or `podman` | External engine only |
+| Platform | Artifact | `containerEngine` | Notes |
+|----------|----------|-------------------|--------|
+| **linux** | `edgelet-linux-<arch>.tar.gz` | `edgelet` (default), `docker`, `podman` | Thin OTA binary + embedded zstd fat runtime |
+| **darwin** | `edgelet-darwin-<arch>.tar.gz` | `docker` or `podman` | Monolithic; no embed |
+| **windows** | `edgelet-windows-amd64.tar.gz` | `docker` or `podman` | Monolithic; no embed |
 
 No **musl-suffixed** release line (RFC R9). Optional ops-only static linking: `STATIC_BUILD=true make build-linux-amd64`.
 
@@ -19,34 +20,35 @@ DEB/RPM are not used. Installation is via **`install.sh`**; removal via **`unins
 
 Release tarball names:
 
-`edgelet-<os>-<arch>-{full|lite}.tar.gz`
+- **Linux:** `edgelet-linux-<arch>.tar.gz`
+- **Darwin:** `edgelet-darwin-<arch>.tar.gz`
+- **Windows:** `edgelet-windows-amd64.tar.gz`
 
-Versioned copies: `edgelet-<VERSION>-linux-<arch>-{full|lite}.tar.gz`
+Versioned copies: `edgelet-<VERSION>-linux-<arch>.tar.gz` (and desktop equivalents).
 
 Examples:
 
-- `edgelet-linux-amd64-full.tar.gz`
-- `edgelet-linux-arm64-lite.tar.gz`
-- `edgelet-darwin-arm64-lite.tar.gz` (lite only)
+- `edgelet-linux-amd64.tar.gz`
+- `edgelet-linux-arm64.tar.gz`
+- `edgelet-darwin-arm64.tar.gz`
 
-Each tarball contains:
+Each linux tarball contains:
 
-- `edgelet` — single multicall binary (CLI + daemon + containerd child on full linux)
+- `edgelet` — thin wrapper (CLI + embed + `daemon` dispatch)
 - Optional `config.yaml.sample`
 
-Checksum manifests (`make release-tarballs`):
+Checksum manifest (`make release-tarballs`):
 
-- `dist/SHA256SUMS-lite`
-- `dist/SHA256SUMS-full`
+- `dist/SHA256SUMS`
 
 ---
 
 ## Build
 
 ```bash
-# Local default
-make build-edgelet-full    # linux full (needs deps embed on linux or Docker)
-make build-edgelet-lite
+# Local default (host OS)
+make build-edgelet-linux    # linux thin (needs deps embed on linux or Docker)
+make build-edgelet-local    # host: linux thin or desktop monolithic
 
 # Linux matrix (no musl targets)
 make build-all-archs
@@ -67,15 +69,16 @@ make ci-docker
 
 ## install.sh
 
-Default: **`--flavor=full`**.
+Default linux install uses **`edgelet-linux-<arch>.tar.gz`** (no flavor suffix).
 
 | Flag | Meaning |
 |------|---------|
-| `--flavor=full\|lite` | Must match tarball |
+| `--container-engine=` | `edgelet`, `docker`, or `podman` (linux default: **edgelet**) |
+| `--flavor=full\|lite` | **Deprecated** — ignored |
 | `--arch=` | Override auto-detected arch |
 | `--airgap` | Do not download; requires `--tarball-path` |
 | `--tarball-path=PATH` | Local `.tar.gz` |
-| `--upgrade` / `--rollback` | Same-flavor OTA |
+| `--upgrade` / `--rollback` | OTA |
 | `--non-interactive` | Pot-oriented install |
 | `--controller-url=` / `--provision-key=` | Optional convenience flags |
 
@@ -95,9 +98,9 @@ Install paths:
 
 | File | Use |
 |------|-----|
-| [config_lite.yaml](edgelet/etc/edgelet/config_lite.yaml) | Lite / docker or podman |
-| [config_full.yaml](edgelet/etc/edgelet/config_full.yaml) | Full / edgelet engine |
-| [config_new.yaml](edgelet/etc/edgelet/config_new.yaml) | Full multi-profile sample |
+| [config_lite.yaml](edgelet/etc/edgelet/config_lite.yaml) | External engine sample (docker/podman) |
+| [config_full.yaml](edgelet/etc/edgelet/config_full.yaml) | Embedded engine sample (`edgelet`) |
+| [config_new.yaml](edgelet/etc/edgelet/config_new.yaml) | Multi-profile sample |
 
 ---
 
@@ -105,12 +108,12 @@ Install paths:
 
 Unit template: [packaging/systemd/edgelet.service](../systemd/edgelet.service)
 
-Lite flavor adds `Wants=docker.service` or `Wants=podman.socket` as needed.
+When `containerEngine` is docker or podman, use `After=docker.service` or `After=podman.service` in a drop-in (see [docs/edgelet/deployment.md](../docs/edgelet/deployment.md)).
 
 ---
 
 ## CI
 
-- **`scripts/ci`** — linux gate: embed pipeline → build-edgelet → `go test` → size check (≤55 MB amd64/arm64 full)
+- **`scripts/ci`** — linux gate: embed pipeline → build-edgelet → `go test` → size check (≤55 MB amd64/arm64 thin)
 - **`.github/workflows/ci-go.yml`** — unit tests + optional Docker embed job
 - **`make test-embedded-ci`** — Lima VM embedded containerd tests (macOS)

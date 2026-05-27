@@ -34,7 +34,7 @@ func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 		"version":                buildInfo["version"],
 		"buildTime":              buildInfo["buildTime"],
 		"gitCommit":              buildInfo["gitCommit"],
-		"flavor":                 buildmeta.Flavor,
+		"embeddedEngine":         buildmeta.HasEmbeddedEngine(),
 		"allowedContainerEngine": buildmeta.AllowedEnginesCSV(),
 		"allowedEngines":         buildmeta.AllowedEngines(),
 	}

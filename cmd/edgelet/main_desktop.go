@@ -1,3 +1,5 @@
+//go:build !linux
+
 package main
 
 import (
@@ -16,7 +18,6 @@ func main() {
 		}
 	}()
 
-	// 1. Containerd child mode — no config load.
 	if handled, err := edgeletcontainerdd.MaybeRunChildProcess(os.Args); handled {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Embedded containerd child failed: %v\n", err)
@@ -25,11 +26,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 2. Operator CLI subcommands.
 	if cmd.ShouldRunCLI(os.Args) {
 		os.Exit(cmd.Execute())
 	}
 
-	// 3. Default: daemon supervisor.
 	runDaemon()
 }

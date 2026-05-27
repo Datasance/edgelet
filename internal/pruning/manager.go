@@ -10,7 +10,6 @@ import (
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/internal/workloadmeta"
-	"github.com/datasance/edgelet/pkg/docker"
 	"github.com/datasance/edgelet/pkg/engine"
 )
 
@@ -21,8 +20,7 @@ const (
 // Manager manages image pruning for all container engine types.
 type Manager struct {
 	config          *config.Config
-	dockerClient    *docker.Client
-	containerEngine engine.ContainerEngine // non-nil when a non-Docker engine is active
+	containerEngine engine.ContainerEngine // set by supervisor for all active engines
 	// getMicroserviceImages returns the image names of ALL currently configured
 	// microservices (running + stopped/restarting). Set by the supervisor via
 	// SetGetMicroservicesCallback. Matches Java MicroserviceManager.getLatestMicroservices().
@@ -59,8 +57,7 @@ var (
 func GetInstance() *Manager {
 	once.Do(func() {
 		instance = &Manager{
-			config:       config.GetInstance(),
-			dockerClient: docker.GetInstance(),
+			config: config.GetInstance(),
 		}
 		instance.ctx, instance.cancel = context.WithCancel(context.Background())
 		instance.freqCtx, instance.freqCancel = context.WithCancel(context.Background())
@@ -243,9 +240,7 @@ func (m *Manager) pruneContainers() {
 		}
 		return
 	}
-	if _, err := m.dockerClient.PruneContainers(); err != nil {
-		logging.LogError(moduleName, "Error pruning Docker containers", err)
-	}
+	m.pruneContainersDocker()
 }
 
 func (m *Manager) pruneVolumes() {
@@ -263,9 +258,7 @@ func (m *Manager) pruneVolumes() {
 		}
 		return
 	}
-	if _, err := m.dockerClient.PruneVolumes(); err != nil {
-		logging.LogError(moduleName, "Error pruning Docker volumes", err)
-	}
+	m.pruneVolumesDocker()
 }
 
 func (m *Manager) pruneImagesRunner() {
@@ -296,7 +289,7 @@ func (m *Manager) pruneImages() {
 		if eng != nil {
 			err = eng.DeleteImage(ctx, nameOrID)
 		} else {
-			err = m.dockerClient.RemoveImage(nameOrID)
+			err = m.deleteImageDocker(nameOrID)
 		}
 		if err != nil {
 			logging.LogError(moduleName, fmt.Sprintf("Error removing image %s", nameOrID), err)
@@ -333,33 +326,11 @@ func (m *Manager) getUnwantedImagesList(ctx context.Context, eng engine.Containe
 		}
 		runningContainers = conts
 	} else {
-		// Docker fallback: map docker.image.Summary → engine.ImageInfo
-		dockerImgs, err := m.dockerClient.GetImages()
+		var err error
+		allImages, runningContainers, err = m.listImagesAndContainersDocker(ctx)
 		if err != nil {
-			logging.LogError(moduleName, "Failed to get Docker images", err)
+			logging.LogError(moduleName, "Failed to list images via Docker fallback", err)
 			return []string{}
-		}
-		allImages = make([]engine.ImageInfo, 0, len(dockerImgs))
-		for _, di := range dockerImgs {
-			allImages = append(allImages, engine.ImageInfo{ID: di.ID, RepoTags: di.RepoTags})
-		}
-
-		dockerConts, err := m.dockerClient.GetRunningContainers()
-		if err != nil {
-			logging.LogError(moduleName, "Failed to get Docker running containers", err)
-			return []string{}
-		}
-		runningContainers = make([]engine.Container, 0, len(dockerConts))
-		for _, dc := range dockerConts {
-			labels := make(map[string]string, len(dc.Labels))
-			for k, v := range dc.Labels {
-				labels[k] = v
-			}
-			runningContainers = append(runningContainers, engine.Container{
-				ID:     dc.ID,
-				Image:  dc.Image,
-				Labels: labels,
-			})
 		}
 	}
 
@@ -443,14 +414,7 @@ func (m *Manager) PruneAgent() string {
 		return "\nSuccess - pruned dangling images"
 	}
 
-	// Docker engine: dangling only (docker system prune)
-	_, err := m.dockerClient.DockerPrune()
-	if err != nil {
-		logging.LogError(moduleName, "Error pruning dangling Docker images", err)
-		return "\nFailure - error pruning dangling images"
-	}
-	logging.LogInfo(moduleName, "Pruned dangling Docker images")
-	return "\nSuccess - pruned dangling images"
+	return m.pruneAgentDocker()
 }
 
 // ChangePruningFreqInterval reschedules frequency-based pruning with new interval.

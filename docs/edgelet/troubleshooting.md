@@ -22,14 +22,14 @@ Common issues when running Edgelet on edge nodes.
    tail -f /var/log/edgelet/daemon-startup.log
    ```
 
-3. Confirm flavor matches config:
+3. Confirm `containerEngine` is valid on this platform:
 
    ```bash
-   edgelet --version
+   edgelet system version -o json | jq '{allowedEngines, containerEngine}'
    grep containerEngine /etc/edgelet/config.yaml
    ```
 
-   Full flavor requires `containerEngine: edgelet`. Lite requires `docker` or `podman`.
+   Linux allows `edgelet`, `docker`, or `podman`. Darwin/windows allow `docker` or `podman` only.
 
 4. Check disk space:
 
@@ -39,7 +39,7 @@ Common issues when running Edgelet on edge nodes.
 
 ---
 
-## Containerd socket (full / edgelet engine)
+## Containerd socket (edgelet engine)
 
 **Symptoms:** `connection refused` to `/run/edgelet/containerd.sock`; microservices stuck in pull/create.
 
@@ -111,7 +111,7 @@ Common issues when running Edgelet on edge nodes.
 
 ---
 
-## External Docker / Podman (lite)
+## External Docker / Podman
 
 **Symptoms:** `Cannot connect to Docker daemon`; containers not starting.
 
@@ -139,7 +139,7 @@ edgelet config cert <base64-controller-cert>   # if TLS verification fails
 
 ## Embedded integration tests
 
-For full-flavor regressions on macOS, use the Lima VM pipeline:
+For embedded-engine regressions on macOS, use the Lima VM pipeline:
 
 ```bash
 ./test/embedded/run-all.sh

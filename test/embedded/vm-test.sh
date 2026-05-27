@@ -41,7 +41,26 @@ echo "======================================================================"
 ###############################################################################
 # Phase 1 — Extracted embedded binaries
 ###############################################################################
-log_step "Phase 1: Extracted embedded binaries"
+log_step "Phase 1: Extracted embedded binaries (thin → fat dispatch)"
+
+assert_ok "thin wrapper installed at /usr/local/bin/edgelet" \
+    R "test -x /usr/local/bin/edgelet"
+
+assert_ok "fat runtime extracted to data/current/bin/edgelet" \
+    R "test -x /var/lib/edgelet/data/current/bin/edgelet"
+
+assert_ok "thin wrapper and fat runtime are distinct paths" \
+    R "set -e
+thin=\$(readlink -f /usr/local/bin/edgelet)
+fat=\$(readlink -f /var/lib/edgelet/data/current/bin/edgelet)
+test \"\${thin}\" != \"\${fat}\""
+
+assert_ok "containerd child re-execs extracted fat runtime" \
+    R "set -e
+child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1)
+test -n \"\${child}\"
+exe=\$(readlink -f /proc/\${child}/exe)
+echo \"\${exe}\" | grep -Eq '/var/lib/edgelet/data/[^/]+/bin/edgelet\$'"
 
 assert_ok "containerd-shim-runc-v2 extracted" \
     R "test -x /var/lib/edgelet-containerd/bin/containerd-shim-runc-v2"
@@ -322,8 +341,11 @@ log_step "Phase 6: CLI integration"
 assert_ok "edgelet binary is executable" \
     R "test -x /usr/local/bin/edgelet"
 
-# assert_contains "edgelet version returns version string" "ioFog" \
-#     R "edgelet version"
+assert_contains "thin CLI version shows embedded engine without daemon extract" "embedded engine: true" \
+    R "edgelet version"
+
+assert_contains "thin CLI version lists allowed containerEngine values" "allowed containerEngine: edgelet,docker,podman" \
+    R "edgelet version"
 
 assert_contains "system info shows containerEngine=edgelet" "edgelet" \
     R "edgelet system info 2>/dev/null || edgelet system info"

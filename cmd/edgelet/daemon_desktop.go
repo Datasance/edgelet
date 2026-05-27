@@ -1,3 +1,5 @@
+//go:build !linux
+
 package main
 
 import (
@@ -16,12 +18,6 @@ import (
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
-)
-
-var (
-	version   = "dev"
-	buildTime = "unknown"
-	gitCommit = "unknown"
 )
 
 func runDaemon() {
@@ -52,7 +48,7 @@ func runDaemon() {
 	cfg := config.GetInstance()
 
 	var prestarted *edgeletcontainerdd.Service
-	if buildmeta.IsFull() && cfg.ContainerEngine == constants.EngineEdgelet {
+	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()
 		if err != nil {

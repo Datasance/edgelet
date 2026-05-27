@@ -70,28 +70,33 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build binary
-        working-directory: ./agent-go
+      - name: Install embed build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd gcc g++ pkg-config libseccomp-dev \
+            libyajl-dev libcap-dev libsystemd-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            autoconf automake libtool make
+
+      - name: Build unified linux edgelet
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
+          ARCH: ${{ matrix.arch }}
           GOARM: ${{ matrix.arm }}
         run: |
-          mkdir -p build
-          CGO_ENABLED=0 go build -trimpath -tags lite \
-            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w -X github.com/datasance/edgelet/internal/buildmeta.Flavor=lite" \
-            -o build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-lite ./cmd/edgelet
-          CGO_ENABLED=1 go build -trimpath -tags "cgo full" \
-            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=${GITHUB_SHA:0:7} -s -w -X github.com/datasance/edgelet/internal/buildmeta.Flavor=full" \
-            -o build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-full ./cmd/edgelet
+          chmod +x scripts/*
+          ARCH=${{ matrix.arch }} ./scripts/download
+          ARCH=${{ matrix.arch }} ./scripts/build-embedded
+          ARCH=${{ matrix.arch }} ./scripts/build-edgelet fat
+          ARCH=${{ matrix.arch }} ./scripts/package-data
+          ARCH=${{ matrix.arch }} ./scripts/build-edgelet
+          ARCH=${{ matrix.arch }} ./scripts/binary_size_check.sh
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            agent-go/build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-lite
-            agent-go/build/edgelet-${{ matrix.os }}-${{ matrix.arch }}-full
+            build/edgelet-linux-${{ matrix.arch }}
 
   docker:
     name: Build Docker Image

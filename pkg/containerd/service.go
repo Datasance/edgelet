@@ -1,4 +1,4 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package edgeletcontainerdd
 
@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/data"
 )
 
 const maxRetries = 30
@@ -49,6 +50,7 @@ var containerdReconfigureRetryDelay = 500 * time.Millisecond
 var containerdReconfigureMaxAttempts = 2
 
 var findManagedShimPIDs = findManagedShimPIDsFromProc
+var resolveChildExecutable = data.RuntimeBinary
 var signalPID = syscall.Kill
 var writeConfigForService = writeConfigFile
 var readLKGForService = readLastKnownGoodConfig
@@ -318,10 +320,23 @@ func (s *Service) Start() error {
 	case <-s.ready:
 		return nil
 	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("containerd failed to start: %w", err)
-		}
+		return describeStartupFailure(err)
+	}
+}
+
+func describeStartupFailure(err error) error {
+	if err == nil {
 		return ErrContainerdExitedEarly
+	}
+	switch {
+	case errors.Is(err, ErrContainerdSpawnFailure):
+		return fmt.Errorf("spawn embedded containerd child: %w", err)
+	case errors.Is(err, ErrContainerdReadiness):
+		return fmt.Errorf("wait for embedded containerd readiness: %w", err)
+	case errors.Is(err, ErrContainerdExitedEarly):
+		return err
+	default:
+		return fmt.Errorf("embedded containerd run loop failed: %w", err)
 	}
 }
 
@@ -422,9 +437,9 @@ func (s *Service) IsHealthy() bool {
 }
 
 func (s *Service) spawnChild() (*exec.Cmd, error) {
-	execPath, err := os.Executable()
+	execPath, err := resolveChildExecutable()
 	if err != nil {
-		return nil, fmt.Errorf("resolve daemon executable: %w", err)
+		return nil, fmt.Errorf("resolve fat runtime executable: %w", err)
 	}
 
 	args := []string{

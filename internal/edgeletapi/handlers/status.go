@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/dnsresolver"
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -38,7 +39,7 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Parse status report into a map
 	statusMap := parseStatusReport(statusReport)
-	if buildmeta.IsFull() {
+	if buildmeta.HasEmbeddedEngine() && strings.EqualFold(strings.TrimSpace(config.GetInstance().ContainerEngine), "edgelet") {
 		augmentWithDNSStatus(statusMap)
 	}
 

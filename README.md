@@ -2,7 +2,7 @@
 
 [![agent-go CI](https://github.com/datasance/agent/actions/workflows/agent-go.yml/badge.svg)](https://github.com/datasance/agent/actions/workflows/agent-go.yml)
 
-Greenfield edge agent for the ioFog platform — single multicall `edgelet` binary (CLI + daemon + embedded containerd child on full/linux). Manages microservice containers, syncs with the Controller, and exposes the on-device **EdgeletAPI** for local administration.
+Greenfield edge agent for the ioFog platform — single `edgelet` binary per platform (linux: thin CLI + embed + fat runtime; desktop: monolithic). Manages microservice containers, syncs with the Controller, and exposes the on-device **EdgeletAPI** for local administration.
 
 **Documentation:** [docs/edgelet/README.md](docs/edgelet/README.md)
 
@@ -13,7 +13,7 @@ Greenfield edge agent for the ioFog platform — single multicall `edgelet` bina
 ├── cmd/edgelet/             # Multicall entry (CLI, daemon, containerd child)
 ├── internal/
 │   ├── auth/                # TLS / JWT / EdgeletAPI PKI
-│   ├── buildmeta/           # Compile-time flavor (lite | full)
+│   ├── buildmeta/           # Platform capability (embedded engine, allowed engines)
 │   ├── edgeletapi/          # EdgeletAPI HTTP/WebSocket (:54321)
 │   ├── fieldagent/          # Controller communication
 │   ├── processmanager/      # Container reconciliation
@@ -34,10 +34,10 @@ Greenfield edge agent for the ioFog platform — single multicall `edgelet` bina
 |------|-----------------|-------|
 | Go | **1.24** | In `go.mod` |
 | Make | any | GNU Make |
-| Docker / Podman | 26.10+ | Lite flavor only |
+| Docker / Podman | 26.10+ | When `containerEngine` is docker/podman |
 | golangci-lint | v1.64.4 | Auto-installed by `make lint` |
 
-For **full** (embedded) engine builds on Linux, install cross-compilers before building:
+For **linux** thin builds with embedded runtime, install cross-compilers before building:
 
 ```bash
 sudo apt-get install -y \
@@ -47,18 +47,18 @@ sudo apt-get install -y \
 
 ## Container engine
 
-Two **build flavors** (compile-time via `internal/buildmeta`). Config must match the binary:
+Runtime selection via `containerEngine` in config (validated per GOOS):
 
-| Build flavor | Allowed `containerEngine` | Notes |
-|--------------|----------------------------|--------|
-| **full** (default, linux) | `edgelet` only | CGO + embedded containerd |
-| **lite** | `docker` or `podman` | CGO disabled; external engine |
+| Platform | Allowed `containerEngine` | Default |
+|----------|---------------------------|---------|
+| **linux** | `edgelet`, `docker`, `podman` | **`edgelet`** |
+| **darwin / windows** | `docker`, `podman` | `docker` |
 
 | Value | Description |
 |-------|-------------|
+| `edgelet` | Embedded containerd (linux only) |
 | `docker` | Host Docker (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
 | `podman` | Host Podman |
-| `edgelet` | Embedded containerd — **full flavor only** |
 
 ```yaml
 profiles:
@@ -72,18 +72,16 @@ Details: [docs/edgelet/container-engine.md](docs/edgelet/container-engine.md)
 ## Building
 
 ```bash
-make build                 # CLI + daemon for FLAVOR (default: full)
-make build FLAVOR=lite     # lite daemon + CLI
+make build                    # host OS: linux thin or desktop monolithic
+make build-edgelet-linux      # unified linux thin (ARCH=amd64 default)
+make deps                     # embed pipeline before linux thin build
 
-make build-cli
-make build-daemon-full     # CGO=1 + embedded deps
-make build-daemon-lite     # CGO=0
-```
-
-Cross-compilation (lite + full per arch):
-
-```bash
-make build-all-archs
+make build-cli                # alias for local edgelet
+make build-daemon-embedded    # alias for build-edgelet-linux
+make build-linux-amd64        # deps + thin for amd64
+make build-linux-arm64        # deps + thin for arm64
+make build-all-archs          # linux matrix (amd64, arm64, arm, riscv64)
+make build-desktop-darwin     # darwin monolithic
 make release-tarballs VERSION=v1.0.0
 ```
 
@@ -95,11 +93,11 @@ make test-unit
 make test-coverage
 ```
 
-Embedded full-flavor integration (Lima VM on macOS): [test/embedded/README.md](test/embedded/README.md)
+Embedded-engine integration (Lima VM on macOS): [test/embedded/README.md](test/embedded/README.md)
 
 ## Local development
 
-Non-Linux hosts use **lite** flavor (`containerEngine: docker`):
+Non-Linux hosts use desktop monolithic build (`containerEngine: docker`):
 
 ```bash
 make install-dev start-dev
@@ -117,14 +115,14 @@ tail -f dev/var/log/edgelet/daemon-startup.log
 
 ## Installation
 
-Tarball + `install.sh` only (no DEB/RPM). Default flavor: **full**.
+Tarball + `install.sh` only (no DEB/RPM). Default linux engine: **edgelet**.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/datasance/agent/main/install.sh | sudo sh -s -- --flavor=full
-sudo sh install.sh --flavor=full --tarball-path=edgelet-linux-amd64-full.tar.gz
+curl -fsSL https://raw.githubusercontent.com/datasance/agent/main/install.sh | sudo sh
+sudo sh install.sh --tarball-path=edgelet-linux-amd64.tar.gz
 ```
 
-Tarball names: `edgelet-<VERSION>-linux-<ARCH>-{full|lite}.tar.gz`
+Tarball names: `edgelet-linux-<arch>.tar.gz` (desktop: `edgelet-darwin-<arch>.tar.gz`)
 
 ```bash
 edgelet daemon                    # foreground
@@ -168,7 +166,7 @@ make lint
 
 | Workflow | Purpose |
 |----------|---------|
-| `.github/workflows/ci-go.yml` | Build lite + full, unit tests |
+| `.github/workflows/ci-go.yml` | Build linux + desktop, unit tests |
 | `.github/workflows/build.yml` | Release matrix |
 
 ## License

@@ -22,6 +22,11 @@ if [ ! -d build/bin ] || [ ! -f build/images/pause.tar.gz ]; then
   exit 1
 fi
 
+if [ ! -f build/bin/edgelet ]; then
+  echo "ERROR: fat runtime missing at build/bin/edgelet (run: ARCH=${ARCH:-amd64} ./scripts/build-edgelet fat)" >&2
+  exit 1
+fi
+
 rm -rf build/stage build/out
 mkdir -p build/stage/bin build/stage/images build/out
 mkdir -p pkg/data/embed

@@ -93,17 +93,18 @@ func ValidateConfig(cfg *Config) error {
 		}
 	}
 
-	// Validate container engine (binary flavor restricts allowed engines)
+	// Validate container engine (platform capability restricts allowed engines)
 	eng := strings.ToLower(strings.TrimSpace(cfg.ContainerEngine))
-	if buildmeta.IsLite() {
-		if eng != constants.EngineDocker && eng != constants.EnginePodman {
-			errors = append(errors, fmt.Sprintf("this agent build (flavor=lite) only supports containerEngine: docker, podman (got %q)", cfg.ContainerEngine))
+	allowed := buildmeta.AllowedEngines()
+	engineAllowed := false
+	for _, candidate := range allowed {
+		if eng == candidate {
+			engineAllowed = true
+			break
 		}
 	}
-	if buildmeta.IsFull() {
-		if eng != constants.EngineEdgelet {
-			errors = append(errors, fmt.Sprintf("this agent build (flavor=full) requires containerEngine: edgelet (got %q)", cfg.ContainerEngine))
-		}
+	if !engineAllowed {
+		errors = append(errors, fmt.Sprintf("containerEngine %q is not supported on this platform (allowed: %s)", cfg.ContainerEngine, strings.Join(allowed, ", ")))
 	}
 	if eng != constants.EngineDocker && eng != constants.EnginePodman && eng != constants.EngineEdgelet {
 		errors = append(errors, "containerEngine must be one of: docker, podman, edgelet")

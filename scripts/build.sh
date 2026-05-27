@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for ioFog Agent (default: full flavor, same as `make build`)
+# Build script for Edgelet (default: host OS build, same as `make build`)
 
 set -e
 
@@ -8,9 +8,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-FLAVOR="${FLAVOR:-full}"
-echo "Building Edgelet (FLAVOR=${FLAVOR})..."
-make build-edgelet "FLAVOR=${FLAVOR}"
+echo "Building Edgelet..."
+make build
 
 echo "Build complete!"
 echo "Binaries:"

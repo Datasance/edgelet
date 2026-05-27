@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestHandleVersion_IncludesFlavorAndAllowedEngine(t *testing.T) {
+func TestHandleVersion_IncludesEmbeddedEngineAndAllowedEngines(t *testing.T) {
 	h := &VersionHandler{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/version", nil)
 	rec := httptest.NewRecorder()
@@ -21,7 +21,7 @@ func TestHandleVersion_IncludesFlavorAndAllowedEngine(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode version response: %v", err)
 	}
-	requiredKeys := []string{"version", "buildTime", "gitCommit", "flavor", "allowedContainerEngine"}
+	requiredKeys := []string{"version", "buildTime", "gitCommit", "embeddedEngine", "allowedContainerEngine"}
 	for _, key := range requiredKeys {
 		if _, ok := body[key]; !ok {
 			t.Fatalf("expected key %q in version response, got %v", key, body)

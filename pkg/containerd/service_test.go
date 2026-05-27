@@ -1,4 +1,4 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package edgeletcontainerdd
 
@@ -13,6 +13,16 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDescribeStartupFailureNilReturnsExitedEarly(t *testing.T) {
+	err := describeStartupFailure(nil)
+	if !errors.Is(err, ErrContainerdExitedEarly) {
+		t.Fatalf("expected ErrContainerdExitedEarly, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("unexpected nil wrap artifact: %v", err)
+	}
+}
 
 func TestStartPropagatesRunError(t *testing.T) {
 	svc := NewService()
@@ -436,5 +446,19 @@ func TestNotifyUnexpectedExitInvokesHandler(t *testing.T) {
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("expected unexpected-exit handler callback")
+	}
+}
+
+func TestSpawnChildSurfacesRuntimeResolutionError(t *testing.T) {
+	prev := resolveChildExecutable
+	resolveChildExecutable = func() (string, error) {
+		return "", errors.New("missing fat runtime")
+	}
+	t.Cleanup(func() { resolveChildExecutable = prev })
+
+	svc := NewService()
+	_, err := svc.spawnChild()
+	if err == nil || !strings.Contains(err.Error(), "resolve fat runtime") {
+		t.Fatalf("expected resolution error, got %v", err)
 	}
 }

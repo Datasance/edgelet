@@ -1,8 +1,9 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package main
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,13 +62,13 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 
 	for attempt := 1; attempt <= containerdBootstrapMaxAttempts; attempt++ {
 		if err := deps.ensureDependencies(); err != nil {
-			lastErr = fmt.Errorf("prepare embedded dependencies: %w", err)
+			lastErr = wrapBootstrapErr("prepare embedded runtime bundle", err)
 		} else {
 			svc := deps.newService()
 			if err := svc.Start(); err == nil {
 				return svc, nil
 			}
-			lastErr = fmt.Errorf("start embedded containerd: %w", err)
+			lastErr = wrapBootstrapContainerdStartErr(err)
 			svc.Stop()
 		}
 
@@ -93,5 +94,31 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 		}
 	}
 
-	return nil, fmt.Errorf("embedded containerd did not become ready after %d attempts: %w", containerdBootstrapMaxAttempts, lastErr)
+	if lastErr == nil {
+		lastErr = errors.New("embedded containerd startup failed with no recorded error")
+	}
+	return nil, fmt.Errorf("embedded containerd did not become ready after %d attempts: %v", containerdBootstrapMaxAttempts, lastErr)
+}
+
+func wrapBootstrapErr(stage string, err error) error {
+	if err == nil {
+		return fmt.Errorf("%s failed with no error detail", stage)
+	}
+	return fmt.Errorf("%s: %w", stage, err)
+}
+
+func wrapBootstrapContainerdStartErr(err error) error {
+	if err == nil {
+		return errors.New("embedded containerd Start returned no error detail")
+	}
+	switch {
+	case errors.Is(err, edgeletcontainerdd.ErrContainerdSpawnFailure):
+		return fmt.Errorf("embedded containerd child spawn failed: %w", err)
+	case errors.Is(err, edgeletcontainerdd.ErrContainerdReadiness):
+		return fmt.Errorf("embedded containerd readiness check failed: %w", err)
+	case errors.Is(err, edgeletcontainerdd.ErrContainerdExitedEarly):
+		return fmt.Errorf("embedded containerd exited before ready: %w", err)
+	default:
+		return fmt.Errorf("embedded containerd startup failed: %w", err)
+	}
 }

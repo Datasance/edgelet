@@ -11,13 +11,17 @@ import (
 	"strings"
 )
 
-// Verify checks sha256sums and symlinks from manifest files in dir.
+// Verify checks sha256sums and symlinks from manifest files in dir, then
+// validates the fat edgelet runtime ELF in dir.
 func Verify(dir string) error {
 	if err := VerifySums(dir, ".sha256sums"); err != nil {
 		return fmt.Errorf("verify sums: %w", err)
 	}
 	if err := VerifyLinks(dir, ".links"); err != nil {
 		return fmt.Errorf("verify links: %w", err)
+	}
+	if err := VerifyFatRuntime(filepath.Join(dir, FatRuntimeName)); err != nil {
+		return fmt.Errorf("verify fat runtime: %w", err)
 	}
 	return nil
 }

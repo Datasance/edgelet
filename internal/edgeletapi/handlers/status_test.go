@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {
@@ -50,12 +52,10 @@ func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {
 	}
 }
 
-func TestHandleStatus_ExcludesDNSKeysForLiteFlavor(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	defer func() {
-		buildmeta.Flavor = originalFlavor
-	}()
+func TestHandleStatus_ExcludesDNSKeysWithoutEmbeddedEdgeletEngine(t *testing.T) {
+	embedded := false
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	defer buildmeta.SetHasEmbeddedEngineForTest(nil)
 
 	handler := &StatusHandler{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
@@ -71,16 +71,19 @@ func TestHandleStatus_ExcludesDNSKeysForLiteFlavor(t *testing.T) {
 		t.Fatalf("failed to decode status payload: %v", err)
 	}
 	if _, ok := payload["dnsStarted"]; ok {
-		t.Fatalf("expected dnsStarted to be absent for lite flavor, payload=%v", payload)
+		t.Fatalf("expected dnsStarted to be absent without embedded edgelet engine, payload=%v", payload)
 	}
 }
 
-func TestHandleStatus_IncludesDNSKeysForFullFlavor(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	defer func() {
-		buildmeta.Flavor = originalFlavor
-	}()
+func TestHandleStatus_IncludesDNSKeysForEmbeddedEdgeletEngine(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	defer buildmeta.SetHasEmbeddedEngineForTest(nil)
+
+	cfg := config.GetInstance()
+	originalEngine := cfg.ContainerEngine
+	cfg.ContainerEngine = constants.EngineEdgelet
+	defer func() { cfg.ContainerEngine = originalEngine }()
 
 	handler := &StatusHandler{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
@@ -96,17 +99,11 @@ func TestHandleStatus_IncludesDNSKeysForFullFlavor(t *testing.T) {
 		t.Fatalf("failed to decode status payload: %v", err)
 	}
 	if _, ok := payload["dnsStarted"]; !ok {
-		t.Fatalf("expected dnsStarted to be present for full flavor, payload=%v", payload)
+		t.Fatalf("expected dnsStarted to be present for embedded edgelet engine, payload=%v", payload)
 	}
 }
 
 func TestHandleStatus_IncludesAvailableNetworkInterfaces(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	defer func() {
-		buildmeta.Flavor = originalFlavor
-	}()
-
 	handler := &StatusHandler{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
@@ -126,12 +123,6 @@ func TestHandleStatus_IncludesAvailableNetworkInterfaces(t *testing.T) {
 }
 
 func TestHandleStatus_IncludesAvailableRuntimes(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	defer func() {
-		buildmeta.Flavor = originalFlavor
-	}()
-
 	handler := &StatusHandler{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
 	rec := httptest.NewRecorder()
