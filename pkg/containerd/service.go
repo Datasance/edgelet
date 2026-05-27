@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/datasance/edgelet/pkg/data"
 )
 
 const maxRetries = 30
@@ -49,6 +50,7 @@ var containerdReconfigureRetryDelay = 500 * time.Millisecond
 var containerdReconfigureMaxAttempts = 2
 
 var findManagedShimPIDs = findManagedShimPIDsFromProc
+var resolveChildExecutable = data.RuntimeBinary
 var signalPID = syscall.Kill
 var writeConfigForService = writeConfigFile
 var readLKGForService = readLastKnownGoodConfig
@@ -422,9 +424,9 @@ func (s *Service) IsHealthy() bool {
 }
 
 func (s *Service) spawnChild() (*exec.Cmd, error) {
-	execPath, err := os.Executable()
+	execPath, err := resolveChildExecutable()
 	if err != nil {
-		return nil, fmt.Errorf("resolve daemon executable: %w", err)
+		return nil, fmt.Errorf("resolve fat runtime executable: %w", err)
 	}
 
 	args := []string{

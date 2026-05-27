@@ -1,4 +1,4 @@
-//go:build linux && cgo
+//go:build linux && full
 
 package data
 
@@ -36,6 +36,11 @@ func ExtractDir() string {
 	return extractDir
 }
 
+// ExtractBundle unpacks the embedded zstd bundle when needed and returns the content directory.
+func ExtractBundle(dataDir string) (string, error) {
+	return extract(dataDir)
+}
+
 // EnsureExtracted unpacks the embedded zstd bundle (if needed), verifies bin/,
 // installs runtime auxiliaries to stable paths, and prepares CNI + pause image.
 func EnsureExtracted() error {
@@ -67,7 +72,31 @@ func getAssetAndDir(dataDir string) (string, string, error) {
 	return asset, dir, nil
 }
 
+func resolveCurrentBundle(dataDir string) (string, error) {
+	root, err := datadir.BundleRoot(dataDir)
+	if err != nil {
+		return "", err
+	}
+	current := filepath.Join(root, "current")
+	target, err := os.Readlink(current)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	if !isBundleReady(target) {
+		return "", fmt.Errorf("current bundle not ready at %s", target)
+	}
+	return target, nil
+}
+
 func extract(dataDir string) (string, error) {
+	if dir, err := resolveCurrentBundle(dataDir); err == nil {
+		setExtractDir(dir)
+		return dir, nil
+	}
+
 	asset, dir, err := getAssetAndDir(dataDir)
 	if err != nil {
 		return "", err
@@ -100,6 +129,11 @@ func extract(dataDir string) (string, error) {
 	}
 
 	dataLogger.Infof("Preparing data dir %s", dir)
+
+	names := AssetNames()
+	if len(names) == 0 {
+		return "", fmt.Errorf("embedded bundle unavailable and runtime not extracted at %s", dir)
+	}
 
 	content, err := Asset(asset)
 	if err != nil {
@@ -141,6 +175,9 @@ func extract(dataDir string) (string, error) {
 }
 
 func isBundleReady(dir string) bool {
+	if err := dataverify.VerifyFatRuntime(filepath.Join(dir, "bin", dataverify.FatRuntimeName)); err != nil {
+		return false
+	}
 	_, err := os.Stat(filepath.Join(dir, "bin", "containerd-shim-runc-v2"))
 	return err == nil
 }
