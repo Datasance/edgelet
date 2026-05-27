@@ -9,10 +9,10 @@ import (
 	"github.com/datasance/edgelet/internal/constants"
 )
 
-func TestBuildProvisionRequestBody_LiteDocker(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+func TestBuildProvisionRequestBody_DockerEngine(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
@@ -37,15 +37,15 @@ func TestBuildProvisionRequestBody_LiteDocker(t *testing.T) {
 	if body["engine"] != constants.EngineDocker {
 		t.Fatalf("engine=%v", body["engine"])
 	}
-	if body["flavor"] != buildmeta.FlavorLite {
+	if body["flavor"] != provisionFlavor {
 		t.Fatalf("flavor=%v", body["flavor"])
 	}
 }
 
-func TestBuildProvisionRequestBody_FullIofog(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+func TestBuildProvisionRequestBody_EdgeletEngine(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
@@ -67,15 +67,15 @@ func TestBuildProvisionRequestBody_FullIofog(t *testing.T) {
 	if body["engine"] != constants.EngineEdgelet {
 		t.Fatalf("engine=%v", body["engine"])
 	}
-	if body["flavor"] != buildmeta.FlavorFull {
+	if body["flavor"] != provisionFlavor {
 		t.Fatalf("flavor=%v", body["flavor"])
 	}
 }
 
-func TestBuildProvisionRequestBody_RejectsInvalidEngineForFlavor(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+func TestBuildProvisionRequestBody_RejectsInvalidEngineForPlatform(t *testing.T) {
+	embedded := false
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
@@ -84,7 +84,7 @@ func TestBuildProvisionRequestBody_RejectsInvalidEngineForFlavor(t *testing.T) {
 
 	_, err := buildProvisionRequestBody("bad-key")
 	if err == nil {
-		t.Fatal("expected error for edgelet engine on lite flavor")
+		t.Fatal("expected error for edgelet engine on desktop platform")
 	}
 	if !strings.Contains(err.Error(), "provisioning blocked") {
 		t.Fatalf("unexpected error: %v", err)

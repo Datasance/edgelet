@@ -275,9 +275,9 @@ func TestHandleDeployRuntimeClassesValidate_RejectsUnsupportedEngineOrFlavor(t *
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "docker"
 
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := false
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	handler := NewEdgeletAPIHandler()
 	req := newManifestMultipartRequest(t, "/v1/deploy/runtimeclasses:validate", `
@@ -319,9 +319,9 @@ func TestHandleDeployRuntimeClassesCRUD_SucceedsWhenFullAndIofog(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
 
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	db := store.GetInstance()
 	_ = db.Close()
@@ -417,9 +417,9 @@ handler: edgelet
 func TestHandleDeployRuntimeClassesApply_AsyncAcceptedAndPollSucceeded(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	manifest := `
 apiVersion: edgelet.iofog.org/v1
@@ -494,9 +494,9 @@ handler: spin
 func TestHandleDeployRuntimeClassesApply_SyncTimeoutReturnsAccepted(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	manifest := `
 apiVersion: edgelet.iofog.org/v1
@@ -534,9 +534,9 @@ handler: spin
 func TestHandleDeployRuntimeClassesApply_PollFailureReturns200WithFailedData(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	manifest := `
 apiVersion: edgelet.iofog.org/v1
@@ -629,9 +629,9 @@ handler: spin
 func TestHandleDeployRuntimeClassesApply_SyncFailureIncludesStageDetails(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	manifest := `
 apiVersion: edgelet.iofog.org/v1
@@ -695,9 +695,9 @@ func TestHandleDeployRuntimeClassesApplyStatus_NotFound(t *testing.T) {
 func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	target := &models.LocalRuntimeClass{
 		Name:        "spin",
@@ -775,9 +775,9 @@ func TestHandleDeployRuntimeClassesDelete_AsyncAcceptedAndPollSucceeded(t *testi
 func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	target := &models.LocalRuntimeClass{
 		Name:        "spin",
@@ -813,9 +813,9 @@ func TestHandleDeployRuntimeClassesDelete_SyncTimeoutReturnsAccepted(t *testing.
 func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	originalPreflight := runtimeClassDeletePreflightRunner
 	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, _ string) (*models.LocalRuntimeClass, error) {
@@ -835,9 +835,9 @@ func TestHandleDeployRuntimeClassesDelete_RejectsReservedRuntime(t *testing.T) {
 func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	cfg.ContainerEngine = "edgelet"
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	originalPreflight := runtimeClassDeletePreflightRunner
 	runtimeClassDeletePreflightRunner = func(_ *runtimeapi.Facade, _ string) (*models.LocalRuntimeClass, error) {

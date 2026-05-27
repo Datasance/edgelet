@@ -152,9 +152,9 @@ func TestClearVolumeMountsOnDeprovision_AllScopeHandlesError(t *testing.T) {
 }
 
 func TestClearLiteRuntimeArtifactsOnDeprovision_LocalScopeSkipsPrune(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 	GetInstance().config.ContainerEngine = constants.EngineDocker
 
 	containersCalled := false
@@ -171,11 +171,11 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_LocalScopeSkipsPrune(t *testing.
 	}
 }
 
-func TestClearLiteRuntimeArtifactsOnDeprovision_FullFlavorSkipsPrune(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorFull
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
-	GetInstance().config.ContainerEngine = constants.EngineDocker
+func TestClearLiteRuntimeArtifactsOnDeprovision_EmbeddedEdgeletEngineSkipsPrune(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
+	GetInstance().config.ContainerEngine = constants.EngineEdgelet
 
 	containersCalled := false
 	volumesCalled := false
@@ -187,14 +187,30 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_FullFlavorSkipsPrune(t *testing.
 		return nil
 	})
 	if containersCalled || volumesCalled {
-		t.Fatalf("expected prune steps to be skipped for full flavor")
+		t.Fatalf("expected prune steps to be skipped for embedded edgelet engine")
 	}
 }
 
-func TestClearLiteRuntimeArtifactsOnDeprovision_OnlyLiteDockerPodman(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+func TestClearLiteRuntimeArtifactsOnDeprovision_ExternalEngineOnLinuxStillPrunes(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
+	GetInstance().config.ContainerEngine = constants.EngineDocker
+
+	containersCalled := false
+	GetInstance().clearLiteRuntimeArtifactsOnDeprovision(false, func() error {
+		containersCalled = true
+		return nil
+	}, nil)
+	if !containersCalled {
+		t.Fatalf("expected container prune for docker engine on embedded-capable platform")
+	}
+}
+
+func TestClearLiteRuntimeArtifactsOnDeprovision_OnlyDockerPodmanEngines(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 
 	GetInstance().config.ContainerEngine = constants.EngineEdgelet
 	called := false
@@ -208,9 +224,9 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_OnlyLiteDockerPodman(t *testing.
 }
 
 func TestClearLiteRuntimeArtifactsOnDeprovision_OrderAndResilience(t *testing.T) {
-	originalFlavor := buildmeta.Flavor
-	buildmeta.Flavor = buildmeta.FlavorLite
-	t.Cleanup(func() { buildmeta.Flavor = originalFlavor })
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
 	GetInstance().config.ContainerEngine = constants.EnginePodman
 
 	order := make([]string, 0, 2)

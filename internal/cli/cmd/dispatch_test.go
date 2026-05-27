@@ -32,7 +32,7 @@ func TestVersionLocalWithoutDaemon(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("version exit=%d stderr=%q", code, stderr)
 	}
-	for _, part := range []string{"edgelet", "build flavor:", "allowed containerEngine:"} {
+	for _, part := range []string{"edgelet", "embedded engine:", "allowed containerEngine:"} {
 		if !strings.Contains(stdout, part) {
 			t.Fatalf("expected %q in stdout=%q", part, stdout)
 		}

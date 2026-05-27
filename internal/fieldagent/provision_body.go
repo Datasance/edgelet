@@ -8,12 +8,13 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 )
 
+const provisionFlavor = "edgelet"
+
 func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, error) {
 	cfg := config.GetInstance()
 	engine := strings.ToLower(strings.TrimSpace(cfg.ContainerEngine))
-	flavor := strings.ToLower(strings.TrimSpace(buildmeta.Flavor))
 
-	if err := validateProvisionEngineForFlavor(engine); err != nil {
+	if err := validateProvisionEngine(engine); err != nil {
 		return nil, err
 	}
 
@@ -21,20 +22,19 @@ func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, 
 		"key":    provisioningKey,
 		"type":   getArchitectureCode(cfg.Arch),
 		"engine": engine,
-		"flavor": flavor,
+		"flavor": provisionFlavor,
 	}, nil
 }
 
-func validateProvisionEngineForFlavor(engine string) error {
+func validateProvisionEngine(engine string) error {
 	for _, allowed := range buildmeta.AllowedEngines() {
 		if engine == allowed {
 			return nil
 		}
 	}
 	return fmt.Errorf(
-		"provisioning blocked: containerEngine %q is not valid for flavor %q (allowed: %s)",
+		"provisioning blocked: containerEngine %q is not valid on this platform (allowed: %s)",
 		engine,
-		strings.ToLower(strings.TrimSpace(buildmeta.Flavor)),
 		buildmeta.AllowedEnginesCSV(),
 	)
 }
