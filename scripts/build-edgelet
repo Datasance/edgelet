@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build edgelet multicall binaries (lite + full) for release/CI.
 # Usage:
-#   ARCH=amd64 ./scripts/build-edgelet              # host/default arch
+#   ARCH=amd64 ./scripts/build-edgelet              # lite + thin full (needs embed)
+#   ARCH=amd64 ./scripts/build-edgelet fat          # fat runtime -> build/bin/edgelet
 #   EDGELET_CI_ARCHES=amd64,arm64 ./scripts/build-edgelet
 # Optional ops-only static linking (RFC R9 — not a separate release name):
 #   STATIC_BUILD=true ARCH=amd64 ./scripts/build-edgelet
@@ -33,7 +34,7 @@ if [ "${STATIC_BUILD}" = "true" ]; then
   STATIC_TAGS="static_build"
 fi
 
-mkdir -p build dist
+mkdir -p build dist build/bin
 
 cc_for_arch() {
   _target="$1"
@@ -59,12 +60,39 @@ cc_for_arch() {
   esac
 }
 
+build_fat_runtime() {
+  _arch="$1"
+  _goarch="$_arch"
+  _goarm=""
+  _cc=""
+
+  case "${_arch}" in
+    arm)
+      _goarch=arm
+      _goarm=7
+      ;;
+    amd64|arm64|riscv64)
+      ;;
+    *)
+      echo "ERROR: unsupported ARCH ${_arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  _cc=$(cc_for_arch "${_arch}")
+  _out="build/bin/edgelet"
+  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=full${STATIC_LDFLAGS}"
+
+  echo "Building edgelet fat runtime linux/${_arch} (CC=${_cc}) -> ${_out}"
+  CGO_ENABLED=1 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" CC="${_cc}" \
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "cgo full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet-server
+}
+
 build_flavor() {
   _arch="$1"
   _flavor="$2"
   _goarch="$_arch"
   _goarm=""
-  _cc=""
   _out="build/edgelet-linux-${_arch}-${_flavor}"
 
   case "${_arch}" in
@@ -89,10 +117,15 @@ build_flavor() {
     return 0
   fi
 
-  _cc=$(cc_for_arch "${_arch}")
-  echo "Building edgelet full linux/${_arch} (CC=${_cc}) -> ${_out}"
-  CGO_ENABLED=1 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" CC="${_cc}" \
-    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "cgo full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+  _embed_count=$(find pkg/data/embed -name '*.tar.zst' 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_embed_count}" -eq 0 ]; then
+    echo "ERROR: no embed bundle in pkg/data/embed (run scripts/package-data after fat build)" >&2
+    exit 1
+  fi
+
+  echo "Building edgelet thin full linux/${_arch} -> ${_out}"
+  CGO_ENABLED=0 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" \
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
 }
 
 build_desktop_lite() {
@@ -110,19 +143,35 @@ build_desktop_lite() {
     "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "lite ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
 }
 
+MODE="${1:-all}"
 ARCHES="${EDGELET_CI_ARCHES:-${ARCH:-amd64}}"
 IFS=',' read -r -a _arch_list <<< "${ARCHES}"
-for _arch in "${_arch_list[@]}"; do
-  _arch=$(echo "${_arch}" | tr -d ' ')
-  [ -n "${_arch}" ] || continue
-  build_flavor "${_arch}" lite
-  build_flavor "${_arch}" full
-done
 
-if [ "${EDGELET_DESKTOP_LITE:-}" = "true" ]; then
-  build_desktop_lite darwin amd64
-  build_desktop_lite darwin arm64
-  build_desktop_lite windows amd64
-fi
+case "${MODE}" in
+  fat)
+    for _arch in "${_arch_list[@]}"; do
+      _arch=$(echo "${_arch}" | tr -d ' ')
+      [ -n "${_arch}" ] || continue
+      build_fat_runtime "${_arch}"
+    done
+    ;;
+  all|"")
+    for _arch in "${_arch_list[@]}"; do
+      _arch=$(echo "${_arch}" | tr -d ' ')
+      [ -n "${_arch}" ] || continue
+      build_flavor "${_arch}" lite
+      build_flavor "${_arch}" full
+    done
+    if [ "${EDGELET_DESKTOP_LITE:-}" = "true" ]; then
+      build_desktop_lite darwin amd64
+      build_desktop_lite darwin arm64
+      build_desktop_lite windows amd64
+    fi
+    ;;
+  *)
+    echo "ERROR: unknown mode ${MODE} (use: fat | all)" >&2
+    exit 1
+    ;;
+esac
 
 echo "build-edgelet complete"

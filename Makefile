@@ -68,11 +68,11 @@ _build-edgelet-lite-bin:
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags lite -o $(EDGELET_BINARY) ./cmd/edgelet
 	@echo "Built: $(EDGELET_BINARY) (lite)"
 
-build-edgelet-full: ## Full edgelet: CGO=1, embedded containerd (linux)
-	@echo "Building edgelet full..."
+build-edgelet-full: deps ## Full edgelet: thin wrapper (CGO=0) with embedded zstd tar (linux)
+	@echo "Building edgelet thin full..."
 	@mkdir -p build
-	@CGO_ENABLED=1 go build $(BUILD_FLAGS_EDGELET) -tags "cgo full" -o $(EDGELET_BINARY) ./cmd/edgelet
-	@echo "Built: $(EDGELET_BINARY) (full)"
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags full -o $(EDGELET_BINARY) ./cmd/edgelet
+	@echo "Built: $(EDGELET_BINARY) (full thin)"
 
 build-cli: build-edgelet-lite ## (alias) Build edgelet lite profile
 
@@ -107,11 +107,12 @@ _build-daemon-cgo0: build-edgelet-lite
 
 _build-daemon-cgo1: build-edgelet-full
 
-deps: ## Download, build, and package embedded zstd bundle (linux full; run before build-edgelet-full)
+deps: ## Download, build fat runtime, package embedded zstd bundle (linux full; run before build-edgelet-full)
 	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
 	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
 	@ARCH=$(or $(ARCH),amd64) ./scripts/download
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-embedded
+	@ARCH=$(or $(ARCH),amd64) ./scripts/build-edgelet fat
 	@ARCH=$(or $(ARCH),amd64) ./scripts/package-data
 
 build-daemon-embedded: build-daemon-full ## (alias) Build full daemon with embedded containerd

@@ -12,7 +12,7 @@ if [ "${DEBUG}" = 1 ]; then
   set -x
 fi
 
-MAX_BINARY_MB=55
+MAX_BINARY_MB=35
 MAX_BINARY_SIZE=$((MAX_BINARY_MB * 1024 * 1024))
 
 CMD_NAME="build/edgelet-linux-${ARCH}-full"

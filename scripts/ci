@@ -14,7 +14,11 @@ if [ "$(uname -s)" != Linux ]; then
 fi
 
 chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data \
-  scripts/build-edgelet scripts/binary_size_check.sh 2>/dev/null || true
+  scripts/build-edgelet scripts/binary_size_check.sh scripts/check-containerd-fork.sh \
+  2>/dev/null || true
+
+echo "=== containerd fork guard (Plan 6 A1) ==="
+./scripts/check-containerd-fork.sh
 
 if [ -f scripts/validate ] && [ -n "${RUN_VALIDATE}" ]; then
   ./scripts/validate
@@ -26,13 +30,14 @@ IFS=',' read -r -a _arch_list <<< "${CI_ARCHES}"
 for _arch in "${_arch_list[@]}"; do
   _arch=$(echo "${_arch}" | tr -d ' ')
   [ -n "${_arch}" ] || continue
-  echo "=== embed + build for linux/${_arch} ==="
+  echo "=== Plan 6 pipeline for linux/${_arch}: build-embedded → fat → package-data → thin ==="
   ARCH="${_arch}" ./scripts/download
   ARCH="${_arch}" ./scripts/build-embedded
+  ARCH="${_arch}" ./scripts/build-edgelet fat
   ARCH="${_arch}" ./scripts/package-data
   _embed_count=$(find pkg/data/embed -name '*.tar.zst' 2>/dev/null | wc -l | tr -d ' ')
   if [ "${_embed_count}" -ne 1 ]; then
-    echo "ERROR: expected 1 embed bundle before build, found ${_embed_count}" >&2
+    echo "ERROR: expected 1 embed bundle before thin build, found ${_embed_count}" >&2
     exit 1
   fi
   ARCH="${_arch}" EDGELET_CI_ARCHES="${_arch}" ./scripts/build-edgelet
