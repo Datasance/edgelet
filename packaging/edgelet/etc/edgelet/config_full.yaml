@@ -1,4 +1,4 @@
-# Example profile for **full** tarball (embedded containerd; engine fixed to edgelet).
+# Example profile for linux edgelet builds (embedded containerd available; default engine edgelet).
 # dockerUrl must match the embedded socket path.
 currentProfile: production
 profiles:

@@ -2,11 +2,12 @@
 # install.sh — Edgelet greenfield installer (tarball-only)
 #
 # Usage:
-#   curl -fsSL ... | sudo sh -s -- --flavor=full
-#   sudo ./install.sh --flavor=full [--version=vX.Y.Z]
-#   sudo ./install.sh --airgap --tarball-path=dist/edgelet-linux-amd64-full.tar.gz
-#   sudo ./install.sh --flavor=lite --container-engine=docker
+#   curl -fsSL ... | sudo sh -s --
+#   sudo ./install.sh [--version=vX.Y.Z]
+#   sudo ./install.sh --airgap --tarball-path=dist/edgelet-linux-amd64.tar.gz
+#   sudo ./install.sh --container-engine=docker
 #
+# Legacy --flavor=full|lite is ignored (unified linux tarball since Plan 7).
 # Linux gates (CI / VM): systemctl status edgelet
 # macOS dev for embed CI: make ci-docker  (runs scripts/ci in Docker)
 
@@ -70,22 +71,22 @@ kv_get() {
 }
 
 write_install_receipt() {
-    _ver="$1" _flavor="$2" _url="$3"
+    _ver="$1" _engine="$2" _url="$3"
     mkdir -p "$BACKUP_DIR"
     {
         printf 'installed_version=%s\n' "$_ver"
-        printf 'flavor=%s\n' "$_flavor"
+        printf 'container_engine=%s\n' "$_engine"
         printf 'source_url=%s\n' "$_url"
     } >"$RECEIPT_FILE"
     chmod 600 "$RECEIPT_FILE" 2>/dev/null || true
 }
 
 write_previous_release() {
-    _pv="$1" _pf="$2" _purl="$3" _cfg="$4"
+    _pv="$1" _peng="$2" _purl="$3" _cfg="$4"
     mkdir -p "$BACKUP_DIR"
     {
         printf 'previous_version=%s\n' "$_pv"
-        printf 'previous_flavor=%s\n' "$_pf"
+        printf 'previous_container_engine=%s\n' "$_peng"
         printf 'previous_download_url=%s\n' "$_purl"
         printf 'config_backup_path=%s\n' "$_cfg"
     } >"$PREVIOUS_FILE"
@@ -94,7 +95,7 @@ write_previous_release() {
 
 # ── argument parsing ──────────────────────────────────────────────────────────
 EDGELET_VERSION="${EDGELET_VERSION:-latest}"
-EDGELET_FLAVOR="${EDGELET_FLAVOR:-full}"
+EDGELET_FLAVOR=""
 CONTAINER_ENGINE=""
 ACTION="install"
 AIRGAP=false
@@ -128,22 +129,22 @@ for arg in "$@"; do
 Usage: $0 [options]
 
 Options:
-  --flavor=full|lite         Build flavor (default: full)
   --version=VERSION          Release tag (default: latest)
   --arch=ARCH                Override auto-detected arch (amd64, arm64, arm, riscv64)
-  --container-engine=ENGINE  Lite only: docker or podman (default: docker)
+  --container-engine=ENGINE  docker, podman, or edgelet (default: edgelet on linux)
+  --flavor=full|lite         Deprecated; ignored (unified linux tarball)
   --airgap                   Do not download; use --tarball-path
   --tarball-path=PATH        Local edgelet-*.tar.gz
   --checksum-path=PATH       Optional sha256sum manifest
   --expected-sha256=HASH     Optional tarball SHA256
-  --upgrade / --rollback     In-place upgrade or rollback (same flavor)
+  --upgrade / --rollback     In-place upgrade or rollback
   --force-config             Replace config on upgrade/rollback
   --non-interactive          Pot-oriented: no prompts
   --controller-url=URL       Optional: write controllerUrl into new config
   --provision-key=KEY        Optional: run edgelet provision after install
 
 Environment:
-  EDGELET_VERSION  EDGELET_FLAVOR  EDGELET_GITHUB_REPO
+  EDGELET_VERSION  EDGELET_GITHUB_REPO
 EOF
             exit 0 ;;
         *) die "Unknown option: ${arg} (use --help)" ;;
@@ -157,25 +158,18 @@ if [ "$AIRGAP" = true ] && [ -z "$TARBALL_PATH" ]; then
 fi
 
 if [ "$ACTION" != "rollback" ]; then
-    case "$EDGELET_FLAVOR" in
-        full|lite) ;;
-        *) die "Invalid --flavor (use full or lite)" ;;
-    esac
+    if [ -n "$EDGELET_FLAVOR" ]; then
+        info "Note: --flavor=${EDGELET_FLAVOR} is deprecated and ignored (unified linux tarball)."
+    fi
 
     if [ -z "$CONTAINER_ENGINE" ]; then
-        if [ "$EDGELET_FLAVOR" = "full" ]; then
-            CONTAINER_ENGINE="edgelet"
-        else
-            CONTAINER_ENGINE="docker"
-        fi
+        CONTAINER_ENGINE="edgelet"
     fi
 
-    if [ "$EDGELET_FLAVOR" = "full" ] && [ "$CONTAINER_ENGINE" != "edgelet" ]; then
-        die "full flavor requires containerEngine edgelet (embedded containerd)"
-    fi
-    if [ "$EDGELET_FLAVOR" = "lite" ] && [ "$CONTAINER_ENGINE" = "edgelet" ]; then
-        die "lite flavor cannot use edgelet engine; use --flavor=full"
-    fi
+    case "$CONTAINER_ENGINE" in
+        edgelet|docker|podman) ;;
+        *) die "Invalid --container-engine (use edgelet, docker, or podman)" ;;
+    esac
 fi
 
 require_root
@@ -186,29 +180,27 @@ INIT=$(detect_init)
 info "Architecture : ${ARCH}"
 info "Init system  : ${INIT}"
 if [ "$ACTION" != "rollback" ]; then
-    info "Flavor       : ${EDGELET_FLAVOR}"
+    info "Engine       : ${CONTAINER_ENGINE}"
 fi
 info "Action       : ${ACTION}"
 
 tarball_name_for() {
     _ver="$1"
     _arch="$2"
-    _fl="$3"
-    echo "edgelet-${_ver}-linux-${_arch}-${_fl}.tar.gz"
+    echo "edgelet-${_ver}-linux-${_arch}.tar.gz"
 }
 
 resolve_tarball_basename() {
     _ver="$1"
     _arch="$2"
-    _fl="$3"
     if [ "$AIRGAP" = true ] && [ -n "$TARBALL_PATH" ]; then
         basename "$TARBALL_PATH"
         return 0
     fi
-    tarball_name_for "$_ver" "$_arch" "$_fl"
+    tarball_name_for "$_ver" "$_arch"
 }
 
-TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}" "${EDGELET_FLAVOR}")
+TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}")
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "${TMPDIR}"' EXIT
 
@@ -217,7 +209,7 @@ if [ "$AIRGAP" = false ] && [ "$EDGELET_VERSION" = "latest" ] && [ "$ACTION" != 
     EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
         | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
     [ -n "${EDGELET_VERSION}" ] || die "Failed to determine latest version"
-    TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}" "${EDGELET_FLAVOR}")
+    TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}")
 fi
 
 info "Version: ${EDGELET_VERSION}"
@@ -234,7 +226,7 @@ download_or_copy_tarball() {
     _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${TARBALL_BASENAME}"
     info "Downloading ${_url} ..."
     if ! curl -fsSL -o "$_dest" "$_url"; then
-        _alt="edgelet-linux-${ARCH}-${EDGELET_FLAVOR}.tar.gz"
+        _alt="edgelet-linux-${ARCH}.tar.gz"
         _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${_alt}"
         info "Retrying ${_url} ..."
         curl -fsSL -o "$_dest" "$_url" || die "Failed to download release tarball"
@@ -389,9 +381,11 @@ EOF
 }
 
 install_service() {
-    _is_full="$1"
+    _eng="$1"
+    _is_embedded="false"
+    [ "$_eng" = "edgelet" ] && _is_embedded="true"
     case "${INIT}" in
-        systemd) install_systemd "$_is_full" "$CONTAINER_ENGINE" ;;
+        systemd) install_systemd "$_is_embedded" "$_eng" ;;
         *)
             info "Non-systemd init: starting edgelet in background."
             start_edgelet_service
@@ -427,14 +421,17 @@ maybe_provision() {
 if [ "$ACTION" = "rollback" ]; then
     [ -f "$PREVIOUS_FILE" ] || die "No ${PREVIOUS_FILE} found."
     _pv=$(kv_get "$PREVIOUS_FILE" "previous_version")
-    _pf=$(kv_get "$PREVIOUS_FILE" "previous_flavor")
+    _peng=$(kv_get "$PREVIOUS_FILE" "previous_container_engine")
     _purl=$(kv_get "$PREVIOUS_FILE" "previous_download_url")
     _cfgbak=$(kv_get "$PREVIOUS_FILE" "config_backup_path")
-    EDGELET_FLAVOR="$_pf"
+    if [ -z "$_peng" ]; then
+        _pf=$(kv_get "$PREVIOUS_FILE" "previous_flavor")
+        _peng="edgelet"
+        [ "$_pf" = "lite" ] && _peng="docker"
+    fi
     EDGELET_VERSION="$_pv"
-    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH" "$EDGELET_FLAVOR")
-    CONTAINER_ENGINE="edgelet"
-    [ "$EDGELET_FLAVOR" = "lite" ] && CONTAINER_ENGINE="docker"
+    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH")
+    CONTAINER_ENGINE="$_peng"
     stop_edgelet_service
     _tg="${TMPDIR}/rollback.tar.gz"
     if [ "$AIRGAP" = true ]; then
@@ -450,11 +447,9 @@ if [ "$ACTION" = "rollback" ]; then
     if [ "$FORCE_CONFIG" != true ] && [ -f "$_cfgbak" ]; then
         install -m 640 "$_cfgbak" "$CONFIG_FILE"
     fi
-    _is_full="false"
-    [ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
-    install_service "$_is_full"
-    write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$_purl"
-    info "Rollback to ${EDGELET_VERSION} (${EDGELET_FLAVOR}) complete."
+    install_service "$CONTAINER_ENGINE"
+    write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$_purl"
+    info "Rollback to ${EDGELET_VERSION} (engine=${CONTAINER_ENGINE}) complete."
     exit 0
 fi
 
@@ -463,17 +458,21 @@ if [ "$ACTION" = "upgrade" ]; then
     [ -f "$BINARY_PATH" ] || die "Edgelet not installed; run install first"
     [ -f "$RECEIPT_FILE" ] || die "Missing ${RECEIPT_FILE}"
     _cur_ver=$(kv_get "$RECEIPT_FILE" "installed_version")
-    _cur_fl=$(kv_get "$RECEIPT_FILE" "flavor")
+    _cur_eng=$(kv_get "$RECEIPT_FILE" "container_engine")
     _cur_src=$(kv_get "$RECEIPT_FILE" "source_url")
-    [ "$_cur_fl" = "$EDGELET_FLAVOR" ] || die "Flavor mismatch: installed ${_cur_fl}, requested ${EDGELET_FLAVOR}"
+    if [ -z "$_cur_eng" ]; then
+        _cur_fl=$(kv_get "$RECEIPT_FILE" "flavor")
+        _cur_eng="edgelet"
+        [ "$_cur_fl" = "lite" ] && _cur_eng="docker"
+    fi
     if [ "$EDGELET_VERSION" = "latest" ]; then
         EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
             | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
     fi
-    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH" "$EDGELET_FLAVOR")
+    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH")
     _cfg_backup="${BACKUP_DIR}/config.yaml.$(date +%Y%m%d%H%M%S)"
     cp "$CONFIG_FILE" "$_cfg_backup" 2>/dev/null || true
-    write_previous_release "$_cur_ver" "$_cur_fl" "$_cur_src" "$_cfg_backup"
+    write_previous_release "$_cur_ver" "$_cur_eng" "$_cur_src" "$_cfg_backup"
     stop_edgelet_service
     _tg="${TMPDIR}/upgrade.tar.gz"
     download_or_copy_tarball "$_tg"
@@ -484,10 +483,8 @@ if [ "$ACTION" = "upgrade" ]; then
         rm -f "$CONFIG_FILE"
         write_default_config_if_missing
     fi
-    write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$(compute_source_url)"
-    _is_full="false"
-    [ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
-    install_service "$_is_full"
+    write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$(compute_source_url)"
+    install_service "$CONTAINER_ENGINE"
     maybe_provision
     info "Upgrade to ${EDGELET_VERSION} complete."
     exit 0
@@ -516,15 +513,13 @@ if command -v sed >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     fi
 fi
 
-write_install_receipt "$EDGELET_VERSION" "$EDGELET_FLAVOR" "$(compute_source_url)"
-_is_full="false"
-[ "$EDGELET_FLAVOR" = "full" ] && _is_full="true"
-install_service "$_is_full"
+write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$(compute_source_url)"
+install_service "$CONTAINER_ENGINE"
 install_cli_completion
 maybe_provision
 
 info ""
-info "edgelet ${EDGELET_VERSION} (${EDGELET_FLAVOR}) installed successfully."
+info "edgelet ${EDGELET_VERSION} (engine=${CONTAINER_ENGINE}) installed successfully."
 info "  Binary : ${BINARY_PATH}"
 info "  Unit   : ${UNIT_NAME}.service"
 info "  Config : ${CONFIG_FILE}"

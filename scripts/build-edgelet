@@ -1,11 +1,12 @@
 #!/bin/bash
-# Build edgelet multicall binaries (lite + full) for release/CI.
+# Build edgelet multicall binaries for release/CI.
 # Usage:
-#   ARCH=amd64 ./scripts/build-edgelet              # lite + thin full (needs embed)
+#   ARCH=amd64 ./scripts/build-edgelet              # unified linux thin (needs embed)
 #   ARCH=amd64 ./scripts/build-edgelet fat          # fat runtime -> build/bin/edgelet
 #   EDGELET_CI_ARCHES=amd64,arm64 ./scripts/build-edgelet
 # Optional ops-only static linking (RFC R9 — not a separate release name):
 #   STATIC_BUILD=true ARCH=amd64 ./scripts/build-edgelet
+# Desktop (optional): EDGELET_DESKTOP=true ./scripts/build-edgelet
 
 set -e
 
@@ -81,19 +82,18 @@ build_fat_runtime() {
 
   _cc=$(cc_for_arch "${_arch}")
   _out="build/bin/edgelet"
-  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=full${STATIC_LDFLAGS}"
+  _ldflags="${LDFLAGS_BASE}${STATIC_LDFLAGS}"
 
   echo "Building edgelet fat runtime linux/${_arch} (CC=${_cc}) -> ${_out}"
   CGO_ENABLED=1 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" CC="${_cc}" \
-    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "cgo full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet-server
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "cgo ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet-server
 }
 
-build_flavor() {
+build_linux_thin() {
   _arch="$1"
-  _flavor="$2"
   _goarch="$_arch"
   _goarm=""
-  _out="build/edgelet-linux-${_arch}-${_flavor}"
+  _out="build/edgelet-linux-${_arch}"
 
   case "${_arch}" in
     arm)
@@ -108,27 +108,19 @@ build_flavor() {
       ;;
   esac
 
-  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=${_flavor}${STATIC_LDFLAGS}"
-
-  if [ "${_flavor}" = lite ]; then
-    echo "Building edgelet lite linux/${_arch} -> ${_out}"
-    CGO_ENABLED=0 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" \
-      "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "lite ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
-    return 0
-  fi
-
   _embed_count=$(find pkg/data/embed -name '*.tar.zst' 2>/dev/null | wc -l | tr -d ' ')
   if [ "${_embed_count}" -eq 0 ]; then
     echo "ERROR: no embed bundle in pkg/data/embed (run scripts/package-data after fat build)" >&2
     exit 1
   fi
 
-  echo "Building edgelet thin full linux/${_arch} -> ${_out}"
+  _ldflags="${LDFLAGS_BASE}${STATIC_LDFLAGS}"
+  echo "Building edgelet linux/${_arch} thin -> ${_out}"
   CGO_ENABLED=0 GOOS=linux GOARCH="${_goarch}" GOARM="${_goarm}" \
-    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "full ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
 }
 
-build_desktop_lite() {
+build_desktop() {
   _goos="$1"
   _goarch="$2"
   _goarm="${3:-}"
@@ -136,11 +128,14 @@ build_desktop_lite() {
   if [ -n "${_goarm}" ]; then
     _suffix="${_goos}-${_goarch}v${_goarm}"
   fi
-  _out="build/edgelet-${_suffix}-lite"
-  _ldflags="${LDFLAGS_BASE} -X ${PKG}/internal/buildmeta.Flavor=lite${STATIC_LDFLAGS}"
-  echo "Building edgelet lite ${_goos}/${_goarch} -> ${_out}"
+  _out="build/edgelet-${_suffix}"
+  if [ "${_goos}" = windows ]; then
+    _out="${_out}.exe"
+  fi
+  _ldflags="${LDFLAGS_BASE}${STATIC_LDFLAGS}"
+  echo "Building edgelet ${_goos}/${_goarch} -> ${_out}"
   CGO_ENABLED=0 GOOS="${_goos}" GOARCH="${_goarch}" GOARM="${_goarm}" \
-    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "lite ${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
+    "${GO}" build -trimpath -ldflags "${_ldflags}" -tags "${STATIC_TAGS}" -o "${_out}" ./cmd/edgelet
 }
 
 MODE="${1:-all}"
@@ -159,13 +154,12 @@ case "${MODE}" in
     for _arch in "${_arch_list[@]}"; do
       _arch=$(echo "${_arch}" | tr -d ' ')
       [ -n "${_arch}" ] || continue
-      build_flavor "${_arch}" lite
-      build_flavor "${_arch}" full
+      build_linux_thin "${_arch}"
     done
-    if [ "${EDGELET_DESKTOP_LITE:-}" = "true" ]; then
-      build_desktop_lite darwin amd64
-      build_desktop_lite darwin arm64
-      build_desktop_lite windows amd64
+    if [ "${EDGELET_DESKTOP:-}" = "true" ]; then
+      build_desktop darwin amd64
+      build_desktop darwin arm64
+      build_desktop windows amd64
     fi
     ;;
   *)

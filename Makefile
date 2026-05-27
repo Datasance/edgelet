@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-lite build-daemon-full build-daemon-embedded build-edgelet build-edgelet-full build-edgelet-lite deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -16,30 +16,19 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-# Flavor: lite (CGO=0, docker|podman) or full (CGO=1, embedded containerd / iofog)
-FLAVOR ?= full
+# Linux release arch (amd64, arm64, arm, riscv64)
+ARCH ?= amd64
 
-# Build flags
-# edgelet is a single multicall binary (CLI + daemon + containerd child on full linux).
+# Build flags — platform capability comes from GOOS (linux embed vs desktop monolithic).
 LDFLAGS_EDGELET := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
 	-X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) \
 	-X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) \
-	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=$(FLAVOR) -s -w
+	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
 BUILD_FLAGS_EDGELET := -trimpath -ldflags "$(LDFLAGS_EDGELET)"
 
 # Legacy aliases (CLI/daemon were separate binaries pre-Plan 3).
 LDFLAGS_CLI := -X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) -X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
-LDFLAGS_DAEMON := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=$(FLAVOR) -s -w
 BUILD_FLAGS_CLI := -trimpath -ldflags "$(LDFLAGS_CLI)"
-BUILD_FLAGS_DAEMON := -trimpath -ldflags "$(LDFLAGS_DAEMON)"
-
-# Fixed flavor ldflags for multi-flavor release builds (do not depend on FLAVOR=)
-LDFLAGS_LITE := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=lite -s -w
-LDFLAGS_FULL := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full -s -w
 
 # Binary names
 EDGELET_BINARY := build/edgelet
@@ -55,26 +44,31 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: build-edgelet ## Build edgelet for FLAVOR (default: full)
+build: build-edgelet-local ## Build edgelet for host OS (linux thin or desktop monolithic)
 
-build-edgelet: build-edgelet-$(FLAVOR) ## Build edgelet multicall binary for FLAVOR
+build-edgelet: build-edgelet-local ## (alias) Build edgelet for host OS
 
-build-edgelet-lite: ## Lite edgelet: CGO=0, docker|podman only
-	@$(MAKE) FLAVOR=lite _build-edgelet-lite-bin
+build-edgelet-linux: deps ## Unified linux thin wrapper with embedded zstd tar (ARCH=amd64 default)
+	@ARCH=$(or $(ARCH),amd64) STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-_build-edgelet-lite-bin:
-	@echo "Building edgelet lite..."
+build-edgelet-local: ## Dev convenience binary at build/edgelet (host GOOS)
 	@mkdir -p build
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags lite -o $(EDGELET_BINARY) ./cmd/edgelet
-	@echo "Built: $(EDGELET_BINARY) (lite)"
+	@case "$$(uname -s)" in \
+		Linux) \
+			$(MAKE) build-edgelet-linux ARCH=$$(go env GOARCH); \
+			cp build/edgelet-linux-$$(go env GOARCH) $(EDGELET_BINARY); \
+			;; \
+		Darwin) \
+			CGO_ENABLED=0 GOOS=darwin GOARCH=$$(go env GOARCH) go build $(BUILD_FLAGS_EDGELET) -o $(EDGELET_BINARY) ./cmd/edgelet; \
+			;; \
+		MINGW*|MSYS*) \
+			CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet.exe ./cmd/edgelet; \
+			;; \
+		*) echo "Unsupported host OS for build-edgelet-local"; exit 1 ;; \
+	esac
+	@echo "Built: $(EDGELET_BINARY)"
 
-build-edgelet-full: deps ## Full edgelet: thin wrapper (CGO=0) with embedded zstd tar (linux)
-	@echo "Building edgelet thin full..."
-	@mkdir -p build
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -tags full -o $(EDGELET_BINARY) ./cmd/edgelet
-	@echo "Built: $(EDGELET_BINARY) (full thin)"
-
-build-cli: build-edgelet-lite ## (alias) Build edgelet lite profile
+build-cli: build-edgelet-local ## Build edgelet for CLI doc generation
 
 cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
 	@mkdir -p docs/cli/generated
@@ -96,18 +90,11 @@ cli-completion: build-cli ## Regenerate bash completion for packaging
 	@$(CLI_BINARY) completion bash > packaging/edgelet/etc/bash_completion.d/edgelet
 	@echo "Updated packaging/edgelet/etc/bash_completion.d/edgelet"
 
-build-daemon: build-edgelet-$(FLAVOR) ## (alias) Build edgelet for FLAVOR
+build-daemon: build-edgelet-local ## (alias) Build edgelet for host OS
 
-build-daemon-lite: build-edgelet-lite ## (alias) Lite edgelet
+build-daemon-embedded: build-edgelet-linux ## (alias) Build linux thin with embedded containerd bundle
 
-build-daemon-full: build-edgelet-full ## (alias) Full edgelet
-
-.PHONY: _build-daemon-cgo0 _build-daemon-cgo1
-_build-daemon-cgo0: build-edgelet-lite
-
-_build-daemon-cgo1: build-edgelet-full
-
-deps: ## Download, build fat runtime, package embedded zstd bundle (linux full; run before build-edgelet-full)
+deps: ## Download, build fat runtime, package embedded zstd bundle (linux; run before build-edgelet-linux)
 	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
 	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
 	@ARCH=$(or $(ARCH),amd64) ./scripts/download
@@ -115,47 +102,37 @@ deps: ## Download, build fat runtime, package embedded zstd bundle (linux full; 
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-edgelet fat
 	@ARCH=$(or $(ARCH),amd64) ./scripts/package-data
 
-build-daemon-embedded: build-daemon-full ## (alias) Build full daemon with embedded containerd
-
 # ── Linux release matrix (RFC R20; no musl-suffixed artifacts — RFC R9) ────────
 # Optional ops-only static linking: STATIC_BUILD=true make build-linux-amd64
 
-build-linux-amd64: ## Build lite+full edgelet for linux/amd64
+build-linux-amd64: ## Build unified linux edgelet for linux/amd64
 	@$(MAKE) deps ARCH=amd64
 	@ARCH=amd64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-arm64: ## Build lite+full edgelet for linux/arm64
+build-linux-arm64: ## Build unified linux edgelet for linux/arm64
 	@$(MAKE) deps ARCH=arm64
 	@ARCH=arm64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-arm: ## Build lite+full edgelet for linux/arm (armhf)
+build-linux-arm: ## Build unified linux edgelet for linux/arm (armhf)
 	@$(MAKE) deps ARCH=arm
 	@ARCH=arm STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-linux-riscv64: ## Build lite+full edgelet for linux/riscv64
+build-linux-riscv64: ## Build unified linux edgelet for linux/riscv64
 	@$(MAKE) deps ARCH=riscv64
 	@ARCH=riscv64 STATIC_BUILD=$(STATIC_BUILD) ./scripts/build-edgelet
 
-build-all-archs: build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 ## Build all linux lite+full targets (no musl matrix)
+build-all-archs: build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 ## Build all linux targets (one binary per arch)
 
-build-desktop-darwin-lite: ## Build lite edgelet for darwin amd64+arm64
-	@$(MAKE) FLAVOR=lite _build-desktop-darwin-lite
+build-desktop-darwin: ## Build monolithic edgelet for darwin amd64+arm64
+	@mkdir -p build
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet-darwin-amd64 ./cmd/edgelet
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet-darwin-arm64 ./cmd/edgelet
 
-_build-desktop-darwin-lite:
-	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-amd64-lite ./cmd/edgelet
-	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-darwin-arm64-lite ./cmd/edgelet
+build-desktop-windows: ## Build monolithic edgelet for windows/amd64
+	@mkdir -p build
+	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet-windows-amd64.exe ./cmd/edgelet
 
-build-desktop-windows-lite: ## Build lite edgelet for windows/amd64
-	@$(MAKE) FLAVOR=lite _build-desktop-windows-lite
-
-_build-desktop-windows-lite:
-	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -tags lite -o build/edgelet-windows-amd64-lite.exe ./cmd/edgelet
-
-build-desktop-darwin: build-desktop-darwin-lite ## (alias) lite darwin builds
-
-build-desktop-windows: build-desktop-windows-lite ## (alias) lite windows build
-
-release-tarballs: build-all-archs ## Package dist/edgelet-*-{full|lite}.tar.gz and SHA256SUMS-*
+release-tarballs: build-all-archs ## Package dist/edgelet-linux-<arch>.tar.gz and SHA256SUMS
 	@chmod +x scripts/release-tarballs.sh
 	@./scripts/release-tarballs.sh "$(VERSION)"
 
@@ -165,13 +142,17 @@ ci-docker: ## Run linux CI gate inside Docker (macOS-friendly)
 
 test: ## Run unit tests (excludes build/src and build/gopath)
 	@echo "Running tests..."
-	@go test -v -tags lite ./cmd/... ./internal/... ./pkg/... ./test/...
+	@go test -v -tags '!linux' ./cmd/... ./internal/... ./pkg/... ./test/...
+	@if [ "$$(uname -s)" = Linux ]; then \
+		go test -v -tags linux ./cmd/... ./internal/... ./pkg/... ./test/...; \
+	fi
 
 test-unit: ## Run unit tests only (skip integration tests)
 	@echo "Running unit tests..."
-	@go test -v -short -tags lite ./cmd/... ./internal/... ./pkg/... ./test/...
+	@go test -v -short -tags '!linux' ./cmd/... ./internal/... ./pkg/... ./test/...
 	@if [ "$$(uname -s)" = Linux ]; then \
-		CGO_ENABLED=1 go test -v -short -tags "cgo full" -ldflags "-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full" ./cmd/... ./internal/... ./pkg/... ./test/...; \
+		go test -v -short -tags linux ./cmd/... ./internal/... ./pkg/... ./test/...; \
+		CGO_ENABLED=1 go test -v -short -tags 'linux,cgo' ./cmd/... ./internal/... ./pkg/... ./test/...; \
 	fi
 
 test-integration: ## Run integration tests
@@ -258,7 +239,7 @@ DEV_VAR_RUN := $(DEV_DIR)/var/run/edgelet
 DEV_PID_FILE := $(DEV_VAR_RUN)/edgelet.pid
 DEV_CERT_FILE := $(DEV_CONFIG_DIR)/cert.crt
 
-install-dev: build-edgelet-lite ## Install edgelet and setup local dev environment
+install-dev: build-edgelet-local ## Install edgelet and setup local dev environment
 	@echo "Setting up local development environment..."
 	@echo ""
 	@# Create directory structure

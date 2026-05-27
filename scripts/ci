@@ -43,13 +43,13 @@ for _arch in "${_arch_list[@]}"; do
   ARCH="${_arch}" EDGELET_CI_ARCHES="${_arch}" ./scripts/build-edgelet
 done
 
-echo "Running unit tests (linux)..."
+echo "Running unit tests (linux + desktop tag sets)..."
 export GO111MODULE=on
 unset GOPATH
 _TEST_PKGS="./cmd/... ./internal/... ./pkg/... ./test/..."
-_FULL_LDFLAGS="-X github.com/datasance/edgelet/internal/buildmeta.Flavor=full"
-go test -tags lite ${_TEST_PKGS}
-CGO_ENABLED=1 go test -tags "cgo full" -ldflags "${_FULL_LDFLAGS}" ${_TEST_PKGS}
+go test -tags '!linux' ${_TEST_PKGS}
+go test -tags linux ${_TEST_PKGS}
+CGO_ENABLED=1 go test -tags 'linux,cgo' ${_TEST_PKGS}
 
 for _arch in "${_arch_list[@]}"; do
   _arch=$(echo "${_arch}" | tr -d ' ')

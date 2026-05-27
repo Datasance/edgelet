@@ -15,13 +15,13 @@ fi
 MAX_BINARY_MB=35
 MAX_BINARY_SIZE=$((MAX_BINARY_MB * 1024 * 1024))
 
-CMD_NAME="build/edgelet-linux-${ARCH}-full"
+CMD_NAME="build/edgelet-linux-${ARCH}"
 if [ ! -f "${CMD_NAME}" ]; then
   CMD_NAME="build/edgelet"
 fi
 
 if [ ! -f "${CMD_NAME}" ]; then
-  echo "ERROR: binary not found: ${CMD_NAME} (run scripts/build-edgelet or make build-edgelet-full first)" >&2
+  echo "ERROR: binary not found: ${CMD_NAME} (run scripts/build-edgelet or make build-edgelet-linux first)" >&2
   exit 1
 fi
 
@@ -37,9 +37,9 @@ if [ -n "${DEBUG}" ]; then
 fi
 
 if [ "${SIZE}" -gt "${MAX_BINARY_SIZE}" ]; then
-  echo "edgelet full binary ${CMD_NAME} size ${SIZE} exceeds max ${MAX_BINARY_SIZE} bytes (${MAX_BINARY_MB} MiB)" >&2
+  echo "edgelet linux binary ${CMD_NAME} size ${SIZE} exceeds max ${MAX_BINARY_SIZE} bytes (${MAX_BINARY_MB} MiB)" >&2
   exit 1
 fi
 
-echo "edgelet full binary ${CMD_NAME} size ${SIZE} is within ${MAX_BINARY_MB} MiB limit"
+echo "edgelet linux binary ${CMD_NAME} size ${SIZE} is within ${MAX_BINARY_MB} MiB limit"
 exit 0

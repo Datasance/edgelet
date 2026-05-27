@@ -29,7 +29,7 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
     #             dockerUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
@@ -74,7 +74,7 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
     #             dockerUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
@@ -119,7 +119,7 @@ profiles:
     #   podman  — use Podman daemon via its Docker-compatible API.
     #             dockerUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
-    #   edgelet — use the embedded containerd engine bundled with edgelet (full flavor).
+    #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
     #             dockerUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
