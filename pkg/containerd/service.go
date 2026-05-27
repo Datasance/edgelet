@@ -1,4 +1,4 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package edgeletcontainerdd
 
@@ -320,10 +320,23 @@ func (s *Service) Start() error {
 	case <-s.ready:
 		return nil
 	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("containerd failed to start: %w", err)
-		}
+		return describeStartupFailure(err)
+	}
+}
+
+func describeStartupFailure(err error) error {
+	if err == nil {
 		return ErrContainerdExitedEarly
+	}
+	switch {
+	case errors.Is(err, ErrContainerdSpawnFailure):
+		return fmt.Errorf("spawn embedded containerd child: %w", err)
+	case errors.Is(err, ErrContainerdReadiness):
+		return fmt.Errorf("wait for embedded containerd readiness: %w", err)
+	case errors.Is(err, ErrContainerdExitedEarly):
+		return err
+	default:
+		return fmt.Errorf("embedded containerd run loop failed: %w", err)
 	}
 }
 

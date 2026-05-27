@@ -1,4 +1,4 @@
-//go:build linux && full
+//go:build linux && cgo
 
 package edgeletcontainerdd
 
@@ -13,6 +13,16 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDescribeStartupFailureNilReturnsExitedEarly(t *testing.T) {
+	err := describeStartupFailure(nil)
+	if !errors.Is(err, ErrContainerdExitedEarly) {
+		t.Fatalf("expected ErrContainerdExitedEarly, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("unexpected nil wrap artifact: %v", err)
+	}
+}
 
 func TestStartPropagatesRunError(t *testing.T) {
 	svc := NewService()
