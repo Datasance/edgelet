@@ -50,12 +50,21 @@ var signalSelfForSupervisor = func(sig syscall.Signal) error {
 	return syscall.Kill(os.Getpid(), sig)
 }
 
+var (
+	supervisorNewContainerEngine = engines.NewContainerEngine
+	engineInitRetryWait          = time.Sleep
+)
+
 // Supervisor orchestrates all ioFog modules
 type Supervisor struct {
 	config *config.Config
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// containerEngine is set once ProcessManager is wired to a runtime backend.
+	containerEngine engine.ContainerEngine
+	engineWireMu    sync.Mutex
 
 	// Embedded containerd service (non-nil only when containerEngine=iofog)
 	containerdSvc *edgeletcontainerdd.Service
@@ -169,10 +178,21 @@ func (s *Supervisor) Start() error {
 
 	var eng engine.ContainerEngine
 	var engErr error
+	engineDegraded := false
 	if cfg.ContainerEngine == constants.EngineDocker || cfg.ContainerEngine == constants.EnginePodman {
 		eng, engErr = s.initExternalEngineWithRetry(cfg.ContainerEngine, engConfig)
+		if engErr != nil {
+			logging.LogError(moduleName,
+				fmt.Sprintf("%s engine unavailable after %d init attempts (retry budget %s); running degraded until socket is ready",
+					cfg.ContainerEngine, engineInitMaxRetries, engineInitTotalWaitBudget()),
+				engErr)
+			s.markExternalEngineDegraded()
+			s.startExternalEngineRecovery(cfg.ContainerEngine, engConfig)
+			engineDegraded = true
+			engErr = nil
+		}
 	} else {
-		eng, engErr = engines.NewContainerEngine(cfg.ContainerEngine, engConfig)
+		eng, engErr = supervisorNewContainerEngine(cfg.ContainerEngine, engConfig)
 		if engErr != nil {
 			return fmt.Errorf("failed to create container engine %q: %w", cfg.ContainerEngine, engErr)
 		}
@@ -184,21 +204,14 @@ func (s *Supervisor) Start() error {
 	if engErr != nil {
 		return engErr
 	}
-	if err := s.processManager.Start(eng, s.fieldAgent); err != nil {
-		return err
+	if eng != nil {
+		if err := s.wireContainerEngine(eng); err != nil {
+			return err
+		}
 	}
-	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
-		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
-	})
-
-	// Set ProcessManager reference in FieldAgent so it can notify ProcessManager during startup
-	s.fieldAgent.SetProcessManager(s.processManager)
-	// Inject engine + ProcessManager into LogSessionManager so log streaming works for all engine types
-	fieldagent.GetLogSessionManager().SetProcessManager(s.processManager)
-	fieldagent.GetLogSessionManager().SetEngine(eng)
 
 	// Start HealthcheckRunner when using iofog engine (Docker/Podman use native healthcheck)
-	if cfg.ContainerEngine == constants.EngineEdgelet {
+	if eng != nil && cfg.ContainerEngine == constants.EngineEdgelet {
 		var hcEng healthcheck.HealthcheckEngine
 		if he, ok := eng.(healthcheck.HealthcheckEngine); ok {
 			hcEng = he
@@ -236,10 +249,15 @@ func (s *Supervisor) Start() error {
 	s.wg.Add(1)
 	go s.monitorLocalAPI()
 
-	// Set daemon status to RUNNING
-	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
-		status.SetDaemonStatus(models.ModuleStatusRunning)
-	})
+	if engineDegraded {
+		s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+			status.SetDaemonStatus(models.ModuleStatusWarning)
+		})
+	} else {
+		s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+			status.SetDaemonStatus(models.ModuleStatusRunning)
+		})
+	}
 
 	// Start Pruning Manager — inject engine so non-Docker engines (iofog/containerd) are pruned correctly.
 	// Also wire in the microservice image callback so scheduled/threshold pruning protects
@@ -306,48 +324,128 @@ const (
 	engineInitMaxBackoff     = 30 * time.Second
 )
 
+// engineInitTotalWaitBudget returns worst-case wall time spent sleeping between
+// external-engine init attempts (2s initial backoff, doubles capped at 30s).
+func engineInitTotalWaitBudget() time.Duration {
+	total := time.Duration(0)
+	backoff := engineInitInitialBackoff
+	for attempt := 1; attempt < engineInitMaxRetries; attempt++ {
+		total += backoff
+		backoff *= 2
+		if backoff > engineInitMaxBackoff {
+			backoff = engineInitMaxBackoff
+		}
+	}
+	return total
+}
+
+func advanceEngineInitBackoff(backoff time.Duration) time.Duration {
+	backoff *= 2
+	if backoff > engineInitMaxBackoff {
+		return engineInitMaxBackoff
+	}
+	return backoff
+}
+
+func initExternalEngineAttempt(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
+	eng, createErr := supervisorNewContainerEngine(engineType, cfg)
+	if createErr != nil {
+		return nil, createErr
+	}
+	if initErr := eng.Init(cfg); initErr != nil {
+		return nil, initErr
+	}
+	return engines.WrapWithLoggingIfExternal(eng, engineType), nil
+}
+
 // initExternalEngineWithRetry creates and initializes Docker or Podman engine with
-// exponential backoff. Used when the socket may be temporarily unavailable (e.g.
-// daemon restart). After max retries, suggests switching to containerEngine: edgelet.
+// exponential backoff when the socket may be temporarily unavailable (e.g. host reboot).
+// There is no fallback to containerEngine=edgelet; callers must handle a returned error.
 func (s *Supervisor) initExternalEngineWithRetry(engineType string, cfg engine.EngineConfig) (engine.ContainerEngine, error) {
 	var lastErr error
 	backoff := engineInitInitialBackoff
 
 	for attempt := 1; attempt <= engineInitMaxRetries; attempt++ {
-		eng, createErr := engines.NewContainerEngine(engineType, cfg)
-		if createErr != nil {
-			lastErr = createErr
-			logging.LogWarn(moduleName, fmt.Sprintf("%s engine create attempt %d/%d failed: %v", engineType, attempt, engineInitMaxRetries, createErr))
-			if attempt < engineInitMaxRetries {
-				logging.LogInfo(moduleName, fmt.Sprintf("Retrying in %v...", backoff))
-				time.Sleep(backoff)
-				if backoff < engineInitMaxBackoff {
-					backoff *= 2
-				}
-			}
-			continue
+		eng, err := initExternalEngineAttempt(engineType, cfg)
+		if err == nil {
+			logging.LogInfo(moduleName, fmt.Sprintf("%s engine initialized successfully after %d attempt(s)", engineType, attempt))
+			return eng, nil
 		}
-
-		if initErr := eng.Init(cfg); initErr != nil {
-			lastErr = initErr
-			logging.LogWarn(moduleName, fmt.Sprintf("%s engine init attempt %d/%d failed (socket may be unavailable): %v", engineType, attempt, engineInitMaxRetries, initErr))
-			if attempt < engineInitMaxRetries {
-				logging.LogInfo(moduleName, fmt.Sprintf("Retrying in %v...", backoff))
-				time.Sleep(backoff)
-				if backoff < engineInitMaxBackoff {
-					backoff *= 2
-				}
-			}
-			continue
+		lastErr = err
+		logging.LogWarn(moduleName, fmt.Sprintf("%s engine init attempt %d/%d failed (socket may be unavailable): %v", engineType, attempt, engineInitMaxRetries, err))
+		if attempt < engineInitMaxRetries {
+			logging.LogInfo(moduleName, fmt.Sprintf("Retrying in %v...", backoff))
+			engineInitRetryWait(backoff)
+			backoff = advanceEngineInitBackoff(backoff)
 		}
-
-		logging.LogInfo(moduleName, fmt.Sprintf("%s engine initialized successfully after %d attempt(s)", engineType, attempt))
-		return engines.WrapWithLoggingIfExternal(eng, engineType), nil
 	}
 
-	logging.LogError(moduleName, fmt.Sprintf("%s socket still unavailable after %d attempts", engineType, engineInitMaxRetries),
-		fmt.Errorf("consider setting containerEngine: edgelet to use the embedded container engine: %w", lastErr))
-	return nil, fmt.Errorf("%s engine init failed after %d retries: %w", engineType, engineInitMaxRetries, lastErr)
+	return nil, fmt.Errorf("%s engine unavailable after %d init attempts (retry wait budget %s): %w",
+		engineType, engineInitMaxRetries, engineInitTotalWaitBudget(), lastErr)
+}
+
+func (s *Supervisor) markExternalEngineDegraded() {
+	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusWarning).
+			SetDaemonStatus(models.ModuleStatusWarning)
+	})
+}
+
+func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
+	s.engineWireMu.Lock()
+	defer s.engineWireMu.Unlock()
+	if s.containerEngine != nil {
+		return nil
+	}
+	if err := s.processManager.Start(eng, s.fieldAgent); err != nil {
+		return err
+	}
+	s.containerEngine = eng
+	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
+	})
+	s.fieldAgent.SetProcessManager(s.processManager)
+	fieldagent.GetLogSessionManager().SetProcessManager(s.processManager)
+	fieldagent.GetLogSessionManager().SetEngine(eng)
+	if s.dockerPruningManager != nil {
+		s.dockerPruningManager.SetEngine(eng)
+	}
+	return nil
+}
+
+func (s *Supervisor) startExternalEngineRecovery(engineType string, cfg engine.EngineConfig) {
+	s.wg.Add(1)
+	go s.runExternalEngineRecovery(engineType, cfg)
+}
+
+func (s *Supervisor) runExternalEngineRecovery(engineType string, cfg engine.EngineConfig) {
+	defer s.wg.Done()
+	backoff := engineInitInitialBackoff
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+		}
+		eng, err := initExternalEngineAttempt(engineType, cfg)
+		if err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("%s engine recovery attempt failed: %v", engineType, err))
+			engineInitRetryWait(backoff)
+			backoff = advanceEngineInitBackoff(backoff)
+			continue
+		}
+		logging.LogInfo(moduleName, fmt.Sprintf("%s engine recovered; activating container runtime", engineType))
+		if err := s.wireContainerEngine(eng); err != nil {
+			logging.LogError(moduleName, "Failed to activate recovered container engine", err)
+			engineInitRetryWait(backoff)
+			backoff = advanceEngineInitBackoff(backoff)
+			continue
+		}
+		s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+			status.SetDaemonStatus(models.ModuleStatusRunning)
+		})
+		return
+	}
 }
 
 // Stop stops all modules gracefully in reverse order
