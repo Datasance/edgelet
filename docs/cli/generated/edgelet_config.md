@@ -37,7 +37,7 @@ edgelet config [flags]
 ### Options
 
 ```
-      --arch string                    fog type/arch. Alias: --ft
+      --arch string                    fog type/arch (auto|amd64|arm64|arm|riscv64). Alias: --ft
       --available-disk-threshold int   available disk threshold. Alias: --dt
       --change-frequency-seconds int   change polling frequency (seconds). Alias: --cf
       --container-engine string        container engine (docker|podman|edgelet). Alias: --ce

@@ -34,6 +34,7 @@ edgelet [flags]
 * [edgelet deploy](edgelet_deploy.md)	 - Deploy a local manifest
 * [edgelet deprovision](edgelet_deprovision.md)	 - Deprovision the agent
 * [edgelet image](edgelet_image.md)	 - Image operations
+* [edgelet init-config](edgelet_init-config.md)	 - Write default config if missing
 * [edgelet ms](edgelet_ms.md)	 - Microservice operations
 * [edgelet provision](edgelet_provision.md)	 - Provision the agent
 * [edgelet registry](edgelet_registry.md)	 - Registry operations

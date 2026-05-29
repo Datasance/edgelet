@@ -1,9 +1,0 @@
-# Example profile for external engine mode (docker or podman).
-currentProfile: production
-profiles:
-  production:
-    containerEngine: docker
-    dockerUrl: unix:///var/run/docker.sock
-    diskDirectory: /var/lib/edgelet/
-    logDirectory: /var/log/edgelet/
-    logLevel: INFO
