@@ -2,118 +2,123 @@
 
 ## Overview
 
-Edgelet uses **tarball-only** distribution. **Linux** ships one unified artifact per architecture; **darwin/windows** ship a monolithic desktop binary.
+Edgelet uses **binary-only** GitHub Releases (Plan 8). **Linux** ships a thin download ELF with embedded zstd fat runtime; **darwin/windows** ship a monolithic binary.
 
-| Platform | Artifact | `containerEngine` | Notes |
-|----------|----------|-------------------|--------|
-| **linux** | `edgelet-linux-<arch>.tar.gz` | `edgelet` (default), `docker`, `podman` | Thin OTA binary + embedded zstd fat runtime |
-| **darwin** | `edgelet-darwin-<arch>.tar.gz` | `docker` or `podman` | Monolithic; no embed |
-| **windows** | `edgelet-windows-amd64.tar.gz` | `docker` or `podman` | Monolithic; no embed |
+| Platform | Release artifact | `containerEngine` | Notes |
+|----------|------------------|-------------------|--------|
+| **linux** | `edgelet-linux-<arch>` | `edgelet` (default), `docker`, `podman` | Thin OTA binary + lazy fat extract |
+| **darwin** | `edgelet-darwin-<arch>` | `docker`, `podman` | Monolithic; no embed |
+| **windows** | `edgelet-windows-amd64.exe` | `docker`, `podman` | Monolithic; no embed |
 
-No **musl-suffixed** release line (RFC R9). Optional ops-only static linking: `STATIC_BUILD=true make build-linux-amd64`.
-
-DEB/RPM are not used. Installation is via **`install.sh`**; removal via **`uninstall.sh`**.
+No DEB/RPM. Install via **`install.sh`**; remove via **`uninstall.sh`**.
 
 ---
 
 ## Distribution artifacts
 
-Release tarball names:
+### GitHub Release (per tag)
 
-- **Linux:** `edgelet-linux-<arch>.tar.gz`
-- **Darwin:** `edgelet-darwin-<arch>.tar.gz`
-- **Windows:** `edgelet-windows-amd64.tar.gz`
+| File | Purpose |
+|------|---------|
+| `edgelet-linux-{amd64,arm64,arm,riscv64}` | Linux thin binaries |
+| `edgelet-darwin-{amd64,arm64}` | macOS binaries |
+| `edgelet-windows-amd64.exe` | Windows binary |
+| `SHA256SUMS` | Checksums for all of the above + samples |
+| `edgelet-config.yaml.sample` | Default config template |
+| `edgelet-controller-ca.crt.sample` | Lab bootstrap CA |
+| `install.sh` / `uninstall.sh` | On-node lifecycle scripts |
 
-Versioned copies: `edgelet-<VERSION>-linux-<arch>.tar.gz` (and desktop equivalents).
+**Not published:** `.tar.gz` bundles, `install-minimal.sh`, DEB/RPM.
 
-Examples:
+Build:
 
-- `edgelet-linux-amd64.tar.gz`
-- `edgelet-linux-arm64.tar.gz`
-- `edgelet-darwin-arm64.tar.gz`
+```bash
+make build-all-archs
+make build-desktop-darwin build-desktop-windows
+make release-binaries VERSION=v1.0.0   # → dist/
+```
 
-Each linux tarball contains:
-
-- `edgelet` — thin wrapper (CLI + embed + `daemon` dispatch)
-- Optional `config.yaml.sample`
-
-Checksum manifest (`make release-tarballs`):
-
-- `dist/SHA256SUMS`
+Script: `scripts/release-binaries.sh` (replaces `release-tarballs.sh`).
 
 ---
 
-## Build
+## Install paths
 
-```bash
-# Local default (host OS)
-make build-edgelet-linux    # linux thin (needs deps embed on linux or Docker)
-make build-edgelet-local    # host: linux thin or desktop monolithic
-
-# Linux matrix (no musl targets)
-make build-all-archs
-
-# Release tarballs → dist/
-make release-tarballs VERSION=v1.0.0
-
-# Embedded bundle (linux)
-make deps ARCH=amd64
-
-# macOS dev — linux CI gates in Docker
-make ci-docker
-# or: docker build -f build/Dockerfile.embedded -t edgelet-embed-ci .
-#     docker run --rm -v "$(pwd)":/src -w /src edgelet-embed-ci ./scripts/ci
-```
+| Item | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `Program Files\Edgelet\edgelet.exe` |
+| Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config.yaml` |
+| OTA | `/var/backups/edgelet/` | — | — |
+| Scripts | `/usr/share/edgelet/` | optional | optional |
 
 ---
 
 ## install.sh
 
-Default linux install uses **`edgelet-linux-<arch>.tar.gz`** (no flavor suffix).
-
 | Flag | Meaning |
 |------|---------|
-| `--container-engine=` | `edgelet`, `docker`, or `podman` (linux default: **edgelet**) |
-| `--flavor=full\|lite` | **Deprecated** — ignored |
-| `--arch=` | Override auto-detected arch |
-| `--airgap` | Do not download; requires `--tarball-path` |
-| `--tarball-path=PATH` | Local `.tar.gz` |
-| `--upgrade` / `--rollback` | OTA |
-| `--non-interactive` | Pot-oriented install |
-| `--controller-url=` / `--provision-key=` | Optional convenience flags |
+| `--version=` | Release tag for download |
+| `--arch=` | Override detected arch |
+| `--bin-path=` | Local binary (dev / airgap) |
+| `--airgap` | Offline; requires `--bin-path` |
+| `--expected-sha256=` | Verify staged binary |
+| `--upgrade` / `--rollback` | Thin-binary OTA |
+| `--force-config` | Replace config from sample |
+| `--with-sample-ca` | Install sample CA if missing |
+| `--container-engine=` | `edgelet`, `docker`, `podman` |
 
-Install paths:
+**Removed:** `--flavor`, `--provision-key`, `--non-interactive`, `--tarball-path`.
 
-| Item | Path |
-|------|------|
-| Binary | `/usr/local/bin/edgelet` |
-| Unit | `edgelet.service` → `ExecStart=/usr/local/bin/edgelet daemon` |
-| Config | `/etc/edgelet/config.yaml` |
-| Data | `/var/lib/edgelet/` |
-| Backups | `/var/backups/edgelet/` |
+Provision after install: `edgelet provision <key>` (potctl SSH).
 
 ---
 
-## Sample configs
+## Config templates (repo)
 
 | File | Use |
 |------|-----|
-| [config_lite.yaml](edgelet/etc/edgelet/config_lite.yaml) | External engine sample (docker/podman) |
-| [config_full.yaml](edgelet/etc/edgelet/config_full.yaml) | Embedded engine sample (`edgelet`) |
-| [config_new.yaml](edgelet/etc/edgelet/config_new.yaml) | Multi-profile sample |
+| [config.default.yaml](edgelet/etc/edgelet/config.default.yaml) | Release default → `edgelet-config.yaml.sample` |
+| [controller-ca.sample.crt](edgelet/etc/edgelet/controller-ca.sample.crt) | Lab CA sample |
+| [config_new.yaml](edgelet/etc/edgelet/config_new.yaml) | **Dev / embedded IT only** (multi-profile) |
+
+**Deleted:** `config_full.yaml`, `config_lite.yaml`.
+
+CLI: `edgelet init-config` writes default config if missing (no overwrite).
 
 ---
 
-## systemd
+## Init templates (linux)
 
-Unit template: [packaging/systemd/edgelet.service](../systemd/edgelet.service)
+Under `packaging/init/`:
 
-When `containerEngine` is docker or podman, use `After=docker.service` or `After=podman.service` in a drop-in (see [docs/edgelet/deployment.md](../docs/edgelet/deployment.md)).
+| Init | Template |
+|------|----------|
+| systemd | `systemd/edgelet.service` |
+| openrc | `openrc/edgelet.init` |
+| sysvinit | `sysvinit/edgelet.init` |
+| upstart | `upstart/edgelet.conf` |
+| s6 | `s6/run`, `s6/finish` |
+| runit | `runit/run` |
+
+Helpers: `scripts/lib/init-detect.sh`, `scripts/lib/init-edgelet.sh`.
+
+---
+
+## Container image
+
+| Item | Value |
+|------|--------|
+| Image | `ghcr.io/datasance/edgelet-linux:<tag>` |
+| Dockerfile | `Dockerfile.edgelet-linux` |
+| Entry | `edgelet daemon` with `EDGELET_DAEMON=container` |
 
 ---
 
 ## CI
 
-- **`scripts/ci`** — linux gate: embed pipeline → build-edgelet → `go test` → size check (≤55 MB amd64/arm64 thin)
-- **`.github/workflows/ci-go.yml`** — unit tests + optional Docker embed job
-- **`make test-embedded-ci`** — Lima VM embedded containerd tests (macOS)
+| Target | Purpose |
+|--------|---------|
+| `scripts/ci` | Linux embed → build → test → size gate (≤55 MB thin) |
+| `.github/workflows/ci-go.yml` | Unit tests + embed job |
+| `test/install/*.sh` | Install / OTA script smoke (linux root) |
+| `test/embedded/run-all.sh` | Lima VM embedded engine IT |

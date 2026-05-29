@@ -1,65 +1,114 @@
 #!/bin/sh
-# install.sh — Edgelet greenfield installer (tarball-only)
+# install.sh — Edgelet greenfield installer (binary-only, multi-OS)
 #
 # Usage:
-#   curl -fsSL ... | sudo sh -s --
-#   sudo ./install.sh [--version=vX.Y.Z]
-#   sudo ./install.sh --airgap --tarball-path=dist/edgelet-linux-amd64.tar.gz
-#   sudo ./install.sh --container-engine=docker
+#   curl -fsSL .../install.sh | sudo sh -s -- --version=vX.Y.Z
+#   sudo ./install.sh --bin-path=build/edgelet-linux-amd64 --version=dev
+#   sudo ./install.sh --airgap --bin-path=./edgelet-linux-amd64 --expected-sha256=...
 #
-# Legacy --flavor=full|lite is ignored (unified linux tarball since Plan 7).
-# Linux gates (CI / VM): systemctl status edgelet
-# macOS dev for embed CI: make ci-docker  (runs scripts/ci in Docker)
+# Provision after install: edgelet provision <key>  (not install.sh flags)
 
 set -e
 
 die() { echo "ERROR: $1" >&2; exit 1; }
 info() { echo ">>> $1"; }
 
-require_root() {
-    [ "$(id -u)" -eq 0 ] || die "This script must be run as root. Try: sudo $0 $*"
-}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if [ -f "${SCRIPT_DIR}/scripts/lib/init-detect.sh" ]; then
+    LIB_DIR="${SCRIPT_DIR}/scripts/lib"
+elif [ -f "${SCRIPT_DIR}/lib/init-detect.sh" ]; then
+    LIB_DIR="${SCRIPT_DIR}/lib"
+else
+    die "Missing init helper scripts (scripts/lib or /usr/share/edgelet/lib)"
+fi
+# shellcheck source=scripts/lib/init-detect.sh
+. "${LIB_DIR}/init-detect.sh"
+# shellcheck source=scripts/lib/init-edgelet.sh
+. "${LIB_DIR}/init-edgelet.sh"
 
 BACKUP_DIR="/var/backups/edgelet"
+CACHE_DIR="${BACKUP_DIR}/cache"
 RECEIPT_FILE="${BACKUP_DIR}/install-receipt"
 PREVIOUS_FILE="${BACKUP_DIR}/previous-release"
 GITHUB_REPO="${EDGELET_GITHUB_REPO:-datasance/edgelet}"
+SHARE_DIR="/usr/share/edgelet"
 UNIT_NAME="edgelet"
-BINARY_PATH="/usr/local/bin/edgelet"
 CONFIG_DIR="/etc/edgelet"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+CERT_FILE="${CONFIG_DIR}/cert.crt"
+
+detect_os() {
+    _u=$(uname -s)
+    case "${_u}" in
+        Linux)  echo "linux" ;;
+        Darwin) echo "darwin" ;;
+        MINGW*|MSYS*|CYGWIN*|Windows_NT) echo "windows" ;;
+        *) die "Unsupported OS: ${_u}" ;;
+    esac
+}
 
 detect_arch() {
     MACHINE=$(uname -m)
     case "${MACHINE}" in
-        x86_64)   echo "amd64" ;;
-        aarch64)  echo "arm64" ;;
+        x86_64|amd64)     echo "amd64" ;;
+        aarch64|arm64)    echo "arm64" ;;
         armv7l|armv6l|arm) echo "arm" ;;
-        riscv64)  echo "riscv64" ;;
+        riscv64)          echo "riscv64" ;;
         *) die "Unsupported architecture: ${MACHINE}" ;;
     esac
 }
 
-detect_init() {
-    if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
-        echo "systemd"
-    elif command -v openrc >/dev/null 2>&1 || [ -f /sbin/openrc ]; then
-        echo "openrc"
-    else
-        echo "unknown"
+require_root() {
+    OS=$(detect_os)
+    if [ "$OS" = "windows" ]; then
+        return 0
     fi
+    [ "$(id -u)" -eq 0 ] || die "This script must be run as root. Try: sudo $0 $*"
 }
 
-verify_tarball_checksum() {
-    _tar="$1"
-    [ -f "$_tar" ] || die "Not a file: $_tar"
+binary_basename() {
+    _os="$1" _arch="$2"
+    case "${_os}" in
+        windows) echo "edgelet-${_os}-${_arch}.exe" ;;
+        *)       echo "edgelet-${_os}-${_arch}" ;;
+    esac
+}
+
+binary_install_path() {
+    _os="$1"
+    case "${_os}" in
+        linux|darwin) echo "/usr/local/bin/edgelet" ;;
+        windows)
+            _pf="${ProgramFiles:-/c/Program Files}"
+            echo "${_pf}/Edgelet/edgelet.exe"
+            ;;
+        *) die "Unsupported OS for binary path" ;;
+    esac
+}
+
+release_download_url() {
+    _ver="$1" _os="$2" _arch="$3"
+    _base="https://github.com/${GITHUB_REPO}/releases/download/${_ver}/$(binary_basename "$_os" "$_arch")"
+    echo "$_base"
+}
+
+verify_binary_checksum() {
+    _bin="$1"
+    [ -f "$_bin" ] || die "Not a file: $_bin"
     if [ -n "$EXPECTED_SHA256" ]; then
-        _sum=$(sha256sum "$_tar" | awk '{print $1}')
+        _sum=$(sha256sum "$_bin" | awk '{print $1}')
         [ "$_sum" = "$EXPECTED_SHA256" ] || die "SHA256 mismatch (expected $EXPECTED_SHA256 got $_sum)"
         info "SHA256 verified."
     elif [ -n "$CHECKSUM_FILE" ] && [ -f "$CHECKSUM_FILE" ]; then
-        ( cd "$(dirname "$_tar")" && sha256sum -c "$CHECKSUM_FILE" ) || die "Checksum file verification failed"
+        _bn=$(basename "$_bin")
+        ( cd "$(dirname "$_bin")" && grep " ${_bn}\$" "$CHECKSUM_FILE" >/dev/null ) || \
+            ( cd "$(dirname "$CHECKSUM_FILE")" && sha256sum -c "$CHECKSUM_FILE" ) || \
+            die "Checksum file verification failed"
     fi
+}
+
+sha256_file() {
+    sha256sum "$1" | awk '{print $1}'
 }
 
 kv_get() {
@@ -71,196 +120,132 @@ kv_get() {
 }
 
 write_install_receipt() {
-    _ver="$1" _engine="$2" _url="$3"
+    _ver="$1" _os="$2" _arch="$3" _eng="$4" _url="$5" _sha="$6" _method="$7"
     mkdir -p "$BACKUP_DIR"
+    _ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u)
     {
         printf 'installed_version=%s\n' "$_ver"
-        printf 'container_engine=%s\n' "$_engine"
+        printf 'os=%s\n' "$_os"
+        printf 'arch=%s\n' "$_arch"
+        printf 'container_engine=%s\n' "$_eng"
         printf 'source_url=%s\n' "$_url"
+        printf 'installed_at=%s\n' "$_ts"
+        printf 'install_method=%s\n' "$_method"
+        printf 'binary_sha256=%s\n' "$_sha"
     } >"$RECEIPT_FILE"
     chmod 600 "$RECEIPT_FILE" 2>/dev/null || true
 }
 
 write_previous_release() {
-    _pv="$1" _peng="$2" _purl="$3" _cfg="$4"
+    _pv="$1" _pos="$2" _parch="$3" _peng="$4" _purl="$5" _psha="$6" _cfg="$7"
     mkdir -p "$BACKUP_DIR"
     {
         printf 'previous_version=%s\n' "$_pv"
+        printf 'previous_os=%s\n' "$_pos"
+        printf 'previous_arch=%s\n' "$_parch"
         printf 'previous_container_engine=%s\n' "$_peng"
         printf 'previous_download_url=%s\n' "$_purl"
+        printf 'previous_binary_sha256=%s\n' "$_psha"
         printf 'config_backup_path=%s\n' "$_cfg"
     } >"$PREVIOUS_FILE"
     chmod 600 "$PREVIOUS_FILE" 2>/dev/null || true
 }
 
-# ── argument parsing ──────────────────────────────────────────────────────────
-EDGELET_VERSION="${EDGELET_VERSION:-latest}"
-EDGELET_FLAVOR=""
-CONTAINER_ENGINE=""
-ACTION="install"
-AIRGAP=false
-TARBALL_PATH=""
-FORCE_CONFIG=false
-NON_INTERACTIVE=false
-CONTROLLER_URL=""
-PROVISION_KEY=""
-ARCH_OVERRIDE=""
-BIN_PATH_LEGACY=""
-
-for arg in "$@"; do
-    case "${arg}" in
-        --version=*)          EDGELET_VERSION="${arg#*=}" ;;
-        --flavor=*)           EDGELET_FLAVOR="${arg#*=}" ;;
-        --arch=*)             ARCH_OVERRIDE="${arg#*=}" ;;
-        --container-engine=*) CONTAINER_ENGINE="${arg#*=}" ;;
-        --bin-path=*)         BIN_PATH_LEGACY="${arg#*=}" ;;
-        --tarball-path=*)     TARBALL_PATH="${arg#*=}" ;;
-        --checksum-path=*)    CHECKSUM_FILE="${arg#*=}" ;;
-        --expected-sha256=*)  EXPECTED_SHA256="${arg#*=}" ;;
-        --airgap)             AIRGAP=true ;;
-        --upgrade)            ACTION="upgrade" ;;
-        --rollback)           ACTION="rollback" ;;
-        --force-config)       FORCE_CONFIG=true ;;
-        --non-interactive)    NON_INTERACTIVE=true ;;
-        --controller-url=*)   CONTROLLER_URL="${arg#*=}" ;;
-        --provision-key=*)    PROVISION_KEY="${arg#*=}" ;;
-        --help|-h)
-            cat <<EOF
-Usage: $0 [options]
-
-Options:
-  --version=VERSION          Release tag (default: latest)
-  --arch=ARCH                Override auto-detected arch (amd64, arm64, arm, riscv64)
-  --container-engine=ENGINE  docker, podman, or edgelet (default: edgelet on linux)
-  --flavor=full|lite         Deprecated; ignored (unified linux tarball)
-  --airgap                   Do not download; use --tarball-path
-  --tarball-path=PATH        Local edgelet-*.tar.gz
-  --checksum-path=PATH       Optional sha256sum manifest
-  --expected-sha256=HASH     Optional tarball SHA256
-  --upgrade / --rollback     In-place upgrade or rollback
-  --force-config             Replace config on upgrade/rollback
-  --non-interactive          Pot-oriented: no prompts
-  --controller-url=URL       Optional: write controllerUrl into new config
-  --provision-key=KEY        Optional: run edgelet provision after install
-
-Environment:
-  EDGELET_VERSION  EDGELET_GITHUB_REPO
-EOF
-            exit 0 ;;
-        *) die "Unknown option: ${arg} (use --help)" ;;
+cache_binary() {
+    _ver="$1" _os="$2" _arch="$3" _src="$4"
+    mkdir -p "$CACHE_DIR"
+    _dest="${CACHE_DIR}/edgelet-${_ver}-${_os}-${_arch}"
+    case "${_os}" in
+        windows) _dest="${_dest}.exe" ;;
     esac
-done
+    cp "$_src" "$_dest"
+    chmod 755 "$_dest" 2>/dev/null || true
+    info "Cached binary at ${_dest}"
+}
 
-[ -n "$BIN_PATH_LEGACY" ] && TARBALL_PATH="${TARBALL_PATH:-$BIN_PATH_LEGACY}"
-
-if [ "$AIRGAP" = true ] && [ -z "$TARBALL_PATH" ]; then
-    die "--airgap requires --tarball-path"
-fi
-
-if [ "$ACTION" != "rollback" ]; then
-    if [ -n "$EDGELET_FLAVOR" ]; then
-        info "Note: --flavor=${EDGELET_FLAVOR} is deprecated and ignored (unified linux tarball)."
-    fi
-
-    if [ -z "$CONTAINER_ENGINE" ]; then
-        CONTAINER_ENGINE="edgelet"
-    fi
-
-    case "$CONTAINER_ENGINE" in
-        edgelet|docker|podman) ;;
-        *) die "Invalid --container-engine (use edgelet, docker, or podman)" ;;
+cached_binary_path() {
+    _ver="$1" _os="$2" _arch="$3"
+    _p="${CACHE_DIR}/edgelet-${_ver}-${_os}-${_arch}"
+    case "${_os}" in
+        windows) _p="${_p}.exe" ;;
     esac
-fi
-
-require_root
-
-ARCH="${ARCH_OVERRIDE:-$(detect_arch)}"
-INIT=$(detect_init)
-
-info "Architecture : ${ARCH}"
-info "Init system  : ${INIT}"
-if [ "$ACTION" != "rollback" ]; then
-    info "Engine       : ${CONTAINER_ENGINE}"
-fi
-info "Action       : ${ACTION}"
-
-tarball_name_for() {
-    _ver="$1"
-    _arch="$2"
-    echo "edgelet-${_ver}-linux-${_arch}.tar.gz"
-}
-
-resolve_tarball_basename() {
-    _ver="$1"
-    _arch="$2"
-    if [ "$AIRGAP" = true ] && [ -n "$TARBALL_PATH" ]; then
-        basename "$TARBALL_PATH"
+    if [ -f "$_p" ]; then
+        echo "$_p"
         return 0
     fi
-    tarball_name_for "$_ver" "$_arch"
+    echo ""
 }
 
-TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}")
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "${TMPDIR}"' EXIT
-
-if [ "$AIRGAP" = false ] && [ "$EDGELET_VERSION" = "latest" ] && [ "$ACTION" != "rollback" ]; then
-    info "Fetching latest release tag..."
-    EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-        | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-    [ -n "${EDGELET_VERSION}" ] || die "Failed to determine latest version"
-    TARBALL_BASENAME=$(tarball_name_for "${EDGELET_VERSION}" "${ARCH}")
-fi
-
-info "Version: ${EDGELET_VERSION}"
-
-download_or_copy_tarball() {
-    _dest="$1"
-    if [ "$AIRGAP" = true ]; then
-        [ -f "$TARBALL_PATH" ] || die "Local archive not found: $TARBALL_PATH"
-        verify_tarball_checksum "$TARBALL_PATH"
-        cp "$TARBALL_PATH" "$_dest"
-        info "Using local archive: ${TARBALL_PATH}"
+packaging_etc_dir() {
+    if [ -d "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet" ]; then
+        echo "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet"
         return 0
     fi
-    _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${TARBALL_BASENAME}"
-    info "Downloading ${_url} ..."
-    if ! curl -fsSL -o "$_dest" "$_url"; then
-        _alt="edgelet-linux-${ARCH}.tar.gz"
-        _url="https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${_alt}"
-        info "Retrying ${_url} ..."
-        curl -fsSL -o "$_dest" "$_url" || die "Failed to download release tarball"
-    fi
-}
-
-extract_tarball() {
-    _tg="$1"
-    info "Extracting archive..."
-    tar -xzf "$_tg" -C "${TMPDIR}"
-}
-
-install_binary() {
-    if [ ! -f "${TMPDIR}/edgelet" ]; then
-        die "Tarball missing edgelet binary"
-    fi
-    install -m 755 "${TMPDIR}/edgelet" "${BINARY_PATH}"
-    info "Installed ${BINARY_PATH}"
-}
-
-install_cli_completion() {
-    if ! command -v edgelet >/dev/null 2>&1; then
+    if [ -d "${SHARE_DIR}/etc/edgelet" ]; then
+        echo "${SHARE_DIR}/etc/edgelet"
         return 0
     fi
-    if [ -d /etc/bash_completion.d ]; then
-        if edgelet completion bash >/etc/bash_completion.d/edgelet 2>/dev/null; then
-            chmod 644 /etc/bash_completion.d/edgelet
-            info "Bash completion installed to /etc/bash_completion.d/edgelet"
-            return 0
+    echo ""
+}
+
+install_config_samples() {
+    _etc="$(packaging_etc_dir)"
+    _sample_cfg=""
+    _sample_ca=""
+    if [ -n "$_etc" ]; then
+        [ -f "${_etc}/config.default.yaml" ] && _sample_cfg="${_etc}/config.default.yaml"
+        [ -f "${_etc}/controller-ca.sample.crt" ] && _sample_ca="${_etc}/controller-ca.sample.crt"
+    fi
+    if [ -f "${SHARE_DIR}/edgelet-config.yaml.sample" ]; then
+        _sample_cfg="${SHARE_DIR}/edgelet-config.yaml.sample"
+    fi
+    if [ -f "${SHARE_DIR}/edgelet-controller-ca.crt.sample" ]; then
+        _sample_ca="${SHARE_DIR}/edgelet-controller-ca.crt.sample"
+    fi
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+        if [ -n "$_sample_cfg" ]; then
+            mkdir -p "$CONFIG_DIR"
+            install -m 640 "$_sample_cfg" "$CONFIG_FILE"
+            info "Config installed from sample."
+        else
+            write_default_config_if_missing
         fi
+    elif [ "$FORCE_CONFIG" = true ]; then
+        [ -n "$_sample_cfg" ] || die "--force-config requires a config sample"
+        install -m 640 "$_sample_cfg" "$CONFIG_FILE"
+        info "Config replaced (--force-config)."
+    else
+        info "Existing config preserved at ${CONFIG_FILE}"
     fi
-    if [ -f packaging/edgelet/etc/bash_completion.d/edgelet ]; then
-        install -m 644 packaging/edgelet/etc/bash_completion.d/edgelet /etc/bash_completion.d/edgelet 2>/dev/null || true
+
+    if [ "$WITH_SAMPLE_CA" = true ] && [ ! -f "$CERT_FILE" ]; then
+        [ -n "$_sample_ca" ] || die "--with-sample-ca requires controller-ca sample"
+        install -m 644 "$_sample_ca" "$CERT_FILE"
+        info "Sample controller CA installed at ${CERT_FILE}"
     fi
+}
+
+write_default_config_if_missing() {
+    [ -f "$CONFIG_FILE" ] && return 0
+    _eng="${CONTAINER_ENGINE:-edgelet}"
+    _du=$(default_docker_url_for_engine "$_eng")
+    mkdir -p "$CONFIG_DIR"
+    cat >"$CONFIG_FILE" <<YAML
+currentProfile: production
+profiles:
+  production:
+    controllerUrl: "http://localhost:54421/api/v3/"
+    controllerCert: "${CERT_FILE}"
+    arch: auto
+    containerEngine: ${_eng}
+    dockerUrl: ${_du}
+    diskDirectory: /var/lib/edgelet/
+    logDiskDirectory: /var/log/edgelet/
+    logLevel: INFO
+YAML
+    chmod 640 "$CONFIG_FILE"
+    info "Default config installed at ${CONFIG_FILE}"
 }
 
 default_docker_url_for_engine() {
@@ -272,184 +257,243 @@ default_docker_url_for_engine() {
     esac
 }
 
-write_default_config_if_missing() {
-    if [ ! -f "$CONFIG_FILE" ]; then
-        _du=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
-        _ctrl="${CONTROLLER_URL:-http://localhost:54421/api/v3/}"
-        cat >"$CONFIG_FILE" <<YAML
-currentProfile: production
-profiles:
-  production:
-    controllerUrl: "${_ctrl}"
-    containerEngine: ${CONTAINER_ENGINE}
-    dockerUrl: ${_du}
-    diskDirectory: /var/lib/edgelet/
-    logDiskDirectory: /var/log/edgelet/
-    logLevel: INFO
-YAML
-        chmod 640 "$CONFIG_FILE"
-        info "Default config installed at ${CONFIG_FILE}"
-    else
-        info "Existing config preserved at ${CONFIG_FILE}"
-    fi
-}
-
 install_dirs() {
-    mkdir -p "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet /run/edgelet \
-        /var/lib/edgelet-containerd "$BACKUP_DIR"
-    chmod 750 "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet 2>/dev/null || true
-}
-
-stop_edgelet_service() {
-    case "${INIT}" in
-        systemd) systemctl stop "${UNIT_NAME}" 2>/dev/null || true ;;
-        openrc) rc-service "${UNIT_NAME}" stop 2>/dev/null || true ;;
-        *) pkill -f "${BINARY_PATH}" 2>/dev/null || true ;;
-    esac
-}
-
-start_edgelet_service() {
-    case "${INIT}" in
-        systemd)
-            systemctl daemon-reload 2>/dev/null || true
-            systemctl enable "${UNIT_NAME}" 2>/dev/null || true
-            systemctl restart "${UNIT_NAME}" 2>/dev/null || true
+    OS="$1"
+    case "${OS}" in
+        linux|darwin)
+            mkdir -p "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet /run/edgelet \
+                /var/lib/edgelet-containerd "$BACKUP_DIR" "$CACHE_DIR" "$SHARE_DIR"
+            chmod 750 "$CONFIG_DIR" /var/log/edgelet /var/lib/edgelet 2>/dev/null || true
             ;;
-        openrc)
-            rc-update add "${UNIT_NAME}" default 2>/dev/null || true
-            rc-service "${UNIT_NAME}" start 2>/dev/null || true
-            ;;
-        *)
-            nohup "${BINARY_PATH}" daemon >/var/log/edgelet/daemon.log 2>&1 &
+        windows)
+            _pd="${ProgramData:-/c/ProgramData}/Edgelet"
+            mkdir -p "${_pd}/data" "${_pd}/config" 2>/dev/null || true
             ;;
     esac
 }
 
-install_systemd() {
-    _full="$1"
-    _eng="$2"
-    _after="network-online.target"
-    _wants=""
-    case "${_eng}" in
-        docker)
-            _after="network-online.target docker.service"
-            _wants="Wants=docker.service"
-            ;;
-        podman)
-            _after="network-online.target podman.socket"
-            _wants="Wants=podman.socket"
-            ;;
-    esac
-
-    if [ -f packaging/systemd/edgelet.service ] && [ "$_full" = "true" ] && [ "$_eng" = "edgelet" ]; then
-        cp packaging/systemd/edgelet.service "/etc/systemd/system/${UNIT_NAME}.service"
-    else
-        cat >"/etc/systemd/system/${UNIT_NAME}.service" <<EOF
-[Unit]
-Description=Edgelet daemon
-Documentation=https://github.com/datasance/edgelet
-${_wants}
-After=${_after}
-StartLimitIntervalSec=300
-StartLimitBurst=20
-
-[Service]
-Type=simple
-ExecStart=${BINARY_PATH} daemon
-Restart=always
-RestartSec=2s
-TimeoutStopSec=120s
-KillMode=control-group
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=edgelet
-LimitNOFILE=65536
-NoNewPrivileges=$([ "$_full" = true ] && echo no || echo true)
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=${CONFIG_DIR} /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet ${BACKUP_DIR}
-
-[Install]
-WantedBy=multi-user.target
-EOF
+copy_bundled_scripts() {
+    OS="$1"
+    [ "$OS" = "linux" ] || return 0
+    mkdir -p "$SHARE_DIR"
+    install -m 755 "${SCRIPT_DIR}/install.sh" "${SHARE_DIR}/install.sh"
+    install -m 755 "${SCRIPT_DIR}/uninstall.sh" "${SHARE_DIR}/uninstall.sh"
+    if [ -d "${SCRIPT_DIR}/packaging/init" ]; then
+        rm -rf "${SHARE_DIR}/init"
+        cp -R "${SCRIPT_DIR}/packaging/init" "${SHARE_DIR}/init"
     fi
-    systemctl daemon-reload
-    systemctl enable "${UNIT_NAME}"
-    systemctl restart "${UNIT_NAME}"
-    info "systemd unit ${UNIT_NAME}.service installed and started."
+    if [ -d "${SCRIPT_DIR}/scripts/lib" ]; then
+        mkdir -p "${SHARE_DIR}/lib"
+        cp "${SCRIPT_DIR}/scripts/lib/"*.sh "${SHARE_DIR}/lib/"
+        chmod 755 "${SHARE_DIR}/lib/"*.sh
+    fi
+    if [ -d "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet" ]; then
+        mkdir -p "${SHARE_DIR}/etc/edgelet"
+        for _f in config.default.yaml controller-ca.sample.crt; do
+            [ -f "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/${_f}" ] && \
+                cp "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/${_f}" "${SHARE_DIR}/etc/edgelet/${_f}" 2>/dev/null || true
+        done
+        [ -f "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/config.default.yaml" ] && \
+            cp "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/config.default.yaml" \
+                "${SHARE_DIR}/edgelet-config.yaml.sample"
+        [ -f "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/controller-ca.sample.crt" ] && \
+            cp "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet/controller-ca.sample.crt" \
+                "${SHARE_DIR}/edgelet-controller-ca.crt.sample"
+    fi
+    info "Bundled install scripts at ${SHARE_DIR}/"
 }
 
-install_service() {
-    _eng="$1"
-    _is_embedded="false"
-    [ "$_eng" = "edgelet" ] && _is_embedded="true"
-    case "${INIT}" in
-        systemd) install_systemd "$_is_embedded" "$_eng" ;;
-        *)
-            info "Non-systemd init: starting edgelet in background."
-            start_edgelet_service
-            ;;
-    esac
+install_binary_file() {
+    _src="$1" _dest="$2"
+    _dir=$(dirname "$_dest")
+    mkdir -p "$_dir"
+    install -m 755 "$_src" "$_dest"
+    info "Installed ${_dest}"
+}
+
+install_cli_completion() {
+    command -v edgelet >/dev/null 2>&1 || return 0
+    if [ -d /etc/bash_completion.d ]; then
+        if edgelet completion bash >/etc/bash_completion.d/edgelet 2>/dev/null; then
+            chmod 644 /etc/bash_completion.d/edgelet
+            info "Bash completion installed."
+        fi
+    fi
+}
+
+apply_container_engine_to_config() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    command -v sed >/dev/null 2>&1 || return 0
+    sed -i "s|containerEngine:.*|containerEngine: ${CONTAINER_ENGINE}|" "$CONFIG_FILE" 2>/dev/null || true
+    _durl=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
+    sed -i "s|dockerUrl:.*|dockerUrl: ${_durl}|" "$CONFIG_FILE" 2>/dev/null || true
+}
+
+download_or_stage_binary() {
+    _dest="$1"
+    if [ -n "$BIN_PATH" ]; then
+        [ -f "$BIN_PATH" ] || die "Local binary not found: $BIN_PATH"
+        verify_binary_checksum "$BIN_PATH"
+        cp "$BIN_PATH" "$_dest"
+        info "Using local binary: ${BIN_PATH}"
+        return 0
+    fi
+    if [ "$AIRGAP" = true ]; then
+        die "--airgap requires --bin-path"
+    fi
+    _url=$(release_download_url "$EDGELET_VERSION" "$OS" "$ARCH")
+    info "Downloading ${_url} ..."
+    curl -fsSL -o "$_dest" "$_url" || die "Failed to download release binary"
 }
 
 compute_source_url() {
-    if [ "$AIRGAP" = true ]; then
-        _real="$(cd "$(dirname "$TARBALL_PATH")" && pwd)/$(basename "$TARBALL_PATH")"
+    if [ -n "$BIN_PATH" ]; then
+        _real=$(cd "$(dirname "$BIN_PATH")" && pwd)/$(basename "$BIN_PATH")
         echo "file://${_real}"
     else
-        echo "https://github.com/${GITHUB_REPO}/releases/download/${EDGELET_VERSION}/${TARBALL_BASENAME}"
+        release_download_url "$EDGELET_VERSION" "$OS" "$ARCH"
     fi
 }
 
-maybe_provision() {
-    if [ -z "$PROVISION_KEY" ]; then
-        return 0
+# ── argument parsing ──────────────────────────────────────────────────────────
+EDGELET_VERSION="${EDGELET_VERSION:-latest}"
+CONTAINER_ENGINE=""
+ACTION="install"
+AIRGAP=false
+BIN_PATH=""
+FORCE_CONFIG=false
+WITH_SAMPLE_CA=false
+ARCH_OVERRIDE=""
+CHECKSUM_FILE=""
+EXPECTED_SHA256=""
+
+for arg in "$@"; do
+    case "${arg}" in
+        --version=*)          EDGELET_VERSION="${arg#*=}" ;;
+        --arch=*)             ARCH_OVERRIDE="${arg#*=}" ;;
+        --container-engine=*) CONTAINER_ENGINE="${arg#*=}" ;;
+        --bin-path=*)         BIN_PATH="${arg#*=}" ;;
+        --checksum-path=*)    CHECKSUM_FILE="${arg#*=}" ;;
+        --expected-sha256=*)  EXPECTED_SHA256="${arg#*=}" ;;
+        --airgap)             AIRGAP=true ;;
+        --upgrade)            ACTION="upgrade" ;;
+        --rollback)           ACTION="rollback" ;;
+        --force-config)       FORCE_CONFIG=true ;;
+        --with-sample-ca)     WITH_SAMPLE_CA=true ;;
+        --help|-h)
+            cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --version=VERSION          Release tag (default: latest)
+  --arch=ARCH                Override arch (amd64, arm64, arm, riscv64)
+  --container-engine=ENGINE  edgelet, docker, or podman (linux default: edgelet)
+  --airgap                   Do not download; use --bin-path
+  --bin-path=PATH            Local edgelet binary
+  --checksum-path=PATH       SHA256SUMS manifest for verification
+  --expected-sha256=HASH     Verify local binary SHA256
+  --upgrade / --rollback     In-place thin binary OTA
+  --force-config             Replace config from sample
+  --with-sample-ca           Install sample controller CA if cert missing
+
+Environment:
+  EDGELET_VERSION  EDGELET_GITHUB_REPO
+EOF
+            exit 0 ;;
+        *) die "Unknown option: ${arg} (use --help)" ;;
+    esac
+done
+
+if [ "$AIRGAP" = true ] && [ -z "$BIN_PATH" ]; then
+    die "--airgap requires --bin-path"
+fi
+
+OS=$(detect_os)
+ARCH="${ARCH_OVERRIDE:-$(detect_arch)}"
+BINARY_PATH=$(binary_install_path "$OS")
+
+if [ "$OS" = "linux" ]; then
+    INIT=$(detect_init)
+else
+    INIT="none"
+fi
+
+if [ "$ACTION" != "rollback" ]; then
+    if [ -z "$CONTAINER_ENGINE" ]; then
+        case "$OS" in
+            linux) CONTAINER_ENGINE="edgelet" ;;
+            *)     CONTAINER_ENGINE="docker" ;;
+        esac
     fi
-    if ! command -v edgelet >/dev/null 2>&1; then
-        die "edgelet binary not found for provision"
-    fi
-    info "Running edgelet provision..."
-    if [ "$NON_INTERACTIVE" = true ]; then
-        edgelet --quiet provision "$PROVISION_KEY" || die "provision failed"
-    else
-        edgelet provision "$PROVISION_KEY" || die "provision failed"
-    fi
-}
+    case "$CONTAINER_ENGINE" in
+        edgelet)
+            [ "$OS" = "linux" ] || die "containerEngine=edgelet is linux-only"
+            ;;
+        docker|podman) ;;
+        *) die "Invalid --container-engine (use edgelet, docker, or podman)" ;;
+    esac
+fi
+
+require_root
+
+info "OS           : ${OS}"
+info "Architecture : ${ARCH}"
+info "Init system  : ${INIT}"
+if [ "$ACTION" != "rollback" ]; then
+    info "Engine       : ${CONTAINER_ENGINE}"
+fi
+info "Action       : ${ACTION}"
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "${TMPDIR}"' EXIT
+
+if [ "$AIRGAP" = false ] && [ "$EDGELET_VERSION" = "latest" ] && [ "$ACTION" != "rollback" ] && [ -z "$BIN_PATH" ]; then
+    info "Fetching latest release tag..."
+    EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    [ -n "${EDGELET_VERSION}" ] || die "Failed to determine latest version"
+fi
+
+info "Version: ${EDGELET_VERSION}"
 
 # ── rollback ──────────────────────────────────────────────────────────────────
 if [ "$ACTION" = "rollback" ]; then
     [ -f "$PREVIOUS_FILE" ] || die "No ${PREVIOUS_FILE} found."
     _pv=$(kv_get "$PREVIOUS_FILE" "previous_version")
+    _pos=$(kv_get "$PREVIOUS_FILE" "previous_os")
+    _parch=$(kv_get "$PREVIOUS_FILE" "previous_arch")
     _peng=$(kv_get "$PREVIOUS_FILE" "previous_container_engine")
     _purl=$(kv_get "$PREVIOUS_FILE" "previous_download_url")
     _cfgbak=$(kv_get "$PREVIOUS_FILE" "config_backup_path")
-    if [ -z "$_peng" ]; then
-        _pf=$(kv_get "$PREVIOUS_FILE" "previous_flavor")
-        _peng="edgelet"
-        [ "$_pf" = "lite" ] && _peng="docker"
-    fi
+    [ -n "$_pos" ] || _pos="$OS"
+    [ -n "$_parch" ] || _parch="$ARCH"
+    CONTAINER_ENGINE="${_peng:-edgelet}"
     EDGELET_VERSION="$_pv"
-    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH")
-    CONTAINER_ENGINE="$_peng"
-    stop_edgelet_service
-    _tg="${TMPDIR}/rollback.tar.gz"
-    if [ "$AIRGAP" = true ]; then
-        [ -n "$TARBALL_PATH" ] || die "rollback with --airgap requires --tarball-path"
-        verify_tarball_checksum "$TARBALL_PATH"
-        cp "$TARBALL_PATH" "$_tg"
+    _staged="${TMPDIR}/edgelet-bin"
+    _cached=$(cached_binary_path "$_pv" "$_pos" "$_parch")
+    if [ -n "$_cached" ]; then
+        cp "$_cached" "$_staged"
+        info "Rollback from cache: ${_cached}"
+    elif [ -n "$BIN_PATH" ]; then
+        verify_binary_checksum "$BIN_PATH"
+        cp "$BIN_PATH" "$_staged"
+    elif [ "$AIRGAP" = true ]; then
+        die "rollback with --airgap requires --bin-path or a cached binary"
     else
-        curl -fsSL -o "$_tg" "$_purl" || die "Failed to download rollback tarball"
+        curl -fsSL -o "$_staged" "$_purl" || die "Failed to download rollback binary"
     fi
-    extract_tarball "$_tg"
-    install_binary
-    install_dirs
+    [ "$OS" = "linux" ] && stop_edgelet_service "$INIT"
+    install_binary_file "$_staged" "$BINARY_PATH"
+    install_dirs "$OS"
     if [ "$FORCE_CONFIG" != true ] && [ -f "$_cfgbak" ]; then
         install -m 640 "$_cfgbak" "$CONFIG_FILE"
     fi
-    install_service "$CONTAINER_ENGINE"
-    write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$_purl"
-    info "Rollback to ${EDGELET_VERSION} (engine=${CONTAINER_ENGINE}) complete."
+    if [ "$OS" = "linux" ]; then
+        install_init_unit "$INIT" "$CONTAINER_ENGINE"
+    fi
+    _sha=$(sha256_file "$BINARY_PATH")
+    write_install_receipt "$EDGELET_VERSION" "$_pos" "$_parch" "$CONTAINER_ENGINE" "$_purl" "$_sha" "rollback"
+    info "Rollback to ${EDGELET_VERSION} complete."
     exit 0
 fi
 
@@ -458,72 +502,71 @@ if [ "$ACTION" = "upgrade" ]; then
     [ -f "$BINARY_PATH" ] || die "Edgelet not installed; run install first"
     [ -f "$RECEIPT_FILE" ] || die "Missing ${RECEIPT_FILE}"
     _cur_ver=$(kv_get "$RECEIPT_FILE" "installed_version")
+    _cur_os=$(kv_get "$RECEIPT_FILE" "os")
+    _cur_arch=$(kv_get "$RECEIPT_FILE" "arch")
     _cur_eng=$(kv_get "$RECEIPT_FILE" "container_engine")
     _cur_src=$(kv_get "$RECEIPT_FILE" "source_url")
-    if [ -z "$_cur_eng" ]; then
-        _cur_fl=$(kv_get "$RECEIPT_FILE" "flavor")
-        _cur_eng="edgelet"
-        [ "$_cur_fl" = "lite" ] && _cur_eng="docker"
-    fi
-    if [ "$EDGELET_VERSION" = "latest" ]; then
+    _cur_sha=$(kv_get "$RECEIPT_FILE" "binary_sha256")
+    [ -n "$_cur_os" ] || _cur_os="$OS"
+    [ -n "$_cur_arch" ] || _cur_arch="$ARCH"
+    [ -n "$_cur_eng" ] || _cur_eng="$CONTAINER_ENGINE"
+    if [ "$EDGELET_VERSION" = "latest" ] && [ -z "$BIN_PATH" ]; then
         EDGELET_VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
             | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
     fi
-    TARBALL_BASENAME=$(tarball_name_for "$EDGELET_VERSION" "$ARCH")
-    _cfg_backup="${BACKUP_DIR}/config.yaml.$(date +%Y%m%d%H%M%S)"
+    _cfg_backup="${BACKUP_DIR}/config.yaml.$(date +%Y%m%d%H%M%S 2>/dev/null || date +%s)"
     cp "$CONFIG_FILE" "$_cfg_backup" 2>/dev/null || true
-    write_previous_release "$_cur_ver" "$_cur_eng" "$_cur_src" "$_cfg_backup"
-    stop_edgelet_service
-    _tg="${TMPDIR}/upgrade.tar.gz"
-    download_or_copy_tarball "$_tg"
-    extract_tarball "$_tg"
-    install_binary
-    install_dirs
+    cache_binary "$_cur_ver" "$_cur_os" "$_cur_arch" "$BINARY_PATH"
+    write_previous_release "$_cur_ver" "$_cur_os" "$_cur_arch" "$_cur_eng" "$_cur_src" "$_cur_sha" "$_cfg_backup"
+    [ "$OS" = "linux" ] && stop_edgelet_service "$INIT"
+    _staged="${TMPDIR}/edgelet-bin"
+    download_or_stage_binary "$_staged"
+    verify_binary_checksum "$_staged"
+    install_binary_file "$_staged" "$BINARY_PATH"
+    install_dirs "$OS"
     if [ "$FORCE_CONFIG" = true ]; then
         rm -f "$CONFIG_FILE"
-        write_default_config_if_missing
+        install_config_samples
     fi
-    write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$(compute_source_url)"
-    install_service "$CONTAINER_ENGINE"
-    maybe_provision
+    apply_container_engine_to_config
+    _sha=$(sha256_file "$BINARY_PATH")
+    _method="upgrade"
+    [ "$AIRGAP" = true ] && _method="upgrade-airgap"
+    write_install_receipt "$EDGELET_VERSION" "$OS" "$ARCH" "$CONTAINER_ENGINE" "$(compute_source_url)" "$_sha" "$_method"
+    copy_bundled_scripts "$OS"
+    if [ "$OS" = "linux" ]; then
+        install_init_unit "$INIT" "$CONTAINER_ENGINE"
+    fi
     info "Upgrade to ${EDGELET_VERSION} complete."
     exit 0
 fi
 
 # ── fresh install ─────────────────────────────────────────────────────────────
-_tg="${TMPDIR}/${TARBALL_BASENAME}"
-download_or_copy_tarball "$_tg"
-extract_tarball "$_tg"
-install_dirs
-install_binary
-
-if [ -f "${TMPDIR}/config.yaml.sample" ] && [ ! -f "$CONFIG_FILE" ]; then
-    install -m 640 "${TMPDIR}/config.yaml.sample" "$CONFIG_FILE"
-    info "Sample config installed from tarball"
-else
-    write_default_config_if_missing
+_staged="${TMPDIR}/edgelet-bin"
+download_or_stage_binary "$_staged"
+verify_binary_checksum "$_staged"
+install_dirs "$OS"
+install_binary_file "$_staged" "$BINARY_PATH"
+install_config_samples
+apply_container_engine_to_config
+_sha=$(sha256_file "$BINARY_PATH")
+_method="install"
+[ "$AIRGAP" = true ] && _method="install-airgap"
+write_install_receipt "$EDGELET_VERSION" "$OS" "$ARCH" "$CONTAINER_ENGINE" "$(compute_source_url)" "$_sha" "$_method"
+copy_bundled_scripts "$OS"
+if [ "$OS" = "linux" ]; then
+    install_init_unit "$INIT" "$CONTAINER_ENGINE"
+    install_cli_completion
 fi
-
-if command -v sed >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-    sed -i "s|containerEngine:.*|containerEngine: ${CONTAINER_ENGINE}|" "$CONFIG_FILE" 2>/dev/null || true
-    _durl=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
-    sed -i "s|dockerUrl:.*|dockerUrl: ${_durl}|" "$CONFIG_FILE" 2>/dev/null || true
-    if [ -n "$CONTROLLER_URL" ]; then
-        sed -i "s|controllerUrl:.*|controllerUrl: \"${CONTROLLER_URL}\"|" "$CONFIG_FILE" 2>/dev/null || true
-    fi
-fi
-
-write_install_receipt "$EDGELET_VERSION" "$CONTAINER_ENGINE" "$(compute_source_url)"
-install_service "$CONTAINER_ENGINE"
-install_cli_completion
-maybe_provision
 
 info ""
-info "edgelet ${EDGELET_VERSION} (engine=${CONTAINER_ENGINE}) installed successfully."
+info "edgelet ${EDGELET_VERSION} installed (os=${OS} engine=${CONTAINER_ENGINE})."
 info "  Binary : ${BINARY_PATH}"
-info "  Unit   : ${UNIT_NAME}.service"
-info "  Config : ${CONFIG_FILE}"
-info "  Data   : /var/lib/edgelet/"
+if [ "$OS" = "linux" ]; then
+    info "  Unit   : ${INIT}"
+    info "  Config : ${CONFIG_FILE}"
+    info "  Data   : /var/lib/edgelet/"
+fi
 info ""
 info "Check status: edgelet system status"
 info "Provision:    edgelet provision <key>"

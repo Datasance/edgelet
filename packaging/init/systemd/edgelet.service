@@ -19,15 +19,11 @@ User=root
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=edgelet
-
-# Security settings (embedded containerd paths)
 NoNewPrivileges=no
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/etc/edgelet /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet /var/backups/edgelet
-
-# Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096
 
