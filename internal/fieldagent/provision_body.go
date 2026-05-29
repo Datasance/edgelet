@@ -8,8 +8,6 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 )
 
-const provisionFlavor = "edgelet"
-
 func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, error) {
 	cfg := config.GetInstance()
 	engine := strings.ToLower(strings.TrimSpace(cfg.ContainerEngine))
@@ -22,7 +20,6 @@ func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, 
 		"key":    provisioningKey,
 		"type":   getArchitectureCode(cfg.Arch),
 		"engine": engine,
-		"flavor": provisionFlavor,
 	}, nil
 }
 

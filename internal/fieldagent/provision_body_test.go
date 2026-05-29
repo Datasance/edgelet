@@ -37,9 +37,6 @@ func TestBuildProvisionRequestBody_DockerEngine(t *testing.T) {
 	if body["engine"] != constants.EngineDocker {
 		t.Fatalf("engine=%v", body["engine"])
 	}
-	if body["flavor"] != provisionFlavor {
-		t.Fatalf("flavor=%v", body["flavor"])
-	}
 }
 
 func TestBuildProvisionRequestBody_EdgeletEngine(t *testing.T) {
@@ -57,7 +54,7 @@ func TestBuildProvisionRequestBody_EdgeletEngine(t *testing.T) {
 		cfg.Arch = originalArch
 	})
 
-	body, err := buildProvisionRequestBody("full-key")
+	body, err := buildProvisionRequestBody("edgelet-key")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,9 +63,6 @@ func TestBuildProvisionRequestBody_EdgeletEngine(t *testing.T) {
 	}
 	if body["engine"] != constants.EngineEdgelet {
 		t.Fatalf("engine=%v", body["engine"])
-	}
-	if body["flavor"] != provisionFlavor {
-		t.Fatalf("flavor=%v", body["flavor"])
 	}
 }
 
@@ -88,5 +82,37 @@ func TestBuildProvisionRequestBody_RejectsInvalidEngineForPlatform(t *testing.T)
 	}
 	if !strings.Contains(err.Error(), "provisioning blocked") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildProvisionRequestBody_ArchitectureCodes(t *testing.T) {
+	embedded := true
+	buildmeta.SetHasEmbeddedEngineForTest(&embedded)
+	t.Cleanup(func() { buildmeta.SetHasEmbeddedEngineForTest(nil) })
+
+	cfg := config.GetInstance()
+	originalEngine := cfg.ContainerEngine
+	originalArch := cfg.Arch
+	cfg.ContainerEngine = constants.EngineEdgelet
+	t.Cleanup(func() {
+		cfg.ContainerEngine = originalEngine
+		cfg.Arch = originalArch
+	})
+
+	tests := map[string]int{
+		"amd64":   1,
+		"arm64":   2,
+		"riscv64": 3,
+		"arm":     4,
+	}
+	for arch, wantType := range tests {
+		cfg.Arch = arch
+		body, err := buildProvisionRequestBody("arch-key")
+		if err != nil {
+			t.Fatalf("arch=%s: %v", arch, err)
+		}
+		if body["type"] != wantType {
+			t.Fatalf("arch=%s type=%v want %d", arch, body["type"], wantType)
+		}
 	}
 }
