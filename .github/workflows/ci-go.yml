@@ -10,6 +10,7 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'build/Dockerfile.embedded'
+      - 'Dockerfile.edgelet-linux'
       - 'docs/cli/**'
       - '.github/workflows/ci-go.yml'
   pull_request:
@@ -21,6 +22,7 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'build/Dockerfile.embedded'
+      - 'Dockerfile.edgelet-linux'
       - 'docs/cli/**'
       - '.github/workflows/ci-go.yml'
   workflow_dispatch:
@@ -93,11 +95,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Install embed build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd gcc g++ pkg-config libseccomp-dev \
-            libyajl-dev libcap-dev libsystemd-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
-            autoconf automake libtool make
+          chmod +x scripts/install-embed-build-deps
+          sudo BUILDARCH=amd64 TARGETARCH=amd64 ./scripts/install-embed-build-deps
       - name: Run scripts/ci (amd64)
         run: |
           chmod +x scripts/*
@@ -114,11 +113,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Install embed build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd gcc g++ pkg-config libseccomp-dev \
-            libyajl-dev libcap-dev libsystemd-dev \
-            gcc-x86-64-linux-gnu gcc-arm-linux-gnueabihf \
-            autoconf automake libtool make
+          chmod +x scripts/install-embed-build-deps
+          sudo BUILDARCH=arm64 TARGETARCH=arm64 ./scripts/install-embed-build-deps
       - name: Run scripts/ci (arm64)
         run: |
           chmod +x scripts/*

@@ -13,7 +13,8 @@ if [ "$(uname -s)" != Linux ]; then
   exit 1
 fi
 
-chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data \
+chmod +x scripts/clean scripts/download scripts/download-root scripts/stage-root-aux \
+  scripts/build-crun-static scripts/build-embedded scripts/package-data \
   scripts/build-edgelet scripts/binary_size_check.sh scripts/check-containerd-fork.sh \
   2>/dev/null || true
 
