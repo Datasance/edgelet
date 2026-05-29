@@ -22,7 +22,7 @@ Greenfield edge agent for the ioFog platform — single `edgelet` binary per pla
 ├── pkg/
 │   ├── containerd/          # In-process containerd (edgelet engine)
 │   └── engine/              # ContainerEngine + docker/podman/edgelet adapters
-├── install.sh               # Tarball installer
+├── install.sh               # Binary installer (multi-OS)
 ├── uninstall.sh             # Clean uninstaller
 ├── packaging/               # systemd unit, config templates
 └── docs/edgelet/            # Operator documentation
@@ -82,7 +82,7 @@ make build-linux-amd64        # deps + thin for amd64
 make build-linux-arm64        # deps + thin for arm64
 make build-all-archs          # linux matrix (amd64, arm64, arm, riscv64)
 make build-desktop-darwin     # darwin monolithic
-make release-tarballs VERSION=v1.0.0
+make release-binaries VERSION=v1.0.0
 ```
 
 ## Testing
@@ -115,19 +115,22 @@ tail -f dev/var/log/edgelet/daemon-startup.log
 
 ## Installation
 
-Tarball + `install.sh` only (no DEB/RPM). Default linux engine: **edgelet**.
+Binary-only releases on **`datasance/edgelet`** (no DEB/RPM, no `.tar.gz` bundles). Default linux engine: **edgelet**.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/datasance/agent/main/install.sh | sudo sh
-sudo sh install.sh --tarball-path=edgelet-linux-amd64.tar.gz
+curl -fsSL https://github.com/datasance/edgelet/releases/download/vX.Y.Z/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh --version=vX.Y.Z
+# dev / CI: sudo ./install.sh --bin-path=build/edgelet-linux-amd64 --version=dev
 ```
 
-Tarball names: `edgelet-linux-<arch>.tar.gz` (desktop: `edgelet-darwin-<arch>.tar.gz`)
+Release binaries: `edgelet-linux-<arch>`, `edgelet-darwin-<arch>`, `edgelet-windows-amd64.exe` + `SHA256SUMS` + config/CA samples.
 
 ```bash
+sudo edgelet init-config          # default config if missing
 edgelet daemon                    # foreground
-systemctl start edgelet           # production
-edgelet provision                 # register with Controller
+systemctl start edgelet           # production (linux)
+edgelet provision <key>           # register with Controller (post-install)
 ```
 
 Deployment guide: [docs/edgelet/deployment.md](docs/edgelet/deployment.md)

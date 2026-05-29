@@ -89,7 +89,6 @@ func TestVersionMatchesSystemVersionHuman(t *testing.T) {
 				"version":                "1.2.3",
 				"buildTime":              "2026-01-01",
 				"gitCommit":              "deadbeef",
-				"flavor":                 "full",
 				"allowedContainerEngine": "edgelet",
 			},
 		},

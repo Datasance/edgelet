@@ -59,9 +59,6 @@ func FormatVersionHuman(cliVersion, cliBuildTime, cliGitCommit string, daemon ma
 	b.WriteString("daemon.gitCommit: ")
 	b.WriteString(MapValueAsString(daemon, "gitCommit"))
 	b.WriteByte('\n')
-	b.WriteString("daemon.flavor: ")
-	b.WriteString(MapValueAsString(daemon, "flavor"))
-	b.WriteByte('\n')
 
 	allowed := MapValueAsString(daemon, "allowedContainerEngine")
 	if allowed == "<unknown>" {

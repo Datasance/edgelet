@@ -16,7 +16,7 @@ import (
 
 const (
 	edgeletAPITokenModuleName = "Edgelet API Token" // #nosec G101 -- logging module name, not a credential
-	tokenSize            = 32                // 32 bytes = 256 bits
+	tokenSize                 = 32                  // 32 bytes = 256 bits
 )
 
 // LocalTokenManager manages local API tokens

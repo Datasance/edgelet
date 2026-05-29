@@ -11,11 +11,11 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/edgeguard"
+	"github.com/datasance/edgelet/internal/edgeletapi"
 	"github.com/datasance/edgelet/internal/engines"
 	"github.com/datasance/edgelet/internal/fieldagent"
 	"github.com/datasance/edgelet/internal/gps"
 	"github.com/datasance/edgelet/internal/healthcheck"
-	"github.com/datasance/edgelet/internal/edgeletapi"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
 	"github.com/datasance/edgelet/internal/processmanager"
@@ -94,7 +94,7 @@ func NewSupervisor() *Supervisor {
 }
 
 // SetPrestartedContainerd injects an embedded containerd service already started in main
-// (full flavor + iofog engine). Supervisor will not start containerd again; it only runs
+// (embedded engine). Supervisor will not start containerd again; it only runs
 // the watchdog and stops containerd on shutdown.
 func (s *Supervisor) SetPrestartedContainerd(svc *edgeletcontainerdd.Service) {
 	s.containerdSvc = svc

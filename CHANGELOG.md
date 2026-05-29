@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Embed crun 1.28:** Pin `VERSION_CRUN=1.28` (json-c ≥ 0.14). Build static glibc `crun` from source via `scripts/build-crun-static` for all linux embed arches (including arm32); removes curl prebuilts and dynamic native autotools output that broke scratch/Docker exec.
+- **Plan 8 — release & install (binary-only):** GitHub Releases publish raw `edgelet-<os>-<arch>[.exe]` + `SHA256SUMS` + samples + `install.sh`/`uninstall.sh` (no release tarballs). Multi-OS `install.sh` with `--bin-path`, `--airgap`, `--upgrade`/`--rollback`; linux six init systems; OTA via `internal/version` `ReleaseManager` (no Java VC / apt). Local deploy manifest **`spec.image`** only. FogType 1–4 = amd64, arm64, riscv64, arm. Scratch `ghcr.io/datasance/edgelet-linux` container image.
 - **Plan 7 — unified edgelet (drop full/lite):** Linux ships one binary per arch (`build/edgelet-linux-<arch>`) with runtime `containerEngine` selection (`edgelet`, `docker`, `podman`; default **`edgelet`**). Release tarballs renamed to **`edgelet-linux-<arch>.tar.gz`** (no `-full`/`-lite` suffix). `install.sh --flavor=` deprecated. Provision body sends `flavor: "edgelet"` with `engine` = configured value. Darwin/windows remain monolithic (docker/podman only).
 - **Plan 6 — full linux two-layer binary (k3s-style):** Download artifact is a **thin** `edgelet` (`CGO=0`, CLI + `go:embed` zstd bundle + `daemon` dispatch). Runtime (**fat**) lives in the tar as `bin/edgelet` and extracts to `/var/lib/edgelet/data/<hash>/` with `current` / `previous` symlinks. Systemd remains `ExecStart=/usr/local/bin/edgelet daemon`. Operator CLI does not require extract; `--edgelet-containerd-child` runs from the fat ELF only.
 - **Plan 6 — monolithic diet (full):** Docker/Podman engine packages build-tagged `lite` only; full factory accepts `containerEngine=edgelet` at compile time.
@@ -18,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`edgelet init-config`:** Write default config from embedded/sample template when `/etc/edgelet/config.yaml` is missing (idempotent).
+- **`test/install/`:** `install-fresh-linux.sh`, `install-upgrade-rollback.sh`, `install-airgap.sh` for install/OTA script smoke.
+- **`scripts/release-binaries.sh`:** Binary-only `dist/` packaging (replaces `release-tarballs.sh`).
 - **`cmd/edgelet-server`:** Fat full-linux entry (supervisor, field agent, EdgeletAPI server, in-process containerd).
 - **`scripts/check-containerd-fork.sh`:** CI guard that `go list -m` resolves containerd to `github.com/k3s-io/containerd/v2 v2.2.3-k3s1`.
 

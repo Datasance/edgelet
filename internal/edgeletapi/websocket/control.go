@@ -409,7 +409,6 @@ func (h *ControlHandler) handleBinaryMessage(conn *Connection, data []byte) {
 		}
 	case OpcodeACK:
 		// Acknowledge received
-		// TODO: Remove from unacknowledged map when implemented (acknowledgment tracking)
 		logging.LogDebug(controlHandlerModuleName, "ACK received")
 	default:
 		logging.LogDebug(controlHandlerModuleName, "Unknown opcode")
