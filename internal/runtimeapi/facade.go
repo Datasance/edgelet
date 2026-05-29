@@ -31,7 +31,7 @@ import (
 
 const runtimeAPIModuleName = "Runtime API Facade"
 
-var ErrRuntimeClassUnsupported = errors.New("runtimeclass is supported only when containerEngine=iofog on full flavor builds")
+var ErrRuntimeClassUnsupported = errors.New("runtimeclass is supported only when containerEngine=edgelet")
 
 const (
 	RuntimeClassStageWriteConfig     = "write_config"
@@ -1296,12 +1296,11 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 	if sourceName == "" {
 		sourceName = "local-cli"
 	}
-	arch := strings.ToLower(strings.TrimSpace(f.cfg.Arch))
-	image := doc.ResolveImageForArch(arch)
+	image := doc.ManifestImage()
 	localMS := manifestToMicroservice(doc, deploymentID, image)
 	registry := models.NewRegistry(2, "from_cache", true, "", "", "")
-	if doc.Spec.Images.Registry != nil {
-		regID := *doc.Spec.Images.Registry
+	if doc.Spec.Registry != nil {
+		regID := *doc.Spec.Registry
 		if regID <= 0 {
 			logging.LogWarn(runtimeAPIModuleName, fmt.Sprintf("local deploy invalid registry id deploymentId=%s registryId=%d", deploymentID, regID))
 			return "", nil, fmt.Errorf("invalid registry id %d", regID)

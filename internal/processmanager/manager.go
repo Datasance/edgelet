@@ -755,12 +755,11 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 		return
 	}
 
-	arch := strings.ToLower(strings.TrimSpace(config.GetInstance().Arch))
-	image := doc.ResolveImageForArch(arch)
+	image := doc.ManifestImage()
 	localMS := models.BuildMicroserviceFromLocalManifest(doc, item.LocalUUID, image)
 	registry := models.NewRegistry(2, "from_cache", true, "", "", "")
-	if doc.Spec.Images.Registry != nil {
-		if reg, err := store.GetInstance().GetLocalRegistry(*doc.Spec.Images.Registry); err == nil && reg != nil {
+	if doc.Spec.Registry != nil {
+		if reg, err := store.GetInstance().GetLocalRegistry(*doc.Spec.Registry); err == nil && reg != nil {
 			registry = reg
 			localMS.RegistryID = reg.ID
 		}
@@ -1612,11 +1611,10 @@ func (pm *ProcessManager) resolveMicroserviceForLifecycle(microserviceUUID strin
 	if err != nil {
 		return nil, err
 	}
-	arch := strings.ToLower(strings.TrimSpace(config.GetInstance().Arch))
-	image := doc.ResolveImageForArch(arch)
+	image := doc.ManifestImage()
 	localMS := models.BuildMicroserviceFromLocalManifest(doc, item.LocalUUID, image)
-	if doc.Spec.Images.Registry != nil {
-		if reg, regErr := store.GetInstance().GetLocalRegistry(*doc.Spec.Images.Registry); regErr == nil && reg != nil {
+	if doc.Spec.Registry != nil {
+		if reg, regErr := store.GetInstance().GetLocalRegistry(*doc.Spec.Registry); regErr == nil && reg != nil {
 			localMS.RegistryID = reg.ID
 		}
 	}

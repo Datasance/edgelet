@@ -1327,15 +1327,13 @@ components:
           type: integer
     VersionInfo:
       type: object
-      required: [version, buildTime, gitCommit, flavor, allowedContainerEngine]
+      required: [version, buildTime, gitCommit, allowedContainerEngine]
       properties:
         version:
           type: string
         buildTime:
           type: string
         gitCommit:
-          type: string
-        flavor:
           type: string
         allowedContainerEngine:
           type: string
@@ -1704,6 +1702,54 @@ components:
           type: string
         dryRun:
           type: boolean
+    LocalDeployMicroserviceManifest:
+      type: object
+      required: [apiVersion, kind, metadata, spec]
+      properties:
+        apiVersion:
+          type: string
+          enum: [edgelet.iofog.org/v1]
+        kind:
+          type: string
+          enum: [Microservice]
+        metadata:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+              description: DNS-1123 label (local deploy name)
+            namespace:
+              type: string
+            labels:
+              type: object
+              additionalProperties:
+                type: string
+        spec:
+          type: object
+          required: [image]
+          properties:
+            image:
+              type: string
+              description: Resolved container image reference for this node
+            registry:
+              type: integer
+              description: Optional local registry id from /v1/deploy/registries
+            container:
+              type: object
+              description: Container runtime options (volumes, ports, env, etc.)
+            schedule:
+              type: integer
+            config:
+              type: object
+              additionalProperties: true
+      example:
+        apiVersion: edgelet.iofog.org/v1
+        kind: Microservice
+        metadata:
+          name: router
+        spec:
+          image: quay.io/skupper/skupper-router:latest
     DeployManifestMultipartRequest:
       type: object
       required: [manifest]
@@ -1711,6 +1757,7 @@ components:
         manifest:
           type: string
           format: binary
+          description: YAML document; microservice deploys use LocalDeployMicroserviceManifest (spec.image)
         sourceName:
           type: string
         dryRun:

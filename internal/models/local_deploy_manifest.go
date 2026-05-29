@@ -17,11 +17,8 @@ type LocalDeployManifest struct {
 		Labels    map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
 	} `yaml:"metadata" json:"metadata"`
 	Spec struct {
-		Images struct {
-			X86      string `yaml:"x86,omitempty" json:"x86,omitempty"`
-			Arm      string `yaml:"arm,omitempty" json:"arm,omitempty"`
-			Registry *int   `yaml:"registry,omitempty" json:"registry,omitempty"`
-		} `yaml:"images" json:"images"`
+		Image     string `yaml:"image" json:"image"`
+		Registry  *int   `yaml:"registry,omitempty" json:"registry,omitempty"`
 		Container struct {
 			Annotations     map[string]interface{} `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 			HostNetworkMode bool                   `yaml:"hostNetworkMode" json:"hostNetworkMode"`
@@ -101,8 +98,8 @@ func (m *LocalDeployManifest) Validate() error {
 	if !localDeployNamePattern.MatchString(name) {
 		return fmt.Errorf("metadata.name must match DNS-1123 label format: lowercase alphanumeric or '-', start/end alphanumeric")
 	}
-	if strings.TrimSpace(m.Spec.Images.X86) == "" && strings.TrimSpace(m.Spec.Images.Arm) == "" {
-		return fmt.Errorf("spec.images.x86 or spec.images.arm is required")
+	if strings.TrimSpace(m.Spec.Image) == "" {
+		return fmt.Errorf("spec.image is required")
 	}
 	for i := range m.Spec.Container.Volumes {
 		volume := &m.Spec.Container.Volumes[i]
@@ -138,13 +135,10 @@ func isValidHostPath(path string) bool {
 	return filepath.IsAbs(trimmed) || windowsAbsPathPattern.MatchString(trimmed)
 }
 
-func (m *LocalDeployManifest) ResolveImageForArch(arch string) string {
-	normalized := strings.TrimSpace(strings.ToLower(arch))
-	if normalized == "arm" && strings.TrimSpace(m.Spec.Images.Arm) != "" {
-		return strings.TrimSpace(m.Spec.Images.Arm)
+// ManifestImage returns the resolved container image from spec.image.
+func (m *LocalDeployManifest) ManifestImage() string {
+	if m == nil {
+		return ""
 	}
-	if strings.TrimSpace(m.Spec.Images.X86) != "" {
-		return strings.TrimSpace(m.Spec.Images.X86)
-	}
-	return strings.TrimSpace(m.Spec.Images.Arm)
+	return strings.TrimSpace(m.Spec.Image)
 }

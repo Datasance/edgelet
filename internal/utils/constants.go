@@ -76,7 +76,7 @@ const (
 	ResourceConsumptionManager = 0
 	ProcessManager             = 1
 	StatusReporter             = 2
-	EdgeletAPI                   = 3
+	EdgeletAPI                 = 3
 	MessageBus                 = 4
 	FieldAgent                 = 5
 	ResourceManager            = 6
@@ -101,7 +101,7 @@ var (
 	WindowsEdgeletPath   = getEnvOrDefault("EDGELET_PATH", "./")
 	VarRun               = getVarRunPath()
 	ConfigDir            = getConfigDir()
-	EdgeletAPITokenPath    = ConfigDir + "edgelet-api"
+	EdgeletAPITokenPath  = ConfigDir + "edgelet-api"
 	ConfigYAMLPath       = ConfigDir + "config.yaml"
 	BackupConfigYAMLPath = ConfigDir + "config-bck.yaml"
 )
@@ -120,15 +120,15 @@ const (
 	FieldAgentPostStatus                      = "FAPS"
 	FieldAgentPostDiagnostic                  = "FAPD"
 	StatusReporterSetStatusReporterSystemTime = "SRST"
-	EdgeletAPIEvent                             = "LAPI"
+	EdgeletAPIEvent                           = "LAPI"
 	ResourceConsumptionManagerGetUsageData    = "RCUD"
 	ProcessManagerContainersMonitor           = "PMCM"
 	ProcessManagerCheckTasks                  = "PMCT"
 	ResourceManagerGetUsageData               = "RMUD"
-	EdgeletAPIControlWebSocketWorker            = "LACW"
-	EdgeletAPIMessageWebSocketWorker            = "LAMW"
+	EdgeletAPIControlWebSocketWorker          = "LACW"
+	EdgeletAPIMessageWebSocketWorker          = "LAMW"
 	ShutdownHook                              = "SDHK"
-	SupervisorCheckEdgeletAPIStatus             = "SCLA"
+	SupervisorCheckEdgeletAPIStatus           = "SCLA"
 	NetworkInterfaceManager                   = "INIM"
 )
 
