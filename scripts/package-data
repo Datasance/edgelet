@@ -32,6 +32,7 @@ mkdir -p build/stage/bin build/stage/images build/out
 mkdir -p pkg/data/embed
 
 cp -a build/bin/. build/stage/bin/
+ARCH="${ARCH}" ./scripts/stage-root-aux
 cp build/images/pause.tar.gz build/stage/images/
 
 (

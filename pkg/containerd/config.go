@@ -258,7 +258,6 @@ func generateConfig() map[string]any {
 
 			// --- CRI runtime plugin ---
 			"io.containerd.cri.v1.runtime": map[string]any{
-				"sandbox_image":                          constants.EdgeletSandboxImage,
 				"enable_selinux":                         false,
 				"selinux_category_range":                 1024,
 				"max_container_log_line_size":            16384,
@@ -302,7 +301,6 @@ func generateConfig() map[string]any {
 				"stream_server_port":    "0",
 				"stream_idle_timeout":   "4h0m0s",
 				"enable_tls_streaming":  false,
-				"sandbox_image":         constants.EdgeletSandboxImage,
 			},
 
 			// --- Overlayfs snapshotter ---

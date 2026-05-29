@@ -32,4 +32,6 @@ git clone --single-branch --branch="${VERSION_CONTAINERD}" --depth=1 \
 git clone --single-branch --branch="${VERSION_CRUN}" --depth=1 \
   https://github.com/containers/crun "${CRUN_DIR}"
 
-echo "Download complete: containerd ${VERSION_CONTAINERD}, crun ${VERSION_CRUN}"
+ARCH="${ARCH}" ./scripts/download-root
+
+echo "Download complete: containerd ${VERSION_CONTAINERD}, crun ${VERSION_CRUN}, k3s-root ${VERSION_ROOT}"

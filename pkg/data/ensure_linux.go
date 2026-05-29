@@ -51,14 +51,17 @@ func EnsureExtracted() error {
 	if err := installFromBundle(dir); err != nil {
 		return err
 	}
-	if err := loadKernelModules(); err != nil {
+	if err := prependRuntimePath(dir); err != nil {
+		return fmt.Errorf("prepend runtime PATH: %w", err)
+	}
+	if err := loadKernelModules(dir); err != nil {
 		dataLogger.Warnf("Failed to load kernel modules (non-fatal): %v", err)
 	}
 	return nil
 }
 
 // getAssetAndDir returns the embedded zstd asset name and the authoritative bundle
-// directory data/<sha256-prefix>/ (k3s: dataDir/data/{hash}/ from the embed filename).
+// directory data/<sha256-prefix>/.
 func getAssetAndDir(dataDir string) (string, string, error) {
 	names := AssetNames()
 	if len(names) == 0 {
@@ -116,7 +119,7 @@ func bundleHashMatchesInstalled(dataDir, wantHash string) bool {
 }
 
 // promoteCurrentBundle rotates data/current into data/previous and symlinks current at dir
-// (authoritative embed-hash tree). Refreshes stable data/cni symlinks (k3s extract tail + sync).
+// (authoritative embed-hash tree). Refreshes stable data/cni symlinks.
 func promoteCurrentBundle(dataDir, dir string) error {
 	root, err := datadir.BundleRoot(dataDir)
 	if err != nil {
@@ -159,7 +162,7 @@ func logBundleHashMismatchIfNeeded(dataDir, wantHash string) {
 	dataLogger.Infof("Embedded bundle hash mismatch (installed=%s embedded=%s); re-extracting", have, wantHash)
 }
 
-// tryUseAuthoritativeBundle uses data/<embed-hash>/ when ready (k3s: Stat on hash dir, not current).
+// tryUseAuthoritativeBundle uses data/<embed-hash>/ when ready.
 // It synchronizes current/previous/cni to that tree and returns it for exec/runtime resolution.
 func tryUseAuthoritativeBundle(dataDir, wantHash, dir string) (string, bool, error) {
 	if !isBundleReady(dir) {
@@ -173,7 +176,7 @@ func tryUseAuthoritativeBundle(dataDir, wantHash, dir string) (string, bool, err
 	return dir, true, nil
 }
 
-// extract unpacks the embedded bundle when needed. Selection follows k3s: the running thin
+// extract unpacks the embedded bundle when needed. Selection: the running thin
 // binary's embed hash names the authoritative directory; data/current is updated on promote only.
 func extract(dataDir string) (string, error) {
 	wantHash := EmbeddedBundleHash()
@@ -256,11 +259,14 @@ func extract(dataDir string) (string, error) {
 }
 
 func isBundleReady(dir string) bool {
-	if err := dataverify.VerifyFatRuntime(filepath.Join(dir, "bin", dataverify.FatRuntimeName)); err != nil {
+	binDir := filepath.Join(dir, "bin")
+	if err := dataverify.VerifyFatRuntime(filepath.Join(binDir, dataverify.FatRuntimeName)); err != nil {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(dir, "bin", "containerd-shim-runc-v2"))
-	return err == nil
+	if _, err := os.Stat(filepath.Join(binDir, "containerd-shim-runc-v2")); err != nil {
+		return false
+	}
+	return dataverify.VerifyNetAux(binDir) == nil
 }
 
 func setExtractDir(dir string) {
@@ -429,7 +435,7 @@ func symlinkShimToPath(src, name string) {
 	}
 }
 
-func loadKernelModules() error {
+func loadKernelModules(bundleDir string) error {
 	modules := []string{
 		"overlay",
 		"br_netfilter",
@@ -439,9 +445,14 @@ func loadKernelModules() error {
 		"nf_conntrack",
 	}
 
+	modprobe := "modprobe"
+	if bundled := bundleModprobePath(bundleDir); bundled != "" {
+		modprobe = bundled
+	}
+
 	var firstErr error
 	for _, mod := range modules {
-		if err := exec.Command("modprobe", mod).Run(); err != nil {
+		if err := exec.Command(modprobe, mod).Run(); err != nil {
 			dataLogger.Debugf("modprobe %s: %v", mod, err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("modprobe %s: %w", mod, err)

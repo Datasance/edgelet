@@ -23,6 +23,35 @@ func Verify(dir string) error {
 	if err := VerifyFatRuntime(filepath.Join(dir, FatRuntimeName)); err != nil {
 		return fmt.Errorf("verify fat runtime: %w", err)
 	}
+	if err := VerifyNetAux(dir); err != nil {
+		return fmt.Errorf("verify net aux: %w", err)
+	}
+	return nil
+}
+
+// VerifyNetAux checks k3s-root net tools staged into the embed bundle bin/ tree.
+func VerifyNetAux(binDir string) error {
+	required := []string{
+		filepath.Join("aux", "xtables-legacy-multi"),
+		"ip",
+		"busybox",
+	}
+	for _, rel := range required {
+		path := filepath.Join(binDir, rel)
+		if st, err := os.Stat(path); err != nil {
+			return fmt.Errorf("missing %s: %w", rel, err)
+		} else if st.IsDir() {
+			return fmt.Errorf("%s is a directory", rel)
+		}
+	}
+	legacy := filepath.Join(binDir, "aux", "iptables")
+	target, err := os.Readlink(legacy)
+	if err != nil {
+		return fmt.Errorf("aux/iptables symlink: %w", err)
+	}
+	if target != "xtables-legacy-multi" {
+		return fmt.Errorf("aux/iptables -> %q, want xtables-legacy-multi", target)
+	}
 	return nil
 }
 

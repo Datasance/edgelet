@@ -1,0 +1,177 @@
+#!/bin/bash
+# Install apt packages for static crun + embed pipeline.
+# Uses BUILDARCH (builder CPU) and TARGETARCH (artifact arch).
+#
+# Docker:  TARGETARCH + BUILDARCH from BuildKit (Dockerfile.edgelet-linux).
+# CI:      TARGETARCH=<matrix.arch> BUILDARCH=<runner native> (release.yml).
+# Embedded image (--ci): native host + safe cross set for scripts/ci on that host.
+set -euo pipefail
+
+APT_COMMON=(
+  git zstd curl ca-certificates file binutils
+  gcc g++ pkg-config
+  autoconf automake libtool make python3
+  libzstd-dev zlib1g-dev
+)
+
+APT_NATIVE_STATIC=(
+  libjson-c-dev libcap-dev libseccomp-dev libsystemd-dev libc6-dev
+)
+
+usage() {
+  echo "Usage: BUILDARCH=<arch> TARGETARCH=<arch> $0" >&2
+  echo "       $0 --ci   # CI Docker image: deps from container uname -m" >&2
+  exit 1
+}
+
+uname_to_deb_arch() {
+  case "$(uname -m)" in
+    x86_64) echo amd64 ;;
+    aarch64) echo arm64 ;;
+    armv7l|armv6l|arm) echo arm ;;
+    riscv64) echo riscv64 ;;
+    *) echo "unsupported uname -m: $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
+add_foreign_arch() {
+  _foreign="$1"
+  if dpkg --print-foreign-architectures 2>/dev/null | grep -qx "${_foreign}"; then
+    return 0
+  fi
+  dpkg --add-architecture "${_foreign}"
+}
+
+# Static lib multiarch packages for TARGETARCH when BUILDARCH != TARGETARCH.
+cross_static_packages() {
+  _target="$1"
+  case "${_target}" in
+    amd64)
+      echo "gcc-x86-64-linux-gnu g++-x86-64-linux-gnu"
+      echo "libc6-dev-amd64-cross"
+      echo "libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64"
+      ;;
+    arm64)
+      echo "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+      echo "libc6-dev-arm64-cross"
+      echo "libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64"
+      ;;
+    arm)
+      echo "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
+      echo "libc6-dev-armhf-cross"
+      echo "libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf"
+      ;;
+    riscv64)
+      echo "gcc-riscv64-linux-gnu g++-riscv64-linux-gnu"
+      echo "libc6-dev-riscv64-cross"
+      echo "libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64"
+      ;;
+    *)
+      echo "unsupported TARGETARCH: ${_target}" >&2
+      return 1
+      ;;
+  esac
+}
+
+foreign_arch_for_target() {
+  case "$1" in
+    amd64) echo amd64 ;;
+    arm64) echo arm64 ;;
+    arm) echo armhf ;;
+    riscv64) echo riscv64 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_for_target() {
+  _build="${1:?}"
+  _target="${2:?}"
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends "${APT_COMMON[@]}" "${APT_NATIVE_STATIC[@]}"
+
+  if [ "${_build}" = "${_target}" ]; then
+    echo "install-embed-build-deps: native linux/${_target} (BUILDARCH=${_build})"
+    rm -rf /var/lib/apt/lists/*
+    return 0
+  fi
+
+  # riscv64 cross static libs are not available as foreign arch on arm64 builders.
+  if [ "${_build}" = arm64 ] && [ "${_target}" = riscv64 ]; then
+    echo "ERROR: cannot cross-build static crun for riscv64 on arm64; use an amd64 builder." >&2
+    return 1
+  fi
+
+  _foreign="$(foreign_arch_for_target "${_target}")"
+  add_foreign_arch "${_foreign}"
+
+  _cross_pkgs=()
+  while IFS= read -r _line; do
+    [ -n "${_line}" ] || continue
+    # shellcheck disable=SC2206
+    _parts=(${_line})
+    _cross_pkgs+=("${_parts[@]}")
+  done < <(cross_static_packages "${_target}")
+
+  echo "install-embed-build-deps: cross linux/${_target} on BUILDARCH=${_build}"
+  apt-get update
+  apt-get install -y --no-install-recommends "${_cross_pkgs[@]}"
+  rm -rf /var/lib/apt/lists/*
+}
+
+install_ci_profile() {
+  _host="$(uname_to_deb_arch)"
+  echo "install-embed-build-deps: --ci profile for host ${_host}"
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends "${APT_COMMON[@]}" "${APT_NATIVE_STATIC[@]}"
+
+  case "${_host}" in
+    amd64)
+      add_foreign_arch armhf
+      add_foreign_arch arm64
+      add_foreign_arch riscv64
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+        gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+        libc6-dev-arm64-cross libc6-dev-armhf-cross libc6-dev-riscv64-cross \
+        libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64 \
+        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf \
+        libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64
+      ;;
+    arm64)
+      add_foreign_arch amd64
+      add_foreign_arch armhf
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
+        gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+        libc6-dev-amd64-cross libc6-dev-armhf-cross \
+        libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64 \
+        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf
+      ;;
+    *)
+      echo "ERROR: --ci profile unsupported on host arch ${_host}" >&2
+      return 1
+      ;;
+  esac
+  rm -rf /var/lib/apt/lists/*
+}
+
+if [ "${1:-}" = --ci ]; then
+  install_ci_profile
+  exit 0
+fi
+
+BUILDARCH="${BUILDARCH:-$(uname_to_deb_arch)}"
+TARGETARCH="${TARGETARCH:-}"
+
+if [ -z "${TARGETARCH}" ]; then
+  usage
+fi
+
+install_for_target "${BUILDARCH}" "${TARGETARCH}"

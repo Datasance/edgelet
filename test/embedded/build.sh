@@ -38,16 +38,31 @@ log_info "Repository root: ${REPO_ROOT}"
 log_info "Target arch: ${TARGET_ARCH}"
 
 cd "${REPO_ROOT}"
-chmod +x scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet 2>/dev/null || true
+chmod +x scripts/download scripts/download-root scripts/stage-root-aux \
+    scripts/build-crun-static scripts/build-embedded scripts/package-data \
+    scripts/build-edgelet 2>/dev/null || true
+
+run_embed_pipeline() {
+    ARCH="${TARGET_ARCH}" ./scripts/download
+    ARCH="${TARGET_ARCH}" ./scripts/build-embedded
+    ARCH="${TARGET_ARCH}" ./scripts/build-edgelet fat
+    ARCH="${TARGET_ARCH}" ./scripts/package-data
+}
 
 ###############################################################################
 # Step 1: Plan 6 embed pipeline (download → build-embedded → fat → package-data)
 ###############################################################################
 log_step "Embed pipeline: download → build-embedded → fat → package-data"
-ARCH="${TARGET_ARCH}" ./scripts/download
-ARCH="${TARGET_ARCH}" ./scripts/build-embedded
-ARCH="${TARGET_ARCH}" ./scripts/build-edgelet fat
-ARCH="${TARGET_ARCH}" ./scripts/package-data
+
+if [ "$(uname -s)" = Darwin ]; then
+    log_info "macOS host: static crun build runs inside edgelet-embed-ci Docker image"
+    docker build -f build/Dockerfile.embedded -t edgelet-embed-ci "${REPO_ROOT}"
+    docker run --rm -v "${REPO_ROOT}:/src" -w /src edgelet-embed-ci \
+        bash -c "chmod +x scripts/* 2>/dev/null || true; ARCH=${TARGET_ARCH} ./scripts/download && ARCH=${TARGET_ARCH} ./scripts/build-embedded && ARCH=${TARGET_ARCH} ./scripts/build-edgelet fat && ARCH=${TARGET_ARCH} ./scripts/package-data"
+else
+    run_embed_pipeline
+fi
+
 log_ok "Embedded zstd bundle packaged (fat runtime in bin/edgelet)"
 
 ###############################################################################

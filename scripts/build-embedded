@@ -101,34 +101,13 @@ popd
 cp -vf ./build/src/github.com/containerd/containerd/bin/containerd-shim-runc-v2 \
   "${INSTALLBIN}/containerd-shim-runc-v2${BINARY_POSTFIX}"
 
-# ── crun ──────────────────────────────────────────────────────────────────────
-echo "Building crun ${VERSION_CRUN}"
-CRUN_ARCH="${ARCH}"
-case "${ARCH}" in
-  arm) CRUN_ARCH="arm" ;;
-esac
-
-_NATIVE_GO="${_HOST_GOARCH}"
-if [ "$(uname -s)" != Linux ] || [ "${ARCH}" != "${_NATIVE_GO}" ]; then
-  echo "Cross/non-native: fetching prebuilt crun for linux/${CRUN_ARCH}"
-  curl -fsSL -o "${INSTALLBIN}/crun${BINARY_POSTFIX}" \
-    "https://github.com/containers/crun/releases/download/${VERSION_CRUN}/crun-${VERSION_CRUN}-linux-${CRUN_ARCH}"
-  chmod +x "${INSTALLBIN}/crun${BINARY_POSTFIX}"
-else
-  pushd ./build/src/github.com/containers/crun
-  if [ ! -f configure ]; then
-    ./autogen.sh
-  fi
-  if [ -n "${CC}" ]; then
-    CC="${CC}" ./configure --prefix=/usr
-  else
-    ./configure --prefix=/usr
-  fi
-  make -j"$(nproc 2>/dev/null || echo 2)"
-  popd
-  cp -vf ./build/src/github.com/containers/crun/crun "${INSTALLBIN}/crun${BINARY_POSTFIX}"
-  chmod +x "${INSTALLBIN}/crun${BINARY_POSTFIX}"
+# ── crun (static glibc; all arches including arm32) ───────────────────────────
+if [ "$(uname -s)" != Linux ]; then
+  echo "[ERROR] build-embedded crun step requires Linux; use build/Dockerfile.embedded on macOS." >&2
+  exit 1
 fi
+chmod +x ./scripts/build-crun-static 2>/dev/null || true
+INSTALLBIN="${INSTALLBIN}" ARCH="${ARCH}" ./scripts/build-crun-static
 
 # ── pause image ───────────────────────────────────────────────────────────────
 PAUSE_ARCH="${ARCH}"

@@ -13,7 +13,7 @@ import (
 const fatRuntimeName = dataverify.FatRuntimeName
 
 // RuntimeBinary returns the path to the extracted fat edgelet runtime ELF.
-// Resolution order matches k3s authoritative data/<embed-hash>/ then data/current fallback.
+// Resolution order: authoritative data/<embed-hash>/ then data/current fallback.
 func RuntimeBinary() (string, error) {
 	if dir := ExtractDir(); dir != "" {
 		if path, err := fatRuntimeInDir(dir); err == nil {

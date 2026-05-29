@@ -130,7 +130,7 @@ func (e *ErrRuntimeHandlerUnavailable) Unwrap() error {
 }
 
 // BuildRuntimeCatalog discovers supported runtimes from PATH.
-// Only discovered handlers are returned (K3s-style found-only inventory).
+// Only discovered handlers are returned.
 func BuildRuntimeCatalog() []RuntimeCatalogEntry {
 	entries := make([]RuntimeCatalogEntry, 0, len(runtimeSpecs))
 	entries = findRunCContainerRuntime(entries)
