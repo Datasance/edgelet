@@ -57,15 +57,20 @@ assert_ok() {
 
 # assert_contains <description> <substring> <command...>
 # Runs a command and checks its output contains the given substring.
+# Captures non-zero exit without tripping set -e (command substitution otherwise aborts).
 assert_contains() {
     local desc="$1"
     local needle="$2"
     shift 2
     local output
-    output="$("$@" 2>&1)"
-    if echo "${output}" | grep -q "${needle}"; then
+    local status=0
+    output="$("$@" 2>&1)" || status=$?
+    if [[ "${status}" -eq 0 ]] && echo "${output}" | grep -q "${needle}"; then
         log_ok "${desc}"
         (( TESTS_PASSED++ )) || true
+    elif [[ "${status}" -ne 0 ]]; then
+        log_fail "${desc} (command exited ${status}; output: ${output})"
+        (( TESTS_FAILED++ )) || true
     else
         log_fail "${desc} (expected '${needle}' in output: ${output})"
         (( TESTS_FAILED++ )) || true

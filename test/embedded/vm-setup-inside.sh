@@ -58,9 +58,8 @@ ExecStart=/usr/local/bin/edgelet daemon
 Restart=always
 RestartSec=2s
 TimeoutStopSec=120s
-KillMode=control-group
-KillSignal=SIGTERM
-SendSIGKILL=yes
+KillMode=process
+Delegate=yes
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=edgelet
@@ -78,6 +77,11 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable edgelet
+
+echo "[vm-setup] Ensuring bpf filesystem for crun (Lima/minimal hosts)..."
+mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
+mkdir -p /sys/fs/bpf/crun/k8s_io
+chmod 755 /sys/fs/bpf/crun /sys/fs/bpf/crun/k8s_io 2>/dev/null || true
 
 echo "[vm-setup] Starting edgelet..."
 systemctl start edgelet
