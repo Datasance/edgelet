@@ -11,7 +11,7 @@ import (
 	"github.com/datasance/edgelet/pkg/datadir"
 )
 
-// prependRuntimePath puts bundled CNI plugins and k3s-root net aux ahead of PATH so
+// prependRuntimePath puts bundled CNI plugins and userland net aux ahead of PATH so
 // CNI bridge/portmap and modprobe work on minimal hosts without distro iptables/ip.
 // /usr/local/bin precedes bundle bin/ so the thin CLI wins over the fat edgelet ELF name.
 func prependRuntimePath(bundleDir string) error {
