@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/cgroups"
 )
 
 func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {

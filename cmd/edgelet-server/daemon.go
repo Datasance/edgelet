@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/branding"
 	"github.com/datasance/edgelet/internal/buildmeta"
 	"github.com/datasance/edgelet/internal/config"
@@ -49,6 +50,10 @@ func runDaemon() {
 
 	var prestarted *edgeletcontainerdd.Service
 	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
+		if _, err := cgroups.Bootstrap(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
+			os.Exit(1)
+		}
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()
 		if err != nil {
