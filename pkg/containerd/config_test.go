@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/constants"
 )
 

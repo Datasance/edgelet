@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/pelletier/go-toml"
 	"github.com/urfave/cli/v2"
@@ -181,6 +182,20 @@ func generateConfig() map[string]any {
 	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
 	crunPath := filepath.Join(constants.EdgeletContainerdBinDir, "crun")
 
+	policy := cgroups.GetGlobalPolicy()
+	cgroupPath := ""
+	// Embedded engine uses crun with cgroupfs OCI backend. Host integration
+	// (edgelet.service + Delegate=yes) is separate from SystemdCgroup.
+	systemdCgroup := false
+	if policy != nil && policy.Driver == cgroups.DriverCgroupfs {
+		cgroupPath = policy.ContainerdCgroupPath
+	}
+
+	crunOptions := map[string]any{
+		"BinaryName":    crunPath,
+		"SystemdCgroup": systemdCgroup,
+	}
+
 	runtimes := map[string]any{
 		"crun": map[string]any{
 			"runtime_type":                    "io.containerd.runc.v2",
@@ -195,14 +210,10 @@ func generateConfig() map[string]any {
 			"snapshotter":       "",
 			"sandboxer":         "podsandbox",
 			"io_type":           "",
-			"options": map[string]any{
-				// BinaryName points at our extracted crun so containerd-shim-runc-v2
-				// uses our binary rather than any system-installed runtime.
-				"BinaryName": crunPath,
-			},
+			"options":           crunOptions,
 		},
 	}
-	appendDiscoveredRuntimes(runtimes)
+	appendDiscoveredRuntimes(runtimes, systemdCgroup)
 
 	return map[string]any{
 		"version":          3,
@@ -223,7 +234,7 @@ func generateConfig() map[string]any {
 		},
 
 		"cgroup": map[string]any{
-			"path": "",
+			"path": cgroupPath,
 		},
 
 		"timeouts": map[string]any{
@@ -331,7 +342,7 @@ func generateConfig() map[string]any {
 	}
 }
 
-func appendDiscoveredRuntimes(runtimes map[string]any) {
+func appendDiscoveredRuntimes(runtimes map[string]any, systemdCgroup bool) {
 	catalog := BuildRuntimeCatalog()
 	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
 	sort.Slice(catalog, func(i, j int) bool {
@@ -346,12 +357,12 @@ func appendDiscoveredRuntimes(runtimes map[string]any) {
 			continue
 		}
 		if _, exists := runtimes[entry.Handler]; !exists {
-			runtimes[entry.Handler] = runtimeClassRuntimeConfig(entry, shimRuncPath)
+			runtimes[entry.Handler] = runtimeClassRuntimeConfig(entry, shimRuncPath, systemdCgroup)
 		}
 	}
 }
 
-func runtimeClassRuntimeConfig(entry RuntimeCatalogEntry, shimRuncPath string) map[string]any {
+func runtimeClassRuntimeConfig(entry RuntimeCatalogEntry, shimRuncPath string, systemdCgroup bool) map[string]any {
 	config := map[string]any{
 		"runtime_type":                    entry.RuntimeType,
 		"pod_annotations":                 []string{"iofog.network"},
@@ -368,7 +379,8 @@ func runtimeClassRuntimeConfig(entry RuntimeCatalogEntry, shimRuncPath string) m
 	if entry.Family == RuntimeFamilyRunc {
 		config["runtime_path"] = shimRuncPath
 		config["options"] = map[string]any{
-			"BinaryName": entry.Path,
+			"BinaryName":    entry.Path,
+			"SystemdCgroup": systemdCgroup,
 		}
 		return config
 	}

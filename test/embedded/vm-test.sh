@@ -100,6 +100,24 @@ assert_ok "edgelet service is active" \
 assert_contains "system status endpoint is reachable" "iofogDaemon" \
     R "edgelet system status"
 
+assert_contains "status exposes cgroup mode" "cgroupMode" \
+    R "edgelet system status -o json"
+
+assert_ok "cgroup policy matches systemd bare-metal or nested cgroupfs layout" \
+    R "set -e
+driver=\$(edgelet system status -o json | jq -r '.cgroupDriver')
+if [ \"\${driver}\" = systemd ]; then
+  grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
+  ! grep -q 'path = \"/edgelet/agent/containerd\"' /var/lib/edgelet-containerd/config.toml
+  mainpid=\$(systemctl show edgelet -p MainPID --value)
+  cg=\$(cat /proc/\${mainpid}/cgroup | sed -n 's/^0:://p')
+  echo \"\${cg}\" | grep -q 'edgelet.service'
+else
+  grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
+  grep -q 'path = \"/edgelet/agent/containerd\"' /var/lib/edgelet-containerd/config.toml
+  test -d /sys/fs/cgroup/edgelet/agent
+fi"
+
 ###############################################################################
 # Phase 3 — CNI network configuration
 ###############################################################################

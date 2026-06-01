@@ -42,6 +42,9 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if buildmeta.HasEmbeddedEngine() && strings.EqualFold(strings.TrimSpace(config.GetInstance().ContainerEngine), "edgelet") {
 		augmentWithDNSStatus(statusMap)
 	}
+	if shouldAugmentCgroupStatus() {
+		augmentWithCgroupStatus(statusMap)
+	}
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(statusMap)

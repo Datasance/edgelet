@@ -29,7 +29,7 @@ func Verify(dir string) error {
 	return nil
 }
 
-// VerifyNetAux checks k3s-root net tools staged into the embed bundle bin/ tree.
+// VerifyNetAux checks userland net tools staged into the embed bundle bin/ tree.
 func VerifyNetAux(binDir string) error {
 	required := []string{
 		filepath.Join("aux", "xtables-legacy-multi"),

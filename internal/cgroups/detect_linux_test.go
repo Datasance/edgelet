@@ -1,0 +1,271 @@
+//go:build linux
+
+package cgroups
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestDetectModeFromMount(t *testing.T) {
+	mode, mount, _ := detectMode()
+	if mode == ModeUnknown {
+		t.Fatalf("expected detectable cgroup mode, got unknown (mount=%q)", mount)
+	}
+	if mount == "" {
+		t.Fatal("expected non-empty unified mountpoint")
+	}
+}
+
+func TestDetectNestedDockerenv(t *testing.T) {
+	prevStat := statFn
+	t.Cleanup(func() { statFn = prevStat })
+	statFn = func(name string) (os.FileInfo, error) {
+		if name == "/.dockerenv" {
+			return fakeDirInfo{}, nil
+		}
+		return prevStat(name)
+	}
+	if !detectNested() {
+		t.Fatal("expected nested=true when /.dockerenv exists")
+	}
+}
+
+func TestSelectDriverNestedPrefersCgroupfs(t *testing.T) {
+	driver, systemd := selectDriver(ModeV2, true, map[string]bool{"cpu": true, "cpuset": true})
+	if driver != DriverCgroupfs || systemd {
+		t.Fatalf("nested policy = (%s, systemd=%t), want (cgroupfs, false)", driver, systemd)
+	}
+}
+
+func TestSelectDriverCgroupfsWhenRootCpusetMissing(t *testing.T) {
+	prevStat := statFn
+	prevComm := pid1CommFn
+	prevRoot := rootHasControllerFn
+	t.Cleanup(func() {
+		statFn = prevStat
+		pid1CommFn = prevComm
+		rootHasControllerFn = prevRoot
+	})
+	statFn = func(name string) (os.FileInfo, error) {
+		if name == "/run/systemd/system" {
+			return fakeDirInfo{}, nil
+		}
+		return prevStat(name)
+	}
+	pid1CommFn = func() (string, error) { return "systemd", nil }
+	rootHasControllerFn = func(string) bool { return false }
+	t.Setenv("INVOCATION_ID", "test-invocation")
+
+	driver, systemd := selectDriver(ModeV2, false, map[string]bool{"cpu": true, "cpuset": true})
+	if driver != DriverCgroupfs || systemd {
+		t.Fatalf("policy without root cpuset = (%s, systemd=%t), want (cgroupfs, false)", driver, systemd)
+	}
+}
+
+func TestSelectDriverSystemdOnV2ServiceWithoutCPUDelegated(t *testing.T) {
+	prevStat := statFn
+	prevComm := pid1CommFn
+	prevRoot := rootHasControllerFn
+	t.Cleanup(func() {
+		statFn = prevStat
+		pid1CommFn = prevComm
+		rootHasControllerFn = prevRoot
+	})
+	statFn = func(name string) (os.FileInfo, error) {
+		if name == "/run/systemd/system" {
+			return fakeDirInfo{}, nil
+		}
+		return prevStat(name)
+	}
+	pid1CommFn = func() (string, error) { return "systemd", nil }
+	rootHasControllerFn = func(name string) bool { return name == "cpuset" }
+	t.Setenv("INVOCATION_ID", "test-invocation")
+
+	// host gate: root cpuset + INVOCATION_ID → systemd driver; crun stays cgroupfs.
+	driver, systemd := selectDriver(ModeV2, false, map[string]bool{"memory": true, "pids": true})
+	if driver != DriverSystemd || systemd {
+		t.Fatalf("systemd service policy = (%s, systemd=%t), want (systemd, false)", driver, systemd)
+	}
+}
+
+func TestSelectDriverSystemdOnV2Host(t *testing.T) {
+	prevStat := statFn
+	prevComm := pid1CommFn
+	prevRoot := rootHasControllerFn
+	t.Cleanup(func() {
+		statFn = prevStat
+		pid1CommFn = prevComm
+		rootHasControllerFn = prevRoot
+	})
+	statFn = func(name string) (os.FileInfo, error) {
+		if name == "/run/systemd/system" {
+			return fakeDirInfo{}, nil
+		}
+		return prevStat(name)
+	}
+	pid1CommFn = func() (string, error) { return "systemd", nil }
+	rootHasControllerFn = func(name string) bool { return name == "cpuset" }
+	t.Setenv("INVOCATION_ID", "test-invocation")
+
+	driver, systemd := selectDriver(ModeV2, false, map[string]bool{"cpu": true})
+	if driver != DriverSystemd || systemd {
+		t.Fatalf("host systemd policy = (%s, systemd=%t), want (systemd, false)", driver, systemd)
+	}
+}
+
+func TestCgroupPathsSystemdFormat(t *testing.T) {
+	agent, ctd := cgroupPaths(ModeV2, DriverSystemd)
+	if agent != "/edgelet/agent" || ctd != "/edgelet/agent/containerd" {
+		t.Fatalf("unexpected paths: agent=%q containerd=%q", agent, ctd)
+	}
+}
+
+func TestCgroupPathsCgroupfsFormat(t *testing.T) {
+	agent, ctd := cgroupPaths(ModeV2, DriverCgroupfs)
+	if agent != "/edgelet/agent" || ctd != "/edgelet/agent/containerd" {
+		t.Fatalf("unexpected paths: agent=%q containerd=%q", agent, ctd)
+	}
+}
+
+func TestValidatePreflightSkipsBareMetalSystemdDriver(t *testing.T) {
+	policy := &CgroupPolicy{
+		Mode:                 ModeV2,
+		Driver:               DriverSystemd,
+		Nested:               false,
+		DelegatedControllers: []string{"memory", "pids"},
+	}
+	if err := ValidatePreflight(policy); err != nil {
+		t.Fatalf("expected no preflight error for systemd driver, got %v", err)
+	}
+}
+
+func TestValidatePreflightSkipsBareMetalCgroupfs(t *testing.T) {
+	policy := &CgroupPolicy{
+		Mode:                 ModeV2,
+		Driver:               DriverCgroupfs,
+		Nested:               false,
+		DelegatedControllers: []string{"memory", "pids"},
+	}
+	if err := ValidatePreflight(policy); err != nil {
+		t.Fatalf("expected no preflight error for bare-metal cgroupfs, got %v", err)
+	}
+}
+
+func TestValidatePreflightMissingCPU(t *testing.T) {
+	policy := &CgroupPolicy{
+		Mode:                 ModeV2,
+		Nested:               true,
+		DelegatedControllers: []string{"memory", "pids"},
+	}
+	err := ValidatePreflight(policy)
+	if err == nil {
+		t.Fatal("expected delegation error")
+	}
+	var del *ErrDelegation
+	if !asErrDelegation(err, &del) {
+		t.Fatalf("expected ErrDelegation, got %T: %v", err, err)
+	}
+	if del.Controller != "cpu" || !del.Nested {
+		t.Fatalf("unexpected delegation error: %+v", del)
+	}
+}
+
+func TestMapRuntimeError(t *testing.T) {
+	policy := &CgroupPolicy{Nested: true, Mode: ModeV2}
+	err := MapRuntimeError(os.ErrInvalid, policy)
+	if err != os.ErrInvalid {
+		t.Fatalf("expected passthrough, got %v", err)
+	}
+	mapped := MapRuntimeError(errors.New("cri failed: controller cpu is not available"), policy)
+	var del *ErrDelegation
+	if !asErrDelegation(mapped, &del) {
+		t.Fatalf("expected mapped delegation error, got %v", mapped)
+	}
+}
+
+func TestCheckDelegatedControllersUsesSelfCgroup(t *testing.T) {
+	controllers := checkDelegatedControllers(defaultUnifiedMount)
+	if len(controllers) == 0 && Mode(detectModeString()) != ModeV1 {
+		t.Fatalf("expected delegated controllers on unified host, got none")
+	}
+}
+
+func TestUniqueSorted(t *testing.T) {
+	got := uniqueSorted([]string{"pids", "cpu", "cpu", "memory"})
+	want := "cpu,memory,pids"
+	if joinControllers(got) != want {
+		t.Fatalf("uniqueSorted = %v (%q), want %q", got, joinControllers(got), want)
+	}
+}
+
+func TestCurrentUnifiedCgroupPath(t *testing.T) {
+	path, err := currentUnifiedCgroupPath(defaultUnifiedMount)
+	if err != nil {
+		t.Fatalf("currentUnifiedCgroupPath failed: %v", err)
+	}
+	if path == "" {
+		t.Fatal("expected non-empty unified cgroup path")
+	}
+	_ = filepath.Base(path)
+}
+
+func TestNormalizeRelUnifiedPath(t *testing.T) {
+	cases := map[string]string{
+		"/":        "",
+		"":         "",
+		"/edgelet": "edgelet",
+		"edgelet":  "edgelet",
+		"/a/b":     "a/b",
+	}
+	for in, want := range cases {
+		if got := normalizeRelUnifiedPath(in); got != want {
+			t.Fatalf("normalizeRelUnifiedPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildSubtreeEnableLine(t *testing.T) {
+	got := buildSubtreeEnableLine([]string{"cpu", "memory", "pids"})
+	want := "+cpu +memory +pids"
+	if got != want {
+		t.Fatalf("buildSubtreeEnableLine = %q, want %q", got, want)
+	}
+}
+
+func TestJoinRelUnifiedPath(t *testing.T) {
+	if got := joinRelUnifiedPath("", "init"); got != "init" {
+		t.Fatalf("joinRelUnifiedPath empty root = %q, want init", got)
+	}
+	if got := joinRelUnifiedPath("edgelet", "init"); got != "edgelet/init" {
+		t.Fatalf("joinRelUnifiedPath edgelet = %q, want edgelet/init", got)
+	}
+}
+
+type fakeDirInfo struct{}
+
+func (fakeDirInfo) Name() string       { return "dockerenv" }
+func (fakeDirInfo) Size() int64        { return 0 }
+func (fakeDirInfo) Mode() os.FileMode  { return os.ModeDir }
+func (fakeDirInfo) ModTime() time.Time { return time.Time{} }
+func (fakeDirInfo) IsDir() bool        { return true }
+func (fakeDirInfo) Sys() any           { return nil }
+
+func detectModeString() string {
+	mode, _, _ := detectMode()
+	return string(mode)
+}
+
+func asErrDelegation(err error, target **ErrDelegation) bool {
+	del, ok := err.(*ErrDelegation)
+	if !ok {
+		return false
+	}
+	if target != nil && *target != nil {
+		**target = *del
+	}
+	return true
+}

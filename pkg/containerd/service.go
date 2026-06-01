@@ -17,6 +17,7 @@ import (
 
 	"github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/pkg/data"
@@ -160,6 +161,12 @@ func (s *Service) Run() error {
 
 	if err := s.prepare(); err != nil {
 		return fmt.Errorf("%w: prepare runtime directories: %v", ErrContainerdSpawnFailure, err)
+	}
+
+	if policy := cgroups.GetGlobalPolicy(); policy != nil {
+		if err := cgroups.ValidatePreflight(policy); err != nil {
+			return fmt.Errorf("%w: cgroup preflight: %v", ErrContainerdSpawnFailure, err)
+		}
 	}
 
 	if err := writeConfigForService(); err != nil {

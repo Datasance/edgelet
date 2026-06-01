@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/datasance/edgelet/internal/cgroups"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -55,7 +56,7 @@ func (c *Client) RunPodSandbox(ctx context.Context, config *runtimeapi.PodSandbo
 		RuntimeHandler: runtimeHandler,
 	})
 	if err != nil {
-		return "", fmt.Errorf("RunPodSandbox: %w", err)
+		return "", cgroups.MapRuntimeError(fmt.Errorf("RunPodSandbox: %w", err), cgroups.GetGlobalPolicy())
 	}
 	return resp.PodSandboxId, nil
 }
