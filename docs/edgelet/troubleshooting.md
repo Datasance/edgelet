@@ -39,6 +39,54 @@ Common issues when running Edgelet on edge nodes.
 
 ---
 
+## Cgroup delegation (embedded edgelet engine)
+
+**Symptoms:** daemon fails at startup with `controller cpu is not available`; `RunPodSandbox` errors; nested Docker deploy fails immediately.
+
+**Checks:**
+
+1. Confirm cgroup mode and driver:
+
+   ```bash
+   edgelet system status -o json | jq '{cgroupMode,cgroupDriver,cgroupNested,cgroupDelegatedControllers}'
+   ```
+
+2. On **cgroup v2** hosts, verify delegated controllers in the edgelet cgroup:
+
+   ```bash
+   grep -E '^(cpu|memory|pids)' /sys/fs/cgroup/cgroup.controllers
+   cat /sys/fs/cgroup/cgroup.subtree_control
+   ```
+
+3. **Hybrid v1+v2:** edgelet logs a warning and prefers unified v2 — migrate the host to pure cgroup v2 when possible. See [cgroups.md](cgroups.md).
+
+4. **Nested `edgelet-linux` in Docker:** `--privileged` is required:
+
+   ```bash
+   docker run -d --name edgelet --privileged \
+     -v /var/lib/edgelet:/var/lib/edgelet \
+     -v /etc/edgelet:/etc/edgelet \
+     ghcr.io/datasance/edgelet-linux:<tag>
+   ```
+
+   Without `--privileged`, cpu/memory/pids controllers are not delegated and CRI cannot create sandboxes.
+
+5. **Non-systemd init** (openrc, sysvinit, s6): edgelet uses the **cgroupfs** driver automatically — ensure `/sys/fs/cgroup` is writable and controllers are mounted.
+
+6. **`RunPodSandbox` / `sd-bus call: Invalid unit name or type`:** crun with `SystemdCgroup=true` (manual `config.d` override or an old edgelet build). Reinstall the current edgelet build — generated config must have **`SystemdCgroup = false`** for crun; systemd bare-metal hosts must stay in `edgelet.service` with no `cgroup.path`. Verify:
+
+   ```bash
+   edgelet system status -o json | jq '{cgroupDriver,cgroupContainerdPath}'
+   grep -E '^\[cgroup\]|path =|SystemdCgroup' /var/lib/edgelet-containerd/config.toml
+   cat /proc/$(systemctl show edgelet -p MainPID --value)/cgroup
+   ```
+
+7. **`bpf pin to /sys/fs/bpf/crun/k8s_io/...`:** often appears when `SystemdCgroup=true` was enabled for crun. Use a current edgelet build (`SystemdCgroup = false`). If BPF is still required on your host, ensure `/sys/fs/bpf` is mounted and `/sys/fs/bpf/crun/k8s_io` exists (see [cgroups.md](cgroups.md)).
+
+See [cgroups.md](cgroups.md) for the full matrix.
+
+---
+
 ## Containerd socket (edgelet engine)
 
 **Symptoms:** `connection refused` to `/run/edgelet/containerd.sock`; microservices stuck in pull/create.
