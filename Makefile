@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-tarballs build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -23,7 +23,10 @@ ARCH ?= amd64
 LDFLAGS_EDGELET := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
 	-X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) \
 	-X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) \
-	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
+	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) \
+	-X github.com/datasance/edgelet/internal/version.Version=$(VERSION) \
+	-X github.com/datasance/edgelet/internal/version.BuildTime=$(BUILD_TIME) \
+	-X github.com/datasance/edgelet/internal/version.GitCommit=$(GIT_COMMIT) -s -w
 BUILD_FLAGS_EDGELET := -trimpath -ldflags "$(LDFLAGS_EDGELET)"
 
 # Legacy aliases (CLI/daemon were separate binaries pre-Plan 3).
@@ -96,7 +99,7 @@ build-daemon-embedded: build-edgelet-linux ## (alias) Build linux thin with embe
 
 deps: ## Download, build fat runtime, package embedded zstd bundle (linux; run before build-edgelet-linux)
 	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
-	@chmod +x scripts/clean scripts/download scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
+	@chmod +x scripts/clean scripts/download scripts/download-root scripts/stage-root-aux scripts/install-embed-build-deps scripts/build-crun-static scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
 	@ARCH=$(or $(ARCH),amd64) ./scripts/download
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-embedded
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-edgelet fat
@@ -132,9 +135,9 @@ build-desktop-windows: ## Build monolithic edgelet for windows/amd64
 	@mkdir -p build
 	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet-windows-amd64.exe ./cmd/edgelet
 
-release-tarballs: build-all-archs ## Package dist/edgelet-linux-<arch>.tar.gz and SHA256SUMS
-	@chmod +x scripts/release-tarballs.sh
-	@./scripts/release-tarballs.sh "$(VERSION)"
+release-binaries: build-all-archs build-desktop-darwin build-desktop-windows ## Package dist/ binary-only release + SHA256SUMS
+	@chmod +x scripts/release-binaries.sh
+	@./scripts/release-binaries.sh "$(VERSION)"
 
 ci-docker: ## Run linux CI gate inside Docker (macOS-friendly)
 	@docker build -f build/Dockerfile.embedded -t edgelet-embed-ci .
@@ -302,7 +305,7 @@ install-dev: build-edgelet-local ## Install edgelet and setup local dev environm
 	else \
 		echo "✓ Config file already exists at $(DEV_CONFIG_DIR)/config.yaml"; \
 	fi
-	@cp packaging/edgelet/etc/edgelet/cert_new.crt $(DEV_CONFIG_DIR)/cert.crt
+	@cp packaging/edgelet/etc/edgelet/controller-ca.sample.crt $(DEV_CONFIG_DIR)/cert.crt
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  Local Development Environment Setup Complete!"
@@ -467,7 +470,7 @@ security-code: ## Run static Go security analysis
 	fi
 
 	@gosec ./...
-# --- Desktop App targets ---
+# --- Desktop App targets --- TODO: Desktop app is not implemented yet
 
 DESKTOP_DIR := ../agent-desktop
 

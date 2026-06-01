@@ -52,7 +52,7 @@ var configKeyRules = map[string]configKeyRule{
 	"gpsCoordinates":         {Key: "gpsCoordinates", Aliases: []string{"gpsc"}, Type: configValueString, Help: "GPS coordinates lat,lon"},
 	"gpsDevice":              {Key: "gpsDevice", Aliases: []string{"gpsd"}, Type: configValueString, Help: "GPS device"},
 	"gpsScanFrequency":       {Key: "gpsScanFrequency", Aliases: []string{"gpsf"}, Type: configValueInt, Help: "GPS scan frequency"},
-	"arch":                   {Key: "arch", Aliases: []string{"ft"}, Type: configValueString, Help: "fog type/arch"},
+	"arch":                   {Key: "arch", Aliases: []string{"ft"}, Type: configValueString, Enums: []string{"auto", "amd64", "arm64", "arm", "riscv64"}, Help: "fog type/arch"},
 	"secureMode":             {Key: "secureMode", Aliases: []string{"sec"}, Type: configValueBool, Help: "secure mode"},
 	"dockerPruningFrequency": {Key: "dockerPruningFrequency", Aliases: []string{"pf"}, Type: configValueInt, Help: "prune frequency"},
 	"availableDiskThreshold": {Key: "availableDiskThreshold", Aliases: []string{"dt"}, Type: configValueInt, Help: "available disk threshold"},

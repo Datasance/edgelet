@@ -350,8 +350,7 @@ kind: Microservice
 metadata:
   name: local-ms
 spec:
-  images:
-    x86: busybox:latest
+  image: busybox:latest
   container:
     hostNetworkMode: false
     isPrivileged: false

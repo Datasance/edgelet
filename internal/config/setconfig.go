@@ -329,8 +329,12 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 
 	case "arch":
-		c.Arch = value
-		if err := c.setYamlProperty("arch", value); err != nil {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if err := ValidateArch(normalized); err != nil {
+			return err
+		}
+		c.Arch = normalized
+		if err := c.setYamlProperty("arch", normalized); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 

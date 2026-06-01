@@ -25,11 +25,11 @@ const (
 	jwtExpiration                   = 10 * time.Minute
 	jwtIssuer                       = "https://edgelet.default.svc.bridge.local"
 	jwtAudience                     = "https://edgelet.default.svc.bridge.local"
-	edgeletAPIAudience                = "edgelet://edgeletapi/v1"
+	edgeletAPIAudience              = "edgelet://edgeletapi/v1"
 	serviceAccountAudience          = "https://edgelet.default.svc.bridge.local"
 	edgeGuardAudience               = "edgelet://edgeguard/v1"
 	tokenUseController              = "controller"
-	tokenUseEdgeletAPI                = "edgeletapi"
+	tokenUseEdgeletAPI              = "edgeletapi"
 	tokenUseServiceAccount          = "serviceaccount"
 	tokenUseEdgeGuard               = "edgeguard"
 	rotationLeadFractionDenominator = 5

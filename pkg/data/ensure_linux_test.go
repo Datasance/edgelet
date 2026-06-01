@@ -29,8 +29,12 @@ func TestIsBundleReadyRequiresFatRuntimeAndShim(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "containerd-shim-runc-v2"), []byte("shim"), 0755); err != nil {
 		t.Fatalf("write shim: %v", err)
 	}
+	if isBundleReady(tmp) {
+		t.Fatal("expected not ready without net aux")
+	}
+	writeNetAuxStubs(t, binDir)
 	if !isBundleReady(tmp) {
-		t.Fatal("expected bundle ready with fat edgelet and shim")
+		t.Fatal("expected bundle ready with fat edgelet, shim, and net aux")
 	}
 
 	badELF := filepath.Join(binDir, "edgelet")
@@ -140,6 +144,25 @@ func TestPromoteCurrentBundleRotatesSymlink(t *testing.T) {
 	}
 }
 
+func writeNetAuxStubs(t *testing.T, binDir string) {
+	t.Helper()
+	auxDir := filepath.Join(binDir, "aux")
+	if err := os.MkdirAll(auxDir, 0755); err != nil {
+		t.Fatalf("mkdir aux: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(auxDir, "xtables-legacy-multi"), []byte("\x7fELF"), 0755); err != nil {
+		t.Fatalf("write xtables-legacy-multi: %v", err)
+	}
+	if err := os.Symlink("xtables-legacy-multi", filepath.Join(auxDir, "iptables")); err != nil {
+		t.Fatalf("symlink iptables: %v", err)
+	}
+	for _, name := range []string{"ip", "busybox"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("\x7fELF"), 0755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+}
+
 func writeReadyBundleDir(t *testing.T, dir string) {
 	t.Helper()
 	binDir := filepath.Join(dir, "bin")
@@ -152,6 +175,7 @@ func writeReadyBundleDir(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(binDir, "containerd-shim-runc-v2"), []byte("shim"), 0755); err != nil {
 		t.Fatalf("write shim: %v", err)
 	}
+	writeNetAuxStubs(t, binDir)
 }
 
 func TestTryUseAuthoritativeBundleOverStaleCurrent(t *testing.T) {

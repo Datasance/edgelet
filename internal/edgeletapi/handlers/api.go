@@ -1153,7 +1153,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApply(w http.ResponseWriter
 		Stage:       runtimeapi.DeployStageParsing,
 		Kind:        strings.TrimSpace(manifestDoc.Kind),
 		Name:        strings.TrimSpace(manifestDoc.Metadata.Name),
-		Image:       strings.TrimSpace(manifestDoc.ResolveImageForArch(facadePlatformArch())),
+		Image:       manifestDoc.ManifestImage(),
 		StartedAt:   time.Now().UTC(),
 	}
 
@@ -1281,7 +1281,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesValidate(w http.ResponseWri
 		"kind":       doc.Kind,
 		"name":       doc.Metadata.Name,
 		"apiVersion": doc.APIVersion,
-		"image":      doc.ResolveImageForArch(facadePlatformArch()),
+		"image":      doc.ManifestImage(),
 	})
 }
 
@@ -1919,20 +1919,6 @@ func runtimeClassDeleteOperationResponse(op *runtimeClassDeleteOperation) map[st
 		response["error"] = errorPayload
 	}
 	return response
-}
-
-func facadePlatformArch() string {
-	cfg := config.GetInstance()
-	if cfg == nil {
-		return "x86"
-	}
-	arch := strings.TrimSpace(strings.ToLower(cfg.Arch))
-	switch arch {
-	case "arm", "arm64", "aarch64":
-		return "arm"
-	default:
-		return "x86"
-	}
 }
 
 func (h *EdgeletAPIHandler) HandleAuthTokens(w http.ResponseWriter, r *http.Request) {

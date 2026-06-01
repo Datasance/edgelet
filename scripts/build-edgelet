@@ -26,7 +26,10 @@ LDFLAGS_BASE="-s -w \
   -X main.gitCommit=${GIT_COMMIT} \
   -X ${PKG}/internal/cli/cmd.Version=${VERSION} \
   -X ${PKG}/internal/cli/cmd.BuildTime=${BUILD_TIME} \
-  -X ${PKG}/internal/cli/cmd.GitCommit=${GIT_COMMIT}"
+  -X ${PKG}/internal/cli/cmd.GitCommit=${GIT_COMMIT} \
+  -X ${PKG}/internal/version.Version=${VERSION} \
+  -X ${PKG}/internal/version.BuildTime=${BUILD_TIME} \
+  -X ${PKG}/internal/version.GitCommit=${GIT_COMMIT}"
 
 STATIC_LDFLAGS=""
 STATIC_TAGS=""

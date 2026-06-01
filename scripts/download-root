@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+case ${OS} in
+  linux) ;;
+  darwin) OS=linux ;;
+  *)
+    echo "[ERROR] unsupported OS for k3s-root download: ${OS}" >&2
+    exit 1
+    ;;
+esac
+
+K3S_ROOT_SHA256=$(k3s_root_sha256) || exit 1
+
+mkdir -p build
+TAR_PATH="build/${K3S_ROOT_TAR}"
+
+if [ -f "${TAR_PATH}" ]; then
+  echo "${K3S_ROOT_SHA256}  ${K3S_ROOT_TAR}" | (
+    cd build
+    sha256sum -c
+  ) && {
+    echo "k3s-root already present: ${TAR_PATH}"
+    exit 0
+  }
+  rm -f "${TAR_PATH}"
+fi
+
+curl --compressed -sfL "${K3S_ROOT_REPO}/${K3S_ROOT_TAR}" -o "${TAR_PATH}"
+echo "${K3S_ROOT_SHA256}  ${K3S_ROOT_TAR}" | (
+  cd build
+  sha256sum -c
+)
+
+echo "Downloaded k3s-root ${VERSION_ROOT} for ${ARCH}: ${TAR_PATH}"

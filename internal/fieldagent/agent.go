@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -32,35 +31,9 @@ const (
 	DeprovisionScopeLocal = "local"
 )
 
-// getArchitectureCode converts architecture string to integer code
-// Matches Java ArchitectureType.getCode():
-// - 1 for INTEL_AMD (x86_64, amd64, etc.)
-// - 2 for ARM (arm, arm64, aarch64, etc.)
-// - 0 for UNDEFINED
+// getArchitectureCode maps config arch to Pot provision FogType (1=amd64, 2=arm64, 3=riscv64, 4=arm).
 func getArchitectureCode(arch string) int {
-	archLower := strings.ToLower(arch)
-
-	// Handle "auto" - detect from runtime
-	if archLower == "auto" {
-		goarch := runtime.GOARCH
-		if goarch == "amd64" || goarch == "386" || goarch == "x86_64" {
-			return 1 // INTEL_AMD
-		}
-		if strings.HasPrefix(goarch, "arm") || goarch == "arm64" || goarch == "aarch64" {
-			return 2 // ARM
-		}
-		return 0 // UNDEFINED
-	}
-
-	// Handle explicit types
-	if archLower == "intel_amd" || archLower == "x86_64" || archLower == "amd64" {
-		return 1 // INTEL_AMD
-	}
-	if archLower == "arm" || archLower == "arm64" || archLower == "aarch64" {
-		return 2 // ARM
-	}
-
-	return 0 // UNDEFINED
+	return config.ArchitectureCode(arch)
 }
 
 // FieldAgent handles all communication with the fog controller
@@ -298,10 +271,11 @@ func (fa *FieldAgent) Start() error {
 
 	// Start background workers (matching Java: lines 1995-1998)
 	logging.LogDebug(moduleName, "Starting background workers")
-	fa.wg.Add(5)
+	fa.wg.Add(6)
 	go fa.pingControllerWorker()
 	go fa.getChangesWorker()
 	go fa.postStatusWorker()
+	go fa.upgradeScanWorker()
 	go fa.localAPITokenRotationWorker()
 	go fa.serviceAccountTokenRotationWorker()
 
@@ -526,7 +500,6 @@ func (fa *FieldAgent) ping() bool {
 	return false
 }
 
-// TODO: remmove region logs
 // Provision provisions the agent with the controller
 func (fa *FieldAgent) Provision(key string) error {
 	logging.LogDebug(moduleName, "Start provisioning")

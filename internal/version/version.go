@@ -14,6 +14,13 @@ var (
 	GitCommit = "unknown"
 )
 
+// SetBuildInfo overrides build metadata (used in tests).
+func SetBuildInfo(version, buildTime, gitCommit string) {
+	Version = version
+	BuildTime = buildTime
+	GitCommit = gitCommit
+}
+
 // GetVersion returns the agent version
 func GetVersion() string {
 	// Try to get version from build info if not set

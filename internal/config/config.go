@@ -362,8 +362,8 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	// GPS coordinates
 	buildLine("GPS Coordinates", c.GPSCoordinates)
 
-	// Architecture
-	buildLine("Fog Type", strings.ToLower(c.Arch))
+	// Architecture (resolved for display; never "auto")
+	buildLine("Fog Type", DisplayArch(c.Arch))
 
 	// Docker pruning frequency
 	buildLine("Docker Pruning Frequency", fmt.Sprintf("%d", c.DockerPruningFrequency))

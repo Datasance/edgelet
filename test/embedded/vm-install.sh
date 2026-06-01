@@ -30,7 +30,7 @@ done
 
 EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}"
 CONFIG_SRC="${REPO_ROOT}/packaging/edgelet/etc/edgelet/config_new.yaml"
-CERT_SRC="${REPO_ROOT}/packaging/edgelet/etc/edgelet/cert_new.crt"
+CERT_SRC="${REPO_ROOT}/packaging/edgelet/etc/edgelet/controller-ca.sample.crt"
 SETUP_SCRIPT="${SCRIPT_DIR}/vm-setup-inside.sh"
 
 ###############################################################################

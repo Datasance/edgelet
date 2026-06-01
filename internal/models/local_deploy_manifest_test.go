@@ -10,8 +10,16 @@ func validLocalDeployManifestForTest(name string) *LocalDeployManifest {
 	doc.APIVersion = "edgelet.iofog.org/v1"
 	doc.Kind = "Microservice"
 	doc.Metadata.Name = name
-	doc.Spec.Images.X86 = "nginx:latest"
+	doc.Spec.Image = "nginx:latest"
 	return doc
+}
+
+func TestLocalDeployManifestValidate_RequiresSpecImage(t *testing.T) {
+	doc := validLocalDeployManifestForTest("img-required")
+	doc.Spec.Image = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.image is required") {
+		t.Fatalf("expected spec.image required error, got: %v", err)
+	}
 }
 
 func TestLocalDeployManifestValidate_NameDNS1123(t *testing.T) {

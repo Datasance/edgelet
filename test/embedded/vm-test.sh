@@ -166,10 +166,8 @@ kind: Microservice
 metadata:
   name: local-test-ms
 spec:
-  images:
-    registry: 1
-    x86: docker.io/library/alpine:3.19
-    arm: docker.io/library/alpine:3.19
+  image: docker.io/library/alpine:3.19
+  registry: 1
   container:
     hostNetworkMode: false
     isPrivileged: false
@@ -190,10 +188,8 @@ kind: Microservice
 metadata:
   name: local-dns-a
 spec:
-  images:
-    registry: 1
-    x86: docker.io/library/busybox:1.36
-    arm: docker.io/library/busybox:1.36
+  image: docker.io/library/busybox:1.36
+  registry: 1
   container:
     hostNetworkMode: false
     isPrivileged: false
@@ -211,10 +207,8 @@ kind: Microservice
 metadata:
   name: local-dns-b
 spec:
-  images:
-    registry: 1
-    x86: docker.io/library/busybox:1.36
-    arm: docker.io/library/busybox:1.36
+  image: docker.io/library/busybox:1.36
+  registry: 1
   container:
     hostNetworkMode: false
     isPrivileged: false
@@ -693,10 +687,8 @@ kind: Microservice
 metadata:
   name: runtime-spin-ms
 spec:
-  images:
-    registry: 1
-    x86: ghcr.io/spinframework/containerd-shim-spin/examples/spin-rust-hello:v0.22.0
-    arm: ghcr.io/spinframework/containerd-shim-spin/examples/spin-rust-hello:v0.22.0
+  image: ghcr.io/spinframework/containerd-shim-spin/examples/spin-rust-hello:v0.22.0
+  registry: 1
   container:
     hostNetworkMode: false
     isPrivileged: false
@@ -718,10 +710,8 @@ kind: Microservice
 metadata:
   name: runtime-edgelet-ms
 spec:
-  images:
-    registry: 1
-    x86: ghcr.io/containerd/runwasi/wasi-demo-app:latest
-    arm: ghcr.io/containerd/runwasi/wasi-demo-app:latest
+  image: ghcr.io/containerd/runwasi/wasi-demo-app:latest
+  registry: 1
   container:
     hostNetworkMode: false
     isPrivileged: false

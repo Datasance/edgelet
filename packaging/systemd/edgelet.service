@@ -20,7 +20,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=edgelet
 
-# Security settings (full flavor — embedded containerd paths)
+# Security settings (embedded containerd paths)
 NoNewPrivileges=no
 PrivateTmp=true
 ProtectSystem=strict

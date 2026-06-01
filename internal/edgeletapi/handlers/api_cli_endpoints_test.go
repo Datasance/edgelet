@@ -309,7 +309,7 @@ handler: edgelet
 	if envelope.Error.Code != ErrCodeInvalidArgument {
 		t.Fatalf("expected error code %s, got %s", ErrCodeInvalidArgument, envelope.Error.Code)
 	}
-	expected := "runtimeclass is supported only when containerEngine=iofog on full flavor builds"
+	expected := "runtimeclass is supported only when containerEngine=edgelet"
 	if envelope.Error.Message != expected {
 		t.Fatalf("unexpected gate error message: got=%q want=%q", envelope.Error.Message, expected)
 	}

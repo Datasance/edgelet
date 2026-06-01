@@ -63,7 +63,6 @@ Combined CLI + daemon payload:
 | `daemon.version` | string | Daemon version when reachable |
 | `daemon.buildTime` | string | Daemon build timestamp |
 | `daemon.gitCommit` | string | Daemon git commit |
-| `daemon.flavor` | string | `lite` or `full` |
 | `daemon.allowedContainerEngine` | string | Allowed engines |
 | `daemon.error` | string | Present when daemon unreachable |
 

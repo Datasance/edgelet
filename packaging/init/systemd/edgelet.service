@@ -1,0 +1,31 @@
+[Unit]
+Description=Edgelet daemon
+Documentation=https://github.com/datasance/edgelet
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/edgelet daemon
+Restart=always
+RestartSec=2s
+TimeoutStopSec=120s
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=edgelet
+NoNewPrivileges=no
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/edgelet /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet /var/backups/edgelet
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

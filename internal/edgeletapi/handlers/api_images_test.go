@@ -281,8 +281,7 @@ kind: Microservice
 metadata:
   name: router
 spec:
-  images:
-    x86: quay.io/skupper/skupper-router:latest
+  image: quay.io/skupper/skupper-router:latest
 `) + "\n"
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

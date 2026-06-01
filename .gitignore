@@ -60,6 +60,7 @@ build/out/
 build/stage/
 build/data-staging/
 build/images/
+build/*.tar
 pkg/data/embed/*.tar.zst
 dist/
 

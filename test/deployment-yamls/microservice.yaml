@@ -3,10 +3,8 @@ kind: Microservice
 metadata:
   name: nodered-test2
 spec:
-  images:
-    registry: 1
-    x86: nodered/node-red:latest
-    arm: nodered/node-red:latest
+  image: nodered/node-red:latest
+  registry: 1
   container:
     annotations: {}
     hostNetworkMode: false
@@ -16,8 +14,8 @@ spec:
     pidMode: ''
     platform: ''
     runtime: ''
-    cdiDevices:
-      - docker.com/gpu=webgpu
+    # cdiDevices:
+    #   - docker.com/gpu=webgpu
     capAdd: []
     capDrop: []
     volumes:

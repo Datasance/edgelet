@@ -19,8 +19,7 @@ kind: Microservice
 metadata:
   name: router
 spec:
-  images:
-    x86: quay.io/skupper/skupper-router:latest
+  image: quay.io/skupper/skupper-router:latest
 `) + "\n"
 }
 
@@ -34,8 +33,7 @@ metadata:
     team: edge
     owner: runtime
 spec:
-  images:
-    x86: nginx:latest
+  image: nginx:latest
 `) + "\n"
 }
 
@@ -46,8 +44,7 @@ kind: Microservice
 metadata:
   name: `+name+`
 spec:
-  images:
-    x86: quay.io/skupper/skupper-router:latest
+  image: quay.io/skupper/skupper-router:latest
 `) + "\n"
 }
 
@@ -58,8 +55,7 @@ kind: Microservice
 metadata:
   name: router
 spec:
-  images:
-    x86: quay.io/skupper/skupper-router:latest
+  image: quay.io/skupper/skupper-router:latest
   container:
     volumes:
       - hostDestination: router-secret

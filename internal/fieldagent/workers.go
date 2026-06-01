@@ -373,6 +373,45 @@ func (fa *FieldAgent) localAPITokenRotationWorker() {
 	}
 }
 
+// upgradeScanWorker periodically evaluates OTA readiness for controller status.
+func (fa *FieldAgent) upgradeScanWorker() {
+	defer fa.wg.Done()
+
+	fa.scanVersionReadiness()
+
+	timer := time.NewTimer(upgradeScanInterval())
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-fa.ctx.Done():
+			return
+		case <-timer.C:
+			fa.scanVersionReadiness()
+			timer.Reset(upgradeScanInterval())
+		}
+	}
+}
+
+func upgradeScanInterval() time.Duration {
+	hours := config.GetInstance().UpgradeScanFrequency
+	if hours <= 0 {
+		hours = 24
+	}
+	return time.Duration(hours) * time.Hour
+}
+
+func (fa *FieldAgent) scanVersionReadiness() {
+	versionHandler := version.GetInstance()
+	readyUpgrade := versionHandler.IsReadyToUpgrade()
+	readyRollback := versionHandler.IsReadyToRollback()
+
+	statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
+		status.ReadyToUpgrade = readyUpgrade
+		status.ReadyToRollback = readyRollback
+	})
+}
+
 func (fa *FieldAgent) serviceAccountTokenRotationWorker() {
 	defer fa.wg.Done()
 	timer := time.NewTimer(serviceAccountRotationInterval)

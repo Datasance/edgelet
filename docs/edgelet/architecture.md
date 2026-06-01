@@ -2,7 +2,7 @@
 
 ## Overview
 
-Edgelet is the edge agent for the ioFog platform. On **linux**, production ships a **two-layer** layout modeled on k3s:
+Edgelet is the edge agent for the ioFog platform. On **linux**, production ships a **two-layer**:
 
 | Layer | Path | Role |
 |-------|------|------|
@@ -171,6 +171,35 @@ Agent DNS name: `edgelet.default.svc.bridge.local`.
 | `/var/log/edgelet/` | Rotated daemon logs |
 
 SQLite stores cached microservices, registries, and volume mount records. Schema migrations run idempotently on startup.
+
+---
+
+## Release OTA (Plan 8 — two layers)
+
+Fleet upgrades use **two coordinated layers** . See [deployment.md](deployment.md).
+
+```mermaid
+flowchart TB
+  pot["Pot changeVersion"]
+  fa["Field agent\nReleaseManager"]
+  inst["/usr/share/edgelet/install.sh\n--upgrade | --rollback"]
+  thin["/usr/local/bin/edgelet\n(thin OTA)"]
+  daemon["edgelet daemon"]
+  fat["/var/lib/edgelet/data/current\n(fat embed hash)"]
+
+  pot --> fa
+  fa -->|"detached sh install.sh"| inst
+  inst --> thin
+  thin --> daemon
+  daemon -->|"new embed hash"| fat
+```
+
+| Layer | Owner | Metadata |
+|-------|--------|----------|
+| **Thin binary** | `install.sh` | `/var/backups/edgelet/install-receipt`, `previous-release`, `cache/` |
+| **Fat bundle** | Daemon extract | `data/current`, `data/previous` symlinks |
+
+Controller heartbeat exposes `readyToUpgrade` / `readyToRollback` when the install script and receipt state allow OTA. Container deployments (`EDGELET_DAEMON=container`) use image-tag rollout only.
 
 ---
 

@@ -1,9 +1,7 @@
 name: Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Superseded by .github/workflows/release.yml (Plan 08D).
   workflow_dispatch:
     inputs:
       version:
@@ -72,11 +70,8 @@ jobs:
 
       - name: Install embed build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd gcc g++ pkg-config libseccomp-dev \
-            libyajl-dev libcap-dev libsystemd-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
-            autoconf automake libtool make
+          chmod +x scripts/install-embed-build-deps
+          sudo BUILDARCH=amd64 TARGETARCH=${{ matrix.arch }} ./scripts/install-embed-build-deps
 
       - name: Build unified linux edgelet
         env:
