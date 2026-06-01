@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/branding"
 	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/supervisor"

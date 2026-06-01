@@ -11,8 +11,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/cgroups"
+	"github.com/datasance/edgelet/internal/constants"
 	"github.com/pelletier/go-toml"
 	"github.com/urfave/cli/v2"
 )

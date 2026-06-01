@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/datasance/edgelet/internal/buildmeta"
+	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/cgroups"
 )
 
 func TestHandleStatus_IncludesCgroupKeysForEmbeddedEdgeletEngine(t *testing.T) {

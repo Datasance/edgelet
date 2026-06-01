@@ -17,8 +17,8 @@ import (
 
 	"github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
-	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/cgroups"
+	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/pkg/data"
 )

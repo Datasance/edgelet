@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/cgroups"
+	"github.com/datasance/edgelet/internal/constants"
 )
 
 func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {

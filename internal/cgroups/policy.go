@@ -26,15 +26,15 @@ const (
 
 // CgroupPolicy is the resolved cgroup bootstrap policy for embedded edgelet.
 type CgroupPolicy struct {
-	Mode                Mode
-	Driver              Driver
-	Nested              bool
-	SystemdCgroup       bool
-	UnifiedMountpoint   string
-	AgentCgroupPath     string
+	Mode                 Mode
+	Driver               Driver
+	Nested               bool
+	SystemdCgroup        bool
+	UnifiedMountpoint    string
+	AgentCgroupPath      string
 	ContainerdCgroupPath string
 	DelegatedControllers []string
-	HybridWarning       string
+	HybridWarning        string
 }
 
 // Snapshot exposes cgroup diagnostics for status reporting.
@@ -48,7 +48,7 @@ type Snapshot struct {
 }
 
 var (
-	globalMu sync.RWMutex
+	globalMu     sync.RWMutex
 	globalPolicy *CgroupPolicy
 )
 
