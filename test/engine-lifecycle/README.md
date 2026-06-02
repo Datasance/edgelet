@@ -1,14 +1,8 @@
-# Engine lifecycle integration tests (Plan 9A-5)
-
-## Status
-
-**Plan 9A-5 complete** (2026-06-02). Run on **macOS + Lima**:
+# Engine lifecycle integration tests
 
 ```bash
 ./test/engine-lifecycle/run-all.sh
 ```
-> **Spec:** [.cursor/edgelet/docs/09a-container-engine-lifecycle.md](../../.cursor/edgelet/docs/09a-container-engine-lifecycle.md) § Phase 9A-5  
-> **Contract:** [.cursor/edgelet/ENGINE-LIFECYCLE.md](../../.cursor/edgelet/ENGINE-LIFECYCLE.md)
 
 End-to-end integration tests for **cold `containerEngine` switches** (edgelet ↔ docker) inside a Lima Linux VM with **Docker preinstalled**. Complements `test/embedded/` (edgelet engine only).
 
@@ -98,6 +92,6 @@ Based on `test/embedded/lima-ubuntu.yaml`, with these differences:
 |-------|--------|---------|
 | `test/embedded/` | `edgelet` only | Embedded containerd, CNI, RuntimeClass, chaos |
 | `test/engine-lifecycle/` | `edgelet` **and** `docker` | Cold engine switch + MS recreate |
-| `test/embedded/container-deploy-smoke.sh` | nested edgelet in Docker | Plan 9B cgroup smoke (different gate) |
+| `test/embedded/container-deploy-smoke.sh` | nested edgelet in Docker |
 
  `./test/engine-lifecycle/run-all.sh` passes both required switch cases.
