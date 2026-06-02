@@ -80,26 +80,6 @@ func ValidateRegistry(r *Registry) error {
 	return nil
 }
 
-// ValidateMessage validates a Message
-func ValidateMessage(m *Message) error {
-	if m == nil {
-		return errors.New("message cannot be nil")
-	}
-	if m.Version != MessageVersion {
-		return &ValidationError{Field: "version", Message: fmt.Sprintf("unsupported message version: %d", m.Version)}
-	}
-	if m.SequenceNumber < 0 {
-		return &ValidationError{Field: "sequencenumber", Message: "sequence number must be non-negative"}
-	}
-	if m.SequenceTotal < 0 {
-		return &ValidationError{Field: "sequencetotal", Message: "sequence total must be non-negative"}
-	}
-	if m.SequenceNumber > m.SequenceTotal && m.SequenceTotal > 0 {
-		return &ValidationError{Field: "sequencenumber", Message: "sequence number cannot exceed sequence total"}
-	}
-	return nil
-}
-
 // ValidateMicroserviceStatus validates a MicroserviceStatus
 func ValidateMicroserviceStatus(ms *MicroserviceStatus) error {
 	if ms == nil {

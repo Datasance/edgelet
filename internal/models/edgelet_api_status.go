@@ -16,9 +16,3 @@ func (l *EdgeletAPIStatus) SetOpenConfigSocketsCount(count int) *EdgeletAPIStatu
 	l.OpenConfigSocketsCount = count
 	return l
 }
-
-// SetOpenMessageSocketsCount sets the open message sockets count and returns the status for chaining
-func (l *EdgeletAPIStatus) SetOpenMessageSocketsCount(count int) *EdgeletAPIStatus {
-	l.OpenMessageSocketsCount = count
-	return l
-}

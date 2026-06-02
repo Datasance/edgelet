@@ -21,7 +21,7 @@ import (
 const (
 	moduleName = "Status Reporter"
 	// Number of modules
-	numberOfModules = 8
+	numberOfModules = 7
 )
 
 // StatusReporter aggregates and reports status from all modules
