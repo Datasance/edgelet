@@ -1,7 +1,7 @@
 #!/sbin/openrc-run
 
 name="edgelet"
-description="Edgelet daemon"
+description="Edgelet daemon (control plane)"
 command="/usr/local/bin/edgelet"
 command_args="daemon"
 command_background=true
@@ -9,8 +9,40 @@ command_user="root"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/edgelet/daemon.log"
 error_log="/var/log/edgelet/daemon.log"
+shutdown="/usr/libexec/edgelet/edgelet-shutdown"
 
 depend() {
     need net
     after firewall
+%%EDGELET_ENGINE_NEED%%
+}
+
+start_pre() {
+    /usr/local/bin/edgelet cgroup-preflight || return $?
+}
+
+stop() {
+    ebegin "Stopping ${RC_SVCNAME}"
+    if ! "${shutdown}"; then
+        # Fallback when EdgeletAPI is down: single TERM/KILL, no SSD --retry (hangs after graceful stop).
+        if [ -f "${pidfile}" ]; then
+            _pid=$(cat "${pidfile}" 2>/dev/null || true)
+            if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
+                kill -TERM "${_pid}" 2>/dev/null || true
+                sleep 2
+                kill -KILL "${_pid}" 2>/dev/null || true
+            fi
+        fi
+        rm -f "${pidfile}" /run/edgelet/edgelet.pid 2>/dev/null || true
+        eend 1
+        return 1
+    fi
+    rm -f "${pidfile}" /run/edgelet/edgelet.pid 2>/dev/null || true
+    # Reap embedded containerd child if shutdown did not (API down / BusyBox pkill limits).
+    _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+    for _p in ${_pids}; do kill -TERM "${_p}" 2>/dev/null || true; done
+    sleep 2
+    _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+    for _p in ${_pids}; do kill -KILL "${_p}" 2>/dev/null || true; done
+    eend 0
 }

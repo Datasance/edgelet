@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+
+# Edgelet embedded containerd (data plane) — stub for Plan 11 workload continuity.
+name="edgelet-containerd"
+description="Edgelet embedded containerd (data plane)"
+
+depend() {
+    need net
+    before edgelet
+}
+
+start() {
+    ebegin "Starting ${RC_SVCNAME} (stub)"
+    # Plan 11: edgelet runtime-bootstrap
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping ${RC_SVCNAME} (stub)"
+    eend 0
+}
