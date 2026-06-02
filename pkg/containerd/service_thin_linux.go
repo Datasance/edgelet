@@ -63,6 +63,11 @@ func (s *Service) IsHealthy() bool { return false }
 // CleanupRuntimeArtifacts is a no-op on thin linux builds.
 func CleanupRuntimeArtifacts() error { return nil }
 
+// StopOrphanedEmbeddedContainerd stops a leftover embedded containerd child after switching to docker/podman.
+func StopOrphanedEmbeddedContainerd() error {
+	return stopOrphanedEmbeddedContainerdFromProc()
+}
+
 // MaybeRunChildProcess rejects child mode on thin linux builds.
 func MaybeRunChildProcess(args []string) (bool, error) {
 	if len(args) >= 2 && args[1] == containerdChildArg {

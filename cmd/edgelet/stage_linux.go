@@ -6,19 +6,52 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
-	"github.com/datasance/edgelet/pkg/data"
+	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/constants"
+	"github.com/datasance/edgelet/internal/utils"
+	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
 func stageAndRunDaemon(args []string) error {
-	if err := data.EnsureExtracted(); err != nil {
-		return fmt.Errorf("prepare embedded runtime: %w", err)
+	engine := constants.EngineEdgelet
+	if len(args) > 1 && args[1] == "daemon" {
+		if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+		engine = strings.ToLower(strings.TrimSpace(config.GetInstance().ContainerEngine))
 	}
 
-	fatPath, err := data.RuntimeBinary()
+	if engine == constants.EngineDocker || engine == constants.EnginePodman {
+		if err := edgeletcontainerdd.StopOrphanedEmbeddedContainerd(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: stop orphaned embedded containerd: %v\n", err)
+		}
+	}
+
+	fatPath, err := dataRuntimeBinary()
 	if err != nil {
-		return fmt.Errorf("locate fat runtime: %w", err)
+		if err := dataEnsureExtracted(); err != nil {
+			return fmt.Errorf("prepare embedded runtime: %w", err)
+		}
+		fatPath, err = dataRuntimeBinary()
+		if err != nil {
+			return fmt.Errorf("locate fat runtime: %w", err)
+		}
+	} else if engine == constants.EngineEdgelet {
+		// Idempotent: refresh CNI/aux paths and current symlink even when fat is already on disk.
+		if err := dataEnsureExtracted(); err != nil {
+			return fmt.Errorf("prepare embedded runtime: %w", err)
+		}
+		fatPath, err = dataRuntimeBinary()
+		if err != nil {
+			return fmt.Errorf("locate fat runtime: %w", err)
+		}
+	}
+
+	if len(args) > 1 && args[1] == "daemon" && os.Getenv("EDGELET_DAEMON") == "container" {
+		_ = utils.RemovePIDFile()
 	}
 
 	execArgs := append([]string{filepath.Base(fatPath)}, args[1:]...)
