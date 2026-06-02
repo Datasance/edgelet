@@ -2,6 +2,7 @@ package processmanager
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -282,6 +283,113 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreateLaunchFailure
 	}
 	if item.LastError == "" {
 		t.Fatalf("expected last error set on recreate launch failure")
+	}
+}
+
+func TestReconcileLocalDesiredRunning_ExitingDockerInPlaceStart(t *testing.T) {
+	openLocalReconcileTestDB(t)
+
+	pm := &ProcessManager{}
+	pm.logger = logging.NewModuleLogger("test-process-manager")
+	pm.engineName = "docker"
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:    "local-docker-exiting",
+		ManifestYAML: minimalLocalManifestYAML(),
+		Generation:   1,
+		RuntimeState: "exiting",
+		State:        "exiting",
+		ContainerID:  "old-container",
+		DesiredState: "running",
+	}
+	container := &engine.Container{ID: "old-container"}
+	startCalled := false
+	pm.startMicroserviceFn = func(uuid string) error {
+		startCalled = true
+		if uuid != item.LocalUUID {
+			t.Fatalf("expected start for %q, got %q", item.LocalUUID, uuid)
+		}
+		return nil
+	}
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateExiting}, nil
+	}
+
+	pm.reconcileLocalDesiredRunning(item, container, 999)
+
+	if !startCalled {
+		t.Fatal("expected in-place start for docker exiting container")
+	}
+	if item.RuntimeState != "running" || item.State != "running" {
+		t.Fatalf("expected running state after start, got runtime=%q state=%q", item.RuntimeState, item.State)
+	}
+	if item.FailureCount != 0 {
+		t.Fatalf("expected failure count reset after start, got %d", item.FailureCount)
+	}
+}
+
+func TestReconcileLocalDesiredRunning_ExitingDockerStartFailureBumpsFailure(t *testing.T) {
+	openLocalReconcileTestDB(t)
+
+	pm := &ProcessManager{}
+	pm.logger = logging.NewModuleLogger("test-process-manager")
+	pm.engineName = "docker"
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:    "local-docker-exiting-fail",
+		ManifestYAML: minimalLocalManifestYAML(),
+		Generation:   1,
+		RuntimeState: "exiting",
+		State:        "exiting",
+		ContainerID:  "old-container",
+		DesiredState: "running",
+		FailureCount: 0,
+	}
+	container := &engine.Container{ID: "old-container"}
+	pm.startMicroserviceFn = func(_ string) error {
+		return fmt.Errorf("docker start failed")
+	}
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateExiting}, nil
+	}
+
+	pm.reconcileLocalDesiredRunning(item, container, 999)
+
+	if item.FailureCount != 1 {
+		t.Fatalf("expected failure count incremented to 1, got %d", item.FailureCount)
+	}
+	if item.RuntimeState != "exiting" {
+		t.Fatalf("expected runtime_state=exiting, got %q", item.RuntimeState)
+	}
+}
+
+func TestReconcileLocalDesiredRunning_ExitingDockerStartResetsPriorFailureCount(t *testing.T) {
+	openLocalReconcileTestDB(t)
+
+	pm := &ProcessManager{}
+	pm.logger = logging.NewModuleLogger("test-process-manager")
+	pm.engineName = "docker"
+	item := &models.LocalDeployedMicroservice{
+		LocalUUID:    "local-docker-exiting-recover",
+		ManifestYAML: minimalLocalManifestYAML(),
+		Generation:   1,
+		RuntimeState: "exiting",
+		State:        "exiting",
+		ContainerID:  "old-container",
+		DesiredState: "running",
+		FailureCount: 3,
+	}
+	container := &engine.Container{ID: "old-container"}
+	pm.startMicroserviceFn = func(_ string) error { return nil }
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateExiting}, nil
+	}
+
+	pm.reconcileLocalDesiredRunning(item, container, 999)
+
+	if item.FailureCount != 0 {
+		t.Fatalf("expected failure count reset after successful start, got %d", item.FailureCount)
+	}
+	if item.RuntimeState != "running" {
+		t.Fatalf("expected runtime_state=running, got %q", item.RuntimeState)
 	}
 }
 

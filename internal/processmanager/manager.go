@@ -437,6 +437,11 @@ func (pm *ProcessManager) containersMonitor() {
 			// Continue to monitoring immediately
 		}
 
+		if IsQuiesced() {
+			pm.logger.Debug("Reconcile quiesced (pending engine restart)")
+			continue
+		}
+
 		pm.logger.Debug("Start Monitoring containers")
 		tickStart := time.Now()
 		reconcileStats := &reconcileCycleStats{}
@@ -704,21 +709,44 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 			item.LastError = ""
 			item.FailureCount = 0
 		}
-	case "failed", "exiting", "unknown":
-		if runtime == "exiting" {
-			if force, reason, exitCode := shouldForceRecreateFromStatus(status); force {
+	case "exiting":
+		if force, reason, exitCode := shouldForceRecreateFromStatus(status); force {
+			pm.logger.Warnf(
+				"local reconcile exiting with non-restartable terminal state localUUID=%s containerID=%s reason=%s exitCode=%d decision=recreate",
+				item.LocalUUID,
+				container.ID,
+				reason,
+				exitCode,
+			)
+			if recErr := pm.recreateLocalDeployment(item, false, now); recErr == nil {
+				return
+			}
+		}
+		if err := pm.startLocalMicroservice(item.LocalUUID); err != nil {
+			if nr, ok := engine.IsNonRestartableContainerError(err); ok {
 				pm.logger.Warnf(
-					"local reconcile exiting with non-restartable terminal state localUUID=%s containerID=%s reason=%s exitCode=%d decision=recreate",
+					"local reconcile exiting start failed with non-restartable terminal state localUUID=%s containerID=%s reason=%s exitCode=%d criMessage=%q decision=recreate",
 					item.LocalUUID,
 					container.ID,
-					reason,
-					exitCode,
+					nr.Reason,
+					nr.ExitCode,
+					nr.Message,
 				)
 				if recErr := pm.recreateLocalDeployment(item, false, now); recErr == nil {
 					return
 				}
 			}
+			pm.bumpLocalFailure(item, err, "exiting")
+		} else {
+			item.RuntimeState = "running"
+			item.State = item.RuntimeState
+			item.ObservedGeneration = item.Generation
+			item.LastError = ""
+			item.FailureCount = 0
 		}
+		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		return
+	case "failed", "unknown":
 		pm.bumpLocalFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
 	default:
 		if status.ErrorMessage != nil {
