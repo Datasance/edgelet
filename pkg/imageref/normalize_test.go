@@ -51,3 +51,17 @@ func TestResolveKeepsQualifiedRef(t *testing.T) {
 		t.Fatalf("qualified ref should remain unchanged, got %s", pullRef)
 	}
 }
+
+func TestResolveDockerHubFullyQualifiedIncludesShortAlias(t *testing.T) {
+	_, lookup := Resolve("docker.io/library/alpine:3.19", "from_cache", true)
+	foundShort := false
+	for _, v := range lookup {
+		if v == "alpine:3.19" {
+			foundShort = true
+			break
+		}
+	}
+	if !foundShort {
+		t.Fatalf("expected short docker hub alias alpine:3.19 in lookup, got %v", lookup)
+	}
+}
