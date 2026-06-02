@@ -111,6 +111,8 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newDeprovisionCommand())
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newInitConfigCommand())
+	cmd.AddCommand(newShutdownCommand())
+	cmd.AddCommand(newCgroupPreflightCommand())
 	cmd.AddCommand(newDeprecatedTopLevelCommand("cert", "use `edgelet config cert` instead of top-level cert"))
 	cmd.AddCommand(newDeprecatedTopLevelCommand("switch", "use `edgelet config switch` instead of top-level switch"))
 	cmd.AddCommand(newDeprecatedTopLevelCommand("start", "top-level start is removed; start the daemon with `edgelet daemon` or `systemctl start edgelet`"))
