@@ -1,10 +1,13 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -15,6 +18,34 @@ const (
 	// PIDFileName is the exported name for the PID file
 	PIDFileName = pidFileName
 )
+
+func removePIDFileBestEffort(pidFile string) {
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		_ = err
+	}
+}
+
+func procCmdline(pid int) (string, error) {
+	path := fmt.Sprintf("/proc/%d/cmdline", pid)
+	data, err := os.ReadFile(path) // #nosec G304 -- bounded /proc path
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.ReplaceAll(data, []byte{0}, []byte{' '})), nil
+}
+
+func isEdgeletDaemonProcess(pid int) bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	cmdline, err := procCmdline(pid)
+	if err != nil {
+		return false
+	}
+	cmdline = strings.ToLower(cmdline)
+	return strings.Contains(cmdline, "edgelet") &&
+		(strings.Contains(cmdline, "daemon") || strings.Contains(cmdline, "edgelet-server"))
+}
 
 // IsAnotherInstanceRunning checks if another instance of the daemon is running
 func IsAnotherInstanceRunning() bool {
@@ -31,25 +62,33 @@ func IsAnotherInstanceRunning() bool {
 		return false
 	}
 
-	pid, err := strconv.Atoi(string(pidBytes))
-	if err != nil {
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		removePIDFileBestEffort(pidFile)
+		return false
+	}
+
+	if pid == os.Getpid() {
+		removePIDFileBestEffort(pidFile)
 		return false
 	}
 
 	// Check if process is running
 	process, err := os.FindProcess(pid)
 	if err != nil {
+		removePIDFileBestEffort(pidFile)
 		return false
 	}
 
 	// Try to send signal 0 to check if process exists
 	err = process.Signal(syscall.Signal(0))
 	if err != nil {
-		// Process doesn't exist, remove stale PID file
-		if rerr := os.Remove(pidFile); rerr != nil && !os.IsNotExist(rerr) {
-			// Cannot log here (may be called before logger init); best-effort remove
-			_ = rerr
-		}
+		removePIDFileBestEffort(pidFile)
+		return false
+	}
+
+	if !isEdgeletDaemonProcess(pid) {
+		removePIDFileBestEffort(pidFile)
 		return false
 	}
 
