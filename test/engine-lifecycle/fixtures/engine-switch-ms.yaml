@@ -1,0 +1,15 @@
+apiVersion: edgelet.iofog.org/v1
+kind: Microservice
+metadata:
+  name: engine-switch-ms
+spec:
+  image: docker.io/library/alpine:3.19
+  registry: 1
+  container:
+    hostNetworkMode: false
+    isPrivileged: false
+    commands:
+      - /bin/sh
+      - -lc
+      - sleep 86400
+  schedule: 50
