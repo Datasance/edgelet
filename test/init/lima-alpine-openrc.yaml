@@ -1,0 +1,59 @@
+# Lima VM for T10-B — Alpine Linux with OpenRC (Plan 10).
+#
+# Bootable Alpine cloud image (same family as `limactl create template:alpine`).
+#
+# Usage:
+#   ./test/init/vm-start-alpine.sh
+#   ./test/init/alpine-openrc-smoke.sh
+
+vmType: vz
+os: Linux
+arch: aarch64
+
+# Alpine uses OpenRC, not systemd — disable Lima-managed containerd (T10-B uses edgelet).
+containerd:
+  system: false
+  user: false
+
+cpus: 2
+memory: "2GiB"
+disk: "8GiB"
+
+images:
+  - location: "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/nocloud_alpine-3.23.4-aarch64-uefi-cloudinit-r0.qcow2"
+    arch: aarch64
+
+mounts:
+  - location: "~"
+    writable: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -e
+      apk add --no-cache curl ca-certificates jq bash iproute2 file binutils
+      mkdir -p /var/log/edgelet /etc/edgelet /var/lib/edgelet /run/edgelet /run/containerd /etc/cni/net.d
+      echo "Alpine openrc Lima VM provisioned OK"
+
+networks:
+  - vzNAT: true
+
+portForwards:
+  - guestPortRange: [1, 65535]
+    ignore: true
+
+probes:
+  - script: |
+      #!/bin/sh
+      command -v jq >/dev/null
+    hint: "Waiting for T10-B provision packages (jq)..."
+
+message: |
+  edgelet-openrc VM is ready (Alpine + OpenRC).
+
+  Run T10-B:
+    ./test/init/alpine-openrc-smoke.sh
+
+  Open a shell:
+    limactl shell edgelet-openrc
