@@ -304,6 +304,22 @@ func (cm *ContainerManager) RemoveContainerByID(ctx context.Context, containerID
 	return nil
 }
 
+// RemoveContainerRuntimeForEngineSwitch removes a workload container without deleting deploy spec rows.
+func (cm *ContainerManager) RemoveContainerRuntimeForEngineSwitch(ctx context.Context, containerID string) error {
+	container, err := cm.engine.GetContainerByID(containerID)
+	if err != nil {
+		return err
+	}
+	if container == nil {
+		return nil
+	}
+	msUUID := ""
+	if workloadmeta.IsManagedByIofog(container.Labels) {
+		msUUID = workloadmeta.MicroserviceUIDFromLabels(container.Labels)
+	}
+	return cm.removeRuntimeContainer(ctx, msUUID, container.ID, container.Image, runtimeops.SourceTask, false, false)
+}
+
 // StopContainerByMicroserviceUUID stops a container by microservice UUID
 func (cm *ContainerManager) StopContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)

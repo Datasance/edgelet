@@ -22,6 +22,7 @@ import (
 	"github.com/datasance/edgelet/internal/pruning"
 	"github.com/datasance/edgelet/internal/resourceconsumption"
 	"github.com/datasance/edgelet/internal/resourcemanager"
+	"github.com/datasance/edgelet/internal/runtime"
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
@@ -84,6 +85,9 @@ type Supervisor struct {
 
 	// Edgelet API monitoring
 	localAPIMonitorTicker *time.Ticker
+
+	// Reload context captured before LoadConfig in BeginConfigReload.
+	pendingReloadCtx *reloadEngineContext
 }
 
 // NewSupervisor creates a new Supervisor instance
@@ -155,6 +159,9 @@ func (s *Supervisor) Start() error {
 	s.processManager = processmanager.GetInstance()
 	// Instantiate the container engine based on configuration.
 	cfg := config.GetInstance()
+	runtime.GetState().RecordStartupEngine(cfg.ContainerEngine)
+	processmanager.SetQuiesced(false)
+	runtime.GetState().SetPendingRestart(false)
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
 	// Startup ownership is in cmd/edgelet bootstrap; Supervisor only consumes prestarted runtime.
@@ -401,6 +408,7 @@ func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
 		return err
 	}
 	s.containerEngine = eng
+	runtime.GetState().SetEngineReady(true)
 	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
 		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
 	})
@@ -418,7 +426,7 @@ func (s *Supervisor) startExternalEngineRecovery(engineType string, cfg engine.E
 	go s.runExternalEngineRecovery(engineType, cfg)
 }
 
-func (s *Supervisor) runExternalEngineRecovery(engineType string, cfg engine.EngineConfig) {
+func (s *Supervisor) runExternalEngineRecovery(engineType string, _ engine.EngineConfig) {
 	defer s.wg.Done()
 	backoff := engineInitInitialBackoff
 	for {
@@ -427,7 +435,13 @@ func (s *Supervisor) runExternalEngineRecovery(engineType string, cfg engine.Eng
 			return
 		default:
 		}
-		eng, err := initExternalEngineAttempt(engineType, cfg)
+		liveCfg := config.GetInstance()
+		if liveCfg.ContainerEngine != engineType {
+			logging.LogInfo(moduleName, fmt.Sprintf("%s engine recovery stopped: containerEngine is now %q", engineType, liveCfg.ContainerEngine))
+			return
+		}
+		engConfig := s.liveExternalEngineConfig()
+		eng, err := initExternalEngineAttempt(engineType, engConfig)
 		if err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("%s engine recovery attempt failed: %v", engineType, err))
 			engineInitRetryWait(backoff)
@@ -501,6 +515,7 @@ func (s *Supervisor) Stop() error {
 	}
 
 	if s.processManager != nil {
+		processmanager.SetQuiesced(true)
 		if err := s.processManager.DrainRuntimeForShutdown(shutdownRuntimeDrainTimeout); err != nil {
 			logging.LogError(moduleName, "Runtime drain during shutdown timed out", err)
 		}
@@ -658,9 +673,23 @@ func (s *Supervisor) GetModuleIndex() int {
 	return utils.ProcessManager
 }
 
-// ReloadConfig notifies all modules that configuration has been reloaded
-// This matches Java: saveConfigUpdates() method
+// BeginConfigReload snapshots engine connection settings before LoadConfig replaces them.
+func (s *Supervisor) BeginConfigReload() {
+	s.pendingReloadCtx = s.captureReloadEngineContext()
+}
+
+// ReloadConfig notifies all modules that configuration has been reloaded.
 func (s *Supervisor) ReloadConfig() error {
+	reloadCtx := s.pendingReloadCtx
+	s.pendingReloadCtx = nil
+	if reloadCtx == nil {
+		reloadCtx = s.captureReloadEngineContext()
+	}
+	return s.ReloadConfigWithContext(reloadCtx)
+}
+
+// reloadHotConfig applies hot config keys to running modules.
+func (s *Supervisor) reloadHotConfig() error {
 	logging.LogInfo(moduleName, "Start updating agent configurations")
 
 	// Notify all modules in the same order as Java
