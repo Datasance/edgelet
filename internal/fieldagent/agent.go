@@ -56,7 +56,7 @@ type FieldAgent struct {
 	// Exec session tracking
 	activeExecSessions map[string]string                       // microserviceUUID -> execID
 	execCallbacks      map[string]*ExecSessionCallback         // microserviceUUID -> callback
-	activeWebSockets   map[string]*ExecSessionWebSocketHandler // microserviceUUID -> WebSocket handler (matching Java activeWebSockets)
+	activeWebSockets   map[string]*ExecSessionWebSocketHandler // microserviceUUID -> WebSocket handler
 	execSessionsMu     sync.RWMutex
 
 	// Microservice management (for MicroserviceManagerInterface)
@@ -67,11 +67,11 @@ type FieldAgent struct {
 
 	// Edge resources
 
-	// Container config map (matching Java ConfigurationMap.containerConfigMap)
+	// Container config map
 	containerConfigMap map[string]string // microserviceUUID -> config JSON string
 	containerConfigMu  sync.RWMutex
 
-	// Provisioning lock (matching Java: provisioningLock)
+	// Provisioning lock
 	provisioningMu sync.Mutex
 
 	// test hook: allows status POST override in unit tests.
@@ -124,7 +124,7 @@ func (fa *FieldAgent) Start() error {
 	// Create context for cancellation
 	fa.ctx, fa.cancel = context.WithCancel(context.Background())
 
-	// Initialize JWT Manager first if we have the private key (matching Java: lines 1960-1971)
+	// Initialize JWT Manager first if we have the private key
 	cfg := config.GetInstance()
 
 	// Private key durability is DB-only. Hydrate in-memory value from SQLite at startup.
@@ -193,7 +193,7 @@ func (fa *FieldAgent) Start() error {
 		return fmt.Errorf("failed to reconcile edgelet-api JWT token: %w", err)
 	}
 
-	// Ping controller (matching Java: line 1980)
+	// Ping controller
 	logging.LogDebug(moduleName, "Pinging controller to verify connectivity")
 	isConnected := fa.ping()
 	logging.LogInfo(moduleName, fmt.Sprintf("Controller ping result: connected=%v", isConnected))
@@ -201,7 +201,7 @@ func (fa *FieldAgent) Start() error {
 	currentStatus := fa.state.GetControllerStatus()
 	logging.LogDebug(moduleName, fmt.Sprintf("Controller status after ping: %s", currentStatus))
 
-	// Get fog config (matching Java: line 1981)
+	// Get fog config
 	logging.LogDebug(moduleName, "Fetching fog configuration from controller")
 	if err := fa.getFogConfig(); err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("Failed to get fog config on startup: %v", err))
@@ -210,7 +210,7 @@ func (fa *FieldAgent) Start() error {
 		logging.LogDebug(moduleName, "Fog configuration fetched successfully")
 	}
 
-	// If provisioned, load initial data (matching Java: lines 1982-1991)
+	// If provisioned, load initial data
 	if !fa.NotProvisioned() {
 		logging.LogInfo(moduleName, "Agent is provisioned, loading initial data from controller")
 
@@ -222,9 +222,9 @@ func (fa *FieldAgent) Start() error {
 			logging.LogDebug(moduleName, "Registries loaded successfully")
 		}
 
-		// Load volume mounts (matching Java: loadVolumeMounts() - catches exceptions)
+		// Load volume mounts
 		logging.LogDebug(moduleName, "Start loading volume mounts")
-		// Don't check error - Java version catches exceptions and continues
+		// Don't check error
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -255,7 +255,7 @@ func (fa *FieldAgent) Start() error {
 
 		}
 
-		// Notify ProcessManager to immediately update (matching Java: line 1990)
+		// Notify ProcessManager to immediately update
 		// This ensures containers are processed during initialization without waiting
 		if fa.processManager != nil {
 			logging.LogDebug(moduleName, "Notifying ProcessManager to update")
@@ -269,7 +269,7 @@ func (fa *FieldAgent) Start() error {
 		logging.LogInfo(moduleName, "Agent not provisioned, skipping initial data load")
 	}
 
-	// Start background workers (matching Java: lines 1995-1998)
+	// Start background workers
 	logging.LogDebug(moduleName, "Starting background workers")
 	fa.wg.Add(6)
 	go fa.pingControllerWorker()
@@ -423,7 +423,7 @@ func (fa *FieldAgent) verificationFailed(err error) {
 			controllerStatus = models.ControllerStatusNotConnected
 		}
 		fa.state.SetControllerStatus(controllerStatus)
-		// Update StatusReporter (matching Java behavior)
+		// Update StatusReporter
 		statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
 			status.ControllerStatus = controllerStatus
 			status.ControllerVerified = false
@@ -477,7 +477,7 @@ func (fa *FieldAgent) ping() bool {
 	if ok {
 		fa.state.SetControllerStatus(models.ControllerStatusOK)
 		fa.state.SetControllerVerified(true)
-		// Update StatusReporter (matching Java: StatusReporter.setFieldAgentStatus().setControllerStatus(OK))
+		// Update StatusReporter
 		statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
 			status.ControllerStatus = models.ControllerStatusOK
 			status.ControllerVerified = true
@@ -532,7 +532,6 @@ func (fa *FieldAgent) Provision(key string) error {
 	}
 
 	// Extract UUID, private key, and namespace from result and save to config
-	// Matching Java: Configuration.setIofogUuid(), setPrivateKey(), setNamespace(), saveConfigUpdates()
 	cfg := config.GetInstance()
 	updated := false
 
@@ -559,7 +558,7 @@ func (fa *FieldAgent) Provision(key string) error {
 		updated = true
 	}
 
-	// Save config to disk (matching Java: Configuration.saveConfigUpdates())
+	// Save config to disk
 	if updated {
 		// Ensure privateKey is not persisted in YAML (DB is the durable source).
 		yamlConfig := cfg.GetYamlConfig()
@@ -589,7 +588,7 @@ func (fa *FieldAgent) Provision(key string) error {
 		return fmt.Errorf("provisioning succeeded but failed to rotate edgelet-api JWT: %w", err)
 	}
 
-	// Recreate API client with new credentials (matching Java: orchestrator.update() after provisioning)
+	// Recreate API client with new credentials
 	// This is critical because the API client was created before provisioning (without UUID/privateKey)
 	fa.mu.Lock()
 	apiClient, err := NewAPIClient()
@@ -611,7 +610,7 @@ func (fa *FieldAgent) Provision(key string) error {
 		logging.LogWarn(moduleName, fmt.Sprintf("JWT generation test failed after provisioning: %v", testErr))
 	}
 
-	// Set status to OK since provisioning succeeded (matching Java: StatusReporter.setFieldAgentStatus().setControllerStatus(OK))
+	// Set status to OK since provisioning succeeded
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
 	fa.state.SetControllerVerified(true)
 
@@ -624,11 +623,11 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to update FieldAgent after provisioning: %v", err))
 		}
 
-		// Post fog config to controller (matching Java: postFogConfig() after provisioning)
+		// Post fog config to controller
 		// This sends the agent configuration to the controller and establishes the connection
 		if err := fa.postFogConfig(); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to post fog config after provisioning (non-critical): %v", err))
-			// Don't fail provisioning for this - matching Java behavior
+			// Don't fail provisioning for this
 		}
 	}
 
@@ -637,7 +636,6 @@ func (fa *FieldAgent) Provision(key string) error {
 }
 
 // getDeprovisionBody builds the deprovision request body with microservice UUIDs
-// (matching Java: getDeprovisionBody())
 func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 	// Get all microservice UUIDs from latest and current (using a set to avoid duplicates)
 	uuidSet := make(map[string]bool)
@@ -667,8 +665,8 @@ func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 	}
 }
 
-// Deprovision deprovisions the agent (matching Java: deProvision(boolean isTokenExpired))
-// clearCredentials=true matches Java's isTokenExpired=true (skip controller request)
+// Deprovision deprovisions the agent
+// clearCredentials=true skip controller request
 func (fa *FieldAgent) Deprovision(clearCredentials bool) error {
 	return fa.DeprovisionWithScope(clearCredentials, DeprovisionScopeAll)
 }
@@ -696,7 +694,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 	preserveLocal := normalizedScope == DeprovisionScopeLocal
 	logging.LogInfo(moduleName, "Start Deprovisioning")
 
-	// Acquire provisioning lock (matching Java: provisioningLock.tryLock())
+	// Acquire provisioning lock
 	if !fa.provisioningMu.TryLock() {
 		msg := "Provisioning in progress"
 		logging.LogInfo(moduleName, msg)
@@ -704,15 +702,15 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 	}
 	defer fa.provisioningMu.Unlock()
 
-	// Check if already not provisioned (matching Java: notProvisioned())
+	// Check if already not provisioned
 	if fa.NotProvisioned() {
 		logging.LogInfo(moduleName, "Finished Deprovisioning : Failure - not provisioned")
 		return fmt.Errorf("\nFailure - not provisioned")
 	}
 
-	// Store configuration values before clearing them (matching Java)
+	// Store configuration values before clearing them
 	iofogUUID := fa.config.IOFogUUID
-	// Note: privateKey and namespace are stored but not used in Go (matching Java behavior)
+	// Note: privateKey and namespace are stored but not used in Go
 
 	// Deprovision invariant: force edge guard disabled and clear DB-backed secret state.
 	fa.config.EdgeGuardFrequency = 0
@@ -730,7 +728,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		}
 	}()
 
-	// Attempt deprovision request if not token expired (matching Java: !isTokenExpired)
+	// Attempt deprovision request if not token expired
 	deprovisionRequestSuccessful := false
 	if !clearCredentials {
 		logging.LogDebug(moduleName, "Attempting deprovision request to controller")
@@ -746,12 +744,12 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		logging.LogInfo(moduleName, "Skipping deprovision request due to expired token")
 	}
 
-	// Update status to NOT_PROVISIONED (matching Java)
+	// Update status to NOT_PROVISIONED
 	statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
 		status.ControllerStatus = models.ControllerStatusNotProvisioned
 	})
 
-	// Clear configuration AFTER the deprovision request attempt (matching Java)
+	// Clear configuration AFTER the deprovision request attempt
 	configUpdated := true
 	func() {
 		defer func() {
@@ -766,7 +764,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		fa.config.Namespace = "default"
 		fa.config.EdgeGuardFrequency = 0
 
-		// Update YAML config properties before saving (matching Java: Configuration.saveConfigUpdates())
+		// Update YAML config properties before saving
 		// The SaveConfig() function uses GetYamlConfig() which doesn't reflect in-memory struct changes
 		// We need to update the YAML config's Properties map directly
 		cfg := config.GetInstance()
@@ -786,7 +784,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 			logging.LogWarn(moduleName, "YAML config not loaded, cannot update properties")
 		}
 
-		// Save config updates (matching Java: Configuration.saveConfigUpdates())
+		// Save config updates
 		// Suppress SIGHUP so the watcher does not disrupt the HTTP response to the CLI.
 		config.SuppressReloadForDeprovision()
 		defer config.RestoreReloadAfterDeprovision()
@@ -799,7 +797,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 			logging.LogDebug(moduleName, "Configuration cleared successfully")
 		}
 
-		// Reset JWT Manager (matching Java: JwtManager.reset())
+		// Reset JWT Manager
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -817,7 +815,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 	}
 
 	if configUpdated {
-		// Update config backup file (matching Java: Configuration.updateConfigBackUpFile())
+		// Update config backup file
 		// Note: This might not be implemented in Go yet, but we'll log it
 		logging.LogDebug(moduleName, "Config backup file update requested")
 	}
@@ -827,7 +825,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 	fa.state.SetControllerStatus(models.ControllerStatusNotProvisioned)
 	fa.state.SetControllerVerified(false)
 
-	// Clear microservice manager (matching Java: microserviceManager.clear())
+	// Clear microservice manager
 	fa.Clear()
 	// Clear stale runtime status cache so /v1/ms and CLI cannot show ghost entries
 	// after deprovision while cleanup continues in background.
@@ -839,7 +837,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		// cannot recreate workloads while cleanup is still in progress.
 		fa.clearSQLiteCacheTablesOnDeprovision(preserveLocal)
 
-		// Stop running microservices (matching Java: ProcessManager.getInstance().stopRunningMicroservices(false, iofogUuid))
+		// Stop running microservices
 		if fa.processManager != nil {
 			func() {
 				defer func() {
@@ -883,7 +881,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 		// Run again after runtime cleanup for best-effort convergence.
 		fa.clearSQLiteCacheTablesOnDeprovision(preserveLocal)
 
-		// Notify modules AFTER configuration is cleared (matching Java: notifyModules())
+		// Notify modules AFTER configuration is cleared
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -1122,7 +1120,7 @@ func (fa *FieldAgent) HandleExecSessionClose(microserviceUUID, execID string) er
 	}
 	fa.execSessionsMu.Unlock()
 
-	// Disconnect WebSocket if no other sessions (matching Java line 2515-2519)
+	// Disconnect WebSocket if no other sessions
 	fa.execSessionsMu.Lock()
 	hasOtherSessions := fa.activeExecSessions[microserviceUUID] != ""
 	if !hasOtherSessions {
@@ -1141,7 +1139,6 @@ func (fa *FieldAgent) HandleExecSessionClose(microserviceUUID, execID string) er
 }
 
 // SendUSBInfoFromHalToController sends USB information from HAL to the controller
-// This matches Java: sendUSBInfoFromHalToController() method
 func (fa *FieldAgent) SendUSBInfoFromHalToController() {
 	logging.LogDebug(moduleName, "Start send USB Info from hal To Controller")
 	if fa.NotProvisioned() {
@@ -1178,7 +1175,6 @@ func (fa *FieldAgent) SendUSBInfoFromHalToController() {
 }
 
 // SendHWInfoFromHalToController sends hardware information from HAL to the controller
-// This matches Java: sendHWInfoFromHalToController() method
 func (fa *FieldAgent) SendHWInfoFromHalToController() {
 	logging.LogDebug(moduleName, "Start send HW Info from HAL To Controller")
 	if fa.NotProvisioned() {
@@ -1215,7 +1211,6 @@ func (fa *FieldAgent) SendHWInfoFromHalToController() {
 }
 
 // getHalResponse makes an HTTP GET request to HAL service and returns the response
-// This matches Java: getResponse() method
 func (fa *FieldAgent) getHalResponse(url string) (string, error) {
 	logging.LogDebug(moduleName, "Start get response from HAL")
 
@@ -1378,7 +1373,7 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 	// Update callback with execID
 	callback.SetExecID(execID)
 
-	// Set up close handler (Matching Java logic)
+	// Set up close handler
 	callback.SetOnCloseHandler(func() {
 		logging.LogInfo(moduleName, fmt.Sprintf("Exec session closed for microservice: %s", microserviceUUID))
 
@@ -1397,13 +1392,13 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 		}
 	})
 
-	// Create and connect WebSocket handler (matching Java: wsHandler.connect() after exec session creation)
+	// Create and connect WebSocket handler
 	logging.LogDebug(moduleName, "Creating and connecting WebSocket handler for exec session")
 	handler := GetExecSessionWebSocketHandler(microserviceUUID)
 	if handler == nil {
 		logging.LogError(moduleName, "WebSocket handler not created (controller URL empty), exec session will run without WebSocket", fmt.Errorf("microserviceUUID: %s", microserviceUUID))
 	} else {
-		// Check if existing handler exists (matching Java line 2297-2302)
+		// Check if existing handler exists
 		fa.execSessionsMu.Lock()
 		if existingHandler, exists := fa.activeWebSockets[microserviceUUID]; exists {
 			logging.LogDebug(moduleName, "Found existing WebSocket handler, cleaning up before creating new one")
@@ -1412,15 +1407,15 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 		}
 		fa.execSessionsMu.Unlock()
 
-		// Disconnect existing handler if any (matching Java behavior)
+		// Disconnect existing handler if any
 		if handler.IsConnected() {
 			handler.Disconnect()
 		}
-		// Connect the WebSocket handler (matching Java line 2304: wsHandler.connect())
+		// Connect the WebSocket handler
 		if err := handler.Connect(); err != nil {
 			logging.LogError(moduleName, fmt.Sprintf("Failed to connect WebSocket handler for exec session: %s", microserviceUUID), err)
 		} else {
-			// Store handler in activeWebSockets map (matching Java line 2305: activeWebSockets.put())
+			// Store handler in activeWebSockets map
 			fa.execSessionsMu.Lock()
 			fa.activeWebSockets[microserviceUUID] = handler
 			fa.execSessionsMu.Unlock()

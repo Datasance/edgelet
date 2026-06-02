@@ -86,7 +86,7 @@ func (c *Client) initDockerClient() error {
 
 	c.client = cli
 
-	// Ensure "edgelet" bridge network exists before returning — matches Java's synchronous
+	// Ensure "edgelet" bridge network exists before returning
 	// call in initDockerClient(). Use the lock-free variant because c.mu is already
 	// held by Init() / ReInit(); calling ensureIoFogNetworkExists() here would deadlock.
 	if err := c.ensureNetworkLockFree(cli, c.ctx); err != nil {

@@ -84,7 +84,7 @@ func (fa *FieldAgent) setRegistries(registries []*models.Registry) {
 	copy(fa.registries, registries)
 }
 
-// Clear clears all microservice data (matching Java: microserviceManager.clear())
+// Clear clears all microservice data
 func (fa *FieldAgent) Clear() {
 	logging.LogDebug(moduleName, "Start microservice clear")
 	fa.microservicesMu.Lock()

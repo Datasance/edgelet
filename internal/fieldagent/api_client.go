@@ -194,16 +194,16 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 		req.URL.RawQuery = q.Encode()
 	}
 
-	// Generate request ID for logging (matching Java: UUID requestID = UUID.randomUUID())
+	// Generate request ID for logging
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	// Log request (matching Java: logDebug("Orchestrator", String.format("(%s) %s %s", requestID, requestType.name(), uri.toString())))
+	// Log request
 	logging.LogDebug("Orchestrator", fmt.Sprintf("(%s) %s %s", requestID, string(requestType), req.URL.String()))
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 
-	// Add Request-Id header (matching Java: req.addHeader("Request-Id", requestID.toString()))
+	// Add Request-Id header
 	req.Header.Set("Request-Id", requestID)
 
 	// Add JWT token only for non-provisioning requests
@@ -242,7 +242,6 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 		}
 		return result, nil
 	case http.StatusNoContent: // 204 - No Content (success with empty body)
-		// Matching Java: case 204: return Json.createObjectBuilder().build();
 		return make(map[string]interface{}), nil
 	case http.StatusUnauthorized:
 		// Token invalid - trigger deprovision
@@ -291,7 +290,6 @@ func shouldRetry(err error) bool {
 // Ping pings the controller to check connectivity
 func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 	// Ping uses a special endpoint: /api/v3/status (not /api/v3/agent/status)
-	// This matches Java: getJSON(controllerUrl + "status")
 	url := c.baseURL + "/status"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

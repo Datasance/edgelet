@@ -92,6 +92,14 @@ func Resolve(imageRef, registryURL string, fromCache bool) (string, []string) {
 		}
 	}
 
+	// Docker tags official library images under short names (alpine:3.19) even when
+	// the manifest uses the fully qualified ref (docker.io/library/alpine:3.19).
+	if strings.HasPrefix(orig, "docker.io/library/") {
+		addWithLatest(strings.TrimPrefix(orig, "docker.io/library/"))
+	} else if strings.HasPrefix(orig, "docker.io/") {
+		addWithLatest(strings.TrimPrefix(orig, "docker.io/"))
+	}
+
 	return pullRef, lookup
 }
 

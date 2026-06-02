@@ -130,3 +130,5 @@ In-process containerd service: `pkg/containerd/`.
 ## DNS and cross-engine policy
 
 Bridge DNS and remediation policies (embedded engine): [../embedded-dns-runbook.md](../embedded-dns-runbook.md), [../embedded-dns-cross-engine-policy.md](../embedded-dns-cross-engine-policy.md).
+
+Engine change lifecycle (cold/warm reload, restart required): [container-engine-lifecycle.md](container-engine-lifecycle.md).

@@ -45,6 +45,7 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if shouldAugmentCgroupStatus() {
 		augmentWithCgroupStatus(statusMap)
 	}
+	augmentWithRuntimeStatus(statusMap)
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(statusMap)
@@ -63,7 +64,6 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseStatusReport parses a status report string into a map
-// This matches the Java implementation which splits by "\n" and " : "
 func parseStatusReport(statusReport string) map[string]string {
 	result := make(map[string]string)
 	lines := strings.Split(statusReport, "\n")

@@ -23,7 +23,7 @@ type Manager struct {
 	containerEngine engine.ContainerEngine // set by supervisor for all active engines
 	// getMicroserviceImages returns the image names of ALL currently configured
 	// microservices (running + stopped/restarting). Set by the supervisor via
-	// SetGetMicroservicesCallback. Matches Java MicroserviceManager.getLatestMicroservices().
+	// SetGetMicroservicesCallback.
 	getMicroserviceImages func() []string
 	isPruning             bool
 	mu                    sync.Mutex
@@ -67,7 +67,7 @@ func GetInstance() *Manager {
 
 // SetGetMicroservicesCallback sets a callback that returns image names for ALL
 // currently configured microservices (running or not). These images are protected
-// from scheduled/threshold pruning, matching Java DockerPruningManager behavior.
+// from scheduled/threshold pruning.
 // Called by the supervisor after ProcessManager is wired up.
 func (m *Manager) SetGetMicroservicesCallback(fn func() []string) {
 	m.mu.Lock()
@@ -176,7 +176,7 @@ func (m *Manager) triggerPruneOnThresholdBreach() {
 		return
 	}
 
-	// AvailableDiskThreshold is a percentage (0-100), matching Java's DockerPruningManager.
+	// AvailableDiskThreshold is a percentage (0-100)
 	// Prune when the available disk percentage falls below the configured threshold.
 	// Guard against division by zero when TotalDiskSpace is not yet populated.
 	if rcmStatus.TotalDiskSpace <= 0 {
@@ -270,7 +270,7 @@ func (m *Manager) pruneImagesRunner() {
 }
 
 // pruneImages removes unused images using the unified getUnwantedImagesList() logic
-// for all engine types. This matches Java DockerPruningManager's scheduled/threshold
+// for all engine types. This scheduled/threshold
 // pruning: protect images for ALL configured microservices + non-ioFog containers,
 // delete everything else.
 func (m *Manager) pruneImages() {
@@ -298,7 +298,7 @@ func (m *Manager) pruneImages() {
 }
 
 // getUnwantedImagesList returns image IDs/names that should be deleted during
-// scheduled or threshold pruning. The logic matches Java DockerPruningManager:
+// scheduled or threshold pruning. The logic:
 //
 //   - Protect images used by running non-managed containers (by image name/ID).
 //   - Protect images for ALL configured microservices via getMicroserviceImages
@@ -394,7 +394,7 @@ func (m *Manager) getUnwantedImagesList(ctx context.Context, eng engine.Containe
 }
 
 // PruneAgent prunes dangling images on demand (CLI command / controller API).
-// Matches Java DockerPruningManager.pruneAgent() which calls docker system prune
+// which calls docker system prune
 // (dangling-only). This is intentionally lighter than scheduled pruning which
 // removes all unused images.
 func (m *Manager) PruneAgent() string {

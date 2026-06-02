@@ -1,0 +1,52 @@
+# Lima VM for Plan 9A engine lifecycle IT — Ubuntu 24.04 + Docker + edgelet deps.
+vmType: vz
+os: Linux
+arch: aarch64
+
+cpus: 2
+memory: "3GiB"
+disk: "25GiB"
+
+images:
+  - location: "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img"
+    arch: aarch64
+
+mounts:
+  - location: "~"
+    writable: false
+
+rosetta:
+  enabled: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -e
+      modprobe overlay      2>/dev/null || true
+      modprobe br_netfilter 2>/dev/null || true
+      echo 1 > /proc/sys/net/ipv4/ip_forward
+      echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+      apt-get update -qq
+      apt-get install -y --no-install-recommends \
+          curl ca-certificates iptables iproute2 jq docker.io
+      systemctl enable --now docker.service
+      # Do not disable host containerd — docker.io uses it as the container backend.
+      echo "Lima engine-lifecycle VM provisioned OK"
+
+networks:
+  - vzNAT: true
+
+portForwards:
+  - guestPortRange: [1, 65535]
+    ignore: true
+
+probes:
+  - script: |
+      #!/bin/bash
+      systemctl is-active docker.service
+    hint: "Waiting for Docker to be active..."
+
+message: |
+  Edgelet engine lifecycle test VM is ready.
+  Run: ./test/engine-lifecycle/run-all.sh

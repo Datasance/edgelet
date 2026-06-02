@@ -21,7 +21,7 @@ const (
 	orchestratorModuleName = "Orchestrator"
 )
 
-// Orchestrator wraps APIClient with additional methods matching Java Orchestrator
+// Orchestrator wraps APIClient with additional methods
 type Orchestrator struct {
 	apiClient *APIClient
 	config    *config.Config
@@ -36,7 +36,6 @@ func NewOrchestrator(apiClient *APIClient) *Orchestrator {
 }
 
 // Update updates the orchestrator configuration
-// This matches Java: update() method
 func (o *Orchestrator) Update() error {
 	// Configuration is already loaded in APIClient
 	// This method can be used to refresh certificate if needed
@@ -44,7 +43,6 @@ func (o *Orchestrator) Update() error {
 }
 
 // Ping pings the IOFog controller
-// This matches Java: ping() method
 func (o *Orchestrator) Ping(ctx context.Context) (bool, error) {
 	logging.LogDebug(orchestratorModuleName, "Inside ping")
 
@@ -62,7 +60,6 @@ func (o *Orchestrator) Ping(ctx context.Context) (bool, error) {
 }
 
 // Provision does provisioning with the given key
-// This matches Java: provision() method
 func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]interface{}, error) {
 	logging.LogDebug(orchestratorModuleName, "Inside provision")
 
@@ -83,25 +80,21 @@ func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]in
 }
 
 // GetJSON performs a GET request and returns JSON
-// This matches Java: getJSON() method
 func (o *Orchestrator) GetJSON(ctx context.Context, command string, result interface{}) error {
 	return o.apiClient.GetJSON(ctx, command, result)
 }
 
 // Request performs an HTTP request (wrapper around APIClient.Request)
-// This matches Java: request() method
 func (o *Orchestrator) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
 	return o.apiClient.Request(ctx, command, requestType, queryParams, body)
 }
 
 // GetControllerCert gets the controller certificate from the controller
-// This matches Java: getControllerCert() method
 // Note: This uses an insecure connection to get the certificate when current cert is invalid
 func (o *Orchestrator) GetControllerCert(ctx context.Context) (string, error) {
 	logging.LogDebug(orchestratorModuleName, "Getting controller certificate")
 
 	// Create a temporary insecure client to get the certificate
-	// This matches Java logic where it uses TrustManagers.getInsecureSocketFactory()
 	cfg := config.GetInstance()
 	insecureClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -169,7 +162,6 @@ func (o *Orchestrator) GetControllerCert(ctx context.Context) (string, error) {
 }
 
 // renewCertificateIfNeeded renews the controller certificate if needed
-// This matches Java certificate renewal logic (lines 314-342)
 func (o *Orchestrator) renewCertificateIfNeeded() error {
 	cfg := config.GetInstance()
 

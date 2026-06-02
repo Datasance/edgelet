@@ -71,16 +71,15 @@ func (s ConfigSwitcherState) FullValue() string {
 
 // Module indices
 const (
-	NumberOfModules = 9
+	NumberOfModules = 7
 
 	ResourceConsumptionManager = 0
 	ProcessManager             = 1
 	StatusReporter             = 2
 	EdgeletAPI                 = 3
-	MessageBus                 = 4
-	FieldAgent                 = 5
-	ResourceManager            = 6
-	GPSManager                 = 7
+	FieldAgent                 = 4
+	ResourceManager            = 5
+	GPSManager                 = 6
 )
 
 // Size constants

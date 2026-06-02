@@ -1,6 +1,6 @@
 package websocket
 
-// WebSocket opcodes (matching Java implementation)
+// WebSocket opcodes
 const (
 	OpcodePing           byte = 0x9
 	OpcodePong           byte = 0xA

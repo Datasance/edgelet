@@ -270,9 +270,9 @@ func (vmm *VolumeMountManager) GetVolumeMountType(volumeName string) VolumeMount
 }
 
 // ProcessVolumeMountChanges processes volume mount changes from controller
-// Matches Java: processVolumeMountChanges() - handles errors gracefully
+// handles errors gracefully
 func (vmm *VolumeMountManager) ProcessVolumeMountChanges(volumeMounts []interface{}) {
-	// Use defer/recover to catch any panics (matching Java try-catch)
+	// Use defer/recover to catch any panics
 	defer func() {
 		if r := recover(); r != nil {
 			logging.LogError(moduleName, fmt.Sprintf("Panic in ProcessVolumeMountChanges: %v", r), fmt.Errorf("%v", r))
@@ -901,7 +901,6 @@ func (vmm *VolumeMountManager) cleanupOldVersions(mountPath string) {
 }
 
 // getTypePrefix gets the type prefix for per-microservice directories
-// Matching Java: getTypePrefix()
 func getTypePrefix(vmType VolumeMountType) string {
 	if vmType == VolumeMountTypeSecret {
 		return "edgelet.iofog.org~secret"
@@ -910,19 +909,17 @@ func getTypePrefix(vmType VolumeMountType) string {
 }
 
 // getMountPath gets the mount path for a microservice volume mount
-// Matching Java: getMountPath()
 func (vmm *VolumeMountManager) getMountPath(microserviceUUID, volumeName string, vmType VolumeMountType) string {
 	typePrefix := getTypePrefix(vmType)
 	return filepath.Join(vmm.baseDirectory, microservicesDir, microserviceUUID, "volumes", typePrefix, volumeName)
 }
 
 // PrepareMicroserviceVolumeMount prepares per-microservice volume mount directory with symlinks
-// Matching Java: prepareMicroserviceVolumeMount()
 func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, volumeName string, vmType VolumeMountType) string {
 	mountPath := vmm.getMountPath(microserviceUUID, volumeName, vmType)
 
 	// Slow path: create directory and copy files
-	// Log error but don't fail container creation (matching Java behavior)
+	// Log error but don't fail container creation
 	defer func() {
 		if r := recover(); r != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Error in PrepareMicroserviceVolumeMount: %v", r))
@@ -942,7 +939,6 @@ func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, 
 	sourceDataLink := filepath.Join(sourcePath, dataSymlink)
 
 	// Resolve the actual ..data symlink to get the real versioned directory
-	// Matching Java: sourceDataLink.toRealPath()
 	sourceVersionedDirPath, err := filepath.EvalSymlinks(sourceDataLink)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -1006,7 +1002,6 @@ func (vmm *VolumeMountManager) PrepareMicroserviceVolumeMount(microserviceUUID, 
 }
 
 // trackMicroserviceUsage tracks microservice usage of volume mounts in index.
-// Matching Java: trackMicroserviceUsage()
 func (vmm *VolumeMountManager) trackMicroserviceUsage(volumeName, microserviceUUID string, add bool) {
 	vmm.indexLock.Lock()
 	defer vmm.indexLock.Unlock()
@@ -1069,7 +1064,6 @@ func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microser
 }
 
 // GetVolumeMountByName gets volume mount info by name
-// Matching Java: getVolumeMountByName()
 func (vmm *VolumeMountManager) GetVolumeMountByName(volumeName string) map[string]interface{} {
 	vmm.indexLock.RLock()
 	defer vmm.indexLock.RUnlock()
@@ -1089,7 +1083,6 @@ func (vmm *VolumeMountManager) GetVolumeMountByName(volumeName string) map[strin
 }
 
 // syncMicroserviceSymlinks syncs per-microservice symlinks when source volume mount is updated
-// Matching Java: syncMicroserviceSymlinks()
 func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmType VolumeMountType) {
 	vmm.indexLock.Lock()
 	defer vmm.indexLock.Unlock()
@@ -1110,7 +1103,6 @@ func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmTyp
 	sourceDataLink := filepath.Join(sourcePath, dataSymlink)
 
 	// Resolve the actual ..data symlink to get the real versioned directory
-	// Matching Java: sourceDataLink.toRealPath()
 	sourceVersionedDirPath, err := filepath.EvalSymlinks(sourceDataLink)
 	if err != nil {
 		return
@@ -1178,7 +1170,6 @@ func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmTyp
 }
 
 // CleanupMicroserviceVolumes cleans up per-microservice volume mount directories
-// Matching Java: cleanupMicroserviceVolumes()
 func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID string) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Cleaning up microservice volumes: %s", microserviceUUID))
 
@@ -1355,7 +1346,7 @@ func (vmm *VolumeMountManager) clearWalk(baseDir string) {
 	})
 }
 
-// Clear clears all volume mounts (matching Java: volumeMountManager.clear())
+// Clear clears all volume mounts
 func (vmm *VolumeMountManager) Clear() error {
 	vmm.indexLock.Lock()
 	defer vmm.indexLock.Unlock()

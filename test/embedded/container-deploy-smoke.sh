@@ -30,6 +30,12 @@ docker run -d --name "${NAME}" --privileged \
     -v /etc/edgelet \
     "${IMAGE}" >/dev/null
 
+# docker run -d --name "${NAME}" --privileged --net=host \
+#     -v /var/lib/edgelet \
+#     -v /etc/edgelet \
+#     -v /var/run/docker.sock:/var/run/docker.sock:rw \
+#     "${IMAGE}" >/dev/null
+
 sleep 5
 
 log_step "Checking cgroup bootstrap inside container"

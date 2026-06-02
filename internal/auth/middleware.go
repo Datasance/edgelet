@@ -22,7 +22,7 @@ func EdgeletAPIAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Remove "Bearer " prefix if present (though Java version doesn't use it)
+		// Remove "Bearer " prefix if present
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		token = strings.TrimSpace(token)
 
@@ -39,7 +39,7 @@ func EdgeletAPIAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ValidateAccessToken is a helper function to validate access tokens (for compatibility with Java API)
+// ValidateAccessToken is a helper function to validate access tokens
 func ValidateAccessToken(token string) bool {
 	tokenManager := GetLocalTokenManager()
 	return tokenManager.ValidateToken(token)

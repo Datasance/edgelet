@@ -7,7 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// LogFormatter formats log entries similar to Java LogFormatter
+// LogFormatter formats log entries
 type LogFormatter struct{}
 
 // Format formats a log entry

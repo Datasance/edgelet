@@ -265,7 +265,7 @@ func (lsm *LogSessionManager) startLogSessionLocked(session *LogSession) {
 		return
 	}
 	lsm.webSocketHandlers[sessionID] = wsHandler
-	// Set LogSessionManager reference in handler so it can start tailing when ready (matching Java line 124)
+	// Set LogSessionManager reference in handler so it can start tailing when ready
 	wsHandler.SetLogSessionManager(lsm)
 
 	// Connect WebSocket
@@ -315,7 +315,6 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 
 // StartLogStreamingOnActivation starts log streaming when WebSocket becomes active
 // This method is called from LogSessionWebSocketHandler when it receives LOG_START
-// Matching Java: startLogStreamingOnActivation()
 func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, tailConfigMap map[string]interface{}) {
 	lsm.mu.Lock()
 	defer lsm.mu.Unlock()
@@ -434,7 +433,7 @@ type logTailHandler struct {
 
 func (h *logTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ engine.StreamType) {
 	if h.wsHandler != nil && len(lineBytes) > 0 {
-		// Always call SendMessage — it buffers when not active and sends when active (matching Java LogSessionWebSocketHandler.sendLogLine)
+		// Always call SendMessage — it buffers when not active and sends when active
 		msgType := byte(6) // LogTypeLogLine
 		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {
 			logging.LogError(logSessionManagerModuleName, "Error sending log line", err)
@@ -509,7 +508,7 @@ type fogLogHandler struct {
 
 func (h *fogLogHandler) OnLogLine(_, _, line string) {
 	if h.wsHandler != nil && line != "" {
-		// Always call SendMessage — it buffers when not active and sends when active (matching Java)
+		// Always call SendMessage — it buffers when not active and sends when active
 		lineBytes := []byte(line)
 		msgType := byte(6) // LogTypeLogLine
 		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {

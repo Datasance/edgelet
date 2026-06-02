@@ -22,6 +22,7 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
 	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/runtime"
 	"github.com/datasance/edgelet/internal/runtimeapi"
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
@@ -744,11 +745,23 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			})
 			return
 		}
+		cfg.SnapshotForReload()
 		errorsMap := cfg.SetConfig(configMap)
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		if len(errorsMap) == 0 {
+			if err := cfg.TriggerReloadCallback(); err != nil {
+				writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
+				return
+			}
+		}
+		resp := map[string]interface{}{
 			"status":   "ok",
 			"errorMap": errorsMap,
-		})
+		}
+		if runtime.GetState().PendingRestart() {
+			resp["pendingRestart"] = true
+			resp["message"] = "containerEngine change persisted; restart edgelet.service to activate the new engine"
+		}
+		writeSuccess(w, http.StatusOK, resp)
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}

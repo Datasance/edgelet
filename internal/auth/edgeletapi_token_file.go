@@ -123,7 +123,6 @@ func (ltm *LocalTokenManager) GenerateAndSaveToken() (string, error) {
 }
 
 // ValidateToken validates a token against the stored token using constant-time comparison
-// Matches Java: accessToken.equalsIgnoreCase(validAccessToken)
 func (ltm *LocalTokenManager) ValidateToken(providedToken string) bool {
 	storedToken, err := ltm.LoadToken()
 	if err != nil {
@@ -131,9 +130,6 @@ func (ltm *LocalTokenManager) ValidateToken(providedToken string) bool {
 		return false
 	}
 
-	// Java uses equalsIgnoreCase, so we should do case-insensitive comparison
-	// But for security, we'll use constant-time comparison with normalized case
-	// Normalize both tokens to lowercase for case-insensitive comparison (matching Java)
 	providedTokenLower := strings.ToLower(strings.TrimSpace(providedToken))
 	storedTokenLower := strings.ToLower(strings.TrimSpace(storedToken))
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestJSONCompatibility tests that Go structs produce JSON compatible with Java output
+// TestJSONCompatibility tests that Go structs produce JSON compatible with output
 func TestJSONCompatibility(t *testing.T) {
 	t.Run("Microservice JSON field names", func(t *testing.T) {
 		ms := NewMicroservice("test-uuid", "test-image")
@@ -22,7 +22,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
 
-		// Verify field names match Java (camelCase)
+		// Verify field names match (camelCase)
 		if _, ok := result["microserviceUuid"]; !ok {
 			t.Error("Missing field: microserviceUuid")
 		}
@@ -34,72 +34,6 @@ func TestJSONCompatibility(t *testing.T) {
 		}
 		if _, ok := result["registryId"]; !ok {
 			t.Error("Missing field: registryId")
-		}
-	})
-
-	t.Run("Message JSON field names", func(t *testing.T) {
-		msg := NewMessage()
-		publisher := "test-publisher"
-		groupID := "group-123"
-		authID := "auth-123"
-		authGroup := "auth-group"
-		msg.Publisher = &publisher
-		msg.MessageGroupID = &groupID
-		msg.AuthIdentifier = &authID
-		msg.AuthGroup = &authGroup
-		msg.SequenceNumber = 1
-		msg.SequenceTotal = 10
-
-		jsonData, err := json.Marshal(msg)
-		if err != nil {
-			t.Fatalf("Failed to marshal: %v", err)
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(jsonData, &result); err != nil {
-			t.Fatalf("Failed to unmarshal: %v", err)
-		}
-
-		// Verify field names match Java (lowercase)
-		if _, ok := result["groupid"]; !ok {
-			t.Error("Missing field: groupid")
-		}
-		if _, ok := result["sequencenumber"]; !ok {
-			t.Error("Missing field: sequencenumber")
-		}
-		if _, ok := result["sequencetotal"]; !ok {
-			t.Error("Missing field: sequencetotal")
-		}
-		if _, ok := result["authid"]; !ok {
-			t.Error("Missing field: authid")
-		}
-		if _, ok := result["authgroup"]; !ok {
-			t.Error("Missing field: authgroup")
-		}
-	})
-
-	t.Run("Message base64 encoding", func(t *testing.T) {
-		msg := NewMessage()
-		msg.ContextData = []byte("test context data")
-		msg.ContentData = []byte("test content data")
-
-		jsonData, err := json.Marshal(msg)
-		if err != nil {
-			t.Fatalf("Failed to marshal: %v", err)
-		}
-
-		// Unmarshal back
-		var msg2 Message
-		if err := json.Unmarshal(jsonData, &msg2); err != nil {
-			t.Fatalf("Failed to unmarshal: %v", err)
-		}
-
-		// Verify base64 roundtrip
-		if string(msg2.ContextData) != "test context data" {
-			t.Errorf("ContextData roundtrip failed: got %q", string(msg2.ContextData))
-		}
-		if string(msg2.ContentData) != "test content data" {
-			t.Errorf("ContentData roundtrip failed: got %q", string(msg2.ContentData))
 		}
 	})
 

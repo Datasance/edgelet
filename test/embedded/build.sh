@@ -40,7 +40,7 @@ log_info "Target arch: ${TARGET_ARCH}"
 cd "${REPO_ROOT}"
 chmod +x scripts/download scripts/download-root scripts/stage-root-aux \
     scripts/build-crun-static scripts/build-embedded scripts/package-data \
-    scripts/build-edgelet 2>/dev/null || true
+    scripts/build-edgelet scripts/binary_size_check.sh 2>/dev/null || true
 
 run_embed_pipeline() {
     ARCH="${TARGET_ARCH}" ./scripts/download
@@ -73,6 +73,9 @@ ARCH="${TARGET_ARCH}" EDGELET_CI_ARCHES="${TARGET_ARCH}" ./scripts/build-edgelet
 
 EDGELET_BIN="${REPO_ROOT}/build/edgelet-linux-${TARGET_ARCH}"
 [[ -f "${EDGELET_BIN}" ]] || die "Expected binary not found: ${EDGELET_BIN}"
+
+log_step "Thin binary size gate"
+ARCH="${TARGET_ARCH}" ./scripts/binary_size_check.sh
 
 log_ok "Binary: build/edgelet-linux-${TARGET_ARCH}"
 

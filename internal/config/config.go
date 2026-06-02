@@ -81,6 +81,8 @@ type Config struct {
 	reloadCallback func() error
 	// GPS config update callback
 	gpsConfigCallback func() error
+	// Reload snapshot for warm dockerUrl revert (set before SetConfig from API).
+	reloadPriorDockerURL string
 }
 
 var (
@@ -115,6 +117,28 @@ func GetInstance() *Config {
 		lastReloadSuccessful.Store(true)
 	})
 	return instance
+}
+
+// SnapshotForReload records dockerUrl before an in-process config mutation (API PATCH).
+func (c *Config) SnapshotForReload() {
+	c.mu.RLock()
+	prior := c.DockerURL
+	c.mu.RUnlock()
+	c.mu.Lock()
+	c.reloadPriorDockerURL = prior
+	c.mu.Unlock()
+}
+
+// ConsumeReloadPriorDockerURL returns and clears a reload snapshot if present.
+func (c *Config) ConsumeReloadPriorDockerURL() (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.reloadPriorDockerURL == "" {
+		return "", false
+	}
+	prior := c.reloadPriorDockerURL
+	c.reloadPriorDockerURL = ""
+	return prior, true
 }
 
 // SetReloadCallback sets the callback for configuration reload

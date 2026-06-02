@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"testing"
 )
 
@@ -108,27 +107,6 @@ func TestMicroserviceStatus(t *testing.T) {
 	}
 }
 
-func TestMessageJSON(t *testing.T) {
-	msg := NewMessage()
-	msg.Publisher = stringPtr("test-publisher")
-	msg.SequenceNumber = 1
-	msg.SequenceTotal = 10
-
-	jsonData, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("Failed to marshal message: %v", err)
-	}
-
-	var msg2 Message
-	if err := json.Unmarshal(jsonData, &msg2); err != nil {
-		t.Fatalf("Failed to unmarshal message: %v", err)
-	}
-
-	if msg2.SequenceNumber != 1 || msg2.SequenceTotal != 10 {
-		t.Errorf("Message JSON roundtrip failed")
-	}
-}
-
 func TestFieldAgentStatus(t *testing.T) {
 	fa := NewFieldAgentStatus()
 	if fa.ControllerStatus != ControllerStatusNotConnected {
@@ -167,33 +145,6 @@ func TestYamlConfig(t *testing.T) {
 	profile.SetProperty("key1", "value1")
 	if profile.GetProperty("key1") != "value1" {
 		t.Errorf("ProfileConfig property not set correctly")
-	}
-}
-
-func TestValidation(t *testing.T) {
-	// Test PortMapping validation
-	pm := NewPortMapping(0, 80, false)
-	if err := ValidatePortMapping(pm); err == nil {
-		t.Errorf("PortMapping with invalid port should fail validation")
-	}
-
-	// Test EnvVar validation
-	ev := NewEnvVar("", "value")
-	if err := ValidateEnvVar(ev); err == nil {
-		t.Errorf("EnvVar with empty key should fail validation")
-	}
-
-	// Test Registry validation
-	reg := NewRegistry(-1, "", true, "", "", "")
-	if err := ValidateRegistry(reg); err == nil {
-		t.Errorf("Registry with invalid fields should fail validation")
-	}
-
-	// Test Message validation
-	msg := NewMessage()
-	msg.Version = 99
-	if err := ValidateMessage(msg); err == nil {
-		t.Errorf("Message with invalid version should fail validation")
 	}
 }
 
