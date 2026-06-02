@@ -92,7 +92,18 @@ Controller CA (`/etc/edgelet/cert.crt`) is **not** installed by default. Use `--
 | OTA metadata | `/var/backups/edgelet/` | — | — |
 | Bundled scripts | `/usr/share/edgelet/install.sh` | optional | optional |
 
-Linux init: **systemd**, OpenRC, SysV, upstart, s6, runit (auto-detected). Templates: `packaging/init/`.
+Linux init: **systemd**, **procd** (OpenWrt), OpenRC, SysV, upstart, s6, runit (auto-detected). Templates: `packaging/init/`.
+
+### Portable embedded build (Plan 10-8)
+
+The fat runtime inside the zstd embed tar is **statically linked by default** (`STATIC_BUILD=true` in `scripts/build-edgelet` / `make deps`). That lets `containerEngine=edgelet` run on **glibc and musl** (Alpine, OpenWrt) without a separate `-musl` release artifact.
+
+| Build | Command |
+|-------|---------|
+| Default (static fat + embed gate) | `make build-linux-arm64` or `./scripts/build-edgelet fat` after `deps` |
+| Fast local iteration (dynamic fat) | `STATIC_BUILD=false make build-linux-amd64` |
+
+CI and packaging run `scripts/check-embed-static.sh` on `build/bin/edgelet` and `build/stage/bin/` after `package-data`.
 
 ## potctl / iofogctl contract
 

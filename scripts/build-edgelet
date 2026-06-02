@@ -4,8 +4,8 @@
 #   ARCH=amd64 ./scripts/build-edgelet              # unified linux thin (needs embed)
 #   ARCH=amd64 ./scripts/build-edgelet fat          # fat runtime -> build/bin/edgelet
 #   EDGELET_CI_ARCHES=amd64,arm64 ./scripts/build-edgelet
-# Optional ops-only static linking (RFC R9 — not a separate release name):
-#   STATIC_BUILD=true ARCH=amd64 ./scripts/build-edgelet
+# Static embed is the default (Plan 10-8 — musl/glibc portable Linux).
+# Opt out for fast local iteration: STATIC_BUILD=false ARCH=amd64 ./scripts/build-edgelet
 # Desktop (optional): EDGELET_DESKTOP=true ./scripts/build-edgelet
 
 set -e
@@ -13,6 +13,8 @@ set -e
 cd "$(dirname "$0")/.."
 
 . ./scripts/version.sh
+# shellcheck source=scripts/embed-static-default.sh
+. ./scripts/embed-static-default.sh
 
 GO=${GO-go}
 VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
@@ -33,7 +35,7 @@ LDFLAGS_BASE="-s -w \
 
 STATIC_LDFLAGS=""
 STATIC_TAGS=""
-if [ "${STATIC_BUILD}" = "true" ]; then
+if [ "${EMBED_STATIC_BUILD}" = "true" ]; then
   STATIC_LDFLAGS=' -extldflags "-static -lm -ldl -lz -lpthread"'
   STATIC_TAGS="static_build"
 fi

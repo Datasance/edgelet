@@ -4,6 +4,8 @@ set -e -x
 cd "$(dirname "$0")/.."
 
 . ./scripts/version.sh
+# shellcheck source=scripts/embed-static-default.sh
+. ./scripts/embed-static-default.sh
 
 GO=${GO-go}
 PKG="github.com/datasance/edgelet"
@@ -90,12 +92,18 @@ case "${ARCH}" in
   arm) _SHIM_CC="${CC:-arm-linux-gnueabihf-gcc}" ;;
   riscv64) _SHIM_CC="${CC:-riscv64-linux-gnu-gcc}" ;;
 esac
-echo "Building containerd-shim-runc-v2 (CC=${_SHIM_CC})"
+_SHIM_LDFLAGS="${VERSIONFLAGS} ${LDFLAGS}"
+if [ "${EMBED_STATIC_BUILD}" = "true" ]; then
+  _SHIM_LDFLAGS="${VERSIONFLAGS} ${LDFLAGS} -extldflags '-static -lm -ldl -pthread'"
+  echo "Building containerd-shim-runc-v2 static (CC=${_SHIM_CC})"
+else
+  echo "Building containerd-shim-runc-v2 (CC=${_SHIM_CC})"
+fi
 pushd ./build/src/github.com/containerd/containerd
 SHIM_TAGS="${TAGS/netcgo/netgo}"
 CGO_ENABLED=1 GOOS="${OS}" GOARCH="${GOARCH:-${ARCH}}" CC="${_SHIM_CC}" \
   "${GO}" build -tags "${SHIM_TAGS}" -gcflags "all=${GCFLAGS}" \
-  -ldflags "${VERSIONFLAGS} ${LDFLAGS}" \
+  -ldflags "${_SHIM_LDFLAGS}" \
   -o bin/containerd-shim-runc-v2 ./cmd/containerd-shim-runc-v2
 popd
 cp -vf ./build/src/github.com/containerd/containerd/bin/containerd-shim-runc-v2 \
