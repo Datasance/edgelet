@@ -2,7 +2,7 @@
 
 ## Status
 
-Scripts implemented for Plan 9A-5. Run on **macOS + Lima**:
+**Plan 9A-5 complete** (2026-06-02). Run on **macOS + Lima**:
 
 ```bash
 ./test/engine-lifecycle/run-all.sh
@@ -14,9 +14,7 @@ End-to-end integration tests for **cold `containerEngine` switches** (edgelet â†
 
 ---
 
-## Planned directory layout (9A-5 deliverables)
-
-These files are **not yet implemented**; phase 9A-5 creates them.
+## Directory layout
 
 ```
 test/engine-lifecycle/
@@ -77,7 +75,7 @@ Based on `test/embedded/lima-ubuntu.yaml`, with these differences:
 
 ---
 
-## Usage (after 9A-5 implementation)
+## Usage
 
 ```bash
 # Full pipeline (macOS + Lima)
@@ -102,4 +100,4 @@ Based on `test/embedded/lima-ubuntu.yaml`, with these differences:
 | `test/engine-lifecycle/` | `edgelet` **and** `docker` | Cold engine switch + MS recreate |
 | `test/embedded/container-deploy-smoke.sh` | nested edgelet in Docker | Plan 9B cgroup smoke (different gate) |
 
-Plan 9A is **not complete** until `./test/engine-lifecycle/run-all.sh` passes both required switch cases.
+ `./test/engine-lifecycle/run-all.sh` passes both required switch cases.
