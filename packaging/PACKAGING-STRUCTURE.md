@@ -89,18 +89,23 @@ CLI: `edgelet init-config` writes default config if missing (no overwrite).
 
 ## Init templates (linux)
 
+**Canonical tree:** `packaging/init/` only (Plan 10). Legacy `packaging/systemd/` removed; CI: `scripts/check-init-packaging.sh`.
+
 Under `packaging/init/`:
 
 | Init | Template |
 |------|----------|
-| systemd | `systemd/edgelet.service` |
-| openrc | `openrc/edgelet.init` |
+| systemd | `systemd/edgelet.service`, `edgelet-containerd.service` (stub), `edgelet.service.d/{docker,podman}.conf` |
+| openrc | `openrc/edgelet.init`, `openrc/edgelet-containerd.init` (stub) |
+| procd | `procd/edgelet` (OpenWrt `USE_PROCD=1`) |
 | sysvinit | `sysvinit/edgelet.init` |
 | upstart | `upstart/edgelet.conf` |
 | s6 | `s6/run`, `s6/finish` |
-| runit | `runit/run` |
+| runit | `runit/run`, `runit/finish` |
 
-Helpers: `scripts/lib/init-detect.sh`, `scripts/lib/init-edgelet.sh`.
+Helpers: `scripts/lib/init-detect.sh`, `scripts/lib/init-edgelet.sh`, `scripts/edgelet-shutdown` → `/usr/libexec/edgelet/edgelet-shutdown`; CLI: `edgelet shutdown`, `edgelet cgroup-preflight`.
+
+Operator matrix: `docs/edgelet/init-systems.md` (Plan 10). IT: `test/init/README.md`.
 
 ---
 
