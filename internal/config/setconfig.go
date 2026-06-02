@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -178,6 +179,9 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 
 	case "dockerURL":
+		if strings.EqualFold(strings.TrimSpace(c.ContainerEngine), constants.EngineEdgelet) {
+			return fmt.Errorf("dockerUrl is fixed for containerEngine edgelet (%s)", constants.EdgeletEngineDockerURL())
+		}
 		c.DockerURL = value
 		if err := c.setYamlProperty("dockerUrl", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
@@ -185,13 +189,21 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 
 	case "containerEngine":
 		switch value {
-		case "docker", "podman", "edgelet":
+		case constants.EngineDocker, constants.EnginePodman, constants.EngineEdgelet:
+			prevEngine := c.ContainerEngine
 			c.ContainerEngine = value
 			if err := c.setYamlProperty("containerEngine", value); err != nil {
 				logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 			}
+			if prevEngine != value {
+				defaultURL := DefaultDockerURLForEngine(value)
+				c.DockerURL = defaultURL
+				if err := c.setYamlProperty("dockerUrl", defaultURL); err != nil {
+					logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist dockerUrl default: %v", err))
+				}
+			}
 		default:
-			return fmt.Errorf("invalid container engine %q: must be one of docker, podman, iofog", value)
+			return fmt.Errorf("invalid container engine %q: must be one of docker, podman, edgelet", value)
 		}
 
 	case "networkInterface":

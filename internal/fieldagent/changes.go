@@ -303,6 +303,7 @@ func (fa *FieldAgent) getFogConfig() error {
 		"controllerUrl":             "a",
 		"controllerCert":            "ac",
 		"dockerUrl":                 "c",
+		"containerEngine":           "ce",
 		"networkInterface":          "n",
 		"logDiskConsumptionLimit":   "l",
 		"logDiskDirectory":          "ld",
