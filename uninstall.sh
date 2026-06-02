@@ -48,14 +48,23 @@ stop_systemd() {
     fi
     systemctl disable edgelet 2>/dev/null || true
     rm -f /etc/systemd/system/edgelet.service
+    rm -f /etc/systemd/system/edgelet-containerd.service
+    rm -rf /etc/systemd/system/edgelet.service.d
     systemctl daemon-reload 2>/dev/null || true
     info "systemd service removed."
+}
+
+stop_procd() {
+    /etc/init.d/edgelet stop 2>/dev/null || true
+    /etc/init.d/edgelet disable 2>/dev/null || true
+    rm -f /etc/init.d/edgelet
+    info "procd init script removed."
 }
 
 stop_openrc() {
     rc-service edgelet stop 2>/dev/null || true
     rc-update del edgelet default 2>/dev/null || true
-    rm -f /etc/init.d/edgelet
+    rm -f /etc/init.d/edgelet /etc/init.d/edgelet-containerd
     info "OpenRC service removed."
 }
 
@@ -112,6 +121,8 @@ remove_init_service() {
     fi
     if [ -f /etc/systemd/system/edgelet.service ]; then
         stop_systemd
+    elif [ -f /etc/init.d/edgelet ] && [ -x /sbin/procd ]; then
+        stop_procd
     elif [ -f /etc/init.d/edgelet ] && command -v openrc >/dev/null 2>&1; then
         stop_openrc
     elif [ -f /etc/init/edgelet.conf ]; then
@@ -126,6 +137,7 @@ remove_init_service() {
         case "$_init" in
             systemd) stop_systemd ;;
             openrc) stop_openrc ;;
+            procd) stop_procd ;;
             sysvinit) stop_sysvinit ;;
             upstart) stop_upstart ;;
             s6) stop_s6 ;;
@@ -142,6 +154,9 @@ lazy_umount_edgelet
 
 rm -f /usr/local/bin/edgelet
 info "Binary removed."
+
+rm -rf /usr/libexec/edgelet
+info "Init helpers removed from /usr/libexec/edgelet/"
 
 rm -rf /usr/share/edgelet
 info "Bundled scripts removed from /usr/share/edgelet/"

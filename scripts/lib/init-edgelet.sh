@@ -1,5 +1,8 @@
 # init-edgelet.sh — install linux init unit for edgelet (sourced by install.sh)
 
+EDGELET_LIBEXEC="/usr/libexec/edgelet"
+EDGELET_INIT_SHARE="/usr/share/edgelet/init"
+
 init_packaging_root() {
     if [ -n "${EDGELET_INIT_DIR}" ] && [ -d "${EDGELET_INIT_DIR}" ]; then
         echo "${EDGELET_INIT_DIR}"
@@ -9,11 +12,69 @@ init_packaging_root() {
         echo "${SCRIPT_DIR}/packaging/init"
         return 0
     fi
-    if [ -d /usr/share/edgelet/init ]; then
-        echo /usr/share/edgelet/init
+    if [ -d "${EDGELET_INIT_SHARE}" ]; then
+        echo "${EDGELET_INIT_SHARE}"
         return 0
     fi
-    die "Init templates not found (packaging/init or /usr/share/edgelet/init)"
+    die "Init templates not found (packaging/init or ${EDGELET_INIT_SHARE})"
+}
+
+edgelet_shutdown_script() {
+    if [ -f "${SCRIPT_DIR}/scripts/edgelet-shutdown" ]; then
+        echo "${SCRIPT_DIR}/scripts/edgelet-shutdown"
+        return 0
+    fi
+    if [ -f "${SHARE_DIR}/edgelet-shutdown" ]; then
+        echo "${SHARE_DIR}/edgelet-shutdown"
+        return 0
+    fi
+    die "Missing edgelet-shutdown helper (scripts/edgelet-shutdown)"
+}
+
+install_init_helpers() {
+    _shutdown="$(edgelet_shutdown_script)"
+    mkdir -p "${EDGELET_LIBEXEC}"
+    install -m 755 "${_shutdown}" "${EDGELET_LIBEXEC}/edgelet-shutdown"
+}
+
+openrc_engine_need_line() {
+    case "$1" in
+        docker) printf '%s\n' '    need docker' ;;
+        podman) printf '%s\n' '    need podman' ;;
+        *)      printf '%s\n' '' ;;
+    esac
+}
+
+apply_openrc_engine_deps() {
+    _eng="$1"
+    _dest="$2"
+    _need="$(openrc_engine_need_line "${_eng}")"
+    if [ -f "${_dest}" ]; then
+        # shellcheck disable=SC2016
+        awk -v need="${_need}" '
+            /%%EDGELET_ENGINE_NEED%%/ {
+                if (need != "") print need
+                next
+            }
+            { print }
+        ' "${_dest}" > "${_dest}.tmp" && mv "${_dest}.tmp" "${_dest}"
+    fi
+}
+
+install_systemd_dropin() {
+    _eng="$1"
+    _root="$2"
+    _dropdir="/etc/systemd/system/edgelet.service.d"
+    mkdir -p "${_dropdir}"
+    rm -f "${_dropdir}/docker.conf" "${_dropdir}/podman.conf"
+    case "${_eng}" in
+        docker)
+            install -m 644 "${_root}/systemd/edgelet.service.d/docker.conf" "${_dropdir}/docker.conf"
+            ;;
+        podman)
+            install -m 644 "${_root}/systemd/edgelet.service.d/podman.conf" "${_dropdir}/podman.conf"
+            ;;
+    esac
 }
 
 install_init_unit() {
@@ -21,32 +82,44 @@ install_init_unit() {
     _eng="$2"
     _root="$(init_packaging_root)"
     mkdir -p /var/log/edgelet
+    install_init_helpers
 
     case "${_init}" in
         systemd)
             _unit="${_root}/systemd/edgelet.service"
             [ -f "$_unit" ] || die "Missing ${_unit}"
+            mkdir -p /etc/cni/net.d /run/edgelet /run/containerd
+            chmod 755 /run/edgelet /run/containerd 2>/dev/null || true
             install -m 644 "$_unit" /etc/systemd/system/edgelet.service
-            case "${_eng}" in
-                docker)
-                    sed -i '/^After=/s/.*/After=network-online.target docker.service/' /etc/systemd/system/edgelet.service 2>/dev/null || true
-                    grep -q 'Wants=docker.service' /etc/systemd/system/edgelet.service 2>/dev/null || \
-                        sed -i '/^After=/a Wants=docker.service' /etc/systemd/system/edgelet.service 2>/dev/null || true
-                    ;;
-                podman)
-                    sed -i '/^After=/s/.*/After=network-online.target podman.socket/' /etc/systemd/system/edgelet.service 2>/dev/null || true
-                    ;;
-            esac
+            _containerd="${_root}/systemd/edgelet-containerd.service"
+            if [ -f "${_containerd}" ]; then
+                install -m 644 "${_containerd}" /etc/systemd/system/edgelet-containerd.service
+            fi
+            install_systemd_dropin "${_eng}" "${_root}"
             systemctl daemon-reload
             systemctl enable edgelet
-            systemctl restart edgelet
-            info "systemd unit edgelet.service installed and started."
+            systemctl stop edgelet 2>/dev/null || true
+            systemctl reset-failed edgelet 2>/dev/null || true
+            systemctl start edgelet
+            info "systemd unit edgelet.service installed (engine=${_eng} drop-in)."
             ;;
         openrc)
             install -m 755 "${_root}/openrc/edgelet.init" /etc/init.d/edgelet
+            apply_openrc_engine_deps "${_eng}" /etc/init.d/edgelet
+            chmod 755 /etc/init.d/edgelet
+            if [ -f "${_root}/openrc/edgelet-containerd.init" ]; then
+                install -m 755 "${_root}/openrc/edgelet-containerd.init" /etc/init.d/edgelet-containerd
+            fi
             rc-update add edgelet default 2>/dev/null || true
             rc-service edgelet restart 2>/dev/null || rc-service edgelet start
-            info "OpenRC service edgelet installed."
+            info "OpenRC service edgelet installed (engine=${_eng})."
+            ;;
+        procd)
+            install -m 755 "${_root}/procd/edgelet" /etc/init.d/edgelet
+            /etc/init.d/edgelet enable 2>/dev/null || true
+            /etc/init.d/edgelet stop 2>/dev/null || true
+            /etc/init.d/edgelet start
+            info "procd init script edgelet installed (engine=${_eng})."
             ;;
         sysvinit)
             install -m 755 "${_root}/sysvinit/edgelet.init" /etc/init.d/edgelet
@@ -78,6 +151,9 @@ install_init_unit() {
         runit)
             mkdir -p /etc/runit/edgelet
             install -m 755 "${_root}/runit/run" /etc/runit/edgelet/run
+            if [ -f "${_root}/runit/finish" ]; then
+                install -m 755 "${_root}/runit/finish" /etc/runit/edgelet/finish
+            fi
             if [ -d /etc/runit ]; then
                 ln -sf /etc/runit/edgelet /etc/service/edgelet 2>/dev/null || \
                     ln -sf /etc/runit/edgelet /var/service/edgelet 2>/dev/null || true
@@ -86,7 +162,7 @@ install_init_unit() {
             info "runit service installed under /etc/runit/edgelet."
             ;;
         *)
-            die "No supported init system detected (${_init}). Install systemd, openrc, sysvinit, upstart, s6, or runit."
+            die "No supported init system detected (${_init}). Install systemd, procd, openrc, sysvinit, upstart, s6, or runit."
             ;;
     esac
 }
@@ -96,10 +172,11 @@ stop_edgelet_service() {
     case "${_init}" in
         systemd) systemctl stop edgelet 2>/dev/null || true ;;
         openrc) rc-service edgelet stop 2>/dev/null || true ;;
+        procd) /etc/init.d/edgelet stop 2>/dev/null || true ;;
         sysvinit) /etc/init.d/edgelet stop 2>/dev/null || true ;;
         upstart) initctl stop edgelet 2>/dev/null || true ;;
         s6) s6-svc -d /var/run/s6/services/edgelet 2>/dev/null || true ;;
         runit) sv down edgelet 2>/dev/null || true ;;
-        *) pkill -f "/usr/local/bin/edgelet daemon" 2>/dev/null || true ;;
+        *) "${EDGELET_LIBEXEC}/edgelet-shutdown" 2>/dev/null || pkill -f "/usr/local/bin/edgelet daemon" 2>/dev/null || true ;;
     esac
 }

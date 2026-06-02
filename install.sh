@@ -18,8 +18,10 @@ if [ -f "${SCRIPT_DIR}/scripts/lib/init-detect.sh" ]; then
     LIB_DIR="${SCRIPT_DIR}/scripts/lib"
 elif [ -f "${SCRIPT_DIR}/lib/init-detect.sh" ]; then
     LIB_DIR="${SCRIPT_DIR}/lib"
+elif [ -f /usr/share/edgelet/lib/init-detect.sh ]; then
+    LIB_DIR="/usr/share/edgelet/lib"
 else
-    die "Missing init helper scripts (scripts/lib or /usr/share/edgelet/lib)"
+    die "Missing init helper scripts (scripts/lib, lib/, or /usr/share/edgelet/lib)"
 fi
 # shellcheck source=scripts/lib/init-detect.sh
 . "${LIB_DIR}/init-detect.sh"
@@ -286,6 +288,9 @@ copy_bundled_scripts() {
         mkdir -p "${SHARE_DIR}/lib"
         cp "${SCRIPT_DIR}/scripts/lib/"*.sh "${SHARE_DIR}/lib/"
         chmod 755 "${SHARE_DIR}/lib/"*.sh
+    fi
+    if [ -f "${SCRIPT_DIR}/scripts/edgelet-shutdown" ]; then
+        install -m 755 "${SCRIPT_DIR}/scripts/edgelet-shutdown" "${SHARE_DIR}/edgelet-shutdown"
     fi
     if [ -d "${SCRIPT_DIR}/packaging/edgelet/etc/edgelet" ]; then
         mkdir -p "${SHARE_DIR}/etc/edgelet"
