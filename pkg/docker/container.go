@@ -96,13 +96,7 @@ func (c *Client) GetContainerByID(containerID string) (*Container, error) {
 	}, nil
 }
 
-// GetAllContainers returns all containers regardless of state
-func (c *Client) GetAllContainers() ([]Container, error) {
-	return c.GetRunningContainers()
-}
-
-// GetRunningContainers returns all running containers
-func (c *Client) GetRunningContainers() ([]Container, error) {
+func (c *Client) listContainers(all bool) ([]Container, error) {
 	cli := c.GetClient()
 	if cli == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
@@ -110,15 +104,21 @@ func (c *Client) GetRunningContainers() ([]Container, error) {
 
 	ctx := c.GetContext()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
-		All: true,
+		All: all,
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
+	return containersFromDockerList(all, containers), nil
+}
+
+func containersFromDockerList(all bool, containers []types.Container) []Container {
 	result := make([]Container, 0, len(containers))
 	for _, cont := range containers {
+		if !all && cont.State != "running" {
+			continue
+		}
 		result = append(result, Container{
 			ID:     cont.ID,
 			Names:  cont.Names,
@@ -128,8 +128,17 @@ func (c *Client) GetRunningContainers() ([]Container, error) {
 			Labels: cont.Labels,
 		})
 	}
+	return result
+}
 
-	return result, nil
+// GetAllContainers returns all containers regardless of state.
+func (c *Client) GetAllContainers() ([]Container, error) {
+	return c.listContainers(true)
+}
+
+// GetRunningContainers returns running containers only.
+func (c *Client) GetRunningContainers() ([]Container, error) {
+	return c.listContainers(false)
 }
 
 // GetContainerStatus retrieves the status of a container
