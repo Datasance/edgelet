@@ -20,6 +20,12 @@ import (
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
+// exitDaemon removes the PID file then exits. defer does not run on os.Exit.
+func exitDaemon(code int) {
+	_ = utils.RemovePIDFile()
+	os.Exit(code)
+}
+
 func runDaemon() {
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
@@ -64,7 +70,7 @@ func runDaemon() {
 	}
 	if err := sup.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
-		os.Exit(1)
+		exitDaemon(1)
 	}
 
 	watcher := config.GetWatcher()
@@ -124,13 +130,13 @@ func runDaemon() {
 		case <-done:
 			if stopErr != nil {
 				logging.LogError("Daemon", "Error during shutdown", stopErr)
-				os.Exit(1)
+				exitDaemon(1)
 			}
 			logging.LogInfo("Daemon", "Shutdown complete")
 		case <-time.After(gracePeriod):
 			logging.LogWarn("Daemon", fmt.Sprintf("Shutdown grace period (%v) exceeded, exiting", gracePeriod))
 		}
-		os.Exit(0)
+		exitDaemon(0)
 	}
 }
 
@@ -165,6 +171,7 @@ func startLoggingService() {
 func reloadAgentConfig(sup *supervisor.Supervisor) {
 	logging.LogInfo("Daemon", "Reloading configuration...")
 	config.SetLastReloadSuccessful(false)
+	sup.BeginConfigReload()
 
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		logging.LogError("Daemon", "Failed to reload configuration", err)

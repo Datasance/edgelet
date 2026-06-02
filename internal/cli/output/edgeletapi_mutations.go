@@ -61,13 +61,22 @@ func FormatConfigPatchResult(result map[string]interface{}) string {
 	}
 	status, _ := result["status"].(string)
 	errorMap, _ := result["errorMap"].(map[string]interface{})
+	var b strings.Builder
 	if len(errorMap) == 0 {
 		if status == "" {
 			status = "ok"
 		}
-		return fmt.Sprintf("config update: %s (all requested changes accepted)", status)
+		fmt.Fprintf(&b, "config update: %s (all requested changes accepted)", status)
+		if pending, _ := result["pendingRestart"].(bool); pending {
+			if msg, _ := result["message"].(string); msg != "" {
+				b.WriteString("\n")
+				b.WriteString(msg)
+			} else {
+				b.WriteString("\nRestart required: systemctl restart edgelet")
+			}
+		}
+		return b.String()
 	}
-	var b strings.Builder
 	fmt.Fprintf(&b, "config update: %s\n", status)
 	fmt.Fprintln(&b, "rejected keys:")
 	keys := make([]string, 0, len(errorMap))

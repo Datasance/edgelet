@@ -64,6 +64,13 @@ func runConfigPatch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	if pending, _ := result.Data["pendingRestart"].(bool); pending {
+		if msg, _ := result.Data["message"].(string); msg != "" {
+			result.Human += "\n" + msg
+		} else {
+			result.Human += "\nRestart required: systemctl restart edgelet"
+		}
+	}
 	return run.WriteHumanConfigResult(appCtx, result.Human, config.HasRejections(result.Data))
 }
 

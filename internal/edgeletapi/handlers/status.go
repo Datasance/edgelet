@@ -45,6 +45,7 @@ func (h *StatusHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if shouldAugmentCgroupStatus() {
 		augmentWithCgroupStatus(statusMap)
 	}
+	augmentWithRuntimeStatus(statusMap)
 
 	// Convert to JSON
 	jsonData, err := json.Marshal(statusMap)
