@@ -188,7 +188,6 @@ func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
 }
 
 // PruneDangling removes only untagged images not referenced by any container.
-// Matches Java DockerPruningManager.pruneAgent() which calls docker system prune (dangling only).
 func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
 	report, err := e.client.DockerPrune()
 	if err != nil {

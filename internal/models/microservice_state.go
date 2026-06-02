@@ -25,7 +25,7 @@ const (
 
 // FromText converts a string to MicroserviceState
 func MicroserviceStateFromText(value string) MicroserviceState {
-	// Convert to uppercase to match Java's valueOf behavior
+	// Convert to uppercase
 	upper := ""
 	for _, r := range value {
 		if r >= 'a' && r <= 'z' {

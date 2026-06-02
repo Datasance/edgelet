@@ -259,11 +259,10 @@ func (m *Manager) clearPayloadCache() {
 }
 
 // handleHardwareChange handles hardware change detection
-// Matching Java: EdgeGuardManager.handleHardwareChange()
 func (m *Manager) handleHardwareChange() {
 	logging.LogWarn(moduleName, "Hardware change detected - deprovisioning agent")
 
-	// Wrap in error handling to match Java's try-catch
+	// Wrap in error handling
 	defer func() {
 		if r := recover(); r != nil {
 			logging.LogError(moduleName, "Error handling hardware change", fmt.Errorf("%v", r))
@@ -271,19 +270,15 @@ func (m *Manager) handleHardwareChange() {
 	}()
 
 	// 1. Update daemon status to WARNING with message "HW signature changed"
-	// Matching Java: StatusReporter.setSupervisorStatus().setDaemonStatus(Constants.ModulesStatus.WARNING)
-	//                StatusReporter.setSupervisorStatus().setWarningMessage("HW signature changed")
 	statusreporter.GetInstance().UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
 		status.SetDaemonStatus(models.ModuleStatusWarning)
 		status.SetWarningMessage("HW signature changed")
 	})
 
 	// 2. Immediately send status to controller
-	// Matching Java: FieldAgent.getInstance().postStatusHelper()
 	fieldagent.GetInstance().PostStatusHelper()
 
-	// 3. Deprovision the agent (false = don't clear credentials, matching Java's deProvision(false))
-	// Matching Java: FieldAgent.getInstance().deProvision(false)
+	// 3. Deprovision the agent (false = don't clear credentials)
 	if err := fieldagent.GetInstance().Deprovision(false); err != nil {
 		logging.LogError(moduleName, "Failed to deprovision agent", err)
 	}
@@ -343,7 +338,6 @@ func (m *Manager) hashData(data string) string {
 }
 
 // signWithPrivateKey signs the hash with Ed25519 private key
-// This matches Java: signWithPrivateKey() method
 func (m *Manager) signWithPrivateKey(hash string) (string, error) {
 	tokenString, _, _, _, err := auth.GetJWTManager().GenerateEdgeGuardJWT(hash, 10*time.Minute)
 	if err != nil {
@@ -419,7 +413,6 @@ func (m *Manager) GetModuleIndex() int {
 }
 
 // InstanceConfigUpdated handles configuration updates
-// Matching Java: EdgeGuardManager.instanceConfigUpdated()
 func (m *Manager) InstanceConfigUpdated() {
 	logging.LogDebug(moduleName, "Handling Edge Guard configuration update")
 

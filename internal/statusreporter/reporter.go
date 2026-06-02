@@ -20,7 +20,7 @@ import (
 
 const (
 	moduleName = "Status Reporter"
-	// Number of modules (from Java Constants.NUMBER_OF_MODULES)
+	// Number of modules
 	numberOfModules = 8
 )
 
@@ -151,11 +151,11 @@ func (sr *StatusReporter) GetStatusReport() string {
 	memoryUsage := sr.resourceConsumptionManagerStatus.MemoryUsage
 	cpuUsage := sr.resourceConsumptionManagerStatus.CPUUsage
 
-	// Debug logging to trace status values (matching Java debug logging)
+	// Debug logging to trace status values
 	logging.LogDebug(moduleName, fmt.Sprintf("Status values: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB, AvailableMemory=%.2f MB, AvailableDisk=%.2f MB, TotalCPU=%.2f%%",
 		memoryUsage, cpuUsage, diskUsage, availableMemory, availableDisk, totalCPU))
 
-	// Get connection status (matching Java: getStatusReport())
+	// Get connection status
 	var connectionStatus string
 	currentStatus := sr.fieldAgentStatus.ControllerStatus
 	logging.LogDebug(moduleName, fmt.Sprintf("Current controller status from StatusReporter: %s (ControllerVerified: %v)",
@@ -169,7 +169,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 	case models.ControllerStatusNotConnected:
 		connectionStatus = "not connected"
 	case models.ControllerStatusOK:
-		connectionStatus = "ok" // Matching Java: case OK: connectionStatus = "ok";
+		connectionStatus = "ok"
 	default:
 		// Default to "not connected" if status is unknown
 		logging.LogDebug(moduleName, fmt.Sprintf("Unknown controller status: %s, defaulting to 'not connected'", currentStatus))
@@ -182,7 +182,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 	systemTime := time.UnixMilli(sr.statusReporterStatus.SystemTime)
 	dateFormat := systemTime.Format("02/01/2006 03:04 PM")
 
-	// Get daemon status (matching Java: supervisorStatus.getDaemonStatus().name())
+	// Get daemon status
 	daemonStatus := string(sr.supervisorStatus.DaemonStatus)
 	if daemonStatus == "" {
 		// Default to RUNNING if not set (shouldn't happen, but safety check)

@@ -133,7 +133,7 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 		fogLogs, _ := changes["fogLogs"].(bool)
 		if microserviceLogs || fogLogs {
 			logging.LogDebug(moduleName, fmt.Sprintf("Processing log sessions changes - microserviceLogs: %v, fogLogs: %v", microserviceLogs, fogLogs))
-			// Fetch and handle log sessions (matching Java: handleLogSessions())
+			// Fetch and handle log sessions
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			logSessionManager := GetLogSessionManager()
 			sessions, err := logSessionManager.FetchLogSessions(ctx)
@@ -353,11 +353,10 @@ func (fa *FieldAgent) getFogConfig() error {
 }
 
 // postFogConfig posts the fog configuration to controller
-// Matching Java: postFogConfig() method
 func (fa *FieldAgent) postFogConfig() error {
 	logging.LogDebug(moduleName, "Post ioFog config")
 
-	// Check if provisioned and connected (matching Java: notProvisioned() || !isControllerConnected(false))
+	// Check if provisioned and connected
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		logging.LogDebug(moduleName, "Skipping postFogConfig: not provisioned or not connected")
 		return nil
@@ -365,7 +364,7 @@ func (fa *FieldAgent) postFogConfig() error {
 
 	cfg := config.GetInstance()
 
-	// Parse GPS coordinates (matching Java logic)
+	// Parse GPS coordinates
 	latitude := 0.0
 	longitude := 0.0
 	if cfg.GPSCoordinates != "" {
@@ -386,7 +385,7 @@ func (fa *FieldAgent) postFogConfig() error {
 		networkInterfaceName = "UNKNOWN"
 	}
 
-	// Build config data matching Java JsonObject structure
+	// Build config data
 	configData := map[string]interface{}{
 		"networkInterface":          networkInterfaceName,
 		"dockerUrl":                 cfg.DockerURL,
@@ -423,7 +422,7 @@ func (fa *FieldAgent) postFogConfig() error {
 	}
 	defer cancel()
 
-	// Post config using PATCH method (matching Java: RequestType.PATCH)
+	// Post config using PATCH method
 	_, err := fa.apiClient.Request(ctx, "config", PATCH, nil, configData)
 	if err != nil {
 		logging.LogError(moduleName, "Failed to post fog config to controller", err)
@@ -435,7 +434,6 @@ func (fa *FieldAgent) postFogConfig() error {
 }
 
 // InstanceGPSConfigUpdated sends dedicated GPS config updates to the controller.
-// Matching Java: instanceGpsConfigUpdated() method.
 func (fa *FieldAgent) InstanceGPSConfigUpdated() error {
 	logging.LogDebug(moduleName, "Start ioFog GPS configuration update")
 	if err := fa.postGPSConfig(); err != nil {
@@ -447,11 +445,10 @@ func (fa *FieldAgent) InstanceGPSConfigUpdated() error {
 }
 
 // postGPSConfig posts dedicated GPS coordinates to controller.
-// Matching Java: postGpsConfig() method.
 func (fa *FieldAgent) postGPSConfig() error {
 	logging.LogDebug(moduleName, "Post ioFog GPS config")
 
-	// Check if provisioned and connected (matching Java guard)
+	// Check if provisioned and connected
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		logging.LogDebug(moduleName, "Skipping postGPSConfig: not provisioned or not connected")
 		return nil

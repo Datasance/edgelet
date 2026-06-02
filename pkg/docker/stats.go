@@ -17,7 +17,6 @@ type ContainerStats struct {
 }
 
 // GetContainerStats gets container statistics
-// This matches Java: getContainerStats() with callback pattern
 func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) {
 	cli := c.GetClient()
 	if cli == nil {

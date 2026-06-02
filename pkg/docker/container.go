@@ -525,7 +525,6 @@ func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.Microserv
 }
 
 // AreMicroserviceAndContainerEqual checks if a microservice configuration matches a container
-// This matches Java logic: areMicroserviceAndContainerEqual()
 func (c *Client) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool {
 	cli := c.GetClient()
 	if cli == nil {
@@ -763,7 +762,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 
 	// Ensure the "edgelet" bridge network exists before attempting container creation.
 	// This guards against races where the network hasn't been created yet (e.g. after
-	// a Docker client re-init) — matches Java's synchronous ensureIoFogNetworkExists().
+	// a Docker client re-init)
 	if !ms.HostNetworkMode {
 		if err := c.ensureNetworkLockFree(c.GetClient(), c.GetContext()); err != nil {
 			return "", fmt.Errorf("failed to ensure iofog network: %w", err)
@@ -794,7 +793,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	config.Labels = labels
 
 	// Build host config — NetworkMode is set later after ExtraHosts are resolved,
-	// matching Java: networkMode("edgelet") is only applied when extraHosts is non-empty.
+	// networkMode("edgelet") is only applied when extraHosts is non-empty.
 	hostConfig := &container.HostConfig{
 		Privileged:      ms.IsPrivileged,
 		PublishAllPorts: false,
@@ -877,7 +876,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	}
 	extraHosts = appendCanonicalReservedHosts(extraHosts, routerIP, natsIP)
 
-	// Filter and validate extra hosts (matches Java validation)
+	// Filter and validate extra hosts
 	validHosts := make([]string, 0)
 	for _, host := range extraHosts {
 		host = strings.TrimSpace(host)
@@ -893,7 +892,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 			}
 		}
 	}
-	// Apply network mode + extra hosts — matches Java's conditional logic:
+	// Apply network mode + extra hosts
 	//   hostNetworkMode → NetworkMode "host"  (no ExtraHosts, no iofog network)
 	//   else            → NetworkMode "edgelet" (always; ExtraHosts only when non-empty)
 	//
@@ -1109,7 +1108,7 @@ func buildHealthCheck(hc *models.Healthcheck) *container.HealthConfig {
 	}
 
 	if hc.Interval != nil {
-		// Convert seconds to nanoseconds (Java code uses TimeUnit.SECONDS.toNanos)
+		// Convert seconds to nanoseconds
 		config.Interval = time.Duration(*hc.Interval) * time.Second
 	}
 	if hc.Timeout != nil {

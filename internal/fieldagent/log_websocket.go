@@ -80,7 +80,7 @@ type LogSessionWebSocketHandler struct {
 	config            *config.Config
 	jwtManager        *auth.JWTManager
 	controllerCert    *x509.Certificate
-	logSessionManager *LogSessionManager // Reference to start tailing when ready (matching Java)
+	logSessionManager *LogSessionManager // Reference to start tailing when ready
 }
 
 var (
@@ -132,7 +132,6 @@ func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string
 	handler.isActive.Store(false)
 
 	// Load controller certificate only if using WSS (secure WebSocket)
-	// Matching Java: only load cert if controllerWsUrl.startsWith("wss")
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
 		if cfg.ControllerCert != "" {
 			cert, err := auth.LoadCertificateFromBase64(cfg.ControllerCert)
@@ -183,7 +182,6 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	}
 
 	// Add certificate to TLS config only if using WSS and certificate is available
-	// Matching Java: only add SSL handler if controllerWsUrl.startsWith("wss") && sslContext != null
 	if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
 		certPool := x509.NewCertPool()
 		certPool.AddCert(h.controllerCert)
@@ -217,7 +215,7 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 
 	h.conn = conn
 	h.isConnected.Store(true)
-	// Transition to PENDING state after handshake (matching Java line 286: CONNECTING -> PENDING)
+	// Transition to PENDING state after handshake
 	// PENDING means connected but waiting for LOG_START message
 	if h.transitionState(LogStateConnecting, LogStatePending) {
 		logging.LogInfo(logWebSocketModuleName, "Connection is now pending LOG_START message")
@@ -229,7 +227,7 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	go h.pingWorker()
 	go h.readWorker()
 
-	// NO initial message for log sessions - wait for LOG_START from controller (matching Java line 289)
+	// NO initial message for log sessions - wait for LOG_START from controller
 
 	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket connection established for log session: %s", h.sessionID))
 	return nil
@@ -286,7 +284,7 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 	var buf bytes.Buffer
 	enc := msgpack.NewEncoder(&buf)
 
-	// Pack as map with 6 key-value pairs (matching Java: always includes both microserviceUuid and iofogUuid, one as nil)
+	// Pack as map with 6 key-value pairs
 	err := enc.EncodeMapLen(6)
 	if err != nil {
 		return fmt.Errorf("failed to encode map length: %w", err)
@@ -322,7 +320,7 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 		return fmt.Errorf("failed to encode sessionId value: %w", err)
 	}
 
-	// Microservice UUID and Iofog UUID (matching Java: always include both, one as nil)
+	// Microservice UUID and Iofog UUID
 	if h.isMicroserviceLog && h.microserviceUUID != "" {
 		// Microservice log: include microserviceUuid, set iofogUuid to nil
 		err = enc.EncodeString("microserviceUuid")
@@ -494,7 +492,7 @@ func (h *LogSessionWebSocketHandler) readWorker() {
 	}
 }
 
-// handleMessage processes incoming messages (matching Java: handleMessage())
+// handleMessage processes incoming messages
 func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 	dec := msgpack.NewDecoder(bytes.NewReader(data))
 
@@ -509,7 +507,7 @@ func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 	var msgData []byte
 	var sessionID string
 
-	// Decode all fields (matching Java: reads all key-value pairs)
+	// Decode all fields
 	for i := 0; i < mapLen; i++ {
 		key, err := dec.DecodeString()
 		if err != nil {
@@ -556,7 +554,7 @@ func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 		}
 	}
 
-	// Handle message based on type (matching Java: handleMessage() switch)
+	// Handle message based on type
 	switch msgType {
 	case LogTypeLogStart:
 		h.handleLogStart(msgData, sessionID)
@@ -570,14 +568,14 @@ func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 	}
 }
 
-// handleLogStart handles LOG_START message (matching Java: handleLogStart())
+// handleLogStart handles LOG_START message
 func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID string) {
 	if data == nil {
 		logging.LogWarn(logWebSocketModuleName, "LOG_START message has no data")
 		return
 	}
 
-	// Parse tailConfig from data (matching Java: parse JSON from data)
+	// Parse tailConfig from data
 	var config map[string]interface{}
 	if err := json.Unmarshal(data, &config); err != nil {
 		logging.LogError(logWebSocketModuleName, "Failed to parse LOG_START data as JSON", err)
@@ -590,12 +588,11 @@ func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID strin
 	}
 
 	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Received LOG_START message with tailConfig: sessionId=%s", sessionID))
-	// Transition from PENDING to ACTIVE (matching Java line 399: PENDING -> ACTIVE)
+	// Transition from PENDING to ACTIVE
 	if h.transitionState(LogStatePending, LogStateActive) {
 		h.isActive.Store(true)
 
 		// Trigger log streaming start in LogSessionManager with tailConfig from LOG_START
-		// (matching Java: logSessionManager.startLogStreamingOnActivation())
 		if h.logSessionManager != nil {
 			logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Triggering log streaming start on WebSocket activation: sessionId=%s", sessionID))
 			h.logSessionManager.StartLogStreamingOnActivation(sessionID, tailConfigMap)
@@ -608,7 +605,7 @@ func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID strin
 	}
 }
 
-// handleLogError handles LOG_ERROR message (matching Java: handleLogError())
+// handleLogError handles LOG_ERROR message
 func (h *LogSessionWebSocketHandler) handleLogError(data []byte) {
 	if data != nil {
 		errorMsg := string(data)
@@ -616,7 +613,7 @@ func (h *LogSessionWebSocketHandler) handleLogError(data []byte) {
 	}
 }
 
-// SetLogSessionManager sets the LogSessionManager reference (matching Java: setLogSessionManager())
+// SetLogSessionManager sets the LogSessionManager reference
 func (h *LogSessionWebSocketHandler) SetLogSessionManager(lsm *LogSessionManager) {
 	h.logSessionManager = lsm
 }
@@ -679,7 +676,7 @@ func (h *LogSessionWebSocketHandler) IsActive() bool {
 	return h.isActive.Load()
 }
 
-// handleClose handles WebSocket close (matching Java: handleClose())
+// handleClose handles WebSocket close
 func (h *LogSessionWebSocketHandler) handleClose() {
 	if !h.isConnected.Load() {
 		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Already disconnected for session: %s", h.sessionID))

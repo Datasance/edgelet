@@ -5,7 +5,7 @@ import (
 	"unicode/utf8"
 )
 
-// CopyOfRange copies a range of bytes from src, similar to Java Arrays.copyOfRange
+// CopyOfRange copies a range of bytes from src
 func CopyOfRange(src []byte, from, to int) []byte {
 	if from < 0 || from >= len(src) || to < from || to > len(src) {
 		return []byte{}

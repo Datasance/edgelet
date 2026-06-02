@@ -106,9 +106,9 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 		return err
 	}
 
-	// Stream logs in a goroutine (matching Java: async execution)
+	// Stream logs in a goroutine
 	go func() {
-		// Close logsReader when goroutine exits (matching Java: reader is closed when callback completes)
+		// Close logsReader when goroutine exits
 		defer func() {
 			if logsReader != nil {
 				if err := logsReader.Close(); err != nil {

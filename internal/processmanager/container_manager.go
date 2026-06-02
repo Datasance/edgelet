@@ -180,7 +180,7 @@ func (cm *ContainerManager) UpdateContainer(ctx context.Context, ms *models.Micr
 
 	// Step 2: Now stop and remove old container (releases ports)
 	// Downtime starts here, but it's brief compared to pull time
-	// removeImage=withCleanup: matches Java ContainerManager behavior (image deleted on clean update)
+	// removeImage=withCleanup: image deleted on clean update
 	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
 		Event:   runtimeops.EventContainerUpdatePhase,
 		MsUUID:  ms.MicroserviceUUID,
@@ -210,8 +210,8 @@ func (cm *ContainerManager) UpdateContainer(ctx context.Context, ms *models.Micr
 // RemoveContainerByMicroserviceUUID removes a container by microservice UUID.
 // withCleanup controls Docker named-volume removal (passed to engine.RemoveContainer).
 // removeImage controls whether the container image is also removed after container deletion —
-// set true for normal lifecycle deletions (matching Java ContainerManager behavior),
-// false for the deprovision path (matching Java ProcessManager private method behavior).
+// set true for normal lifecycle deletions,
+// false for the deprovision path.
 func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(ctx context.Context, microserviceUUID string, withCleanup bool, removeImage bool) error {
 	container, err := cm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
@@ -649,12 +649,12 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 	})
 
 	cfg := config.GetInstance()
-	// Get host IP from network interface manager (matches Java: getCurrentIpAddress).
+	// Get host IP from network interface manager
 	// Used for iofog and service.local extra hosts so containers can reach the host/agent.
 	networkManager := network.GetInstance()
 	hostIP := networkManager.GetCurrentIPAddress()
 	if hostIP == "" {
-		// Retry like Java ContainerManager.retryHostName
+		// Retry
 		for tries := 0; tries < 5 && hostIP == ""; tries++ {
 			time.Sleep(500 * time.Millisecond)
 			hostIP = networkManager.GetCurrentIPAddress()
@@ -761,7 +761,7 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 		Message:     "container started",
 	})
 
-	// Clear rebuild flag after successful creation (matches Java ContainerManager.setRebuild(false))
+	// Clear rebuild flag after successful creation
 	ms.Rebuild = false
 
 	// Set status to RUNNING via status reporter

@@ -85,7 +85,6 @@ type ContainerEngine interface {
 	// DeleteImage removes an image by its ID or name:tag reference.
 	DeleteImage(ctx context.Context, nameOrID string) error
 	// PruneDangling removes only untagged images not referenced by any container.
-	// Matches Java DockerPruningManager.pruneAgent() / docker system prune (dangling only).
 	PruneDangling(ctx context.Context) (*ImagePruneReport, error)
 	// PruneContainers removes stopped/orphaned containers that are safe to delete.
 	PruneContainers(ctx context.Context) (*ContainerPruneReport, error)

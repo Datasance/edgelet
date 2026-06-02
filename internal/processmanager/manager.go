@@ -349,7 +349,7 @@ func (pm *ProcessManager) StopRunningMicroservicesWithScope(iofogUUID string, wi
 	}
 
 	// Stop (and optionally remove) each matching container.
-	// removeImage=false: deprovision path matches Java ProcessManager private method (no image removal).
+	// removeImage=false: deprovision path (no image removal).
 	for _, msUUID := range runningMicroserviceUuids {
 		if withCleanup {
 			if err := pm.containerManager.RemoveContainerByMicroserviceUUID(pm.operationContext(msUUID), msUUID, true, false); err != nil {
@@ -385,17 +385,17 @@ func (pm *ProcessManager) GetLatestMicroservices() []*models.Microservice {
 }
 
 // Update notifies the ProcessManager of changes
-// Matches Java: ProcessManager.update() - updates registries and notifies monitor thread
+// updates registries and notifies monitor thread
 func (pm *ProcessManager) Update() {
 	pm.logger.Debug("updates registries list according to the last changes")
 
-	// Update registries status (matching Java: updateRegistriesStatus())
+	// Update registries status
 	// Remove registries that no longer exist
 	if pm.microserviceManager != nil {
 		status := statusreporter.GetInstance().GetProcessManagerStatus()
 		if status != nil && status.RegistriesStatus != nil {
 			// Filter out registries that don't exist in microservice manager
-			// This is a simplified version - in Java it uses entrySet().removeIf()
+			// This is a simplified version
 			pm.logger.Debug("Updated registries status")
 		}
 	}
@@ -414,7 +414,7 @@ func (pm *ProcessManager) notifyMonitorThread() {
 }
 
 // containersMonitor monitors containers and handles lifecycle
-// Matches Java: containersMonitor Runnable - uses wait/notify pattern
+// uses wait/notify pattern
 func (pm *ProcessManager) containersMonitor() {
 	defer pm.wg.Done()
 	defer func() {
@@ -875,7 +875,7 @@ func (pm *ProcessManager) checkTasks() {
 			} else {
 				pm.emitTaskFailed(task, err)
 				pm.logger.Errorf("Task %s for microservice %s failed after %d retries, giving up", task.Action, task.MicroserviceUUID, task.Retries)
-				// Set FAILED status and error message so controller receives it (matches Java ProcessManager.retryTask)
+				// Set FAILED status and error message so controller receives it
 				statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
 					s.SetMicroservicesState(task.MicroserviceUUID, models.MicroserviceStateFailed)
 					errMsg := fmt.Sprintf("Container %s %s operation failed after 5 attempts: %v", task.MicroserviceUUID, task.Action, err)
@@ -989,7 +989,7 @@ func (pm *ProcessManager) executeTask(task *ContainerTask) error {
 	case TaskActionRemove:
 		err = pm.containerManager.RemoveContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID, false, false)
 	case TaskActionRemoveWithCleanup:
-		// removeImage=true: matches Java ContainerManager behavior for clean removal
+		// removeImage=true: clean removal
 		err = pm.containerManager.RemoveContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID, true, true)
 	case TaskActionStop:
 		err = pm.containerManager.StopContainerByMicroserviceUUID(opCtx, task.MicroserviceUUID)
@@ -1060,7 +1060,7 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 	pm.logger.Debug("Start handle latest microservices")
 
 	latestMicroservices := pm.microserviceManager.GetLatestMicroservices()
-	// Sort by schedule ascending — matches Java: Comparator.comparingInt(Microservice::getSchedule)
+	// Sort by schedule ascending
 	sort.Slice(latestMicroservices, func(i, j int) bool {
 		return latestMicroservices[i].Schedule < latestMicroservices[j].Schedule
 	})
@@ -1111,7 +1111,7 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 					continue
 				}
 			}
-			// If status is FAILED and Rebuild not requested, skip — do not re-add (matches Java behavior)
+			// If status is FAILED and Rebuild not requested, skip — do not re-add
 			if pmStatus := statusreporter.GetInstance().GetProcessManagerStatus(); pmStatus != nil {
 				if st := pmStatus.GetMicroserviceStatus(ms.MicroserviceUUID); st != nil &&
 					st.Status == models.MicroserviceStateFailed && !ms.Rebuild {
@@ -1221,7 +1221,7 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 		}
 
 		// Detect containers stuck in exit/creation loops and mark them accordingly.
-		// Prefer existing error message from engine (e.g. Docker) when available; use static fallback otherwise (matching Java DockerUtil.getMicroserviceStatus).
+		// Prefer existing error message from engine (e.g. Docker) when available; use static fallback otherwise
 		if status.Status == models.MicroserviceStateExiting {
 			if checker.IsStuck(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
@@ -1357,7 +1357,7 @@ func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, cont
 }
 
 // stuckInRestartErrorMessage returns the existing error message from the status reporter
-// when available (e.g. from Docker/engine), otherwise the static fallback (matching Java DockerUtil.getMicroserviceStatus).
+// when available (e.g. from Docker/engine), otherwise the static fallback
 func stuckInRestartErrorMessage(microserviceUUID, fallback string) string {
 	existing := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus(microserviceUUID)
 	if existing != nil && existing.ErrorMessage != nil && *existing.ErrorMessage != "" {
@@ -2092,7 +2092,7 @@ func (h *collectLogTailHandler) OnError(_ string, err error) {
 // CreateExecSession creates and starts an exec session for a microservice.
 // It calls engine.CreateExecSession to register the exec spec, then
 // engine.StartExecSession to attach the callback's I/O pipes and launch the process.
-// This matches the Java agent's two-phase: createExecSession + startExecSession.
+// This two-phase: createExecSession + startExecSession.
 func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []string, callback ExecSessionCallbackInterface) (string, error) {
 	pm.logger.Infof("Creating exec session for microservice: %s", microserviceUUID)
 

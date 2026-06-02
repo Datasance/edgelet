@@ -111,7 +111,6 @@ func newExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSock
 	handler.isActive.Store(false)
 
 	// Load controller certificate only if using WSS (secure WebSocket)
-	// Matching Java: only load cert if controllerWsUrl.startsWith("wss")
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
 		if cfg.ControllerCert != "" {
 			cert, err := auth.LoadCertificateFromBase64(cfg.ControllerCert)
@@ -147,7 +146,7 @@ func convertToWebSocketURL(httpURL string) string {
 func (h *ExecSessionWebSocketHandler) Connect() error {
 	h.connMu.Lock()
 
-	// Idempotency check: if already connected or connecting, do nothing (matching Java)
+	// Idempotency check: if already connected or connecting, do nothing
 	if h.isConnected.Load() {
 		h.connMu.Unlock()
 		logging.LogDebug(execWebSocketModuleName, "Connection already established, skipping Connect")
@@ -187,7 +186,6 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 		}
 
 		// Add certificate to TLS config only if using WSS and certificate is available
-		// Matching Java: only add SSL handler if controllerWsUrl.startsWith("wss") && sslContext != null
 		if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
 			certPool := x509.NewCertPool()
 			certPool.AddCert(h.controllerCert)
@@ -230,7 +228,7 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 
 	// Lock is released here, proceeding with post-connection setup
 
-	// Transition to PENDING state after handshake (matching Java line 320: CONNECTING -> PENDING)
+	// Transition to PENDING state after handshake
 	// PENDING means connected but waiting for user activation
 	if h.transitionState(StateConnecting, StatePending) {
 		logging.LogInfo(execWebSocketModuleName, "Connection is now pending user activation")
@@ -242,7 +240,7 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 	go h.pingWorker()
 	go h.readWorker()
 
-	// Send initial message (matching Java line 323: sendInitialMessage() after transition to PENDING)
+	// Send initial message
 	// Send immediately - execId should already be stored before Connect() is called
 	// Safe to call now as we released the lock
 	h.sendInitialMessage()
@@ -269,7 +267,7 @@ func (h *ExecSessionWebSocketHandler) sendInitialMessage() {
 		return
 	}
 
-	// Get execId from FieldAgent (matching Java line 205)
+	// Get execId from FieldAgent
 	fa := GetInstance()
 	execID := fa.GetActiveExecSession(h.microserviceUUID)
 	if execID == "" {
@@ -577,7 +575,7 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 	}
 }
 
-// handleMessage processes incoming messages (matching Java: handleMessage())
+// handleMessage processes incoming messages
 func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Received binary message: length=%d", len(data)))
 
@@ -597,7 +595,7 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 	var msgMicroserviceUUID string
 	var msgExecID string
 
-	// Decode all fields (matching Java: reads all key-value pairs)
+	// Decode all fields
 	for i := 0; i < mapLen; i++ {
 		key, err := dec.DecodeString()
 		if err != nil {
@@ -655,7 +653,7 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Successfully unpacked message: type=%d, execId=%s, microserviceUuid=%s",
 		msgType, msgExecID, msgMicroserviceUUID))
 
-	// Handle message based on type (matching Java: handleMessage() switch)
+	// Handle message based on type
 	switch msgType {
 	case ExecTypeStdin:
 		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Handling STDIN message: length=%d", len(msgData)))
@@ -674,7 +672,7 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 	}
 }
 
-// handleStdin handles STDIN messages (matching Java: handleStdin())
+// handleStdin handles STDIN messages
 func (h *ExecSessionWebSocketHandler) handleStdin(data []byte) {
 	if data == nil {
 		return
@@ -693,7 +691,7 @@ func (h *ExecSessionWebSocketHandler) handleStdin(data []byte) {
 	}
 }
 
-// handleControl handles CONTROL messages (matching Java: handleControl())
+// handleControl handles CONTROL messages
 func (h *ExecSessionWebSocketHandler) handleControl(data []byte) {
 	if data == nil {
 		return
@@ -710,17 +708,17 @@ func (h *ExecSessionWebSocketHandler) handleControl(data []byte) {
 	}
 }
 
-// handleActivation handles ACTIVATION messages (matching Java: handleActivation())
+// handleActivation handles ACTIVATION messages
 func (h *ExecSessionWebSocketHandler) handleActivation(microserviceUUID, execID string) {
 	fa := GetInstance()
 	currentExecID := fa.GetActiveExecSession(microserviceUUID)
 
 	if currentExecID != "" && currentExecID == execID {
 		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received activation message for exec session: %s", execID))
-		// Transition from PENDING to ACTIVE (matching Java line 487)
+		// Transition from PENDING to ACTIVE
 		if h.transitionState(StatePending, StateActive) {
 			h.isActive.Store(true)
-			// Flush buffered output (matching Java line 490: flushBufferedOutput())
+			// Flush buffered output
 			go h.flushBuffer()
 		}
 	} else {
@@ -785,7 +783,7 @@ func (h *ExecSessionWebSocketHandler) IsActive() bool {
 	return h.isActive.Load()
 }
 
-// handleClose handles WebSocket close (matching Java: handleClose())
+// handleClose handles WebSocket close
 func (h *ExecSessionWebSocketHandler) handleClose() {
 	if !h.isConnected.Load() {
 		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Already disconnected for microservice: %s", h.microserviceUUID))
@@ -799,24 +797,24 @@ func (h *ExecSessionWebSocketHandler) handleClose() {
 	h.isActive.Store(false)
 	h.state.Store(StateDisconnected)
 
-	// Get current exec session ID before cleanup (matching Java line 576-579)
+	// Get current exec session ID before cleanup
 	fa := GetInstance()
 	execID := fa.GetActiveExecSession(h.microserviceUUID)
 	if execID != "" {
-		// Coordinate with FieldAgent for exec session cleanup (matching Java line 579)
+		// Coordinate with FieldAgent for exec session cleanup
 		if err := fa.HandleExecSessionClose(h.microserviceUUID, execID); err != nil {
 			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close exec session: %v", err))
 		}
 	}
 
-	// Check if there are other active exec sessions before cleanup (matching Java line 585-602)
+	// Check if there are other active exec sessions before cleanup
 	fa.execSessionsMu.RLock()
 	hasOtherActiveSessions := fa.activeExecSessions[h.microserviceUUID] != ""
 	fa.execSessionsMu.RUnlock()
 
 	if !hasOtherActiveSessions {
 		logging.LogDebug(execWebSocketModuleName, "No other active sessions found, proceeding with cleanup")
-		// Cleanup connection (matching Java: cleanup())
+		// Cleanup connection
 		h.Disconnect()
 	} else {
 		logging.LogInfo(execWebSocketModuleName, "Skipping cleanup due to other active sessions")

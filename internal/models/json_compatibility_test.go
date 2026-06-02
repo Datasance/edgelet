@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestJSONCompatibility tests that Go structs produce JSON compatible with Java output
+// TestJSONCompatibility tests that Go structs produce JSON compatible with output
 func TestJSONCompatibility(t *testing.T) {
 	t.Run("Microservice JSON field names", func(t *testing.T) {
 		ms := NewMicroservice("test-uuid", "test-image")
@@ -22,7 +22,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
 
-		// Verify field names match Java (camelCase)
+		// Verify field names match (camelCase)
 		if _, ok := result["microserviceUuid"]; !ok {
 			t.Error("Missing field: microserviceUuid")
 		}
@@ -60,7 +60,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
 
-		// Verify field names match Java (lowercase)
+		// Verify field names match (lowercase)
 		if _, ok := result["groupid"]; !ok {
 			t.Error("Missing field: groupid")
 		}

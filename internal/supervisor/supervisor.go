@@ -268,7 +268,7 @@ func (s *Supervisor) Start() error {
 
 	// Start Pruning Manager — inject engine so non-Docker engines (iofog/containerd) are pruned correctly.
 	// Also wire in the microservice image callback so scheduled/threshold pruning protects
-	// ALL configured microservice images (matching Java DockerPruningManager behavior).
+	// ALL configured microservice images.
 	s.dockerPruningManager = pruning.GetInstance()
 	pm := s.processManager
 	s.dockerPruningManager.SetGetMicroservicesCallback(func() []string {
@@ -578,7 +578,6 @@ func (s *Supervisor) monitorLocalAPI() {
 			logging.LogDebug(moduleName, "Check local API status")
 			// Edgelet API runs in a goroutine, so we can't easily check if it's dead
 			// In Go, if the server crashes, it will be logged but we can't restart it
-			// This is different from Java where we could check thread state
 			// For now, we just log that we're checking
 			logging.LogDebug(moduleName, "Finished checking local API status")
 		}
@@ -692,7 +691,7 @@ func (s *Supervisor) ReloadConfig() error {
 func (s *Supervisor) reloadHotConfig() error {
 	logging.LogInfo(moduleName, "Start updating agent configurations")
 
-	// Notify all modules in the same order as Java
+	// Notify all modules in the same order
 	if s.fieldAgent != nil {
 		if err := s.fieldAgent.Update(); err != nil {
 			logging.LogError(moduleName, "Failed to update FieldAgent", err)

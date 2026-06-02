@@ -15,7 +15,6 @@ const (
 )
 
 // CreateExecSession creates an exec session in a container
-// This matches Java: createExecSession() method
 func (c *Client) CreateExecSession(containerID string, command []string) (string, error) {
 	logging.LogInfo(execModuleName, fmt.Sprintf("Creating exec session for container: %s, command: %v", containerID, command))
 
@@ -49,7 +48,6 @@ func (c *Client) CreateExecSession(containerID string, command []string) (string
 }
 
 // StartExecSession starts an exec session with I/O handling
-// This matches Java: startExecSession() method
 func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	logging.LogInfo(execModuleName, fmt.Sprintf("Starting exec session: %s", execID))
 
@@ -113,7 +111,6 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 }
 
 // GetExecSessionStatus gets the status of an exec session
-// This matches Java: getExecSessionStatus() method
 func (c *Client) GetExecSessionStatus(execID string) (*types.ContainerExecInspect, error) {
 	logging.LogDebug(execModuleName, fmt.Sprintf("Getting exec session status: %s", execID))
 
@@ -159,7 +156,6 @@ func (c *Client) ResizeExecSession(execID string, cols, rows uint32) error {
 }
 
 // KillExecSession kills an exec session
-// This matches Java: killExecSession() method
 func (c *Client) KillExecSession(execID string) error {
 	logging.LogInfo(execModuleName, fmt.Sprintf("Killing exec session: %s", execID))
 

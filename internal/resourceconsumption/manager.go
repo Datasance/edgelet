@@ -193,22 +193,13 @@ func (rcm *Manager) getUsageDataWorker() {
 }
 
 // getMemoryUsage gets the memory usage of the ioFog process in bytes
-// Matches Java: Runtime.totalMemory() - Runtime.freeMemory()
 func (rcm *Manager) getMemoryUsage() int64 {
 	logging.LogDebug(moduleName, "Start get memory usage")
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	// Java: allocatedMemory - freeMemory = used memory
 	// Go equivalent: Sys (total memory obtained from OS) - HeapIdle (free heap memory)
 	// But more accurate: Alloc (allocated heap) + (Sys - HeapSys) (non-heap memory)
-	// Simplest match to Java: totalMemory - freeMemory
-	// In Go: Sys (total memory from OS) - HeapIdle (free heap) gives us used memory
-	// However, Java's totalMemory is heap size, not total OS memory
-	// So we use: Alloc (allocated heap) which is closer to Java's (totalMemory - freeMemory)
-	// Actually, Java's totalMemory is the heap size, and freeMemory is free heap
-	// So used = totalMemory - freeMemory = heap used
-	// In Go, Alloc is the heap used, which matches
 	memoryUsage := int64(m.Alloc) // #nosec G115 -- Alloc is heap bytes; practical values fit in int64
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished get memory usage: %d bytes (Alloc=%d, Sys=%d, HeapSys=%d, HeapIdle=%d)",
@@ -287,7 +278,7 @@ func (rcm *Manager) getTotalCPU() float64 {
 	return totalCPU
 }
 
-// getTotalCPULinux reads /proc/stat to calculate total CPU usage (matching Java)
+// getTotalCPULinux reads /proc/stat to calculate total CPU usage
 func (rcm *Manager) getTotalCPULinux() float64 {
 	// Read /proc/stat
 	statFile := "/proc/stat"

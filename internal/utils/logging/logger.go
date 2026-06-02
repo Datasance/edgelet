@@ -91,7 +91,7 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 	logger.logWriter = logFile
 
 	// Set log level (logrus expects lowercase, but config stores uppercase)
-	// Convert to lowercase before parsing (matching Java: Level.parse(logLevel))
+	// Convert to lowercase before parsing
 	level, err := logrus.ParseLevel(strings.ToLower(logLevel))
 	if err != nil {
 		// Default to InfoLevel if parsing fails
@@ -168,7 +168,7 @@ func (l *LogrusLogger) LogWithFields(level, moduleName, msg string, fields map[s
 func (l *LogrusLogger) SetLevel(level string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	// Convert to lowercase before parsing (matching Java: Level.parse(logLevel))
+	// Convert to lowercase before parsing
 	if parsedLevel, err := logrus.ParseLevel(strings.ToLower(level)); err == nil {
 		l.logger.SetLevel(parsedLevel)
 	}
@@ -182,7 +182,7 @@ func (l *LogrusLogger) GetLevel() logrus.Level {
 }
 
 // UpdateLoggerConfig updates logger configuration without recreating the writer
-// This prevents log rotation on config reloads (matching Java: reuses existing FileHandler)
+// This prevents log rotation on config reloads
 func UpdateLoggerConfig(_ string, _ int, _ int, logLevel string) error {
 	logger := GetInstance()
 	logger.mu.Lock()
@@ -208,7 +208,7 @@ func UpdateLoggerConfig(_ string, _ int, _ int, logLevel string) error {
 }
 
 // InstanceConfigUpdated updates the logger with updated configuration
-// Matching Java: LoggingService.instanceConfigUpdated() which reuses existing FileHandler
+// which reuses existing FileHandler
 func InstanceConfigUpdated(logDir string, maxFileSizeMB int, logFileCount int, logLevel string) error {
 	// Use UpdateLoggerConfig instead of SetupLogger to prevent rotation on config reload
 	return UpdateLoggerConfig(logDir, maxFileSizeMB, logFileCount, logLevel)

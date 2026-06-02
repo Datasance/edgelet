@@ -1006,7 +1006,7 @@ func (e *Engine) DeleteImage(_ context.Context, nameOrID string) error {
 }
 
 // PruneDangling removes images with no active containers referencing them and no tags,
-// matching Java's pruneAgent() / docker system prune --filter dangling=true semantics.
+// docker system prune --filter dangling=true semantics.
 func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, error) {
 	pruneStart := time.Now()
 	ctx := e.ctx()

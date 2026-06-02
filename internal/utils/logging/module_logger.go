@@ -51,7 +51,7 @@ func SetupMicroserviceLogger(microserviceUUID string, logDir string, maxFileSize
 		maxFileSize = 1024 * 1024 // Minimum 1MB
 	}
 
-	// Setup file rotation (matching Java behavior: {uuid}.0.log as active)
+	// Setup file rotation
 	// Rotate on existing files for initial setup (similar to main logger)
 	logFile, err := NewRotatingWriter(logDir, microserviceUUID, int64(maxFileSize), logFileCount, true)
 	if err != nil {

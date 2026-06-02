@@ -142,7 +142,7 @@ type LoadedImage struct {
 }
 
 // readPullProgress parses Docker's newline-delimited JSON pull stream and reports
-// per-layer progress. Uses the same formula as Java: sum(layer_pcts)/(count-1).
+// per-layer progress.
 func readPullProgress(reader io.Reader, callback func(float32)) error {
 	dec := json.NewDecoder(reader)
 	layerPct := make(map[string]int)
@@ -223,7 +223,6 @@ func (c *Client) GetImages() ([]image.Summary, error) {
 }
 
 // DockerPrune prunes Docker images (removes unused images)
-// This matches Java: dockerPrune()
 func (c *Client) DockerPrune() (image.PruneReport, error) {
 	cli := c.GetClient()
 	if cli == nil {

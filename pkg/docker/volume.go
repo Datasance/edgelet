@@ -13,7 +13,6 @@ import (
 )
 
 // ResolveVolumeMountPath resolves volume mount paths for VOLUME_MOUNT type
-// This matches Java logic: resolveVolumeMountPath()
 func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.VolumeMappingType, microserviceUUID string) (string, error) {
 	// Handle VOLUME_MOUNT type
 	if volumeMappingType == models.VolumeMappingTypeVolumeMount {
@@ -39,14 +38,13 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		}
 
 		// Prepare per-microservice mount point (creates directory structure and symlinks)
-		// Matching Java: prepareMicroserviceVolumeMount()
 		mountPath := volumeMountManager.PrepareMicroserviceVolumeMount(microserviceUUID, volumeName, volumeMountType)
 
 		// If key is specified, append it to mount path to point to specific file
 		// Then resolve the symlink to get the actual file path (Docker bind mounts need real paths)
 		if keyName != "" {
 			keyPath := filepath.Join(mountPath, keyName)
-			// Resolve symlink to get actual file path (matching Java behavior)
+			// Resolve symlink to get actual file path
 			// When mounting a specific file, Docker needs the resolved path, not the symlink
 			// This is critical for container bind mounts to work correctly
 			resolvedPath, err := filepath.EvalSymlinks(keyPath)

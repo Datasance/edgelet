@@ -57,14 +57,14 @@ func GetInstance() *Manager {
 func (m *Manager) Start() error {
 	logging.LogInfo(moduleName, "Start IoFog NetworkInterface")
 
-	// Initial update (matching Java: try to update, restart on error)
+	// Initial update
 	if err := m.UpdateNetworkInterface(); err != nil {
 		logging.LogError(moduleName, "Error in updating IOFogNetworkInterface", err)
-		// Retry on error (matching Java behavior)
+		// Retry on error
 		return m.Start()
 	}
 
-	// Start periodic updates (every 30 minutes, matching Java)
+	// Start periodic updates (every 30 minutes)
 	go m.periodicUpdate()
 
 	logging.LogInfo(moduleName, "Started IoFog NetworkInterface")
@@ -80,7 +80,7 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-// periodicUpdate periodically updates network interface information (every 30 minutes, matching Java)
+// periodicUpdate periodically updates network interface information (every 30 minutes)
 func (m *Manager) periodicUpdate() {
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
@@ -92,7 +92,7 @@ func (m *Manager) periodicUpdate() {
 		case <-ticker.C:
 			if err := m.UpdateNetworkInterface(); err != nil {
 				logging.LogError(moduleName, "Error updating network interface", err)
-				// Restart the periodic update on error (matching Java behavior)
+				// Restart the periodic update on error
 				go m.periodicUpdate()
 				return
 			}
@@ -134,7 +134,7 @@ func (m *Manager) UpdateNetworkInterface() error {
 		}
 	}
 
-	// Store IP address in memory only (matching Java: IOFogNetworkInterfaceManager.currentIpAddress)
+	// Store IP address in memory only
 	// Note: IP address is NOT saved to config file - it's only stored in memory
 	if m.currentIPAddress != "" {
 		logging.LogDebug(moduleName, fmt.Sprintf("Updated network interface IP address in memory: %s", m.currentIPAddress))
@@ -220,7 +220,6 @@ func (m *Manager) getAnyIPv4Address() (string, error) {
 }
 
 // getNetworkInterface gets the network interface based on controller URL
-// Matches Java IOFogNetworkInterface.getNetworkInterface() and getOSNetworkInterface()
 func (m *Manager) getNetworkInterface() (*NetworkInterfaceInfo, error) {
 	return m.resolveNetworkInterface(m.config.ControllerURL, m.config.NetworkInterface)
 }
@@ -270,15 +269,14 @@ func (m *Manager) resolveNetworkInterface(controllerURL, networkInterfaceConfig 
 	}
 	normalizedInterface := strings.TrimSpace(networkInterfaceConfig)
 	if normalizedInterface != "" && !strings.EqualFold(normalizedInterface, "dynamic") {
-		// Use specific network interface (matching Java: NetworkInterface.getByName())
+		// Use specific network interface
 		return m.getSpecificNetworkInterface(normalizedInterface, controllerURL)
 	}
-	// Use dynamic detection (matching Java: getOSNetworkInterface())
+	// Use dynamic detection
 	return m.getOSNetworkInterface(controllerURL)
 }
 
 // getSpecificNetworkInterface gets a specific network interface by name
-// Matches Java: NetworkInterface.getByName(configNetworkInterface)
 func (m *Manager) getSpecificNetworkInterface(interfaceName, controllerURL string) (*NetworkInterfaceInfo, error) {
 	// Parse controller URL
 	parsedURL, err := url.Parse(controllerURL)
@@ -314,7 +312,6 @@ func (m *Manager) getSpecificNetworkInterface(interfaceName, controllerURL strin
 }
 
 // getOSNetworkInterface gets the OS network interface (dynamic detection)
-// Matches Java: getOSNetworkInterface()
 func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterfaceInfo, error) {
 	// Parse controller URL properly
 	parsedURL, err := url.Parse(controllerURL)
@@ -354,7 +351,7 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 	var cniBridgeInterface *net.Interface
 
 	// First pass: find interfaces that can connect to controller.
-	// Skip the container bridge on first pass (matching Java logic).
+	// Skip the container bridge on first pass
 	for _, iface := range interfaces {
 		if cniBridgeInterfaceName != "" && iface.Name == cniBridgeInterfaceName {
 			cniBridgeInterface = &iface
@@ -390,7 +387,6 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 }
 
 // getConnectedAddress checks if a network interface can connect to the controller
-// Matches Java IOFogNetworkInterface.getConnectedAddress()
 func (m *Manager) getConnectedAddress(_ *url.URL, controllerHost, controllerPort string, networkInterface *net.Interface, checkConnection bool) *NetworkInterfaceInfo {
 	addrs, err := networkInterface.Addrs()
 	if err != nil {
@@ -425,7 +421,7 @@ func (m *Manager) getConnectedAddress(_ *url.URL, controllerHost, controllerPort
 			}
 		}
 
-		// Test connection to controller (matching Java: Socket.connect with 1 second timeout)
+		// Test connection to controller
 		if m.testConnection(ip, controllerHost, controllerPort) {
 			return &NetworkInterfaceInfo{
 				Interface: networkInterface,
@@ -438,7 +434,6 @@ func (m *Manager) getConnectedAddress(_ *url.URL, controllerHost, controllerPort
 }
 
 // testConnection tests if an IP can connect to the controller
-// Matches Java: Socket.bind() and Socket.connect() with 1 second timeout
 func (m *Manager) testConnection(localIP net.IP, controllerHost, controllerPort string) bool {
 	// Create a dialer bound to the local IP
 	dialer := &net.Dialer{

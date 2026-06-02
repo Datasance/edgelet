@@ -155,7 +155,7 @@ func (m *Message) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
-// ToJSON converts the message to a JSON object (for compatibility with Java)
+// ToJSON converts the message to a JSON object
 func (m *Message) ToJSON() (map[string]interface{}, error) {
 	data, err := m.MarshalJSON()
 	if err != nil {

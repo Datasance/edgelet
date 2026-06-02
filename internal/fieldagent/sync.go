@@ -101,10 +101,8 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 }
 
 // parseMicroservice parses a microservice from JSON data
-// Matches Java: containerJsonObjectToMicroserviceFunction() - uses "uuid" and "imageId" from JSON
 func parseMicroservice(data map[string]interface{}) (*models.Microservice, error) {
 	uuid, _ := data["uuid"].(string)
-	// Java uses "imageId" from JSON (not "imageName")
 	imageID, _ := data["imageId"].(string)
 
 	// Fallback to imageName for backward compatibility
@@ -116,7 +114,6 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		return nil, fmt.Errorf("missing required fields: uuid or imageId")
 	}
 
-	// Java: new Microservice(jsonObj.getString("uuid"), jsonObj.getString("imageId"))
 	// The imageID from JSON is stored as imageName in the Microservice object
 	microservice := models.NewMicroservice(uuid, imageID)
 
@@ -230,7 +227,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse env vars (matching Java: envVarsValue.getJsonArray("env"))
+	// Parse env vars
 	if envVars, ok := data["env"].([]interface{}); ok {
 		microservice.EnvVars = make([]*models.EnvVar, 0, len(envVars))
 		for _, env := range envVars {
@@ -260,13 +257,13 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse memory limit (matching Java: getJsonNumber("memoryLimit").longValue())
+	// Parse memory limit
 	if memoryLimit, ok := data["memoryLimit"].(float64); ok {
 		memoryLimitBytes := int64(memoryLimit)
 		microservice.MemoryLimit = &memoryLimitBytes
 	}
 
-	// Parse cdiDevices (matching Java: getStringList(cdiDevsValue))
+	// Parse cdiDevices
 	if cdiDevices, ok := data["cdiDevices"].([]interface{}); ok {
 		microservice.CdiDevs = make([]string, 0, len(cdiDevices))
 		for _, device := range cdiDevices {
@@ -276,12 +273,12 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse annotations (matching Java: jsonObj.getString("annotations"))
+	// Parse annotations
 	if annotations, ok := data["annotations"].(string); ok && annotations != "" {
 		microservice.Annotations = &annotations
 	}
 
-	// Parse capAdd (matching Java: getStringList(capAddValue))
+	// Parse capAdd
 	if capAdd, ok := data["capAdd"].([]interface{}); ok {
 		microservice.CapAdd = make([]string, 0, len(capAdd))
 		for _, cap := range capAdd {
@@ -291,7 +288,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse capDrop (matching Java: getStringList(capDropValue))
+	// Parse capDrop
 	if capDrop, ok := data["capDrop"].([]interface{}); ok {
 		microservice.CapDrop = make([]string, 0, len(capDrop))
 		for _, cap := range capDrop {
@@ -301,7 +298,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse extraHosts (matching Java: getStringList(extraHostsValue))
+	// Parse extraHosts
 	if extraHosts, ok := data["extraHosts"].([]interface{}); ok {
 		microservice.ExtraHosts = make([]string, 0, len(extraHosts))
 		for _, host := range extraHosts {
@@ -311,22 +308,22 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 		}
 	}
 
-	// Parse pidMode (matching Java: jsonObj.getString("pidMode"))
+	// Parse pidMode
 	if pidMode, ok := data["pidMode"].(string); ok && pidMode != "" {
 		microservice.PidMode = &pidMode
 	}
 
-	// Parse ipcMode (matching Java: jsonObj.getString("ipcMode"))
+	// Parse ipcMode
 	if ipcMode, ok := data["ipcMode"].(string); ok && ipcMode != "" {
 		microservice.IpcMode = &ipcMode
 	}
 
-	// Parse cpuSetCpus (matching Java: jsonObj.getString("cpuSetCpus"))
+	// Parse cpuSetCpus
 	if cpuSetCpus, ok := data["cpuSetCpus"].(string); ok && cpuSetCpus != "" {
 		microservice.CPUSetCpus = &cpuSetCpus
 	}
 
-	// Parse healthCheck (matching Java: healthcheckValue.getJsonObject("healthCheck"))
+	// Parse healthCheck
 	if healthCheck, ok := data["healthCheck"].(map[string]interface{}); ok {
 		healthcheck := &models.Healthcheck{}
 
@@ -340,7 +337,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 			}
 		}
 
-		// Parse numeric fields (can be null in Java)
+		// Parse numeric fields
 		if interval, ok := healthCheck["interval"].(float64); ok {
 			intervalVal := int64(interval)
 			healthcheck.Interval = &intervalVal
@@ -550,11 +547,10 @@ func (fa *FieldAgent) processMicroserviceConfig(microservices []*models.Microser
 }
 
 // loadVolumeMounts loads volume mounts from controller
-// Matches Java: loadVolumeMounts() - catches exceptions and continues
 func (fa *FieldAgent) loadVolumeMounts() error {
 	logging.LogDebug(moduleName, "Start loading volume mounts")
 
-	// Use defer/recover to catch any panics (matching Java try-catch behavior)
+	// Use defer/recover to catch any panics
 	defer func() {
 		if r := recover(); r != nil {
 			logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
@@ -566,7 +562,7 @@ func (fa *FieldAgent) loadVolumeMounts() error {
 
 	result, err := fa.apiClient.Request(ctx, "volumeMounts", GET, nil, nil)
 	if err != nil {
-		// Log error but don't fail startup (matching Java: catch Exception and log)
+		// Log error but don't fail startup
 		logging.LogError(moduleName, "Unable to process volume mount changes", err)
 		logging.LogDebug(moduleName, "Finished loading volume mounts (with error)")
 		return nil // Return nil to continue execution
