@@ -5,6 +5,7 @@
 # systemd.unified_cgroup_hierarchy=0). Requires test/embedded/lima-ubuntu-v1.yaml.
 #
 # Usage:
+#   limactl start --name=iofog-test-v1 test/embedded/lima-ubuntu-v1.yaml
 #   ./test/embedded/vm-test-cgroup-v1.sh [--vm-name=iofog-test-v1]
 
 set -euo pipefail

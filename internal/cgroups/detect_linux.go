@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && cgo
 
 package cgroups
 
@@ -130,34 +130,6 @@ func rootHasController(controller string) bool {
 	}
 }
 
-func runningUnderSystemdService() bool {
-	return os.Getenv("INVOCATION_ID") != ""
-}
-
-func pid1IsSystemd() bool {
-	if statSystemdRuntime() {
-		return true
-	}
-	comm, err := pid1CommFn()
-	if err != nil {
-		return false
-	}
-	return comm == "systemd"
-}
-
-func statSystemdRuntime() bool {
-	st, err := statFn("/run/systemd/system")
-	return err == nil && st.IsDir()
-}
-
-func readPID1Comm() (string, error) {
-	raw, err := readFileFn("/proc/1/comm")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(raw)), nil
-}
-
 func detectNested() bool {
 	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
 		if _, err := statFn(marker); err == nil {
@@ -208,6 +180,34 @@ func checkDelegatedControllers(mount string) []string {
 		}
 	}
 	return uniqueSorted(out)
+}
+
+func runningUnderSystemdService() bool {
+	return os.Getenv("INVOCATION_ID") != ""
+}
+
+func pid1IsSystemd() bool {
+	if statSystemdRuntime() {
+		return true
+	}
+	comm, err := pid1CommFn()
+	if err != nil {
+		return false
+	}
+	return comm == "systemd"
+}
+
+func statSystemdRuntime() bool {
+	st, err := statFn("/run/systemd/system")
+	return err == nil && st.IsDir()
+}
+
+func readPID1Comm() (string, error) {
+	raw, err := readFileFn("/proc/1/comm")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
 }
 
 func legacyControllers() []string {
@@ -294,30 +294,6 @@ func sortStrings(in []string) {
 			}
 		}
 	}
-}
-
-// ValidatePreflight checks delegation requirements before CRI starts.
-func ValidatePreflight(policy *CgroupPolicy) error {
-	if policy == nil {
-		return fmt.Errorf("cgroup policy is not initialized")
-	}
-	if cgv3.Mode() == cgv3.Legacy {
-		return nil
-	}
-	if policy.Driver == DriverSystemd {
-		return nil
-	}
-	if !policy.Nested {
-		return nil
-	}
-	delegated := delegatedSet(policy.DelegatedControllers)
-	for _, required := range []string{"cpu", "memory", "pids"} {
-		if delegated[required] {
-			continue
-		}
-		return &ErrDelegation{Controller: required, Nested: policy.Nested, Mode: policy.Mode}
-	}
-	return nil
 }
 
 // EnsureAgentSubtree creates the agent cgroup and moves the current process into it.
