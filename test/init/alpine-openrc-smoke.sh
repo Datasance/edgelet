@@ -72,8 +72,8 @@ run_remote "
 "
 
 run_remote "rc-service edgelet status" || true
-run_remote "rc-service edgelet stop"
-run_remote "rc-service edgelet start"
+run_remote "rc-service edgelet-containerd restart"
+run_remote "rc-service edgelet restart"
 run_remote "pgrep -f '[e]dgelet daemon'"
 
 log_success "T10-B Alpine openrc smoke passed"

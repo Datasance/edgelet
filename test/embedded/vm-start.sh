@@ -5,7 +5,7 @@
 # Waits until the VM is reachable via SSH before returning.
 #
 # Usage:
-#   ./test/embedded/vm-start.sh [--vm-name=iofog-test] [--timeout=300]
+#   ./test/embedded/vm-start.sh [--vm-name=iofog-test] [--timeout=300] [--lima-yaml=PATH]
 
 set -euo pipefail
 
@@ -14,15 +14,15 @@ source "${SCRIPT_DIR}/lib/log.sh"
 
 VM_NAME="iofog-test"
 TIMEOUT=300  # seconds to wait for VM readiness
+LIMA_YAML="${SCRIPT_DIR}/lima-ubuntu.yaml"
 
 for arg in "$@"; do
     case "${arg}" in
         --vm-name=*) VM_NAME="${arg#*=}" ;;
         --timeout=*) TIMEOUT="${arg#*=}" ;;
+        --lima-yaml=*) LIMA_YAML="${arg#*=}" ;;
     esac
 done
-
-LIMA_YAML="${SCRIPT_DIR}/lima-ubuntu.yaml"
 
 ###############################################################################
 # Check limactl
@@ -60,7 +60,13 @@ if [[ "${VM_STATUS}" == "Running" ]]; then
     log_info "VM '${VM_NAME}' is already running"
 else
     log_step "Starting VM '${VM_NAME}'..."
-    limactl start --timeout=1200s "${VM_NAME}"
+    if ! limactl start --timeout=1200s "${VM_NAME}"; then
+        # lima-ubuntu-v1.yaml reboots once for GRUB hybrid cgroup; first start may fail the probe.
+        log_warn "lima start failed — retrying (common after v1 GRUB reboot)..."
+        sleep 15
+        limactl start --timeout=1200s "${VM_NAME}" \
+            || die "Could not start VM '${VM_NAME}' (see ~/.lima/${VM_NAME}/ha.stderr.log)"
+    fi
 fi
 
 ###############################################################################

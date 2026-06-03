@@ -61,10 +61,22 @@ systemctl daemon-reload
 systemctl enable edgelet
 systemctl restart edgelet
 
-for i in $(seq 1 60); do
-    if edgelet system status 2>/dev/null | grep -q runtime.engineReady; then
-        break
-    fi
-    sleep 2
-done
+wait_edgelet_api_ready() {
+    local _timeout="${1:-180}" _elapsed=0
+    while (( _elapsed < _timeout )); do
+        if [[ -S /run/edgelet/edgelet.sock ]] \
+            && edgelet system status -o json 2>/dev/null \
+            | jq -e '.["runtime.engineReady"] == "true"' >/dev/null; then
+            return 0
+        fi
+        sleep 2
+        _elapsed=$(( _elapsed + 2 ))
+    done
+    echo "[vm-setup] edgelet API/runtime not ready after ${_timeout}s" >&2
+    systemctl status edgelet --no-pager 2>&1 || true
+    journalctl -u edgelet -n 40 --no-pager 2>&1 || true
+    return 1
+}
+
+wait_edgelet_api_ready 180
 echo "[vm-setup] edgelet started with containerEngine=${START_ENGINE}"

@@ -84,11 +84,16 @@ Do not use limactl create template:alpine — that image does not run OpenRC."
 fi
 log_ok "OpenRC supervisor active"
 
+# log_step "Ensuring bpf filesystem for crun (embedded runtime on minimal hosts)..."
+# limactl --tty=false shell "${VM_NAME}" -- sudo sh -c '
+#     mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
+#     mkdir -p /sys/fs/bpf/crun/k8s_io
+#     chmod 755 /sys/fs/bpf/crun /sys/fs/bpf/crun/k8s_io 2>/dev/null || true
+# '
+
 log_step "Ensuring bpf filesystem for crun (embedded runtime on minimal hosts)..."
 limactl --tty=false shell "${VM_NAME}" -- sudo sh -c '
     mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
-    mkdir -p /sys/fs/bpf/crun/k8s_io
-    chmod 755 /sys/fs/bpf/crun /sys/fs/bpf/crun/k8s_io 2>/dev/null || true
 '
 
 log_success "VM '${VM_NAME}' is ready for T10-B / T10-B+ (./test/init/alpine-openrc-smoke.sh)"

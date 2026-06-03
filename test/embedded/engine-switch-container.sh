@@ -5,6 +5,7 @@
 # docker restart, verify MS reconciles on host Docker.
 #
 # Usage:
+#   ./test/embedded/run-all-nested-docker.sh
 #   EDGELET_IMAGE=edgelet-linux:local ./test/embedded/engine-switch-container.sh
 #
 # Prerequisites: docker CLI, jq, locally built/pulled edgelet-linux image.

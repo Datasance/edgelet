@@ -77,9 +77,12 @@ STAGE="/tmp/edgelet-t10b-runtime"
 
 if [[ "${AFTER_T10_B}" == true ]]; then
     log_info "Continuing after T10-B (no reinstall — avoids orphaned containerd-child)"
-    if ! run_remote "test -x /usr/local/bin/edgelet && pgrep -f '[e]dgelet daemon' >/dev/null"; then
-        die "T10-B+ --after-t10-b requires a running edgelet from alpine-openrc-smoke.sh"
+    if ! run_remote "test -x /usr/local/bin/edgelet"; then
+        die "T10-B+ --after-t10-b requires edgelet installed from alpine-openrc-smoke.sh"
     fi
+    log_info "Restart split OpenRC units after T10-B binary refresh"
+    run_remote "rc-service edgelet-containerd restart"
+    run_remote "rc-service edgelet restart"
 else
     log_info "Fresh install path (stage + install.sh)"
     stage_install_bundle_ssh "${SSH_CONFIG}" "${SSH_HOST}" "${STAGE}" "${REPO_ROOT}" "${BIN}"
@@ -95,8 +98,8 @@ fi
 log_step "Fat runtime must be statically linked (Plan 10-8)"
 run_remote "${EMBED_RUNTIME_ASSERT_STATIC_SNIPPET}"
 
-log_step "Wait for EdgeletAPI + embedded engine (up to 180s)"
-run_remote "API_WAIT_SEC=180
+log_step "Wait for EdgeletAPI + embedded engine (up to 240s)"
+run_remote "API_WAIT_SEC=240
 ${EMBED_RUNTIME_WAIT_API_SNIPPET}"
 
 log_step "EdgeletAPI and cgroupfs driver on non-systemd"

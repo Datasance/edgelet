@@ -53,5 +53,5 @@ probes:
 
 message: |
   Lima VM ready for cgroup v1/hybrid embedded tests.
-  Install: ./test/embedded/vm-install.sh --vm-name=iofog-test-v1 --arch=arm64
-  Gate:    ./test/embedded/vm-test-cgroup-v1.sh --vm-name=iofog-test-v1
+  Suite:  ./test/embedded/run-all-cgroup-v1.sh
+  Gate:   ./test/embedded/vm-test-cgroup-v1.sh --vm-name=iofog-test-v1
