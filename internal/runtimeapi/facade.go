@@ -563,9 +563,19 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 		}
 	}
 
+	controlPlane, hasControlPlane := f.controlPlaneDeploymentRow()
+	controlPlaneUUID := ""
+	if hasControlPlane {
+		controlPlaneUUID = strings.TrimSpace(controlPlane.ControllerUUID)
+	}
+
 	suppressedManaged := 0
 	if pmStatus != nil {
 		for uuid, status := range pmStatus.MicroservicesStatus {
+			if controlPlaneUUID != "" && uuid == controlPlaneUUID {
+				suppressedManaged++
+				continue
+			}
 			if shouldSuppressManagedRuntimeEntry(uuid, status, msByUUID, localByUUID) {
 				suppressedManaged++
 				continue
@@ -616,6 +626,12 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 		result = append(result, entry)
 	}
 
+	if hasControlPlane {
+		if entry := controlPlaneRuntimeListEntry(controlPlane); entry != nil {
+			result = append(result, entry)
+		}
+	}
+
 	sort.Slice(result, func(i, j int) bool {
 		return result[i]["uuid"].(string) < result[j]["uuid"].(string)
 	})
@@ -628,21 +644,19 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 	if err != nil {
 		return nil, err
 	}
-	containerInspect := map[string]interface{}{}
-	if cont, contErr := processmanager.GetInstance().GetContainerForMicroservice(uuid); contErr == nil && cont != nil {
-		if rawInspect, rawErr := processmanager.GetInstance().InspectContainerRaw(cont.ID); rawErr == nil && rawInspect != nil {
-			containerInspect = rawInspect
-		} else {
-			containerInspect = map[string]interface{}{
-				"id":     cont.ID,
-				"names":  cont.Names,
-				"image":  cont.Image,
-				"status": cont.Status,
-				"state":  cont.State,
-				"labels": cont.Labels,
-			}
+	if item, ok := f.controlPlaneDeploymentRow(); ok && strings.TrimSpace(item.ControllerUUID) == uuid {
+		entry := controlPlaneRuntimeListEntry(item)
+		if entry == nil {
+			return nil, fmt.Errorf("control plane deployment not found")
 		}
+		entry["raw"] = map[string]interface{}{
+			"engineInspect":        f.engineInspectForMicroservice(uuid),
+			"engineType":           currentEngineName(f.cfg),
+			"inspectSchemaVersion": "v1",
+		}
+		return entry, nil
 	}
+	containerInspect := f.engineInspectForMicroservice(uuid)
 	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
 		state := strings.TrimSpace(local.RuntimeState)
 		if state == "" {
@@ -705,6 +719,23 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 			"inspectSchemaVersion": "v1",
 		},
 	}, nil
+}
+
+func (f *Facade) engineInspectForMicroservice(microserviceUUID string) map[string]interface{} {
+	if cont, contErr := processmanager.GetInstance().GetContainerForMicroservice(microserviceUUID); contErr == nil && cont != nil {
+		if rawInspect, rawErr := processmanager.GetInstance().InspectContainerRaw(cont.ID); rawErr == nil && rawInspect != nil {
+			return rawInspect
+		}
+		return map[string]interface{}{
+			"id":     cont.ID,
+			"names":  cont.Names,
+			"image":  cont.Image,
+			"status": cont.Status,
+			"state":  cont.State,
+			"labels": cont.Labels,
+		}
+	}
+	return map[string]interface{}{}
 }
 
 func currentEngineName(cfg *config.Config) string {
@@ -812,6 +843,9 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 	if local, err := f.db.GetLocalDeployedMicroservice(trimmed); err == nil && local != nil {
 		return trimmed, nil
 	}
+	if item, ok := f.controlPlaneDeploymentRow(); ok && strings.TrimSpace(item.ControllerUUID) == trimmed {
+		return trimmed, nil
+	}
 
 	if strings.Contains(trimmed, ".") {
 		parts := strings.SplitN(trimmed, ".", 2)
@@ -846,6 +880,17 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 				}
 				matchSet[uuid] = struct{}{}
 				matches = append(matches, uuid)
+			}
+		}
+		if item, ok := f.controlPlaneDeploymentRow(); ok {
+			if strings.EqualFold(strings.TrimSpace(item.Namespace), app) &&
+				strings.EqualFold(strings.TrimSpace(item.Name), name) {
+				uuid := strings.TrimSpace(item.ControllerUUID)
+				if uuid != "" {
+					if _, exists := matchSet[uuid]; !exists {
+						matches = append(matches, uuid)
+					}
+				}
 			}
 		}
 		switch len(matches) {
@@ -883,6 +928,9 @@ func (f *Facade) StartRuntimeMicroservice(selector string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := f.guardControlPlaneMicroserviceMutation(uuid, "start"); err != nil {
+		return "", err
+	}
 	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
 		local.DesiredState = "running"
 		local.RuntimeState = "starting"
@@ -912,6 +960,9 @@ func (f *Facade) StopRuntimeMicroservice(selector string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := f.guardControlPlaneMicroserviceMutation(uuid, "stop"); err != nil {
+		return "", err
+	}
 	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
 		local.DesiredState = "stopped"
 		local.RuntimeState = "stopping"
@@ -934,6 +985,9 @@ func (f *Facade) KillRuntimeMicroservice(selector string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := f.guardControlPlaneMicroserviceMutation(uuid, "kill"); err != nil {
+		return "", err
+	}
 	if err := processmanager.GetInstance().KillMicroservice(uuid); err != nil {
 		return "", err
 	}
@@ -943,6 +997,9 @@ func (f *Facade) KillRuntimeMicroservice(selector string) (string, error) {
 func (f *Facade) RestartRuntimeMicroservice(selector string) (string, error) {
 	uuid, err := f.ResolveMicroserviceID(selector)
 	if err != nil {
+		return "", err
+	}
+	if err := f.guardControlPlaneMicroserviceMutation(uuid, "restart"); err != nil {
 		return "", err
 	}
 	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
@@ -973,6 +1030,9 @@ func (f *Facade) RestartRuntimeMicroservice(selector string) (string, error) {
 func (f *Facade) RemoveRuntimeMicroservice(selector string) (string, error) {
 	uuid, err := f.ResolveMicroserviceID(selector)
 	if err != nil {
+		return "", err
+	}
+	if err := f.guardControlPlaneMicroserviceMutation(uuid, "rm"); err != nil {
 		return "", err
 	}
 	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
