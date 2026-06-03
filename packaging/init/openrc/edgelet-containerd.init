@@ -1,21 +1,36 @@
 #!/sbin/openrc-run
 
-# Edgelet embedded containerd (data plane) — stub for Plan 11 workload continuity.
+# Edgelet embedded containerd (data plane) — Plan 11 workload continuity
 name="edgelet-containerd"
 description="Edgelet embedded containerd (data plane)"
+command="/usr/local/bin/edgelet"
+command_args="runtime-bootstrap"
+command_background=true
+command_user="root"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/edgelet/containerd.log"
+error_log="/var/log/edgelet/containerd.log"
 
 depend() {
     need net
     before edgelet
 }
 
-start() {
-    ebegin "Starting ${RC_SVCNAME} (stub)"
-    # Plan 11: edgelet runtime-bootstrap
-    eend 0
+start_pre() {
+    # C3: light preflight only; primary cgroup bootstrap is in runtime-bootstrap (C1).
+    /usr/local/bin/edgelet cgroup-preflight || return $?
 }
 
 stop() {
-    ebegin "Stopping ${RC_SVCNAME} (stub)"
+    ebegin "Stopping ${RC_SVCNAME}"
+    if [ -f "${pidfile}" ]; then
+        _pid=$(cat "${pidfile}" 2>/dev/null || true)
+        if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
+            kill -TERM "${_pid}" 2>/dev/null || true
+            sleep 2
+            kill -KILL "${_pid}" 2>/dev/null || true
+        fi
+    fi
+    rm -f "${pidfile}" 2>/dev/null || true
     eend 0
 }

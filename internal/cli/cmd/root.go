@@ -28,7 +28,11 @@ func ShouldRunCLI(args []string) bool {
 	if len(args) <= 1 {
 		return true
 	}
-	return args[1] != "daemon"
+	switch args[1] {
+	case "daemon", "runtime-bootstrap":
+		return false
+	}
+	return true
 }
 
 // Execute runs the Cobra command tree and returns a process exit code.

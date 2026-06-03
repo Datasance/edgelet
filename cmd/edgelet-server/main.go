@@ -25,8 +25,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "runtime-bootstrap" {
+		runRuntimeBootstrap()
+		os.Exit(0)
+	}
+
 	if len(os.Args) > 1 && os.Args[1] != "daemon" {
-		fmt.Fprintf(os.Stderr, "fat runtime only supports `edgelet daemon` and --edgelet-containerd-child\n")
+		fmt.Fprintf(os.Stderr, "fat runtime only supports `edgelet daemon`, `edgelet runtime-bootstrap`, and --edgelet-containerd-child\n")
 		os.Exit(1)
 	}
 

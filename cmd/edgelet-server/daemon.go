@@ -54,24 +54,42 @@ func runDaemon() {
 
 	cfg := config.GetInstance()
 
+	runtimeSplit := os.Getenv("EDGELET_RUNTIME_SPLIT") == "1"
+
 	var prestarted *edgeletcontainerdd.Service
 	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
-		if _, err := cgroups.Bootstrap(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
-			os.Exit(1)
+		if runtimeSplit {
+			attached := edgeletcontainerdd.NewAttachedService()
+			if err := attached.Start(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", err)
+				os.Exit(1)
+			}
+			prestarted = attached
+			logging.LogInfo("MAIN_DAEMON", "Attached to data-plane containerd (runtime split)")
+			if _, err := cgroups.PublishHostPolicy(); err != nil {
+				logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("cgroup status snapshot: %v", err))
+			}
+		} else {
+			if _, err := cgroups.Bootstrap(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
+				os.Exit(1)
+			}
+			var err error
+			prestarted, err = startEmbeddedContainerdWithRetry()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
+				os.Exit(1)
+			}
+			logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor (monolithic)")
 		}
-		var err error
-		prestarted, err = startEmbeddedContainerdWithRetry()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
-			os.Exit(1)
-		}
-		logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor")
 	}
 
 	sup := supervisor.NewSupervisor()
 	if prestarted != nil {
 		sup.SetPrestartedContainerd(prestarted)
+		if runtimeSplit {
+			sup.SetContainerdAttachOnly(true)
+		}
 	}
 	if err := sup.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
@@ -85,6 +103,10 @@ func runDaemon() {
 		watcher.OnChange(func() {
 			if config.IsReloadSuppressedForDeprovision() {
 				logging.LogDebug("Daemon", "Skipping SIGHUP for deprovision config save")
+				return
+			}
+			if config.IsReloadSuppressedForInProcessMutation() {
+				logging.LogDebug("Daemon", "Skipping SIGHUP for in-process config mutation")
 				return
 			}
 			logging.LogInfo("Daemon", "Configuration file changed, sending SIGHUP to trigger reload...")

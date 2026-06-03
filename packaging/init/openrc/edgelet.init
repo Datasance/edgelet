@@ -19,6 +19,9 @@ depend() {
 
 start_pre() {
     /usr/local/bin/edgelet cgroup-preflight || return $?
+    if [ -f /etc/init.d/edgelet-containerd ]; then
+        export EDGELET_RUNTIME_SPLIT=1
+    fi
 }
 
 stop() {
@@ -38,11 +41,13 @@ stop() {
         return 1
     fi
     rm -f "${pidfile}" /run/edgelet/edgelet.pid 2>/dev/null || true
-    # Reap embedded containerd child if shutdown did not (API down / BusyBox pkill limits).
-    _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
-    for _p in ${_pids}; do kill -TERM "${_p}" 2>/dev/null || true; done
-    sleep 2
-    _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
-    for _p in ${_pids}; do kill -KILL "${_p}" 2>/dev/null || true; done
+    # Plan 11 split: data-plane containerd is edgelet-containerd service — do not reap child here.
+    if [ "${EDGELET_RUNTIME_SPLIT:-0}" != "1" ]; then
+        _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+        for _p in ${_pids}; do kill -TERM "${_p}" 2>/dev/null || true; done
+        sleep 2
+        _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+        for _p in ${_pids}; do kill -KILL "${_p}" 2>/dev/null || true; done
+    fi
     eend 0
 }

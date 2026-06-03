@@ -41,6 +41,7 @@ openrc_engine_need_line() {
     case "$1" in
         docker) printf '%s\n' '    need docker' ;;
         podman) printf '%s\n' '    need podman' ;;
+        edgelet) printf '%s\n' '    need edgelet-containerd' ;;
         *)      printf '%s\n' '' ;;
     esac
 }
@@ -66,13 +67,17 @@ install_systemd_dropin() {
     _root="$2"
     _dropdir="/etc/systemd/system/edgelet.service.d"
     mkdir -p "${_dropdir}"
-    rm -f "${_dropdir}/docker.conf" "${_dropdir}/podman.conf"
+    rm -f "${_dropdir}/docker.conf" "${_dropdir}/podman.conf" "${_dropdir}/edgelet.conf"
     case "${_eng}" in
         docker)
             install -m 644 "${_root}/systemd/edgelet.service.d/docker.conf" "${_dropdir}/docker.conf"
             ;;
         podman)
             install -m 644 "${_root}/systemd/edgelet.service.d/podman.conf" "${_dropdir}/podman.conf"
+            ;;
+        edgelet)
+            install -m 644 "${_root}/systemd/edgelet.service.d/edgelet.conf" "${_dropdir}/edgelet.conf"
+            systemctl enable edgelet-containerd 2>/dev/null || true
             ;;
     esac
 }
@@ -97,6 +102,10 @@ install_init_unit() {
             fi
             install_systemd_dropin "${_eng}" "${_root}"
             systemctl daemon-reload
+            if [ "${_eng}" = "edgelet" ]; then
+                systemctl enable edgelet-containerd 2>/dev/null || true
+                systemctl start edgelet-containerd 2>/dev/null || true
+            fi
             systemctl enable edgelet
             systemctl stop edgelet 2>/dev/null || true
             systemctl reset-failed edgelet 2>/dev/null || true
@@ -109,6 +118,10 @@ install_init_unit() {
             chmod 755 /etc/init.d/edgelet
             if [ -f "${_root}/openrc/edgelet-containerd.init" ]; then
                 install -m 755 "${_root}/openrc/edgelet-containerd.init" /etc/init.d/edgelet-containerd
+            fi
+            if [ "${_eng}" = "edgelet" ]; then
+                rc-update add edgelet-containerd default 2>/dev/null || true
+                rc-service edgelet-containerd start 2>/dev/null || true
             fi
             rc-update add edgelet default 2>/dev/null || true
             rc-service edgelet restart 2>/dev/null || rc-service edgelet start

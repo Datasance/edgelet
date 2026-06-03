@@ -1,19 +1,32 @@
-# Edgelet embedded containerd (data plane) — stub for Plan 11 workload continuity.
-# Plan 11 fills ExecStart (runtime-bootstrap), cgroup bootstrap, and MS lifecycle.
+# Edgelet embedded containerd (data plane) — Plan 11 workload continuity
 [Unit]
 Description=Edgelet embedded containerd (data plane)
 Documentation=https://github.com/datasance/edgelet
-PartOf=edgelet.service
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target
+PartOf=edgelet.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-# Plan 11: ExecStart=/usr/local/bin/edgelet runtime-bootstrap
-ExecStart=/bin/true
-ExecStop=/bin/true
+Type=simple
+ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
+ExecStart=/usr/local/bin/edgelet runtime-bootstrap
+Restart=always
+RestartSec=2s
+# Data-plane stop: drain MS via runtime-bootstrap SIGTERM handler + shutdownGracePeriodSeconds
+TimeoutStopSec=120s
+KillMode=process
+KillSignal=SIGTERM
+SendSIGKILL=yes
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=edgelet-containerd
+Delegate=yes
+DelegateSubgroup=containerd
+NoNewPrivileges=no
+LimitNOFILE=65536
+LimitNPROC=4096
 
 [Install]
 WantedBy=multi-user.target
