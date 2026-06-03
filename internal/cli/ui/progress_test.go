@@ -95,6 +95,15 @@ func TestFormatDeployStageLine(t *testing.T) {
 	}
 }
 
+func TestFormatControlPlaneStageLine(t *testing.T) {
+	if got := FormatControlPlaneStageLine("pulling"); !strings.Contains(got, "control plane") || !strings.Contains(got, "(pulling)") {
+		t.Fatalf("unexpected stage line: %s", got)
+	}
+	if got := FormatControlPlaneStageLine(""); got != "applying control plane manifest..." {
+		t.Fatalf("unexpected empty stage line: %s", got)
+	}
+}
+
 func TestWritePercent_DoneAddsNewlineInteractive(t *testing.T) {
 	clearInteractiveEnv(t)
 	var stderr bytes.Buffer

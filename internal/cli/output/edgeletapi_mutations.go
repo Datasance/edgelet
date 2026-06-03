@@ -23,9 +23,9 @@ func formatMutationRoute(routePath string, result map[string]interface{}) string
 		return formatImagePruneResult(result)
 	case "/v1/images:remove":
 		return formatImageRemoveResult(result)
-	case "/v1/deploy/microservices:validate", "/v1/deploy/registries:validate", "/v1/deploy/runtimeclasses:validate":
+	case "/v1/deploy/microservices:validate", "/v1/deploy/registries:validate", "/v1/deploy/runtimeclasses:validate", "/v1/deploy/controlplane:validate":
 		return formatDeployValidateResult(result)
-	case "/v1/deploy/microservices:apply", "/v1/deploy/registries:apply", "/v1/deploy/runtimeclasses:apply":
+	case "/v1/deploy/microservices:apply", "/v1/deploy/registries:apply", "/v1/deploy/runtimeclasses:apply", "/v1/deploy/controlplane:apply":
 		return formatDeployApplyResult(result)
 	default:
 		if strings.HasPrefix(routePath, "/v1/ms/") {
@@ -319,6 +319,14 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 				)
 			}
 			return "runtimeclass manifest applied successfully"
+		case "controlplane":
+			return fmt.Sprintf(
+				"controlplane manifest applied successfully (controllerUuid=%s namespace=%s name=%s mode=%s)",
+				MapValueAsString(result, "controllerUuid"),
+				MapValueAsString(result, "namespace"),
+				MapValueAsString(result, "name"),
+				MapValueAsString(result, "mode"),
+			)
 		default:
 			if id := MapValueAsString(result, "deploymentId"); id != "<unknown>" {
 				return fmt.Sprintf("manifest applied successfully (deploymentId=%s)", id)

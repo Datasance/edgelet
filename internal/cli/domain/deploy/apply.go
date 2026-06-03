@@ -2,6 +2,8 @@ package deploy
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -59,22 +61,35 @@ func Execute(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, r
 		fields["dryRun"] = "true"
 	}
 
-	if req.DryRun {
-		data, err := api.RequestMultipartFile("POST", target.validatePath(), "manifest", req.ManifestPath, fields)
-		if err != nil {
-			return nil, run.MapAPIError(err)
-		}
-		return &Result{Data: data, Human: FormatValidateHuman(data)}, nil
-	}
-
 	switch target {
+	case TargetControlPlane:
+		result, err := applyAsync(ctx, api, uiProgress, target, req.ManifestPath, fields)
+		if err != nil {
+			if errors.Is(err, client.ErrPollTimeout) {
+				return nil, err
+			}
+			return nil, err
+		}
+		if !req.DryRun {
+			if err := verifyControlPlaneRunning(api); err != nil {
+				return nil, err
+			}
+		}
+		return result, nil
 	case TargetMicroservices, TargetRuntimeClasses:
+		if req.DryRun {
+			data, err := api.RequestMultipartFile("POST", target.validatePath(), "manifest", req.ManifestPath, fields)
+			if err != nil {
+				return nil, run.MapAPIError(err)
+			}
+			return &Result{Data: data, Human: FormatValidateHuman(data)}, nil
+		}
 		fields["async"] = "true"
 		return applyAsync(ctx, api, uiProgress, target, req.ManifestPath, fields)
-	default:
+	case TargetRegistries:
 		var spin *ui.Spinner
 		if uiProgress != nil {
-			spin = uiProgress.StartSpinner("Applying registry manifest...")
+			spin = uiProgress.StartSpinner(applySpinnerMessage(target))
 			defer spin.Stop()
 		}
 		data, err := api.RequestMultipartFile("POST", target.applyPath(), "manifest", req.ManifestPath, fields)
@@ -82,6 +97,45 @@ func Execute(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, r
 			return nil, run.MapAPIError(err)
 		}
 		return &Result{Data: data, Human: FormatApplyHuman(data)}, nil
+	default:
+		return nil, run.NewCLIError(run.CodeInternal, "unsupported deploy target", nil)
+	}
+}
+
+func verifyControlPlaneRunning(api run.EdgeletAPIClient) error {
+	data, err := api.Request("GET", "/v1/system/controlplane", nil)
+	if err != nil {
+		return run.MapAPIError(err)
+	}
+	state := strings.ToLower(strings.TrimSpace(output.MapValueAsString(data, "runtimeState")))
+	if state == "running" {
+		return nil
+	}
+	return run.NewCLIError(
+		run.CodeInternal,
+		fmt.Sprintf("control plane apply finished but runtimeState=%q (expected running); run edgelet controlplane get", state),
+		nil,
+	)
+}
+
+func controlPlanePollTimeoutError(operationID string) error {
+	msg := "control plane deploy polling timed out; work may still be running on the daemon"
+	msg += "; check edgelet controlplane get"
+	if strings.TrimSpace(operationID) != "" {
+		msg += fmt.Sprintf(" or GET /v1/deploy/controlplane:apply/%s", strings.TrimSpace(operationID))
+	}
+	msg += "; do not run another deploy immediately"
+	return run.NewCLIError(run.CodeInternal, msg, client.ErrPollTimeout)
+}
+
+func applySpinnerMessage(target Target) string {
+	switch target {
+	case TargetControlPlane:
+		return "Applying control plane manifest..."
+	case TargetRegistries:
+		return "Applying registry manifest..."
+	default:
+		return "Applying manifest..."
 	}
 }
 
@@ -106,16 +160,25 @@ func applyAsync(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI
 	}
 
 	pollCfg := client.PollConfig{Interval: 500 * time.Millisecond}
-	if target == TargetRuntimeClasses {
+	switch target {
+	case TargetRuntimeClasses:
 		pollCfg.Interval = runtimeClassApplyPollInterval
 		pollCfg.Timeout = runtimeClassApplyPollTimeout
+	case TargetControlPlane:
+		pollCfg.Timeout = client.PollTimeoutFor("controlplane")
+	default:
+		pollCfg.Timeout = client.PollTimeoutFor("microservices")
 	}
 
 	stageFormatter := ui.FormatDeployStageLine
 	baseMessage := "Applying microservice manifest..."
-	if target == TargetRuntimeClasses {
+	switch target {
+	case TargetRuntimeClasses:
 		stageFormatter = ui.FormatRuntimeClassStageLine
 		baseMessage = "Applying runtimeclass manifest..."
+	case TargetControlPlane:
+		stageFormatter = ui.FormatControlPlaneStageLine
+		baseMessage = "Applying control plane manifest..."
 	}
 
 	progress := client.PollProgress{
@@ -139,6 +202,9 @@ func applyAsync(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI
 				"status":      "running",
 			}
 			return &Result{Data: WithStages(data, stages), Stages: stages, Human: human}, nil
+		}
+		if err == client.ErrPollTimeout && target == TargetControlPlane {
+			return nil, controlPlanePollTimeoutError(operationID)
 		}
 		return nil, run.MapAPIError(err)
 	}

@@ -1,10 +1,14 @@
 package image
 
 import (
+	"context"
 	"strings"
+	"time"
 
+	"github.com/datasance/edgelet/internal/cli/client"
 	"github.com/datasance/edgelet/internal/cli/output"
 	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 )
 
 // LoadResult carries image load outcome.
@@ -19,20 +23,52 @@ type LoadRequest struct {
 }
 
 // Load imports an image archive from a tar file path.
-func Load(client run.EdgeletAPIClient, req LoadRequest) (*LoadResult, error) {
-	if client == nil {
+func Load(ctx context.Context, clientAPI run.EdgeletAPIClient, uiProgress *ui.UI, req LoadRequest) (*LoadResult, error) {
+	if clientAPI == nil {
 		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
 	path := strings.TrimSpace(req.Path)
 	if path == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "path is required", nil)
 	}
-	data, err := client.Request("POST", "/v1/images:load", map[string]interface{}{"path": path})
+
+	startResult, err := clientAPI.Request("POST", "/v1/images:load", map[string]interface{}{"path": path})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
+	operationID := client.OperationIDFromStart(startResult)
+	if operationID == "" || operationID == "<unknown>" {
+		return nil, run.NewCLIError(run.CodeInternal, "missing image load operationId in response", nil)
+	}
+
+	progress := client.PollProgress{UI: uiProgress}
+	if uiProgress != nil {
+		spin := uiProgress.StartSpinner("Loading image archive...")
+		defer spin.Stop()
+		progress.Spinner = spin
+	}
+
+	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{
+		Interval: 500 * time.Millisecond,
+		Timeout:  client.PollTimeoutFor("image-load"),
+	}, func() (map[string]interface{}, error) {
+		return clientAPI.Request("GET", "/v1/images:load/"+operationID, nil)
+	}, progress)
+	if err != nil {
+		return nil, run.MapAPIError(err)
+	}
+
+	status := strings.ToLower(strings.TrimSpace(output.MapValueAsString(final, "status")))
+	if status == "failed" {
+		errMsg := strings.TrimSpace(output.MapValueAsString(final, "error"))
+		if errMsg == "" || errMsg == "<unknown>" {
+			errMsg = "image load failed"
+		}
+		return nil, run.NewCLIError(run.CodeInternal, errMsg, nil)
+	}
+
 	return &LoadResult{
-		Human: output.FormatEdgeletAPIHuman("/v1/images:load", data),
-		Data:  data,
+		Human: output.FormatEdgeletAPIHuman("/v1/images:load", final),
+		Data:  final,
 	}, nil
 }

@@ -86,6 +86,10 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]interface{}) stri
 		return formatRegistryList(result)
 	case "/v1/deploy/runtimeclasses":
 		return formatRuntimeClassList(result)
+	case "/v1/system/controlplane":
+		return formatControlPlaneStatus(result)
+	case "/v1/system/controlplane/manifest":
+		return formatControlPlaneManifest(result)
 	default:
 		if human := formatMutationRoute(routePath, result); human != "" {
 			return human
@@ -247,6 +251,47 @@ func formatRuntimeClassList(result map[string]interface{}) string {
 		})
 	}
 	return formatAlignedTable(rows)
+}
+
+var controlPlaneStatusOrder = []string{
+	"controllerUuid",
+	"namespace",
+	"name",
+	"image",
+	"containerId",
+	"state",
+	"desiredState",
+	"runtimeState",
+	"generation",
+	"observedGeneration",
+	"restartCount",
+	"lastError",
+	"lastTransitionAt",
+	"source",
+	"type",
+}
+
+func formatControlPlaneStatus(result map[string]interface{}) string {
+	if _, hasUUID := result["controllerUuid"]; !hasUUID {
+		if MapValueAsString(result, "status") == "ok" {
+			return "control plane deployment removed successfully"
+		}
+		return formatFlatMapWithOrder(result, nil)
+	}
+	return formatFlatMapWithOrder(result, controlPlaneStatusOrder)
+}
+
+func formatControlPlaneManifest(result map[string]interface{}) string {
+	yaml := strings.TrimSpace(MapValueAsString(result, "manifestYaml"))
+	if yaml == "" {
+		return "control plane manifest unavailable"
+	}
+	masked := MapValueAsString(result, "masked")
+	header := "manifestYaml:"
+	if masked == "true" {
+		header = "manifestYaml (secrets masked):"
+	}
+	return header + "\n" + yaml
 }
 
 func formatImageList(result map[string]interface{}) string {

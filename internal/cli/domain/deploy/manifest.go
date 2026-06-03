@@ -14,6 +14,7 @@ const (
 	TargetMicroservices  Target = "microservices"
 	TargetRegistries     Target = "registries"
 	TargetRuntimeClasses Target = "runtimeclasses"
+	TargetControlPlane   Target = "controlplane"
 )
 
 // DetectTargetFromManifest inspects manifest kind to choose the deploy API target.
@@ -27,6 +28,8 @@ func DetectTargetFromManifest(path string) (Target, error) {
 		return TargetRegistries, nil
 	case strings.EqualFold(kind, "RuntimeClass"):
 		return TargetRuntimeClasses, nil
+	case strings.EqualFold(kind, "ControlPlane"):
+		return TargetControlPlane, nil
 	default:
 		return TargetMicroservices, nil
 	}

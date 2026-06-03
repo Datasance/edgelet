@@ -11,7 +11,7 @@ func TestHelp_DeployShowsLong(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "Apply or validate a local microservice") {
+	if !strings.Contains(stdout, "Apply or validate a local manifest") {
 		t.Fatalf("expected deploy Long in help stdout, got stdout=%q", stdout)
 	}
 	if strings.Contains(stderr, bannerMarker) {

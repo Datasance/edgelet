@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/datasance/edgelet/internal/cli/client"
 	"github.com/datasance/edgelet/internal/cli/output"
@@ -64,7 +65,10 @@ func Pull(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req 
 		progress.Spinner = spin
 	}
 
-	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{}, func() (map[string]interface{}, error) {
+	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{
+		Interval: 500 * time.Millisecond,
+		Timeout:  client.PollTimeoutFor("image-pull"),
+	}, func() (map[string]interface{}, error) {
 		return api.Request("GET", "/v1/images:pull/"+operationID, nil)
 	}, progress)
 	if err != nil {
