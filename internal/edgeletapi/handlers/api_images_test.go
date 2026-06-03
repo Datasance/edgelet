@@ -85,6 +85,29 @@ func TestHandleImagePullStatus_MissingOperationID(t *testing.T) {
 	}
 }
 
+func TestHandleImageLoad_AsyncAccepted(t *testing.T) {
+	handler := NewEdgeletAPIHandler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/images:load", bytes.NewBufferString(`{"path":"/tmp/test.tar"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.HandleImageLoad(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	operationID, _ := envelope.Data["operationId"].(string)
+	if strings.TrimSpace(operationID) == "" {
+		t.Fatalf("expected operationId, got %#v", envelope.Data)
+	}
+}
+
 func TestHandleImageLoad_RequiresPath(t *testing.T) {
 	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/images:load", bytes.NewBufferString(`{}`))

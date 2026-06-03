@@ -64,6 +64,33 @@ func TestIsAuthorized_AcceptsVerbAliases(t *testing.T) {
 	}
 }
 
+func TestMapRequestToPermission_ControlPlaneRoutes(t *testing.T) {
+	tests := []struct {
+		method   string
+		path     string
+		resource string
+		verb     string
+	}{
+		{method: http.MethodGet, path: "/v1/system/controlplane", resource: "system/controlplane", verb: "get"},
+		{method: http.MethodGet, path: "/v1/system/controlplane/manifest", resource: "system/controlplane", verb: "get"},
+		{method: http.MethodDelete, path: "/v1/system/controlplane", resource: "system/controlplane", verb: "delete"},
+		{method: http.MethodGet, path: "/v1/system/controller", resource: "system/controller", verb: "get"},
+		{method: http.MethodPost, path: "/v1/deploy/controlplane:apply", resource: "deploy/controlplane", verb: "create"},
+		{method: http.MethodGet, path: "/v1/deploy/controlplane:apply/op-123", resource: "deploy/controlplane/apply/status", verb: "get"},
+		{method: http.MethodPost, path: "/v1/deploy/controlplane:validate", resource: "deploy/controlplane", verb: "create"},
+	}
+	for _, tt := range tests {
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		perm, ok := mapRequestToPermission(req)
+		if !ok {
+			t.Fatalf("expected route %s to map", tt.path)
+		}
+		if perm.Resource != tt.resource || perm.Verb != tt.verb {
+			t.Fatalf("unexpected mapping for %s: resource=%s verb=%s", tt.path, perm.Resource, perm.Verb)
+		}
+	}
+}
+
 func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 	tests := []struct {
 		method   string
@@ -79,6 +106,7 @@ func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 		{method: http.MethodPost, path: "/v1/images:pull", resource: "images/pull", verb: "create"},
 		{method: http.MethodGet, path: "/v1/images:pull/abc", resource: "images/pull/status", verb: "get"},
 		{method: http.MethodPost, path: "/v1/images:load", resource: "images/load", verb: "create"},
+		{method: http.MethodGet, path: "/v1/images:load/abc", resource: "images/load/status", verb: "get"},
 		{method: http.MethodPost, path: "/v1/images:prune", resource: "images/prune", verb: "create"},
 		{method: http.MethodPost, path: "/v1/images:remove", resource: "images/remove", verb: "create"},
 		{method: http.MethodGet, path: "/v1/deploy/microservices:apply/op-123", resource: "deploy/microservices/apply/status", verb: "get"},

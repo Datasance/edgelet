@@ -45,6 +45,10 @@ type EdgeletAPIHandler struct {
 	pullMu                sync.RWMutex
 	deployOps             map[string]*deployApplyOperation
 	deployMu              sync.RWMutex
+	controlPlaneApplyOps  map[string]*controlPlaneApplyOperation
+	controlPlaneApplyMu   sync.RWMutex
+	loadOps               map[string]*imageLoadOperation
+	loadMu                sync.RWMutex
 	runtimeClassApplyOps  map[string]*runtimeClassApplyOperation
 	runtimeClassApplyMu   sync.RWMutex
 	runtimeClassDeleteOps map[string]*runtimeClassDeleteOperation
@@ -61,6 +65,8 @@ func NewEdgeletAPIHandler() *EdgeletAPIHandler {
 		execSessions:          make(map[string]*localExecSession),
 		pullOps:               make(map[string]*imagePullOperation),
 		deployOps:             make(map[string]*deployApplyOperation),
+		controlPlaneApplyOps:  make(map[string]*controlPlaneApplyOperation),
+		loadOps:               make(map[string]*imageLoadOperation),
 		runtimeClassApplyOps:  make(map[string]*runtimeClassApplyOperation),
 		runtimeClassDeleteOps: make(map[string]*runtimeClassDeleteOperation),
 		resolveMicroservice: func(selector string) (string, error) {
@@ -110,6 +116,18 @@ type imagePullOperation struct {
 	Error         string
 	StartedAt     time.Time
 	EndedAt       *time.Time
+}
+
+type imageLoadOperation struct {
+	OperationID string
+	Status      string
+	Path        string
+	Loaded      []map[string]interface{}
+	Count       int
+	Engine      string
+	Error       string
+	StartedAt   time.Time
+	EndedAt     *time.Time
 }
 
 type deployApplyOperation struct {
@@ -528,29 +546,97 @@ func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Reque
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid JSON body", nil)
 		return
 	}
-	if strings.TrimSpace(req.Path) == "" {
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "path is required", nil)
 		return
 	}
-	loaded, err := h.facade.LoadImageFromPath(req.Path)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+	engineName := strings.ToLower(strings.TrimSpace(config.GetInstance().ContainerEngine))
+	op := &imageLoadOperation{
+		OperationID: uuid.NewString(),
+		Status:      "running",
+		Path:        path,
+		Engine:      engineName,
+		StartedAt:   time.Now().UTC(),
+	}
+	h.loadMu.Lock()
+	h.loadOps[op.OperationID] = op
+	h.loadMu.Unlock()
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("image load operation started operationId=%s path=%s engine=%s", op.OperationID, path, engineName))
+
+	go func(operationID, loadPath string) {
+		loaded, err := h.facade.LoadImageFromPath(loadPath)
+		h.loadMu.Lock()
+		defer h.loadMu.Unlock()
+		current, ok := h.loadOps[operationID]
+		if !ok {
+			return
+		}
+		now := time.Now().UTC()
+		current.EndedAt = &now
+		if err != nil {
+			current.Status = "failed"
+			current.Error = err.Error()
+			logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("image load failed operationId=%s path=%s err=%v", operationID, loadPath, err))
+			return
+		}
+		items := make([]map[string]interface{}, 0, len(loaded))
+		for _, item := range loaded {
+			items = append(items, map[string]interface{}{
+				"name": item.Name,
+				"id":   item.ID,
+			})
+		}
+		current.Status = "succeeded"
+		current.Loaded = items
+		current.Count = len(items)
+		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("image load succeeded operationId=%s path=%s count=%d", operationID, loadPath, current.Count))
+	}(op.OperationID, path)
+
+	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
+		"operationId": op.OperationID,
+		"status":      op.Status,
+		"path":        op.Path,
+		"engine":      op.Engine,
+		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
+	})
+}
+
+func (h *EdgeletAPIHandler) HandleImageLoadStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 		return
 	}
-	items := make([]map[string]interface{}, 0, len(loaded))
-	for _, item := range loaded {
-		items = append(items, map[string]interface{}{
-			"name": item.Name,
-			"id":   item.ID,
-		})
+	operationID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/v1/images:load/"))
+	if operationID == "" {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "missing operation id", nil)
+		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
-		"status":  "ok",
-		"loaded":  items,
-		"count":   len(items),
-		"engine":  strings.ToLower(strings.TrimSpace(config.GetInstance().ContainerEngine)),
-		"message": "image archive loaded successfully",
-	})
+	h.loadMu.RLock()
+	op, ok := h.loadOps[operationID]
+	h.loadMu.RUnlock()
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "image load operation not found", nil)
+		return
+	}
+	response := map[string]interface{}{
+		"operationId": op.OperationID,
+		"status":      op.Status,
+		"path":        op.Path,
+		"engine":      op.Engine,
+		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
+	}
+	if len(op.Loaded) > 0 {
+		response["loaded"] = op.Loaded
+		response["count"] = op.Count
+	}
+	if op.EndedAt != nil {
+		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
+	}
+	if strings.TrimSpace(op.Error) != "" {
+		response["error"] = op.Error
+	}
+	writeSuccess(w, http.StatusOK, response)
 }
 
 func (h *EdgeletAPIHandler) HandleImagePrune(w http.ResponseWriter, r *http.Request) {
@@ -947,15 +1033,16 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		if source == "" {
 			source = "all"
 		}
-		if source != "all" && source != "managed" && source != "local" {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "source must be one of managed|local|all", nil)
+		if source != "all" && source != "managed" && source != "local" && source != "controlplane" {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "source must be one of managed|local|controlplane|all", nil)
 			return
 		}
 		items := h.facade.ListRuntimeMicroservices()
 		filtered := make([]map[string]interface{}, 0, len(items))
 		for _, item := range items {
 			itemType := strings.ToLower(fmt.Sprintf("%v", item["type"]))
-			if source == "all" || source == itemType {
+			itemSource := strings.ToLower(fmt.Sprintf("%v", item["source"]))
+			if source == "all" || source == itemType || source == itemSource {
 				filtered = append(filtered, item)
 			}
 		}
@@ -1004,7 +1091,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		case http.MethodDelete:
 			uuid, err := h.facade.RemoveRuntimeMicroservice(id)
 			if err != nil {
-				writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+				writeMicroserviceLifecycleError(w, err)
 				return
 			}
 			writeSuccess(w, http.StatusOK, map[string]interface{}{
@@ -1027,7 +1114,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		}
 		uuid, err := h.facade.StartRuntimeMicroservice(id)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			writeMicroserviceLifecycleError(w, err)
 			return
 		}
 		writeSuccess(w, http.StatusOK, map[string]interface{}{
@@ -1042,7 +1129,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		}
 		uuid, err := h.facade.StopRuntimeMicroservice(id)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			writeMicroserviceLifecycleError(w, err)
 			return
 		}
 		writeSuccess(w, http.StatusOK, map[string]interface{}{
@@ -1057,7 +1144,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		}
 		uuid, err := h.facade.RestartRuntimeMicroservice(id)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			writeMicroserviceLifecycleError(w, err)
 			return
 		}
 		writeSuccess(w, http.StatusOK, map[string]interface{}{
@@ -1072,7 +1159,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 		}
 		uuid, err := h.facade.KillRuntimeMicroservice(id)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+			writeMicroserviceLifecycleError(w, err)
 			return
 		}
 		writeSuccess(w, http.StatusOK, map[string]interface{}{

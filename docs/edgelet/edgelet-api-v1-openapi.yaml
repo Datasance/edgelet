@@ -277,7 +277,8 @@ paths:
   /v1/images:load:
     post:
       tags: [Images]
-      summary: Load image archive from daemon-local path
+      summary: Load image archive from daemon-local path (async)
+      description: Accepts load work and returns operationId. Poll GET /v1/images:load/{operationId}.
       requestBody:
         required: true
         content:
@@ -285,14 +286,27 @@ paths:
             schema:
               $ref: "#/components/schemas/ImageLoadRequest"
       responses:
-        "200":
-          description: Load result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ImageLoadResponse"
+        "202":
+          description: Load accepted
         "400":
           $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:load/{operationId}:
+    get:
+      tags: [Images]
+      summary: Image load operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation status
+        "404":
+          $ref: "#/components/responses/NotFound"
         "401":
           $ref: "#/components/responses/Unauthorized"
   /v1/images:prune:
@@ -446,6 +460,69 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/system/controlplane:
+    get:
+      tags: [System]
+      summary: Get local ControlPlane deployment status
+      description: Admin-only. Returns singleton controller deployment status.
+      responses:
+        "200":
+          description: ControlPlane status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [System]
+      summary: Delete local ControlPlane deployment
+      description: Admin-only. Stops the controller container, removes volumes, and deletes the SQLite row.
+      responses:
+        "200":
+          description: ControlPlane deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/system/controlplane/manifest:
+    get:
+      tags: [System]
+      summary: Get ControlPlane manifest with secrets masked
+      responses:
+        "200":
+          description: Masked manifest YAML
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifestYaml:
+                    type: string
+                  masked:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/system/controller:
+    get:
+      tags: [System]
+      summary: Get local ControlPlane status (alias)
+      description: Alias of GET /v1/system/controlplane. Delete is not supported on this path.
+      responses:
+        "200":
+          description: ControlPlane status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /v1/system/config/switch:
     post:
       tags: [Config]
@@ -1021,6 +1098,64 @@ paths:
           description: Deletion result
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/controlplane:apply:
+    post:
+      tags: [Deploy]
+      summary: Apply ControlPlane manifest (async)
+      description: Admin-only. Accepts the manifest and runs apply in the background. Poll GET /v1/deploy/controlplane:apply/{operationId}. At most one apply may be running; a second POST returns 409 APPLY_IN_PROGRESS.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "202":
+          description: Apply accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneApplyOperationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/deploy/controlplane:apply/{operationId}:
+    get:
+      tags: [Deploy]
+      summary: ControlPlane apply operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation status
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/controlplane:validate:
+    post:
+      tags: [Deploy]
+      summary: Validate ControlPlane manifest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: Validation result
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/deploy/runtimeclasses:apply:
     post:
       tags: [Deploy]
@@ -1284,6 +1419,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
   schemas:
     ApiError:
       type: object
@@ -1325,6 +1466,43 @@ components:
           type: number
         uptimeSeconds:
           type: integer
+    ControlPlaneStatus:
+      type: object
+      required: [controllerUuid, namespace, name, runtimeState, source, type]
+      properties:
+        controllerUuid:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        image:
+          type: string
+        containerId:
+          type: string
+        state:
+          type: string
+        desiredState:
+          type: string
+        runtimeState:
+          type: string
+        lastError:
+          type: string
+        restartCount:
+          type: integer
+        generation:
+          type: integer
+        observedGeneration:
+          type: integer
+        lastTransitionAt:
+          type: integer
+          format: int64
+        source:
+          type: string
+          enum: [controlplane]
+        type:
+          type: string
+          enum: [controlplane]
     VersionInfo:
       type: object
       required: [version, buildTime, gitCommit, allowedContainerEngine]
