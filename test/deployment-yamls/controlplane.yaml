@@ -1,0 +1,75 @@
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: foo
+  namespace: bar
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.7.0
+    registry: 1
+    port: 51121
+  auth:
+    url: https://auth-dt.datasance.com/
+    realm: datasance
+    realmKey: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjQuSwvTMSk/WP5MYi3kyx7t0RQmdaQuM22XvLC8lYtE1qf/ZYfQt+hVsgyEbpNOo2N7/EjuNbPa3GmKKW9P0TvgSz4U6uOE47i1uUPUe16eMw0TipG+cQ0rh+FRx4OXp3xMUrrYgAoO0zg4gmg8JJ3Y4wA/1Zx9l9HbNw3iUUkf9Q5QTo5rwGKWOOZPo7I9XKMnvbxOrLIDCNjoU5mGmNdcA6LMB/qs5W3Pn1mCJZs6B9FisIjmr484rs20ozp9ZbQnRopS7dNEqc66HrvtQe3X/pChu4ZXumQ6mu2xzPKyIUewcEQcj73WCzs43510zrwD9/b8THc00Wjz3L2UnhQIDAQAB
+    ssl: external
+    controllerClient: pot-controller
+    controllerSecret: vLGWKJlXIf8GQTe2GfdubPxXedodtCU8
+    viewerClient: ecn-viewer
+  # database: # an external database or have multiple controllers for the ControlPlane, you can set the database here
+  #     provider: postgres/mysql  
+  #     user: 
+  #     host: 
+  #     port: 5432
+  #     password: 
+  #     databaseName: 
+  #     ssl: true/false 
+  #     ca: base64 encoded string
+  events:  # enable/disable or configure controller audit events
+    auditEnabled: true   # true / false
+    retentionDays: 14    # how many days should controller saved events records
+    cleanupInterval: 86400  # controller internal event cleanup job interval in seconds.
+    captureIpAddress: true
+  systemMicroservices:
+    router:
+      amd64: ghcr.io/datasance/router:3.7.0
+      arm64: ghcr.io/datasance/router:3.7.0
+      riscv64: ghcr.io/datasance/router:3.7.0
+      arm: ghcr.io/datasance/router:3.7.0
+    nats:   # when nats.enabled is true
+      amd64: ghcr.io/datasance/nats:2.12.4
+      arm64: ghcr.io/datasance/nats:2.12.4
+      riscv64: ghcr.io/datasance/nats:2.12.4
+      arm: ghcr.io/datasance/nats:2.12.4
+  nats:  # optional; when present and enabled, NATS is deployed with JetStream
+    enabled: true  # set to false to disable NATS
+  # ecnViewerPort:
+  # ecnViewerUrl: # set the URL for the ECN Viewer UI for Controller REST API endpoint
+  # logLevel:
+  # https: # optional; when set, controller will be deployed with HTTPS. User can provider either path or base64. cannot provide both.
+  #   path: # path to the certificate and key files the path must be valid and include ca.crt(optional), tls.crt(must) and tls.key(must) files. path must be absolute path.
+  #   base64: # base64 encoded string of the certificate and key files
+  #     ca: base64 encoded string(optional)
+  #     cert: base64 encoded string(must)
+  #     key: base64 encoded string(must)
+  # vault:  # optional; when set, operator creates a Secret from provider config and injects VAULT_* env vars into the controller
+  #   enabled: true
+  #   provider: openbao  # hashicorp, openbao, vault, aws, aws-secrets-manager, azure, azure-key-vault, google, google-secret-manager
+  #   basePath: "pot/local-test/secrets"  # $namespace is replaced with the ControlPlane namespace
+  #   # Provide only the block for your selected provider. Operator creates Secret "controller-vault-credentials" from these values.
+  #   hashicorp:
+  #     address: "http://192.168.139.3:8200"
+  #     token: "s.JCqRS37hu1VOy7PX3QRVdSY2"   # Vault token (sensitive; consider External Secrets to populate the CR)
+  #     mount: "kv"
+    # aws:
+    #   region: "us-east-1"
+    #   accessKeyId: ""
+    #   accessKey: ""
+    # azure:
+    #   url: "https://your-vault.vault.azure.net"
+    #   tenantId: ""
+    #   clientId: ""
+    #   clientSecret: ""
+    # google:
+    #   projectId: ""
+    #   credentials: ""  # path to service account key or JSON content
