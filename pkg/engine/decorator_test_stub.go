@@ -38,6 +38,7 @@ func (noopEngine) PruneContainers(context.Context) (*ContainerPruneReport, error
 	return nil, nil
 }
 func (noopEngine) PruneVolumes(context.Context) (*VolumePruneReport, error) { return nil, nil }
+func (noopEngine) RemoveNamedVolume(context.Context, string) error          { return nil }
 func (noopEngine) GetContainerStatus(string, string) (*models.MicroserviceStatus, error) {
 	return nil, nil
 }

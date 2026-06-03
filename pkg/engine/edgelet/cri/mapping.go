@@ -126,8 +126,9 @@ func PodSandboxConfigFromMicroservice(ms *models.Microservice, hostname, logDir,
 		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
+		IsController:     ms.IsController,
 		HostNetwork:      ms.HostNetworkMode,
-		IsSystem:         false,
+		IsSystem:         ms.IsSystem || ms.IsController,
 		UserLabels:       ms.Labels,
 	})
 	networkSelection := SelectCNINetworkForMicroservice(ms)
@@ -199,8 +200,9 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
+		IsController:     ms.IsController,
 		HostNetwork:      ms.HostNetworkMode,
-		IsSystem:         false,
+		IsSystem:         ms.IsSystem || ms.IsController,
 		SandboxID:        sandboxID,
 		UserLabels:       ms.Labels,
 	})

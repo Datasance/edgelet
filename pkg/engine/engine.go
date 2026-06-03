@@ -90,6 +90,8 @@ type ContainerEngine interface {
 	PruneContainers(ctx context.Context) (*ContainerPruneReport, error)
 	// PruneVolumes removes unused/orphaned volume artifacts.
 	PruneVolumes(ctx context.Context) (*VolumePruneReport, error)
+	// RemoveNamedVolume deletes a named volume when it exists.
+	RemoveNamedVolume(ctx context.Context, name string) error
 
 	// Inspection / stats
 	GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)

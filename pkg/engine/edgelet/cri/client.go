@@ -141,3 +141,12 @@ func (c *Client) PodSandboxStatus(ctx context.Context, podSandboxID string) (*ru
 		Verbose:     false,
 	})
 }
+
+// ListPodSandboxes lists pod sandboxes matching the filter.
+func (c *Client) ListPodSandboxes(ctx context.Context, filter *runtimeapi.PodSandboxFilter) ([]*runtimeapi.PodSandbox, error) {
+	resp, err := c.runtime.ListPodSandbox(ctx, &runtimeapi.ListPodSandboxRequest{Filter: filter})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}

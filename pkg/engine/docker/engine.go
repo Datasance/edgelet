@@ -245,6 +245,10 @@ func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, err
 	}, nil
 }
 
+func (e *Engine) RemoveNamedVolume(_ context.Context, name string) error {
+	return e.client.RemoveNamedVolume(name)
+}
+
 // --- Inspection / stats ---
 
 func (e *Engine) GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error) {
