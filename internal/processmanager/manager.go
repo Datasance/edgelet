@@ -51,7 +51,9 @@ type ProcessManager struct {
 	startMicroserviceFn       func(microserviceUUID string) error
 	removeContainerByIDFn     func(containerID string) error
 	launchLocalDeploymentFn   func(item *models.LocalDeployedMicroservice, now int64)
+	launchControlPlaneFn      func(item *models.ControlPlaneDeployment, now int64)
 	recreateLocalDeploymentFn func(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error
+	recreateControlPlaneFn    func(item *models.ControlPlaneDeployment, pullImage bool, now int64) error
 	getContainerStatusFn      func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
 	reconcileMonitorTick      uint64
 	localLaunchLocks          sync.Map // microservice UUID -> *sync.Mutex
@@ -446,6 +448,7 @@ func (pm *ProcessManager) containersMonitor() {
 		tickStart := time.Now()
 		reconcileStats := &reconcileCycleStats{}
 
+		pm.reconcileControlPlane()
 		pm.handleLatestMicroservices(reconcileStats)
 		pm.reconcileLocalDeployments()
 		pm.deleteRemainingMicroservices()
@@ -1438,6 +1441,11 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 
 	cfg := config.GetInstance()
 
+	var cpDep *models.ControlPlaneDeployment
+	if item, found, err := store.GetInstance().GetControlPlaneDeployment(); err == nil && found {
+		cpDep = item
+	}
+
 	for _, container := range allContainers {
 		msUUID := workloadmeta.MicroserviceUIDFromLabels(container.Labels)
 		if msUUID == "" {
@@ -1449,9 +1457,12 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 
 		removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
 			container.Labels,
+			container.ID,
+			container.Image,
 			isCurrent,
 			isLatest,
 			cfg.WatchdogEnabled,
+			cpDep,
 		)
 		if removeManagedByUUID {
 			oldAgentUUIDs = append(oldAgentUUIDs, msUUID)
@@ -1495,25 +1506,6 @@ func isProcessManagerStatusReportTombstone(status *models.MicroserviceStatus) bo
 	default:
 		return false
 	}
-}
-
-func cleanupDecisionForContainer(labels map[string]string, isCurrent, isLatest, watchdogEnabled bool) (removeManagedByUUID bool, removeUnknownByID bool) {
-	if workloadmeta.IsSystemWorkload(labels) {
-		return false, false
-	}
-
-	isLocalScope := strings.EqualFold(strings.TrimSpace(labels[workloadmeta.LabelScope]), workloadmeta.ScopeLocal)
-	// Agent-managed, non-local workloads that no longer exist in desired latest set
-	// should be removed regardless of watchdog setting.
-	if !isLatest && workloadmeta.IsManagedByIofog(labels) && !isLocalScope {
-		return true, false
-	}
-
-	// Unknown workload cleanup remains watchdog-gated.
-	if !isCurrent && !isLatest && watchdogEnabled {
-		return false, true
-	}
-	return false, false
 }
 
 // updateRunningMicroservicesCount updates the count of running managed microservices.

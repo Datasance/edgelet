@@ -107,9 +107,12 @@ func TestCleanupDecisionForContainer_RemovesManagedStaleEvenWhenNotCurrentAndWat
 
 	removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
 		labels,
+		"cid-stale",
+		"busybox:latest",
 		false, // not in current set
 		false, // not in latest set
 		false, // watchdog disabled
+		nil,
 	)
 	if !removeManagedByUUID {
 		t.Fatalf("expected stale managed workload to be removed by uuid when watchdog is disabled")
@@ -128,9 +131,12 @@ func TestCleanupDecisionForContainer_DoesNotRemoveLocalScopeAsManagedStale(t *te
 
 	removeManagedByUUID, removeUnknownByID := cleanupDecisionForContainer(
 		labels,
+		"cid-local",
+		"busybox:latest",
 		false,
 		false,
 		false,
+		nil,
 	)
 	if removeManagedByUUID || removeUnknownByID {
 		t.Fatalf("expected local scope workload to be preserved by managed stale cleanup")
