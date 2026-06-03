@@ -29,6 +29,7 @@ Usage: $0 --suite=NAME [suite-specific options]
 
 Suites:
   workload-continuity   Plan 11 T11-A–D (test/workload-continuity/run-all.sh)
+  control-plane         Plan 12 T12-A–E (test/control-plane/run-all.sh)
   embedded              Full embedded matrix on iofog-test
   embedded-cgroup-v1    Hybrid cgroup v1 gate on iofog-test-v1 (optional)
   engine-lifecycle      Plan 9A cold engine switch
@@ -50,6 +51,9 @@ run_suite() {
     case "${SUITE}" in
         workload-continuity)
             exec "${REPO_ROOT}/test/workload-continuity/run-all.sh" "${FORWARD_ARGS[@]}"
+            ;;
+        control-plane)
+            exec "${REPO_ROOT}/test/control-plane/run-all.sh" "${FORWARD_ARGS[@]}"
             ;;
         embedded)
             exec "${REPO_ROOT}/test/embedded/run-all.sh" "${FORWARD_ARGS[@]}"

@@ -10,7 +10,7 @@
 | **T11-A** | `docker-restart.sh` | After 11-1 | `restart edgelet` → same Docker container IDs; MS running |
 | **T11-B** | (regression) | After 11-1 | `test/engine-lifecycle/run-all.sh` still green |
 | **T11-C** | `embedded-restart.sh` | After 11-4 | restart **edgelet** only → CRI containers survive |
-| **T11-D** | `embedded-runtime-restart.sh` | After 11-4 | restart containerd unit; MS down then up |
+| **T11-D** | `embedded-runtime-restart.sh` | After 11-4 | restart containerd unit; poll until CRI drain (0 ctr rows), then MS reconciles |
 | **T11-E** | doc | Pre-11-4 | Monolithic embedded restart still drains MS |
 
 ## Runner
