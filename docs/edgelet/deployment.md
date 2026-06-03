@@ -170,6 +170,18 @@ On thin upgrade with a new embed hash, `edgelet daemon` extracts to `/var/lib/ed
 
 Coordinated rollback: controller triggers `install.sh --rollback` + service restart; operators may reuse an on-disk hash tree if still present.
 
+### Service restart matrix (Plan 11)
+
+After install/OTA, restart the minimum unit set so MS stay running when possible:
+
+| Change | Restart order | MS impact |
+|--------|---------------|-----------|
+| Thin **edgelet** binary only (same embed hash) | `systemctl restart edgelet` | **None** on docker/podman; **none** on embedded split |
+| Fat / containerd bundle (new embed hash) | `systemctl restart edgelet-containerd` then `edgelet` | MS stop during data-plane restart; reconcile on control start |
+| Monolithic embedded (no split) | `systemctl restart edgelet` | MS drained until runtime split enabled |
+
+See [workload-continuity.md](workload-continuity.md).
+
 ## Runtime engine selection
 
 ```yaml

@@ -87,6 +87,36 @@ See [cgroups.md](cgroups.md) for the full matrix.
 
 ---
 
+## Control vs data plane restart
+
+**Symptoms:** MS disappear after `systemctl restart edgelet`; unexpected downtime during agent OTA.
+
+**Checks:**
+
+1. Identify which unit you restarted:
+
+   ```bash
+   systemctl status edgelet edgelet-containerd --no-pager
+   ```
+
+2. **docker/podman:** control restart should **not** drain MS (`shutdownPolicy=leave-running` default):
+
+   ```bash
+   grep shutdownPolicy /etc/edgelet/config.yaml
+   edgelet system status -o json | jq '."runtime.shutdownPolicy", ."runtime.agentPhase"'
+   docker ps --filter label=iofog.org/microservice-uuid
+   ```
+
+3. **embedded split:** restart **`edgelet` only** for control OTA; restart **`edgelet-containerd`** only when the fat/runtime bundle changed (expect MS stop + reconcile).
+
+4. **Monolithic embedded** (no `edgelet-containerd` active): `restart edgelet` still drains MS — enable runtime split per [workload-continuity.md](workload-continuity.md).
+
+5. **Cold engine change** (Plan 9A): changing `containerEngine` always recreates MS — this is expected and unrelated to workload continuity.
+
+See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
+
+---
+
 ## Containerd socket (edgelet engine)
 
 **Symptoms:** `connection refused` to `/run/edgelet/containerd.sock`; microservices stuck in pull/create.

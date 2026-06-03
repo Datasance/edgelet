@@ -58,7 +58,7 @@ Preflight on the **thin** `/usr/local/bin/edgelet` uses a procfs/cgroupfs-only p
 
 `edgelet shutdown` tries EdgeletAPI graceful stop, then SIGTERM/SIGKILL fallback. **Drain / leave-running policy** is owned by Plan 11; Plan 10 only defines the stop entry.
 
-`TimeoutStopSec=120` on systemd is a placeholder until Plan 11 wires `shutdownGracePeriodSeconds` + buffer.
+`TimeoutStopSec=120` on systemd equals default `shutdownGracePeriodSeconds` (90) + 30s buffer (Plan 11). Embedded engine uses `edgelet.service.d/edgelet.conf` drop-in with `EDGELET_RUNTIME_SPLIT=1`.
 
 ---
 
