@@ -182,6 +182,7 @@ func workloadEqual(a, b WorkloadRecord) bool {
 		a.HostNetwork == b.HostNetwork &&
 		a.IsRouter == b.IsRouter &&
 		a.IsNats == b.IsNats &&
+		a.IsController == b.IsController &&
 		a.Active == b.Active &&
 		a.StartedAt == b.StartedAt
 }

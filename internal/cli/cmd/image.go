@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 
 	"github.com/datasance/edgelet/internal/cli/domain/image"
 	"github.com/datasance/edgelet/internal/cli/output"
 	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/datasance/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -69,12 +71,11 @@ func newImageLoadCommand() *cobra.Command {
 			if err := run.RequireDaemon(appCtx.Client); err != nil {
 				return err
 			}
-			var result *image.LoadResult
-			err := run.WithSpinner(appCtx, "Loading image archive...", func() error {
-				var err error
-				result, err = image.Load(appCtx.Client, image.LoadRequest{Path: filePath})
-				return err
-			})
+			var uiProgress *ui.UI
+			if !appCtx.Format.IsStructured() {
+				uiProgress = appCtx.UI
+			}
+			result, err := image.Load(context.Background(), appCtx.Client, uiProgress, image.LoadRequest{Path: filePath})
 			if err != nil {
 				return err
 			}

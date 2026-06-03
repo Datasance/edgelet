@@ -1,6 +1,10 @@
 package docker
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/datasance/edgelet/internal/dnsresolver"
+)
 
 func TestBuildExtraHostsWithIoFog_UsesCanonicalAgentHost(t *testing.T) {
 	got := buildExtraHostsWithIoFog([]string{"custom.local:10.0.0.10"}, "10.0.0.2")
@@ -59,5 +63,18 @@ func TestAppendCanonicalReservedHosts_DeduplicatesHostnames(t *testing.T) {
 	}
 	if routerCount != 1 || natsCount != 1 {
 		t.Fatalf("expected deduped canonical host entries, got %v", got)
+	}
+}
+
+func TestWorkloadBridgeNetworkAliases_ControlPlaneDocker(t *testing.T) {
+	got := dnsresolver.WorkloadBridgeNetworkAliases("default", "pot", true)
+	want := []string{"default.pot", "edgelet.controller", "controller.default"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
 	}
 }

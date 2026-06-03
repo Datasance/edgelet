@@ -169,6 +169,10 @@ func (l *loggingEngine) PruneVolumes(ctx context.Context) (*VolumePruneReport, e
 	return report, err
 }
 
+func (l *loggingEngine) RemoveNamedVolume(ctx context.Context, name string) error {
+	return l.inner.RemoveNamedVolume(ctx, name)
+}
+
 func (l *loggingEngine) GetContainerStatus(containerID, microserviceUUID string) (*models.MicroserviceStatus, error) {
 	return l.inner.GetContainerStatus(containerID, microserviceUUID)
 }

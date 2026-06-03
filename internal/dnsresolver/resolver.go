@@ -40,16 +40,17 @@ const (
 )
 
 type WorkloadRecord struct {
-	UUID        string
-	Application string
-	Name        string
-	Scope       Scope
-	IP          string
-	HostNetwork bool
-	IsRouter    bool
-	IsNats      bool
-	Active      bool
-	StartedAt   int64
+	UUID         string
+	Application  string
+	Name         string
+	Scope        Scope
+	IP           string
+	HostNetwork  bool
+	IsRouter     bool
+	IsNats       bool
+	IsController bool
+	Active       bool
+	StartedAt    int64
 }
 
 type serverSet struct {
@@ -790,6 +791,14 @@ func aliasesForWorkload(rec WorkloadRecord, compat bool) []string {
 		short := "iofog_" + rec.UUID
 		add(short)
 		add(short + "." + defaultZoneName)
+	}
+	if rec.IsController {
+		add(controlPlaneAliasEdgeletController)
+		add(controlPlaneAliasEdgeletController + "." + defaultZoneName)
+		if nsAlias := ControlPlaneBridgeAliasNamespaceController(rec.Application); nsAlias != "" {
+			add(nsAlias)
+			add(nsAlias + "." + defaultZoneName)
+		}
 	}
 	if rec.Scope == ScopeManaged && rec.IsRouter {
 		add(reservedRouterName)

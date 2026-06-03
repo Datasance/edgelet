@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/datasance/edgelet/internal/branding"
+	"github.com/datasance/edgelet/internal/cli/client"
 	"github.com/datasance/edgelet/internal/cli/output"
 	"github.com/datasance/edgelet/internal/cli/run"
 	"github.com/datasance/edgelet/internal/cli/ui"
@@ -81,6 +82,9 @@ func newRootCommand() *cobra.Command {
 			appCtx.BuildTime = BuildTime
 			appCtx.GitCommit = GitCommit
 			appCtx.Client = newClient()
+			if apiClient, ok := appCtx.Client.(*client.Client); ok {
+				client.ConfigureCLI(apiClient, timeout)
+			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -108,6 +112,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newSystemCommand())
 	cmd.AddCommand(newMSCommand())
 	cmd.AddCommand(newRegistryCommand())
+	cmd.AddCommand(newControlPlaneCommand())
 	cmd.AddCommand(newRuntimeClassCommand())
 	cmd.AddCommand(newImageCommand())
 	cmd.AddCommand(newAuthCommand())

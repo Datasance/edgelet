@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/datasance/edgelet/internal/runtimeapi"
 )
 
 const (
@@ -12,6 +14,7 @@ const (
 	ErrCodeForbidden        = "FORBIDDEN"
 	ErrCodeNotFound         = "NOT_FOUND"
 	ErrCodeConflict         = "CONFLICT"
+	ErrCodeApplyInProgress  = "APPLY_IN_PROGRESS"
 	ErrCodeNotImplemented   = "NOT_IMPLEMENTED"
 	ErrCodeInternal         = "INTERNAL"
 	ErrCodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
@@ -39,6 +42,14 @@ func writeSuccess(w http.ResponseWriter, statusCode int, payload interface{}) {
 		Success: true,
 		Data:    payload,
 	})
+}
+
+func writeMicroserviceLifecycleError(w http.ResponseWriter, err error) {
+	if runtimeapi.IsControlPlaneLifecycleBlocked(err) {
+		writeAPIError(w, http.StatusForbidden, ErrCodeForbidden, err.Error(), nil)
+		return
+	}
+	writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 }
 
 func writeAPIError(w http.ResponseWriter, statusCode int, code, message string, details map[string]interface{}) {

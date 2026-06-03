@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/datasance/edgelet/internal/config"
+	"github.com/datasance/edgelet/internal/dnsresolver"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/workloadmeta"
@@ -970,13 +971,16 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 
 	// Build networking config with DNS alias for service discovery
 	var networkingConfig *network.NetworkingConfig
-	if !ms.HostNetworkMode && ms.ApplicationName != "" && ms.MicroserviceName != "" {
-		networkingConfig = &network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				targetNetwork: {
-					Aliases: []string{ms.ApplicationName + "." + ms.MicroserviceName},
+	if !ms.HostNetworkMode {
+		aliases := dnsresolver.WorkloadBridgeNetworkAliases(ms.ApplicationName, ms.MicroserviceName, ms.IsController)
+		if len(aliases) > 0 {
+			networkingConfig = &network.NetworkingConfig{
+				EndpointsConfig: map[string]*network.EndpointSettings{
+					targetNetwork: {
+						Aliases: aliases,
+					},
 				},
-			},
+			}
 		}
 	}
 
@@ -1010,8 +1014,9 @@ func buildCanonicalContainerMetadata(ms *models.Microservice, cfg *config.Config
 		RuntimeEngine:    workloadmeta.RuntimeEngineDocker,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
+		IsController:     ms.IsController,
 		HostNetwork:      ms.HostNetworkMode,
-		IsSystem:         false,
+		IsSystem:         ms.IsSystem || ms.IsController,
 		TimeZone:         cfg.TimeZone,
 		UserEnv:          envVarMap(ms.EnvVars),
 		UserLabels:       ms.Labels,

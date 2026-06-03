@@ -13,10 +13,11 @@ type BuildInput struct {
 	NodeUUID         string
 	RuntimeEngine    string
 
-	IsRouter    bool
-	IsNats      bool
-	HostNetwork bool
-	IsSystem    bool
+	IsRouter     bool
+	IsNats       bool
+	IsController bool
+	HostNetwork  bool
+	IsSystem     bool
 
 	SandboxID string
 	TimeZone  string
@@ -26,7 +27,7 @@ type BuildInput struct {
 }
 
 func BuildLabels(in BuildInput) map[string]string {
-	scope := ResolveScope(in.ApplicationName, in.HostNetwork)
+	scope := scopeForBuildInput(in)
 	labels := map[string]string{
 		LabelAppName:         strings.TrimSpace(in.MicroserviceName),
 		LabelAppInstance:     strings.TrimSpace(in.MicroserviceUUID),
@@ -36,8 +37,8 @@ func BuildLabels(in BuildInput) map[string]string {
 		LabelNodeUID:         strings.TrimSpace(in.NodeUUID),
 		LabelScope:           scope,
 		LabelRuntimeEngine:   normalizeRuntimeEngine(in.RuntimeEngine),
-		LabelRole:            RoleFromMicroservice(in.IsRouter, in.IsNats),
-		LabelSystem:          boolLabel(in.IsSystem),
+		LabelRole:            roleForBuildInput(in),
+		LabelSystem:          boolLabel(in.IsSystem || in.IsController),
 		LabelHostNetwork:     boolLabel(in.HostNetwork),
 	}
 
@@ -49,7 +50,7 @@ func BuildLabels(in BuildInput) map[string]string {
 }
 
 func BuildEnv(in BuildInput) []string {
-	scope := ResolveScope(in.ApplicationName, in.HostNetwork)
+	scope := scopeForBuildInput(in)
 	canonical := map[string]string{
 		EnvMicroserviceUID:  strings.TrimSpace(in.MicroserviceUUID),
 		EnvMicroserviceName: strings.TrimSpace(in.MicroserviceName),
@@ -57,7 +58,7 @@ func BuildEnv(in BuildInput) []string {
 		EnvNodeUID:          strings.TrimSpace(in.NodeUUID),
 		EnvScope:            scope,
 		EnvRuntimeEngine:    normalizeRuntimeEngine(in.RuntimeEngine),
-		EnvRole:             RoleFromMicroservice(in.IsRouter, in.IsNats),
+		EnvRole:             roleForBuildInput(in),
 	}
 
 	// Canonical env vars first in deterministic order.
@@ -123,6 +124,20 @@ func MergeUserLabels(user map[string]string, canonical map[string]string) map[st
 	}
 
 	return out
+}
+
+func roleForBuildInput(in BuildInput) string {
+	if in.IsController {
+		return RoleController
+	}
+	return RoleFromMicroservice(in.IsRouter, in.IsNats)
+}
+
+func scopeForBuildInput(in BuildInput) string {
+	if in.IsController {
+		return ScopeLocal
+	}
+	return ResolveScope(in.ApplicationName, in.HostNetwork)
 }
 
 func normalizeRuntimeEngine(v string) string {

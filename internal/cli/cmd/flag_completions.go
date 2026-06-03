@@ -10,7 +10,7 @@ func registerOutputFlagCompletion(cmd *cobra.Command) {
 
 func registerSourceFlagCompletion(cmd *cobra.Command) {
 	_ = cmd.RegisterFlagCompletionFunc("source", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{"managed", "local", "all"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"managed", "local", "controlplane", "all"}, cobra.ShellCompDirectiveNoFileComp
 	})
 }
 

@@ -125,6 +125,9 @@ func (e *Engine) PruneContainers(ctx context.Context) (*engine.ContainerPruneRep
 func (e *Engine) PruneVolumes(ctx context.Context) (*engine.VolumePruneReport, error) {
 	return e.inner.PruneVolumes(ctx)
 }
+func (e *Engine) RemoveNamedVolume(ctx context.Context, name string) error {
+	return e.inner.RemoveNamedVolume(ctx, name)
+}
 func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
 	return e.inner.InspectContainerRaw(containerID)
 }

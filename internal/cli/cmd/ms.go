@@ -46,7 +46,7 @@ func newMSListCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  runMSList,
 	}
-	cmd.Flags().String("source", "all", "Filter list: managed, local, or all")
+	cmd.Flags().String("source", "all", "Filter list: managed, local, controlplane, or all")
 	registerSourceFlagCompletion(cmd)
 	return cmd
 }
@@ -166,8 +166,8 @@ func runMSList(cmd *cobra.Command, args []string) error {
 	if source == "" {
 		source = "all"
 	}
-	if source != "managed" && source != "local" && source != "all" {
-		return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|all", nil)
+	if source != "managed" && source != "local" && source != "controlplane" && source != "all" {
+		return run.NewCLIError(run.CodeInvalidArgument, "--source requires managed|local|controlplane|all", nil)
 	}
 	path := "/v1/ms?source=" + source
 	data, err := appCtx.Client.Request("GET", path, nil)

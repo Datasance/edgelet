@@ -390,7 +390,7 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	podConfig := cri.PodSandboxConfigFromMicroservice(ms, hostname, logDirectory, cfg.IOFogUUID)
 
 	sandboxStart := time.Now()
-	sandboxID, err := e.criClient.RunPodSandbox(ctx, podConfig, runtimeHandler)
+	sandboxID, err := e.runPodSandboxWithRecovery(ctx, podConfig, runtimeHandler, ms.MicroserviceUUID)
 	if err != nil {
 		e.emitCRISubstep(runtimeops.EventEngineCRISandboxCreated, "criRunPodSandbox", "", "", ms.ImageName, runtimeops.ReasonCreateFailed, sandboxStart, err)
 		return "", fmt.Errorf("RunPodSandbox for %s: %w", containerName, err)
@@ -446,15 +446,16 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	})
 	e.ensureDNSResolver()
 	e.dnsResolver.UpsertWorkload(dnsresolver.WorkloadRecord{
-		UUID:        ms.MicroserviceUUID,
-		Application: ms.ApplicationName,
-		Name:        ms.MicroserviceName,
-		Scope:       dnsScopeFromMicroservice(ms),
-		IP:          ipAddr,
-		HostNetwork: ms.HostNetworkMode,
-		IsRouter:    ms.IsRouter,
-		IsNats:      ms.IsNats,
-		Active:      false,
+		UUID:         ms.MicroserviceUUID,
+		Application:  ms.ApplicationName,
+		Name:         ms.MicroserviceName,
+		Scope:        dnsScopeFromMicroservice(ms),
+		IP:           ipAddr,
+		HostNetwork:  ms.HostNetworkMode,
+		IsRouter:     ms.IsRouter,
+		IsNats:       ms.IsNats,
+		IsController: ms.IsController,
+		Active:       false,
 	})
 	e.emitEngineSuccess(runtimeops.EventEngineCRIContainerCreated, containerID, sandboxID, ms.ImageName, "CRI create complete", createStart, map[string]any{
 		"step":           "criCreateComplete",
@@ -679,13 +680,14 @@ func dnsScopeFromWorkloadScope(scope string) dnsresolver.Scope {
 func dnsRecordFromLabels(labels map[string]string, ip string) dnsresolver.WorkloadRecord {
 	role := strings.TrimSpace(labels[workloadmeta.LabelRole])
 	rec := dnsresolver.WorkloadRecord{
-		UUID:        workloadmeta.MicroserviceUIDFromLabels(labels),
-		Name:        strings.TrimSpace(labels[workloadmeta.LabelAppName]),
-		Application: strings.TrimSpace(labels[workloadmeta.LabelAppPartOf]),
-		IP:          strings.TrimSpace(ip),
-		HostNetwork: strings.EqualFold(strings.TrimSpace(labels[workloadmeta.LabelHostNetwork]), "true"),
-		IsRouter:    role == workloadmeta.RoleRouter,
-		IsNats:      role == workloadmeta.RoleNats,
+		UUID:         workloadmeta.MicroserviceUIDFromLabels(labels),
+		Name:         strings.TrimSpace(labels[workloadmeta.LabelAppName]),
+		Application:  strings.TrimSpace(labels[workloadmeta.LabelAppPartOf]),
+		IP:           strings.TrimSpace(ip),
+		HostNetwork:  strings.EqualFold(strings.TrimSpace(labels[workloadmeta.LabelHostNetwork]), "true"),
+		IsRouter:     role == workloadmeta.RoleRouter,
+		IsNats:       role == workloadmeta.RoleNats,
+		IsController: role == workloadmeta.RoleController,
 	}
 	rec.Scope = dnsScopeFromWorkloadScope(workloadmeta.ResolveScope(rec.Application, rec.HostNetwork))
 	return rec
@@ -1151,6 +1153,21 @@ func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, err
 	}
 	e.emitEnginePruneSummary("pruneVolumes", pruneStart, map[string]any{"deletedCount": report.DeletedCount})
 	return report, nil
+}
+
+func (e *Engine) RemoveNamedVolume(_ context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("volume name is required")
+	}
+	target := filepath.Join(config.GetInstance().DiskDirectory, "volumes", name)
+	if _, err := os.Stat(target); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return os.RemoveAll(target)
 }
 
 // --- Inspection / stats ---
@@ -2273,8 +2290,9 @@ func buildIofogContainerEnv(ms *models.Microservice, cfg *config.Config) []strin
 		RuntimeEngine:    workloadmeta.RuntimeEngineEdgelet,
 		IsRouter:         ms.IsRouter,
 		IsNats:           ms.IsNats,
+		IsController:     ms.IsController,
 		HostNetwork:      ms.HostNetworkMode,
-		IsSystem:         false,
+		IsSystem:         ms.IsSystem || ms.IsController,
 		TimeZone:         cfg.TimeZone,
 		UserEnv:          envVarMapFromMicroservice(ms.EnvVars),
 		UserLabels:       ms.Labels,

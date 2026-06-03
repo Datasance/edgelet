@@ -42,6 +42,14 @@ func FormatApplyHuman(result map[string]interface{}) string {
 				)
 			}
 			return "runtimeclass manifest applied successfully"
+		case "controlplane":
+			return fmt.Sprintf(
+				"controlplane manifest applied successfully (controllerUuid=%s namespace=%s name=%s mode=%s)",
+				output.MapValueAsString(result, "controllerUuid"),
+				output.MapValueAsString(result, "namespace"),
+				output.MapValueAsString(result, "name"),
+				output.MapValueAsString(result, "mode"),
+			)
 		default:
 			if id := output.MapValueAsString(result, "deploymentId"); id != "<unknown>" {
 				return fmt.Sprintf("manifest applied successfully (deploymentId=%s)", id)
@@ -73,6 +81,15 @@ func FormatApplyHuman(result map[string]interface{}) string {
 	}
 
 	if status == "succeeded" {
+		if controllerUUID := output.MapValueAsString(result, "controllerUuid"); controllerUUID != "<unknown>" && controllerUUID != "" {
+			return fmt.Sprintf(
+				"controlplane manifest applied successfully (controllerUuid=%s namespace=%s name=%s mode=%s)",
+				controllerUUID,
+				output.MapValueAsString(result, "namespace"),
+				output.MapValueAsString(result, "name"),
+				output.MapValueAsString(result, "mode"),
+			)
+		}
 		if id := output.MapValueAsString(result, "deploymentId"); id != "<unknown>" {
 			return fmt.Sprintf("microservice manifest applied successfully (deploymentId=%s)", id)
 		}

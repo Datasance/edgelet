@@ -47,6 +47,10 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/config/switch", Verb: "update"}, true
 	case path == "/v1/system/gps":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/gps", Verb: verb}, true
+	case path == "/v1/system/controlplane" || path == "/v1/system/controlplane/manifest":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controlplane", Verb: verb}, true
+	case path == "/v1/system/controller":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controller", Verb: verb}, true
 	case path == "/v1/images":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images", Verb: verb}, true
 	case path == "/v1/images:pull":
@@ -55,6 +59,8 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/pull/status", Verb: verb}, true
 	case path == "/v1/images:load":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/load", Verb: verb}, true
+	case strings.HasPrefix(path, "/v1/images:load/"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/load/status", Verb: verb}, true
 	case path == "/v1/images:prune":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "images/prune", Verb: verb}, true
 	case path == "/v1/images:remove":
@@ -87,6 +93,10 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/registries", Verb: verb}, true
 	case strings.HasPrefix(path, "/v1/deploy/runtimeclasses"):
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/runtimeclasses", Verb: verb}, true
+	case strings.HasPrefix(path, "/v1/deploy/controlplane:apply/"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/controlplane/apply/status", Verb: verb}, true
+	case strings.HasPrefix(path, "/v1/deploy/controlplane"):
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "deploy/controlplane", Verb: verb}, true
 	case path == "/v1/auth/whoami":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "auth/whoami", Verb: verb}, true
 	case path == "/v1/auth/tokens" || path == "/v1/auth/tokens/revoke":

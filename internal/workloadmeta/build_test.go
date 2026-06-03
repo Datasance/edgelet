@@ -136,6 +136,28 @@ func TestBuildEnvInjectTZWhenMissing(t *testing.T) {
 	}
 }
 
+func TestBuildLabelsControlPlaneIdentity(t *testing.T) {
+	in := BuildInput{
+		MicroserviceUUID: "cp-uuid",
+		MicroserviceName: "pot",
+		ApplicationName:  "default",
+		NodeUUID:         "node-1",
+		RuntimeEngine:    RuntimeEngineEdgelet,
+		IsController:     true,
+		IsSystem:         true,
+	}
+	got := BuildLabels(in)
+	if got[LabelRole] != RoleController {
+		t.Fatalf("expected role controller, got %q", got[LabelRole])
+	}
+	if got[LabelScope] != ScopeLocal {
+		t.Fatalf("expected scope local, got %q", got[LabelScope])
+	}
+	if got[LabelSystem] != "true" {
+		t.Fatalf("expected system true, got %q", got[LabelSystem])
+	}
+}
+
 func TestMergeUserLabelsCanonicalWins(t *testing.T) {
 	user := map[string]string{
 		"custom.one":             "1",

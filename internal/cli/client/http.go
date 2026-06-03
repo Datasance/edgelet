@@ -30,6 +30,25 @@ type Client struct {
 	baseURL        string
 	unixSocketPath string
 	token          string
+	requestTimeout time.Duration
+}
+
+// SetRequestTimeout configures the per-request HTTP timeout for unix/TLS transports.
+func (c *Client) SetRequestTimeout(timeout time.Duration) {
+	if c == nil {
+		return
+	}
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+	c.requestTimeout = timeout
+}
+
+func (c *Client) httpTimeout() time.Duration {
+	if c == nil || c.requestTimeout <= 0 {
+		return DefaultRequestTimeout
+	}
+	return c.requestTimeout
 }
 
 // EdgeletAPIError is a structured EdgeletAPI v1 error.
@@ -51,11 +70,13 @@ func (e *EdgeletAPIError) Error() string {
 
 // New creates a new Edgelet API client.
 func New() *Client {
-	return &Client{
+	c := &Client{
 		baseURL:        localAPIBaseURL,
 		unixSocketPath: filepath.Join(utils.VarRun, "edgelet.sock"),
 		token:          readAccessToken(),
 	}
+	c.SetRequestTimeout(DefaultRequestTimeout)
+	return c
 }
 
 // Token returns the EdgeletAPI bearer token used for WebSocket auth.
@@ -316,8 +337,12 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 	// Prefer unix socket transport for admin/CLI path.
 	reqUnix, err := cloneRequestWithBody(req)
 	if err == nil {
-		if resp, unixErr := c.doViaUnixSocket(reqUnix, c.unixSocketPath); unixErr == nil {
+		resp, unixErr := c.doViaUnixSocket(reqUnix, c.unixSocketPath)
+		if unixErr == nil {
 			return resp, nil
+		}
+		if isMutatingHTTPMethod(req.Method) {
+			return nil, unixErr
 		}
 	}
 
@@ -326,10 +351,19 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	httpClient := &http.Client{
-		Timeout:   15 * time.Second,
+		Timeout:   c.httpTimeout(),
 		Transport: c.tlsTransport(),
 	}
 	return httpClient.Do(reqTLS)
+}
+
+func isMutatingHTTPMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func cloneRequestWithBody(req *http.Request) (*http.Request, error) {
@@ -391,7 +425,7 @@ func (c *Client) doViaUnixSocket(req *http.Request, socketPath string) (*http.Re
 	clone.RequestURI = ""
 
 	httpClient := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: c.httpTimeout(),
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", socketPath)
