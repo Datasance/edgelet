@@ -61,13 +61,7 @@ func detectNestedHost() bool {
 	if err != nil {
 		return false
 	}
-	path := strings.ToLower(unified)
-	for _, token := range []string{"docker", "lxc", "libpod", "containerd", "kubepods", "podman", "cri-containerd"} {
-		if strings.Contains(path, token) {
-			return true
-		}
-	}
-	return false
+	return cgroupPathIndicatesNested(unified)
 }
 
 func parseCgroupFileUnified(path string) (string, error) {
