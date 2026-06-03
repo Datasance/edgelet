@@ -126,6 +126,16 @@ func ValidateConfig(cfg *Config) error {
 		errors = append(errors, "shutdownGracePeriodSeconds must be between 5 and 600")
 	}
 
+	policy := strings.ToLower(strings.TrimSpace(cfg.ShutdownPolicy))
+	if policy == "" {
+		policy = DefaultShutdownPolicy(cfg.ContainerEngine)
+	}
+	switch policy {
+	case ShutdownPolicyLeaveRunning, ShutdownPolicyDrainAll:
+	default:
+		errors = append(errors, fmt.Sprintf("shutdownPolicy must be %q or %q (got %q)", ShutdownPolicyLeaveRunning, ShutdownPolicyDrainAll, cfg.ShutdownPolicy))
+	}
+
 	// Validate controller timeouts (edge-friendly)
 	if cfg.ControllerRequestTimeoutSeconds < 5 || cfg.ControllerRequestTimeoutSeconds > 300 {
 		errors = append(errors, "controllerRequestTimeoutSeconds must be between 5 and 300")
@@ -226,6 +236,12 @@ func ValidateProperty(key, value string) error {
 	case "dockerUrl":
 		if value != "" && !strings.HasPrefix(value, "tcp://") && !strings.HasPrefix(value, "unix://") {
 			return fmt.Errorf("docker URL must start with 'tcp://' or 'unix://'")
+		}
+	case "shutdownPolicy":
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case ShutdownPolicyLeaveRunning, ShutdownPolicyDrainAll:
+		default:
+			return fmt.Errorf("shutdownPolicy must be %q or %q", ShutdownPolicyLeaveRunning, ShutdownPolicyDrainAll)
 		}
 	}
 

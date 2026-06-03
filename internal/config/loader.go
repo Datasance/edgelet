@@ -201,6 +201,10 @@ func loadConfigValues(cfg *Config) {
 	if cfg.ShutdownGracePeriodSeconds < 1 {
 		cfg.ShutdownGracePeriodSeconds = 90
 	}
+	cfg.ShutdownPolicy = strings.ToLower(strings.TrimSpace(getProp("shutdownPolicy", "")))
+	if cfg.ShutdownPolicy == "" {
+		cfg.ShutdownPolicy = DefaultShutdownPolicy(cfg.ContainerEngine)
+	}
 	cfg.ControllerRequestTimeoutSeconds = parseInt("controllerRequestTimeoutSeconds", "30")
 	if cfg.ControllerRequestTimeoutSeconds < 5 {
 		cfg.ControllerRequestTimeoutSeconds = 30
