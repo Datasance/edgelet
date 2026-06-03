@@ -352,6 +352,66 @@ func TestLocalDeployedMicroserviceUniqueByAppName(t *testing.T) {
 	}
 }
 
+func TestMigration011CreatesControlPlaneDeploymentsSchema(t *testing.T) {
+	db := openStoreForLocalAPIV3Tests(t)
+
+	var name string
+	if err := db.Conn().QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, "control_plane_deployments").Scan(&name); err != nil {
+		t.Fatalf("expected control_plane_deployments table after migration 011: %v", err)
+	}
+
+	requiredColumns := []string{
+		"id",
+		"controller_uuid",
+		"namespace",
+		"name",
+		"manifest_yaml",
+		"image",
+		"container_id",
+		"state",
+		"desired_state",
+		"runtime_state",
+		"last_error",
+		"restart_count",
+		"last_transition_at",
+		"last_reconcile_at",
+		"last_start_attempt_at",
+		"failure_count",
+		"deleted_at",
+		"generation",
+		"observed_generation",
+		"created_at",
+		"updated_at",
+	}
+
+	rows, err := db.Conn().Query(`PRAGMA table_info(control_plane_deployments)`)
+	if err != nil {
+		t.Fatalf("failed to inspect control_plane_deployments schema: %v", err)
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid       int
+			colName   string
+			ctype     string
+			notnull   int
+			dfltValue interface{}
+			pk        int
+		)
+		if scanErr := rows.Scan(&cid, &colName, &ctype, &notnull, &dfltValue, &pk); scanErr != nil {
+			t.Fatalf("failed to scan pragma row: %v", scanErr)
+		}
+		seen[colName] = true
+	}
+	for _, col := range requiredColumns {
+		if !seen[col] {
+			t.Fatalf("expected column %q to exist after migration 011", col)
+		}
+	}
+}
+
 func TestLocalRuntimeClassCRUD(t *testing.T) {
 	db := openStoreForLocalAPIV3Tests(t)
 
