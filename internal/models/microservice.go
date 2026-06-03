@@ -36,6 +36,8 @@ type Microservice struct {
 	CapDrop            []string          `json:"capDrop,omitempty" yaml:"capDrop,omitempty"`
 	ExtraHosts         []string          `json:"extraHosts,omitempty" yaml:"extraHosts,omitempty"`
 	IsRouter           bool              `json:"isRouter" yaml:"isRouter"`
+	IsController       bool              `json:"isController" yaml:"isController"`
+	IsSystem           bool              `json:"isSystem" yaml:"isSystem"`
 	PidMode            *string           `json:"pidMode,omitempty" yaml:"pidMode,omitempty"`
 	IpcMode            *string           `json:"ipcMode,omitempty" yaml:"ipcMode,omitempty"`
 	ExecEnabled        bool              `json:"execEnabled" yaml:"execEnabled"`

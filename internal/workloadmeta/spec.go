@@ -13,9 +13,11 @@ const (
 )
 
 const (
-	RoleWorkload = "workload"
-	RoleRouter   = "router"
-	RoleNats     = "nats"
+	RoleWorkload   = "workload"
+	RoleRouter     = "router"
+	RoleNats       = "nats"
+	RoleController = "controller"
+	RoleEdgelet    = "edgelet"
 )
 
 const (
@@ -125,6 +127,21 @@ func IsSystemWorkload(labels map[string]string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(labels[LabelSystem]), "true")
+}
+
+func RoleFromLabels(labels map[string]string) string {
+	if labels == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(labels[LabelRole]))
+}
+
+func IsControllerRole(labels map[string]string) bool {
+	return RoleFromLabels(labels) == RoleController
+}
+
+func IsEdgeletRole(labels map[string]string) bool {
+	return RoleFromLabels(labels) == RoleEdgelet
 }
 
 func RoleFromMicroservice(isRouter, isNats bool) string {

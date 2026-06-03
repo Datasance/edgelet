@@ -102,3 +102,19 @@ func TestIsSystemWorkload(t *testing.T) {
 		t.Fatal("expected false for non-system workload")
 	}
 }
+
+func TestRoleFromLabelsAndControllerEdgeletRoles(t *testing.T) {
+	labels := map[string]string{LabelRole: " Controller "}
+	if got := RoleFromLabels(labels); got != RoleController {
+		t.Fatalf("expected normalized controller role, got %q", got)
+	}
+	if !IsControllerRole(labels) {
+		t.Fatal("expected controller role detection")
+	}
+	if IsEdgeletRole(labels) {
+		t.Fatal("expected edgelet role false for controller labels")
+	}
+	if !IsEdgeletRole(map[string]string{LabelRole: RoleEdgelet}) {
+		t.Fatal("expected edgelet role detection")
+	}
+}
