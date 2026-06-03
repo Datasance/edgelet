@@ -14,6 +14,8 @@ func TestShouldRunCLI(t *testing.T) {
 		{"bare binary", []string{"edgelet"}, true},
 		{"daemon alias", []string{"edgelet", "daemon"}, false},
 		{"cli subcommand", []string{"edgelet", "provision"}, true},
+		{"shutdown subcommand", []string{"edgelet", "shutdown"}, true},
+		{"cgroup-preflight subcommand", []string{"edgelet", "cgroup-preflight"}, true},
 		{"version subcommand", []string{"edgelet", "version"}, true},
 		{"help flag", []string{"edgelet", "--help"}, true},
 	}

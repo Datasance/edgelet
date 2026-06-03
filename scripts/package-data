@@ -66,3 +66,6 @@ echo "Cleared previous embed bundles for ARCH=${ARCH}"
 cp "${OUT_TAR}.zst" "pkg/data/embed/${HASH}.tar.zst"
 
 echo "Packaged pkg/data/embed/${HASH}.tar.zst ($(stat -f '%z bytes' "${OUT_TAR}.zst" 2>/dev/null || stat -c '%s bytes' "${OUT_TAR}.zst"))"
+
+chmod +x scripts/check-embed-static.sh 2>/dev/null || true
+ARCH="${ARCH}" ./scripts/check-embed-static.sh build/bin/edgelet build/stage/bin

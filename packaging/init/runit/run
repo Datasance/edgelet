@@ -1,2 +1,5 @@
 #!/bin/sh
-exec /usr/local/bin/edgelet daemon 2>&1
+LOG=/var/log/edgelet/daemon.log
+exec 2>&1
+/usr/local/bin/edgelet cgroup-preflight >>"$LOG" 2>&1 || exit $?
+exec /usr/local/bin/edgelet daemon >>"$LOG" 2>&1

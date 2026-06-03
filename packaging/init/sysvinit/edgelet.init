@@ -9,21 +9,31 @@
 ### END INIT INFO
 
 DAEMON=/usr/local/bin/edgelet
+SHUTDOWN=/usr/libexec/edgelet/edgelet-shutdown
 PIDFILE=/var/run/edgelet.pid
 LOGFILE=/var/log/edgelet/daemon.log
+KILLTIMEOUT=30
 
 . /lib/lsb/init-functions
+
+preflight() {
+    "${DAEMON}" cgroup-preflight
+}
 
 case "$1" in
     start)
         log_daemon_msg "Starting edgelet"
+        preflight || exit $?
         start-stop-daemon --start --background --make-pidfile --pidfile "$PIDFILE" \
             --exec "$DAEMON" -- daemon >>"$LOGFILE" 2>&1
         log_end_msg $?
         ;;
     stop)
         log_daemon_msg "Stopping edgelet"
-        start-stop-daemon --stop --pidfile "$PIDFILE" --retry TERM/30/KILL/5
+        if [ -x "$SHUTDOWN" ]; then
+            "$SHUTDOWN" && log_end_msg 0 && exit 0
+        fi
+        start-stop-daemon --stop --pidfile "$PIDFILE" --retry TERM/${KILLTIMEOUT}/KILL/5
         log_end_msg $?
         ;;
     restart|force-reload)

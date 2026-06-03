@@ -99,14 +99,15 @@ build-daemon-embedded: build-edgelet-linux ## (alias) Build linux thin with embe
 
 deps: ## Download, build fat runtime, package embedded zstd bundle (linux; run before build-edgelet-linux)
 	@echo "Building embedded data bundle for ARCH=$(or $(ARCH),amd64)..."
-	@chmod +x scripts/clean scripts/download scripts/download-root scripts/stage-root-aux scripts/install-embed-build-deps scripts/build-crun-static scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
+	@chmod +x scripts/clean scripts/download scripts/download-root scripts/stage-root-aux scripts/install-embed-build-deps scripts/build-crun-static scripts/build-embedded scripts/package-data scripts/build-edgelet scripts/check-embed-static.sh scripts/binary_size_check.sh scripts/ci 2>/dev/null || true
 	@ARCH=$(or $(ARCH),amd64) ./scripts/download
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-embedded
 	@ARCH=$(or $(ARCH),amd64) ./scripts/build-edgelet fat
 	@ARCH=$(or $(ARCH),amd64) ./scripts/package-data
+	@ARCH=$(or $(ARCH),amd64) ./scripts/check-embed-static.sh build/bin/edgelet build/stage/bin
 
-# ── Linux release matrix (RFC R20; no musl-suffixed artifacts — RFC R9) ────────
-# Optional ops-only static linking: STATIC_BUILD=true make build-linux-amd64
+# ── Linux release matrix; no musl-suffixed artifacts ────────
+# Static embed is default Opt out: STATIC_BUILD=false make build-linux-amd64
 
 build-linux-amd64: ## Build unified linux edgelet for linux/amd64
 	@$(MAKE) deps ARCH=amd64

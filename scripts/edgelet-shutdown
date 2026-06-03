@@ -1,0 +1,6 @@
+#!/bin/sh
+# edgelet-shutdown — shared control-plane stop entry for all init systems (Plan 10).
+# Plan 11 coordinates drain policy; this script only invokes the edgelet shutdown path.
+set -e
+EDGELET="${EDGELET_BIN:-/usr/local/bin/edgelet}"
+exec "${EDGELET}" shutdown "$@"

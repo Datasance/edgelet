@@ -1,5 +1,5 @@
 [Unit]
-Description=Edgelet daemon
+Description=Edgelet daemon (control plane)
 Documentation=https://github.com/datasance/edgelet
 Wants=network-online.target
 After=network-online.target
@@ -8,12 +8,16 @@ StartLimitBurst=20
 
 [Service]
 Type=simple
+ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
 ExecStart=/usr/local/bin/edgelet daemon
+ExecStop=/usr/libexec/edgelet/edgelet-shutdown
 Restart=always
 RestartSec=2s
+# Placeholder: align with shutdownGracePeriodSeconds + buffer (Plan 11-2 wires config).
 TimeoutStopSec=120s
 KillMode=process
 Delegate=yes
+DelegateSubgroup=supervisor
 KillSignal=SIGTERM
 SendSIGKILL=yes
 User=root
@@ -21,12 +25,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=edgelet
 
-# Security settings (embedded containerd paths)
+# Embedded engine needs host paths under /etc/cni, /run, /var, /opt (monolithic unit).
+# Tighten on edgelet-containerd.service after Plan 11 data-plane split.
 NoNewPrivileges=no
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/etc/edgelet /var/lib/edgelet /var/lib/edgelet-containerd /var/log/edgelet /run/edgelet /var/backups/edgelet
 
 # Resource limits
 LimitNOFILE=65536

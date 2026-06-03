@@ -40,7 +40,7 @@ log_info "Target arch: ${TARGET_ARCH}"
 cd "${REPO_ROOT}"
 chmod +x scripts/download scripts/download-root scripts/stage-root-aux \
     scripts/build-crun-static scripts/build-embedded scripts/package-data \
-    scripts/build-edgelet scripts/binary_size_check.sh 2>/dev/null || true
+    scripts/build-edgelet scripts/check-embed-static.sh scripts/binary_size_check.sh 2>/dev/null || true
 
 run_embed_pipeline() {
     ARCH="${TARGET_ARCH}" ./scripts/download
@@ -58,9 +58,10 @@ if [ "$(uname -s)" = Darwin ]; then
     log_info "macOS host: static crun build runs inside edgelet-embed-ci Docker image"
     docker build -f build/Dockerfile.embedded -t edgelet-embed-ci "${REPO_ROOT}"
     docker run --rm -v "${REPO_ROOT}:/src" -w /src edgelet-embed-ci \
-        bash -c "chmod +x scripts/* 2>/dev/null || true; ARCH=${TARGET_ARCH} ./scripts/download && ARCH=${TARGET_ARCH} ./scripts/build-embedded && ARCH=${TARGET_ARCH} ./scripts/build-edgelet fat && ARCH=${TARGET_ARCH} ./scripts/package-data"
+        bash -c "chmod +x scripts/* 2>/dev/null || true; ARCH=${TARGET_ARCH} ./scripts/download && ARCH=${TARGET_ARCH} ./scripts/build-embedded && ARCH=${TARGET_ARCH} ./scripts/build-edgelet fat && ARCH=${TARGET_ARCH} ./scripts/package-data && ARCH=${TARGET_ARCH} ./scripts/check-embed-static.sh build/bin/edgelet build/stage/bin"
 else
     run_embed_pipeline
+    ARCH="${TARGET_ARCH}" ./scripts/check-embed-static.sh build/bin/edgelet build/stage/bin
 fi
 
 log_ok "Embedded zstd bundle packaged (fat runtime in bin/edgelet)"

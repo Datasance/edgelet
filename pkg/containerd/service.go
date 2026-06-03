@@ -757,6 +757,10 @@ func findManagedShimPIDsFromProc(socketPath string) ([]int, error) {
 // CleanupRuntimeArtifacts removes stale runtime artifacts used by embedded containerd.
 // It intentionally preserves persistent image/layer data under EdgeletContainerdRootDir.
 func CleanupRuntimeArtifacts() error {
+	if err := stopOrphanedEmbeddedContainerdFromProc(); err != nil {
+		return fmt.Errorf("stop orphaned embedded containerd children: %w", err)
+	}
+
 	paths := []string{
 		constants.EdgeletContainerdSocket,
 		constants.EdgeletRunDir,
