@@ -658,6 +658,9 @@ func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Reque
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 			return
 		}
+		config.SuppressReloadForInProcessMutation()
+		defer config.RestoreReloadAfterInProcessMutation()
+
 		errorsMap := cfg.SetConfig(map[string]interface{}{
 			"gps":  "manual",
 			"gpsc": normalizedCoordinates,
@@ -746,6 +749,9 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		cfg.SnapshotForReload()
+		config.SuppressReloadForInProcessMutation()
+		defer config.RestoreReloadAfterInProcessMutation()
+
 		errorsMap := cfg.SetConfig(configMap)
 		if len(errorsMap) == 0 {
 			if err := cfg.TriggerReloadCallback(); err != nil {
@@ -828,6 +834,9 @@ func (h *EdgeletAPIHandler) HandleSystemControllerCert(w http.ResponseWriter, r 
 		return
 	}
 
+	config.SuppressReloadForInProcessMutation()
+	defer config.RestoreReloadAfterInProcessMutation()
+
 	errorsMap := cfg.SetConfig(map[string]interface{}{"sec": "on"})
 	if len(errorsMap) > 0 {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "failed to enable secure mode", map[string]interface{}{"errorMap": errorsMap})
@@ -870,6 +879,10 @@ func (h *EdgeletAPIHandler) HandleSystemConfigSwitch(w http.ResponseWriter, r *h
 	}
 	cfg := config.GetInstance()
 	oldProfile := cfg.GetCurrentProfile().FullValue()
+
+	config.SuppressReloadForInProcessMutation()
+	defer config.RestoreReloadAfterInProcessMutation()
+
 	if err := cfg.SwitchProfile(profile); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return

@@ -56,6 +56,7 @@ type Config struct {
 	TimeZone                        string
 	Namespace                       string
 	ShutdownGracePeriodSeconds      int
+	ShutdownPolicy                  string
 	ControllerRequestTimeoutSeconds int
 	ControllerPingTimeoutSeconds    int
 	// HWSignature removed - now stored in separate file: /etc/edgelet/agent-{uuid}.jwt
@@ -89,6 +90,7 @@ var (
 	instance                     *Config
 	once                         sync.Once
 	suppressReloadForDeprovision atomic.Bool
+	suppressReloadForInProcess   atomic.Bool
 	lastReloadSuccessful         atomic.Bool
 )
 
@@ -101,6 +103,23 @@ func RestoreReloadAfterDeprovision() { suppressReloadForDeprovision.Store(false)
 
 // IsReloadSuppressedForDeprovision returns whether SIGHUP should be skipped.
 func IsReloadSuppressedForDeprovision() bool { return suppressReloadForDeprovision.Load() }
+
+// SuppressReloadForInProcessMutation sets a flag so the config watcher skips SIGHUP
+// while the daemon writes config and applies TriggerReloadCallback in-process (API PATCH).
+func SuppressReloadForInProcessMutation() { suppressReloadForInProcess.Store(true) }
+
+// RestoreReloadAfterInProcessMutation clears in-process reload suppression.
+func RestoreReloadAfterInProcessMutation() { suppressReloadForInProcess.Store(false) }
+
+// IsReloadSuppressedForInProcessMutation returns whether watcher SIGHUP should be skipped.
+func IsReloadSuppressedForInProcessMutation() bool { return suppressReloadForInProcess.Load() }
+
+// RunInProcessConfigMutation suppresses file-watcher SIGHUP for fn (config save + reload).
+func RunInProcessConfigMutation(fn func() error) error {
+	SuppressReloadForInProcessMutation()
+	defer RestoreReloadAfterInProcessMutation()
+	return fn()
+}
 
 // SetLastReloadSuccessful updates the last reload result.
 func SetLastReloadSuccessful(ok bool) { lastReloadSuccessful.Store(ok) }

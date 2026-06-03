@@ -53,6 +53,12 @@ func startupEngineURL(engineName, dockerURL string) string {
 }
 
 func (s *Supervisor) handleColdEngineChange() error {
+	if processmanager.IsQuiesced() && runtime.GetState().PendingRestart() {
+		logging.LogDebug(moduleName, "cold engine switch already active; skipping duplicate cleanup")
+		processmanager.SetQuiesced(true)
+		return nil
+	}
+
 	logging.LogWarn(moduleName, "containerEngine change requires service restart; quiescing reconcile and cleaning up runtime state")
 
 	processmanager.SetQuiesced(true)
@@ -160,6 +166,9 @@ func (s *Supervisor) liveExternalEngineConfig() engine.EngineConfig {
 
 // ReloadConfigWithContext notifies modules after config reload with engine lifecycle handling.
 func (s *Supervisor) ReloadConfigWithContext(reloadCtx *reloadEngineContext) error {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+
 	if reloadCtx == nil {
 		reloadCtx = s.captureReloadEngineContext()
 	}

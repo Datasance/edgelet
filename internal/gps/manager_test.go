@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -45,6 +46,41 @@ func TestStartCoordinateUpdateScheduler_DisabledWhenFrequencyZero(t *testing.T) 
 	m.startCoordinateUpdateScheduler()
 	if m.updateTicker != nil {
 		t.Fatal("expected update ticker to stay nil when GPSScanFrequency <= 0")
+	}
+}
+
+func TestInstanceConfigUpdated_RapidDoubleCallDoesNotPanic(t *testing.T) {
+	cfg := config.GetInstance()
+	cfg.GPSScanFrequency = 1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	m := &Manager{
+		status: NewStatus(),
+		config: cfg,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+
+	var wg sync.WaitGroup
+	panicCh := make(chan any, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					panicCh <- r
+				}
+			}()
+			m.InstanceConfigUpdated()
+		}()
+	}
+	wg.Wait()
+	close(panicCh)
+	for r := range panicCh {
+		t.Fatalf("InstanceConfigUpdated panicked: %v", r)
 	}
 }
 

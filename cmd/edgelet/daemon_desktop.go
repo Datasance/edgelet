@@ -82,6 +82,10 @@ func runDaemon() {
 				logging.LogDebug("Daemon", "Skipping SIGHUP for deprovision config save")
 				return
 			}
+			if config.IsReloadSuppressedForInProcessMutation() {
+				logging.LogDebug("Daemon", "Skipping SIGHUP for in-process config mutation")
+				return
+			}
 			logging.LogInfo("Daemon", "Configuration file changed, sending SIGHUP to trigger reload...")
 			if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
 				logging.LogError("Daemon", "Failed to send SIGHUP for config reload", err)
