@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/datasance/edgelet/internal/constants"
@@ -13,6 +14,7 @@ type State struct {
 	startupEngine  string
 	pendingRestart bool
 	engineReady    bool
+	agentPhase     string
 }
 
 var instance = &State{}
@@ -68,6 +70,20 @@ func (s *State) EngineReady() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.engineReady
+}
+
+// SetAgentPhase records control-plane lifecycle phase for status (e.g. restarting).
+func (s *State) SetAgentPhase(phase string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agentPhase = strings.TrimSpace(phase)
+}
+
+// AgentPhase returns the current control-plane phase exposed on system status.
+func (s *State) AgentPhase() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.agentPhase
 }
 
 func normalizeEngine(engine string) string {
