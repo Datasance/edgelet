@@ -2,6 +2,7 @@ package fieldagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/datasance/edgelet/internal/gps"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/runtime"
 	"github.com/datasance/edgelet/internal/serviceaccount"
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -258,6 +261,7 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 	if microserviceStatusJSON == "" {
 		microserviceStatusJSON = "[]"
 	}
+	microserviceStatusJSON = annotateMicroserviceStatusForControlRestart(microserviceStatusJSON)
 
 	// Get repository status JSON
 	repositoryStatusJSON := processManagerStatus.GetJSONRegistriesStatus()
@@ -314,7 +318,36 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 		"availableRuntimes":         controllerRuntimes,
 	}
 
+	if phase := runtime.GetState().AgentPhase(); phase != "" {
+		status["runtimeAgentPhase"] = phase
+	}
+	if processmanager.IsQuiesced() {
+		status["controlPlaneQuiesced"] = true
+	}
+
 	return status
+}
+
+func annotateMicroserviceStatusForControlRestart(rawJSON string) string {
+	phase := runtime.GetState().AgentPhase()
+	if phase != "restarting" && !processmanager.IsQuiesced() {
+		return rawJSON
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &items); err != nil || len(items) == 0 {
+		return rawJSON
+	}
+	for _, item := range items {
+		item["controlRestart"] = true
+		if phase == "restarting" {
+			item["agentPhase"] = phase
+		}
+	}
+	out, err := json.Marshal(items)
+	if err != nil {
+		return rawJSON
+	}
+	return string(out)
 }
 
 func runtimeNamesForController(_ string, available []string) []string {

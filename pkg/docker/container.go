@@ -960,10 +960,9 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 		}
 	}
 
-	// Set restart policy
+	// ioFog MS lifecycle is owned by edgelet reconcile — not Docker RestartPolicy.
 	hostConfig.RestartPolicy = container.RestartPolicy{
-		Name:              "always",
-		MaximumRetryCount: 0,
+		Name: "no",
 	}
 
 	// Container name

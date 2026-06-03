@@ -28,15 +28,16 @@ const (
 
 // Manager manages GPS functionality
 type Manager struct {
-	status        *Status
-	deviceHandler *DeviceHandler
-	webHandler    *WebHandler
-	isRunning     bool
-	mu            sync.RWMutex
-	config        *config.Config
-	ctx           context.Context
-	cancel        context.CancelFunc
-	updateTicker  *time.Ticker
+	status          *Status
+	deviceHandler   *DeviceHandler
+	webHandler      *WebHandler
+	isRunning       bool
+	mu              sync.RWMutex
+	config          *config.Config
+	ctx             context.Context
+	cancel          context.CancelFunc
+	schedulerCancel context.CancelFunc
+	updateTicker    *time.Ticker
 }
 
 var (
@@ -116,11 +117,7 @@ func (m *Manager) Stop() error {
 
 	logging.LogInfo(moduleName, "Stopping GPS Manager")
 
-	// Stop coordinate update scheduler
-	if m.updateTicker != nil {
-		m.updateTicker.Stop()
-		m.updateTicker = nil
-	}
+	m.stopCoordinateUpdateScheduler()
 
 	// Stop device handler if running
 	if m.deviceHandler != nil {
@@ -150,6 +147,19 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
+// stopCoordinateUpdateScheduler cancels the active scheduler goroutine and stops its ticker.
+// Caller must hold m.mu when invoked from InstanceConfigUpdated/Start/Stop paths.
+func (m *Manager) stopCoordinateUpdateScheduler() {
+	if m.schedulerCancel != nil {
+		m.schedulerCancel()
+		m.schedulerCancel = nil
+	}
+	if m.updateTicker != nil {
+		m.updateTicker.Stop()
+		m.updateTicker = nil
+	}
+}
+
 // startCoordinateUpdateScheduler starts the periodic coordinate update scheduler.
 // A GPSScanFrequency of 0 (or negative) means GPS scanning is explicitly disabled;
 // no scheduler is started and no GPS updates are performed.
@@ -160,17 +170,23 @@ func (m *Manager) startCoordinateUpdateScheduler() {
 	}
 
 	updateInterval := time.Duration(m.config.GPSScanFrequency) * time.Second
-	m.updateTicker = time.NewTicker(updateInterval)
-	go func() {
+	schedCtx, cancel := context.WithCancel(m.ctx)
+	ticker := time.NewTicker(updateInterval)
+
+	m.schedulerCancel = cancel
+	m.updateTicker = ticker
+
+	go func(t *time.Ticker, done <-chan struct{}) {
+		defer t.Stop()
 		for {
 			select {
-			case <-m.ctx.Done():
+			case <-done:
 				return
-			case <-m.updateTicker.C:
+			case <-t.C:
 				m.updateCoordinates()
 			}
 		}
-	}()
+	}(ticker, schedCtx.Done())
 }
 
 // initializeGps initializes GPS based on configured mode
@@ -372,11 +388,7 @@ func (m *Manager) InstanceConfigUpdated() {
 
 	logging.LogDebug(moduleName, "Handling GPS configuration update")
 
-	// Stop old ticker so the scheduler goroutine exits
-	if m.updateTicker != nil {
-		m.updateTicker.Stop()
-		m.updateTicker = nil
-	}
+	m.stopCoordinateUpdateScheduler()
 
 	// Re-initialize GPS mode with new settings
 	if err := m.initializeGps(); err != nil {

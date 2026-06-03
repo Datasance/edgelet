@@ -17,7 +17,11 @@ import (
 
 func stageAndRunDaemon(args []string) error {
 	engine := constants.EngineEdgelet
-	if len(args) > 1 && args[1] == "daemon" {
+	subcommand := ""
+	if len(args) > 1 {
+		subcommand = args[1]
+	}
+	if subcommand == "daemon" || subcommand == "runtime-bootstrap" {
 		if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
@@ -50,7 +54,7 @@ func stageAndRunDaemon(args []string) error {
 		}
 	}
 
-	if len(args) > 1 && args[1] == "daemon" && os.Getenv("EDGELET_DAEMON") == "container" {
+	if len(args) > 1 && subcommand == "daemon" && os.Getenv("EDGELET_DAEMON") == "container" {
 		_ = utils.RemovePIDFile()
 	}
 

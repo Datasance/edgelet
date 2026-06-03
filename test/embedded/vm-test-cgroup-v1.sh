@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # test/embedded/vm-test-cgroup-v1.sh
 #
-# Optional gate: embedded IT on a Lima VM with hybrid cgroup v1 (Ubuntu 24.04 +
-# systemd.unified_cgroup_hierarchy=0). Requires test/embedded/lima-ubuntu-v1.yaml.
+# Hybrid cgroup v1 gate. Prefer the master runner:
+#   ./test/embedded/run-all-cgroup-v1.sh
 #
-# Usage:
+# Manual:
 #   limactl start --name=iofog-test-v1 test/embedded/lima-ubuntu-v1.yaml
 #   ./test/embedded/vm-test-cgroup-v1.sh [--vm-name=iofog-test-v1]
 
@@ -32,12 +32,17 @@ R() { echo "$*" | limactl --tty=false shell "${VM_NAME}" -- sudo bash; }
 assert_ok "host reports hybrid cgroup v1 (not pure v2)" \
     R "source ${REPO_ROOT}/test/embedded/lib/cgroup-v1-host.sh && cgroup_v1_hybrid_host_ready"
 
-assert_ok "edgelet service active on v1 VM" \
-    R "systemctl is-active edgelet"
+assert_ok "edgelet-containerd service active on v1 VM (split)" \
+    R "systemctl is-active --quiet edgelet-containerd"
 
-assert_ok "status exposes non-v2 cgroup mode (v1 or hybrid)" \
-    R 'mode=$(edgelet system status -o json | jq -r .cgroupMode)
-case "${mode}" in v1|hybrid) ;; *) echo "unexpected cgroupMode=${mode}"; exit 1 ;; esac'
+assert_ok "edgelet service active on v1 VM" \
+    R "systemctl is-active --quiet edgelet"
+
+assert_ok "split unit installed" \
+    R "test -f /etc/systemd/system/edgelet-containerd.service"
+
+assert_ok "data plane cgroup mode is v1 or hybrid (split install)" \
+    R 'journalctl -u edgelet-containerd --no-pager | grep -Eq "cgroup mode=(v1|hybrid)"'
 
 assert_contains "deploy manifest succeeds on hybrid/v1 host" "microservice manifest applied successfully" \
     R "set -e

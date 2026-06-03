@@ -5,7 +5,8 @@
 # Requires a locally built/pulled edgelet-linux image and Docker with privileged support.
 #
 # Usage:
-#   EDGELET_IMAGE=ghcr.io/datasance/edgelet-linux:dev ./test/embedded/container-deploy-smoke.sh
+#   ./test/embedded/run-all-nested-docker.sh
+#   EDGELET_IMAGE=edgelet-linux:local ./test/embedded/container-deploy-smoke.sh
 
 set -euo pipefail
 
@@ -14,6 +15,8 @@ source "${SCRIPT_DIR}/lib/log.sh"
 
 IMAGE="${EDGELET_IMAGE:-ghcr.io/datasance/edgelet-linux:latest}"
 NAME="${EDGELET_CONTAINER_NAME:-edgelet-nested-smoke}"
+LIB_VOL="${EDGELET_LIB_VOL:-edgelet-nested-smoke-lib}"
+ETC_VOL="${EDGELET_ETC_VOL:-edgelet-nested-smoke-etc}"
 
 cleanup() {
     docker rm -f "${NAME}" >/dev/null 2>&1 || true
@@ -26,15 +29,9 @@ fi
 
 log_step "Starting privileged nested edgelet container (${IMAGE})"
 docker run -d --name "${NAME}" --privileged \
-    -v /var/lib/edgelet \
-    -v /etc/edgelet \
+    -v "${LIB_VOL}:/var/lib/edgelet" \
+    -v "${ETC_VOL}:/etc/edgelet" \
     "${IMAGE}" >/dev/null
-
-# docker run -d --name "${NAME}" --privileged --net=host \
-#     -v /var/lib/edgelet \
-#     -v /etc/edgelet \
-#     -v /var/run/docker.sock:/var/run/docker.sock:rw \
-#     "${IMAGE}" >/dev/null
 
 sleep 5
 

@@ -13,7 +13,7 @@ ExecStart=/usr/local/bin/edgelet daemon
 ExecStop=/usr/libexec/edgelet/edgelet-shutdown
 Restart=always
 RestartSec=2s
-# Placeholder: align with shutdownGracePeriodSeconds + buffer (Plan 11-2 wires config).
+# Default 120s = shutdownGracePeriodSeconds (90) + 30s buffer; edgelet-engine drop-in may override.
 TimeoutStopSec=120s
 KillMode=process
 Delegate=yes

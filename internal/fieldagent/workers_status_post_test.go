@@ -11,6 +11,8 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/models"
+	"github.com/datasance/edgelet/internal/processmanager"
+	"github.com/datasance/edgelet/internal/runtime"
 	"github.com/datasance/edgelet/internal/statusreporter"
 )
 
@@ -86,6 +88,41 @@ func TestPostStatusHelper_FailedPostRetainsTerminalStatesForRetry(t *testing.T) 
 	}
 	if st == nil || st.Status != models.MicroserviceStateDeleted {
 		t.Fatalf("expected deleted state to remain unchanged after failed post")
+	}
+}
+
+func TestGetFogStatus_AnnotatesDuringRestart(t *testing.T) {
+	runtime.ResetForTests()
+	processmanager.SetQuiesced(true)
+	t.Cleanup(func() {
+		processmanager.SetQuiesced(false)
+		runtime.ResetForTests()
+	})
+	runtime.GetState().SetAgentPhase("restarting")
+
+	fa := &FieldAgent{
+		config: config.GetInstance(),
+		state:  NewState(),
+	}
+	status := fa.getFogStatus()
+	if status["runtimeAgentPhase"] != "restarting" {
+		t.Fatalf("expected runtimeAgentPhase=restarting, got %#v", status["runtimeAgentPhase"])
+	}
+	if status["controlPlaneQuiesced"] != true {
+		t.Fatalf("expected controlPlaneQuiesced=true, got %#v", status["controlPlaneQuiesced"])
+	}
+	raw, ok := status["microserviceStatus"].(string)
+	if !ok || raw == "[]" {
+		return
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		t.Fatalf("parse microserviceStatus: %v", err)
+	}
+	for _, item := range items {
+		if item["controlRestart"] != true {
+			t.Fatalf("expected controlRestart annotation on MS item: %#v", item)
+		}
 	}
 }
 

@@ -13,7 +13,8 @@ validate_install_bundle_sources() {
         "${_root}/scripts/lib/init-detect.sh" \
         "${_root}/scripts/lib/init-edgelet.sh" \
         "${_root}/scripts/edgelet-shutdown" \
-        "${_root}/packaging/init/systemd/edgelet.service"
+        "${_root}/packaging/init/systemd/edgelet.service" \
+        "${_root}/packaging/init/systemd/edgelet-containerd.service"
     do
         [ -f "${_p}" ] || _missing="${_missing} ${_p}"
     done

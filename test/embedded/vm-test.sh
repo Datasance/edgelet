@@ -94,8 +94,11 @@ assert_ok "containerd config has edgelet socket" \
 assert_ok "containerd socket exists" \
     R "test -S /run/edgelet/containerd.sock"
 
+assert_ok "edgelet-containerd service active (Plan 11 split)" \
+    R "systemctl is-active --quiet edgelet-containerd"
+
 assert_ok "edgelet service is active" \
-    R "systemctl is-active edgelet"
+    R "systemctl is-active --quiet edgelet"
 
 assert_contains "system status endpoint is reachable" "iofogDaemon" \
     R "edgelet system status"
@@ -103,20 +106,42 @@ assert_contains "system status endpoint is reachable" "iofogDaemon" \
 assert_contains "status exposes cgroup mode" "cgroupMode" \
     R "edgelet system status -o json"
 
-assert_ok "cgroup policy matches systemd bare-metal or nested cgroupfs layout" \
+assert_ok "cgroup policy matches Plan 11 split (systemd data plane)" \
     R "set -e
-driver=\$(edgelet system status -o json | jq -r '.cgroupDriver')
-if [ \"\${driver}\" = systemd ]; then
-  grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
-  ! grep -q 'path = \"/edgelet/agent/containerd\"' /var/lib/edgelet-containerd/config.toml
-  mainpid=\$(systemctl show edgelet -p MainPID --value)
-  cg=\$(cat /proc/\${mainpid}/cgroup | sed -n 's/^0:://p')
-  echo \"\${cg}\" | grep -q 'edgelet.service'
-else
-  grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
-  grep -q 'path = \"/edgelet/agent/containerd\"' /var/lib/edgelet-containerd/config.toml
-  test -d /sys/fs/cgroup/edgelet/agent
-fi"
+systemctl is-active --quiet edgelet-containerd
+grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
+! grep -q 'path = \"/edgelet/agent/containerd\"' /var/lib/edgelet-containerd/config.toml
+ctd_pid=\$(systemctl show edgelet-containerd -p MainPID --value)
+test -n \"\${ctd_pid}\"
+echo \"\$(cat /proc/\${ctd_pid}/cgroup | sed -n 's/^0:://p')\" | grep -q 'edgelet-containerd.service'
+ctl_pid=\$(systemctl show edgelet -p MainPID --value)
+test -n \"\${ctl_pid}\"
+echo \"\$(cat /proc/\${ctl_pid}/cgroup | sed -n 's/^0:://p')\" | grep -q 'edgelet.service'"
+
+assert_ok "control plane status reports host cgroup policy (split)" \
+    R "set -e
+mode=\$(edgelet system status -o json | jq -r .cgroupMode)
+driver=\$(edgelet system status -o json | jq -r .cgroupDriver)
+nested=\$(edgelet system status -o json | jq -r .cgroupNested)
+case \"\${mode}\" in v2|v1|hybrid) ;; *) echo \"unexpected cgroupMode=\${mode}\"; exit 1 ;; esac
+case \"\${driver}\" in systemd|cgroupfs) ;; *) echo \"unexpected cgroupDriver=\${driver}\"; exit 1 ;; esac
+test \"\${nested}\" = false
+journalctl -u edgelet-containerd --no-pager | grep -q 'cgroup mode=v2 driver=systemd' || \
+  journalctl -u edgelet-containerd --no-pager | grep -Eq 'cgroup mode=(v1|hybrid) driver='"
+
+assert_ok "runtime.engineReady before deploy-heavy phases" \
+    R "set -e
+_elapsed=0
+while [ \${_elapsed} -lt 180 ]; do
+  if edgelet system status -o json 2>/dev/null | jq -e '.[\"runtime.engineReady\"] == \"true\"' >/dev/null; then
+    exit 0
+  fi
+  sleep 2
+  _elapsed=\$((_elapsed + 2))
+done
+echo 'runtime.engineReady not true after 180s' >&2
+edgelet system status -o json 2>/dev/null | jq '{engineReady: .[\"runtime.engineReady\"], agentPhase: .[\"runtime.agentPhase\"]}' || true
+exit 1"
 
 ###############################################################################
 # Phase 3 — CNI network configuration

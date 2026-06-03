@@ -87,6 +87,7 @@ type Service struct {
 	runFn func() error
 
 	unexpectedExitHandler func(error)
+	attachOnly            bool
 }
 
 type ErrContainerdReconfigureOperation struct {
@@ -121,6 +122,27 @@ func (e *ErrContainerdReconfigureOperation) Details() map[string]interface{} {
 		details["attempt"] = e.Attempt
 	}
 	return details
+}
+
+// NewAttachedService monitors an externally managed containerd (Plan 11 data-plane unit).
+func NewAttachedService() *Service {
+	ctx, cancel := context.WithCancel(context.Background())
+	svc := &Service{
+		ctx:        ctx,
+		cancel:     cancel,
+		ready:      make(chan struct{}),
+		done:       make(chan struct{}),
+		attachOnly: true,
+	}
+	return svc
+}
+
+// IsAttachOnly reports whether this service only monitors an external containerd process.
+func (s *Service) IsAttachOnly() bool {
+	if s == nil {
+		return false
+	}
+	return s.attachOnly
 }
 
 // NewService creates an uninitialized containerd service.
@@ -314,6 +336,9 @@ func (s *Service) Ready() <-chan struct{} {
 
 // Start launches the service in background and waits for readiness.
 func (s *Service) Start() error {
+	if s.attachOnly {
+		return s.startAttached()
+	}
 	errCh := make(chan error, 1)
 	run := s.runFn
 	if run == nil {
@@ -345,6 +370,19 @@ func describeStartupFailure(err error) error {
 	default:
 		return fmt.Errorf("embedded containerd run loop failed: %w", err)
 	}
+}
+
+func (s *Service) startAttached() error {
+	deadline := time.Now().Add(containerdStartupTimeout)
+	for time.Now().Before(deadline) {
+		if s.IsHealthy() {
+			s.readyOnce.Do(func() { close(s.ready) })
+			logger.Info("Attached to externally managed containerd socket")
+			return nil
+		}
+		time.Sleep(containerdClientRetryInterval)
+	}
+	return fmt.Errorf("%w: containerd socket not ready for attach", ErrContainerdReadiness)
 }
 
 // WaitReady waits for the service to become ready up to timeout.
@@ -414,6 +452,9 @@ func (s *Service) Reap() error {
 
 // Stop keeps backward-compatible behavior while enforcing escalation.
 func (s *Service) Stop() {
+	if s.attachOnly {
+		return
+	}
 	if err := s.StopGraceful(); err == nil {
 		return
 	} else {

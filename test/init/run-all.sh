@@ -54,7 +54,7 @@ case "${CASE}" in
     all)
         run_cgroup_regression || FAILED=1
         run_systemd || FAILED=1
-        run_openrc || true
+        run_openrc || FAILED=1
         ;;
     systemd)
         run_systemd || FAILED=1

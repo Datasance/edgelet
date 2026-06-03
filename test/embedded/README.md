@@ -7,16 +7,20 @@ End-to-end integration tests for **edgelet** with the embedded containerd engine
 
 ```
 test/embedded/
-├── run-all.sh          # Master runner — setup → build → VM → install → test
-├── setup.sh            # Install macOS prerequisites via Homebrew
-├── build.sh            # Embed pipeline + cross-compile unified linux/arm64 (or amd64) binary
-├── vm-start.sh         # Create / start the Lima Ubuntu VM
-├── vm-install.sh       # Copy edgelet + config into VM, start edgelet.service
-├── vm-test.sh          # Run all test assertions inside VM
-├── vm-stop.sh          # Stop (and optionally delete) the VM
-├── lima-ubuntu.yaml    # Lima VM definition (Ubuntu 24.04, cgroups v2, overlayfs)
+├── run-all.sh              # Master runner — setup → build → VM → install → test (cgroups v2)
+├── run-all-cgroup-v1.sh    # Hybrid cgroup v1 suite — iofog-test-v1 + lima-ubuntu-v1.yaml
+├── setup.sh                # Install macOS prerequisites via Homebrew
+├── build.sh                # Embed pipeline + cross-compile unified linux/arm64 (or amd64) binary
+├── vm-start.sh             # Create / start the Lima Ubuntu VM
+├── vm-install.sh           # install.sh split install (edgelet-containerd + edgelet)
+├── vm-test.sh              # Run all test assertions inside VM
+├── vm-test-cgroup-v1.sh    # Hybrid v1 gate: host probe, status, deploy smoke
+├── vm-stop.sh              # Stop (and optionally delete) the VM
+├── lima-ubuntu.yaml        # Lima VM definition (Ubuntu 24.04, cgroups v2, overlayfs)
+├── lima-ubuntu-v1.yaml     # Lima VM definition (hybrid cgroup v1, Plan 9B / Plan 11-7)
 └── lib/
-    └── log.sh          # Shared colour logging + assert helpers
+    ├── log.sh              # Shared colour logging + assert helpers
+    └── cgroup-v1-host.sh   # cgroup_v1_hybrid_host_ready (shared with vm-test-cgroup-v1.sh)
 ```
 
 ## Quick Start
@@ -32,6 +36,9 @@ cd agent-go
 ./test/embedded/run-all.sh --skip-setup --skip-build --skip-start
 # or just rerun the test script directly:
 ./test/embedded/vm-test.sh
+
+# Hybrid cgroup v1 suite (separate VM — Plan 11-7 / Plan 9B):
+./test/embedded/run-all-cgroup-v1.sh
 ```
 
 ## Prerequisites
@@ -60,6 +67,45 @@ Installed automatically by `setup.sh`:
   --arch=ARCH       Target Linux arch: arm64 | amd64 (default: auto-detect from host)
   --timeout=N       Seconds to wait for VM readiness (default: 300)
   --ci              CI mode — deletes VM on failure
+```
+
+## Hybrid cgroup v1 suite (`embedded-cgroup-v1`)
+
+Separate from the default v2 embedded matrix. Uses **`iofog-test-v1`** and
+`lima-ubuntu-v1.yaml` (`systemd.unified_cgroup_hierarchy=0`).
+
+```bash
+./test/embedded/run-all-cgroup-v1.sh
+./test/embedded/run-all-cgroup-v1.sh --skip-setup --skip-build --skip-start
+./test/embedded/vm-test-cgroup-v1.sh --vm-name=iofog-test-v1
+```
+
+| Item | v2 (`run-all.sh`) | v1 (`run-all-cgroup-v1.sh`) |
+|------|-------------------|-----------------------------|
+| VM | `iofog-test` | `iofog-test-v1` |
+| Lima YAML | `lima-ubuntu.yaml` | `lima-ubuntu-v1.yaml` |
+| Test script | `vm-test.sh` (full matrix) | `vm-test-cgroup-v1.sh` (bootstrap + deploy) |
+
+Plan 11-7 migrated both suites to **`install.sh` split** install via `test/lima/lib/install-split.sh`.
+See [.cursor/edgelet/docs/11-workload-continuity.md](../../.cursor/edgelet/docs/11-workload-continuity.md)
+(Phase 11-7).
+
+Unified orchestrator:
+
+```bash
+./test/run-all.sh --suite=embedded
+./test/run-all.sh --suite=embedded-cgroup-v1
+./test/run-all.sh --suite=nested-docker
+```
+
+### Nested Docker suite (`nested-docker`)
+
+Runs on the **Mac host** with Docker (no Lima). Builds `Dockerfile.edgelet-linux`, then deploy + engine-switch smokes:
+
+```bash
+./test/embedded/run-all-nested-docker.sh
+./test/embedded/run-all-nested-docker.sh --skip-build --image=edgelet-linux:local
+./test/run-all.sh --suite=nested-docker --skip-build
 ```
 
 ## Build pipeline
@@ -163,7 +209,7 @@ limactl shell edgelet-test -- sudo ctr \
 | Item | Value |
 |---|---|
 | Binary | `edgelet` (single multicall) |
-| systemd unit | `edgelet.service` |
+| systemd unit | `edgelet.service` + `edgelet-containerd.service` (split) |
 | Data paths | `/var/lib/edgelet`, `/run/edgelet`, `/var/lib/edgelet-containerd` |
 | Config | `/etc/edgelet/config.yaml` |
 | `containerEngine` | `edgelet` |

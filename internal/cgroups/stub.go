@@ -14,6 +14,11 @@ func Bootstrap() (*CgroupPolicy, error) {
 	return nil, fmt.Errorf("cgroups bootstrap is only supported on linux")
 }
 
+// PublishHostPolicy is unsupported off Linux.
+func PublishHostPolicy() (*CgroupPolicy, error) {
+	return nil, fmt.Errorf("cgroups publish is only supported on linux")
+}
+
 // EnsureAgentSubtree is unsupported off Linux.
 func EnsureAgentSubtree(_ *CgroupPolicy) error {
 	return fmt.Errorf("cgroups bootstrap is only supported on linux")

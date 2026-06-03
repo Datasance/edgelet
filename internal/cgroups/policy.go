@@ -71,7 +71,7 @@ func SnapshotFromPolicy(p *CgroupPolicy) Snapshot {
 	if p == nil {
 		return Snapshot{
 			Mode:   string(ModeUnknown),
-			Driver: string(DriverCgroupfs),
+			Driver: "",
 		}
 	}
 	return Snapshot{

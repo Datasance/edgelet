@@ -32,8 +32,7 @@ import (
 )
 
 const (
-	moduleName                  = "Supervisor"
-	shutdownRuntimeDrainTimeout = 45 * time.Second
+	moduleName = "Supervisor"
 )
 
 var requestDaemonRestart = func(reason string, cause error) {
@@ -70,6 +69,9 @@ type Supervisor struct {
 	// Embedded containerd service (non-nil only when containerEngine=iofog)
 	containerdSvc *edgeletcontainerdd.Service
 
+	// containerdAttachOnly: control plane attaches to data-plane containerd; do not stop on control shutdown.
+	containerdAttachOnly bool
+
 	// Module instances
 	statusReporter             *statusreporter.StatusReporter
 	networkInterfaceManager    *network.Manager
@@ -88,6 +90,8 @@ type Supervisor struct {
 
 	// Reload context captured before LoadConfig in BeginConfigReload.
 	pendingReloadCtx *reloadEngineContext
+
+	reloadMu sync.Mutex
 }
 
 // NewSupervisor creates a new Supervisor instance
@@ -99,9 +103,14 @@ func NewSupervisor() *Supervisor {
 
 // SetPrestartedContainerd injects an embedded containerd service already started in main
 // (embedded engine). Supervisor will not start containerd again; it only runs
-// the watchdog and stops containerd on shutdown.
+// the watchdog and stops containerd on shutdown unless attach-only (runtime split).
 func (s *Supervisor) SetPrestartedContainerd(svc *edgeletcontainerdd.Service) {
 	s.containerdSvc = svc
+}
+
+// SetContainerdAttachOnly marks containerd as owned by the data-plane unit (Plan 11 split).
+func (s *Supervisor) SetContainerdAttachOnly(v bool) {
+	s.containerdAttachOnly = v
 }
 
 // Start starts all modules in the correct order
@@ -162,6 +171,7 @@ func (s *Supervisor) Start() error {
 	runtime.GetState().RecordStartupEngine(cfg.ContainerEngine)
 	processmanager.SetQuiesced(false)
 	runtime.GetState().SetPendingRestart(false)
+	runtime.GetState().SetAgentPhase("running")
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
 	// Startup ownership is in cmd/edgelet bootstrap; Supervisor only consumes prestarted runtime.
@@ -466,6 +476,8 @@ func (s *Supervisor) runExternalEngineRecovery(engineType string, _ engine.Engin
 func (s *Supervisor) Stop() error {
 	logging.LogDebug(moduleName, "Stopping Supervisor")
 
+	runtime.GetState().SetAgentPhase("restarting")
+
 	// Cancel context to signal all workers to stop
 	if s.cancel != nil {
 		s.cancel()
@@ -516,8 +528,13 @@ func (s *Supervisor) Stop() error {
 
 	if s.processManager != nil {
 		processmanager.SetQuiesced(true)
-		if err := s.processManager.DrainRuntimeForShutdown(shutdownRuntimeDrainTimeout); err != nil {
-			logging.LogError(moduleName, "Runtime drain during shutdown timed out", err)
+		if s.shouldDrainRuntimeOnControlStop() {
+			drainTimeout := time.Duration(s.config.ShutdownDrainTimeout()) * time.Second
+			if err := s.processManager.DrainRuntimeForShutdown(drainTimeout); err != nil {
+				logging.LogError(moduleName, "Runtime drain during shutdown timed out", err)
+			}
+		} else {
+			logging.LogInfo(moduleName, "Skipping runtime drain on control-plane stop (leave-running policy)")
 		}
 		if err := s.processManager.Stop(); err != nil {
 			logging.LogError(moduleName, "Error stopping Process Manager", err)
@@ -542,10 +559,12 @@ func (s *Supervisor) Stop() error {
 		}
 	}
 
-	// Stop embedded containerd last (after all containers are stopped).
-	if s.containerdSvc != nil {
+	// Stop embedded containerd when control plane owns it (monolithic path).
+	if s.containerdSvc != nil && !s.containerdAttachOnly {
 		logging.LogInfo(moduleName, "Stopping embedded containerd")
 		s.containerdSvc.Stop()
+	} else if s.containerdSvc != nil && s.containerdAttachOnly {
+		logging.LogInfo(moduleName, "Leaving data-plane containerd running (runtime split attach-only)")
 	}
 
 	if s.statusReporter != nil {
@@ -743,4 +762,11 @@ func (s *Supervisor) reloadHotConfig() error {
 
 	logging.LogInfo(moduleName, "Finished updating agent configurations")
 	return nil
+}
+
+func (s *Supervisor) shouldDrainRuntimeOnControlStop() bool {
+	if s.containerdAttachOnly {
+		return false
+	}
+	return !config.GetInstance().LeaveRunningOnControlStop()
 }

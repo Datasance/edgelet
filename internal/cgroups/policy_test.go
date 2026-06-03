@@ -10,8 +10,8 @@ func TestSnapshotFromPolicyNil(t *testing.T) {
 	if snap.Mode != string(ModeUnknown) {
 		t.Fatalf("mode = %q", snap.Mode)
 	}
-	if snap.Driver != string(DriverCgroupfs) {
-		t.Fatalf("driver = %q", snap.Driver)
+	if snap.Driver != "" {
+		t.Fatalf("driver = %q want empty", snap.Driver)
 	}
 }
 

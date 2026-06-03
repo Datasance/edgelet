@@ -21,11 +21,12 @@ esac
 
 R() { echo "$*" | limactl --tty=false shell "${VM_NAME}" -- sudo bash; }
 
+MS_NAME="engine-switch-ms"
+CLEANUP_POLL="${ENGINE_SWITCH_CLEANUP_POLL:-15}"
+
 log_step "Engine switch test: ${SWITCH}"
 
 "${SCRIPT_DIR}/vm-install.sh" --vm-name="${VM_NAME}" --start-engine="${START_ENGINE}"
-
-R "docker pull docker.io/library/alpine:3.19"
 
 scp -F "${HOME}/.lima/${VM_NAME}/ssh.config" -q \
     "${SCRIPT_DIR}/fixtures/engine-switch-ms.yaml" \
@@ -38,19 +39,86 @@ assert_contains "MS running before switch" "engine-switch-ms" \
     R "edgelet ms ls"
 
 assert_contains "pendingRestart false before switch" "false" \
-    R "edgelet system status | grep runtime.pendingRestart"
+    R "edgelet system status -o json | jq -r '.[\"runtime.pendingRestart\"]'"
 
-R "edgelet config --container-engine ${TARGET_ENGINE}"
+assert_ok "config change to ${TARGET_ENGINE}" \
+    R "set -euo pipefail
+for i in \$(seq 1 30); do
+  if edgelet config --container-engine ${TARGET_ENGINE}; then
+    exit 0
+  fi
+  sleep 2
+done
+edgelet config --container-engine ${TARGET_ENGINE}"
 
-assert_contains "pendingRestart after config change" "true" \
-    R "edgelet system status | grep runtime.pendingRestart"
+assert_ok "pendingRestart true after config change" \
+    R "set -euo pipefail
+for i in \$(seq 1 15); do
+  if [[ \$(edgelet system status -o json 2>/dev/null | jq -r '.[\"runtime.pendingRestart\"]') == 'true' ]]; then
+    exit 0
+  fi
+  sleep 1
+done
+exit 1"
 
 if [[ "${START_ENGINE}" == "edgelet" ]]; then
-    assert_ok "containers removed before restart (edgelet engine)" \
-        R "! test -S /run/edgelet/containerd.sock || ! ctr --address /run/edgelet/containerd.sock -n k8s.io containers list -q 2>/dev/null | grep -q ."
+    assert_ok "switch MS runtime removed before restart (edgelet engine)" \
+        R "set -euo pipefail
+MS='${MS_NAME}'
+POLL=${CLEANUP_POLL}
+ok=0
+for i in \$(seq 1 \"\${POLL}\"); do
+  if python3 -c \"
+import os, sqlite3, subprocess, sys
+ms = sys.argv[1]
+sock = '/run/edgelet/containerd.sock'
+if not os.path.exists(sock):
+    sys.exit(0)
+c = sqlite3.connect('/var/lib/edgelet/edgelet.db')
+rows = c.execute('select local_uuid from local_deployed_microservices where microservice_name=?', (ms,)).fetchall()
+if not rows:
+    sys.exit(0)
+listed = subprocess.run(['ctr', '--address', sock, '-n', 'k8s.io', 'containers', 'list', '-q'], capture_output=True, text=True)
+for cid in listed.stdout.split():
+    cid = cid.strip()
+    if not cid:
+        continue
+    info = subprocess.run(['ctr', '--address', sock, '-n', 'k8s.io', 'containers', 'info', cid], capture_output=True, text=True)
+    for (uuid,) in rows:
+        if uuid in info.stdout:
+            sys.exit(1)
+sys.exit(0)
+\" \"\${MS}\"; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+test \"\${ok}\" -eq 1"
 else
-    assert_ok "containers removed before restart (docker engine)" \
-        R "! docker ps -q 2>/dev/null | grep -q ."
+    assert_ok "switch MS runtime removed before restart (docker engine)" \
+        R "set -euo pipefail
+MS='${MS_NAME}'
+POLL=${CLEANUP_POLL}
+ok=0
+for i in \$(seq 1 \"\${POLL}\"); do
+  if python3 -c \"
+import sqlite3, subprocess, sys
+ms = sys.argv[1]
+c = sqlite3.connect('/var/lib/edgelet/edgelet.db')
+rows = c.execute('select local_uuid from local_deployed_microservices where microservice_name=?', (ms,)).fetchall()
+for (uuid,) in rows:
+    r = subprocess.run(['docker', 'ps', '-q', f'--filter=label=edgelet.iofog.org/microservice-uid={uuid}'], capture_output=True, text=True)
+    if r.stdout.strip():
+        sys.exit(1)
+sys.exit(0)
+\" \"\${MS}\"; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+test \"\${ok}\" -eq 1"
 fi
 
 assert_contains "local deploy spec retained in DB" "engine-switch-ms" \
@@ -66,7 +134,7 @@ for i in $(seq 1 30); do
 done
 
 assert_contains "pendingRestart cleared after restart" "false" \
-    R "edgelet system status | grep runtime.pendingRestart"
+    R "edgelet system status -o json | jq -r '.[\"runtime.pendingRestart\"]'"
 
 assert_contains "runtime.engine matches target" "${TARGET_ENGINE}" \
     R "edgelet system status | grep runtime.engine"
@@ -89,7 +157,6 @@ if [[ "${TARGET_ENGINE}" == "docker" ]]; then
     log_step "Docker restart storm (local MS survives daemon restarts)"
 
     STORM_CYCLES="${DOCKER_RESTART_STORM_CYCLES:-10}"
-    MS_NAME="engine-switch-ms"
 
     assert_contains "MS running before restart storm" "running" \
         R "edgelet ms ls --source local | grep ${MS_NAME}"
