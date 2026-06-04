@@ -124,12 +124,12 @@ func TestWatchdog_CleanupDecision_RemovesControllerIdentityMismatch(t *testing.T
 
 func TestIsEdgeletSelfContainer_Match(t *testing.T) {
 	t.Setenv("EDGELET_DAEMON", "container")
-	t.Setenv("EDGELET_IMAGE", "ghcr.io/datasance/edgelet-linux:v1")
+	t.Setenv("EDGELET_IMAGE", "ghcr.io/datasance/edgelet:v1")
 
 	labels := map[string]string{
 		workloadmeta.LabelRole: workloadmeta.RoleEdgelet,
 	}
-	if !IsEdgeletSelfContainer(labels, "ghcr.io/datasance/edgelet-linux:v1") {
+	if !IsEdgeletSelfContainer(labels, "ghcr.io/datasance/edgelet:v1") {
 		t.Fatal("expected edgelet self container to match EDGELET_IMAGE")
 	}
 }
@@ -140,14 +140,14 @@ func TestIsEdgeletSelfContainer_RejectsWithoutEnv(t *testing.T) {
 	}
 	t.Setenv("EDGELET_DAEMON", "")
 	t.Setenv("EDGELET_IMAGE", "")
-	if IsEdgeletSelfContainer(labels, "ghcr.io/datasance/edgelet-linux:v1") {
+	if IsEdgeletSelfContainer(labels, "ghcr.io/datasance/edgelet:v1") {
 		t.Fatal("expected edgelet self check to fail without container env")
 	}
 }
 
 func TestWatchdog_CleanupDecision_SkipsEdgeletSelfContainer(t *testing.T) {
 	t.Setenv("EDGELET_DAEMON", "container")
-	t.Setenv("EDGELET_IMAGE", "edgelet-linux:local")
+	t.Setenv("EDGELET_IMAGE", "edgelet:local")
 
 	labels := map[string]string{
 		workloadmeta.LabelRole:            workloadmeta.RoleEdgelet,
@@ -159,7 +159,7 @@ func TestWatchdog_CleanupDecision_SkipsEdgeletSelfContainer(t *testing.T) {
 	removeManaged, removeUnknown := cleanupDecisionForContainer(
 		labels,
 		"edgelet-cid",
-		"edgelet-linux:local",
+		"edgelet:local",
 		false,
 		false,
 		true,

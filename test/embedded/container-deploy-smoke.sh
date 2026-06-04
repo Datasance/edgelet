@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # test/embedded/container-deploy-smoke.sh
 #
-# Documented gate for nested edgelet-linux + deploy smoke (Plan 9B).
-# Requires a locally built/pulled edgelet-linux image and Docker with privileged support.
+# Documented gate for nested edgelet container + deploy smoke.
+# Requires a locally built/pulled edgelet image and Docker with privileged support.
 #
 # Usage:
 #   ./test/embedded/run-all-nested-docker.sh
-#   EDGELET_IMAGE=edgelet-linux:local ./test/embedded/container-deploy-smoke.sh
+#   EDGELET_IMAGE=edgelet:local ./test/embedded/container-deploy-smoke.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/log.sh"
 
-IMAGE="${EDGELET_IMAGE:-ghcr.io/datasance/edgelet-linux:latest}"
+IMAGE="${EDGELET_IMAGE:-edgelet:local}"
 NAME="${EDGELET_CONTAINER_NAME:-edgelet-nested-smoke}"
 LIB_VOL="${EDGELET_LIB_VOL:-edgelet-nested-smoke-lib}"
 ETC_VOL="${EDGELET_ETC_VOL:-edgelet-nested-smoke-etc}"

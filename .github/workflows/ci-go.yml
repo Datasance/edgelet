@@ -10,7 +10,7 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'build/Dockerfile.embedded'
-      - 'Dockerfile.edgelet-linux'
+      - 'Dockerfile'
       - 'docs/cli/**'
       - '.github/workflows/ci-go.yml'
   pull_request:
@@ -22,7 +22,7 @@ on:
       - 'Makefile'
       - 'scripts/**'
       - 'build/Dockerfile.embedded'
-      - 'Dockerfile.edgelet-linux'
+      - 'Dockerfile'
       - 'docs/cli/**'
       - '.github/workflows/ci-go.yml'
   workflow_dispatch:
