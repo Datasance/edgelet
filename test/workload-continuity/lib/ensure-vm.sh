@@ -43,6 +43,39 @@ wc_cri_container_ids() {
         "ctr --address /run/edgelet/containerd.sock -n k8s.io containers list -q 2>/dev/null | sort | tr '\n' ' '"
 }
 
+# wc_wait_embedded_control_ready VM [TIMEOUT] — data + control units, CRI socket, API.
+wc_wait_embedded_control_ready() {
+    local _vm="$1" _timeout="${2:-120}" _elapsed=0
+    while (( _elapsed < _timeout )); do
+        if wc_remote "${_vm}" \
+            "systemctl is-active --quiet edgelet-containerd \
+             && systemctl is-active --quiet edgelet \
+             && test -S /run/edgelet/containerd.sock"; then
+            if wc_wait_edgelet_api "${_vm}" 30; then
+                return 0
+            fi
+        fi
+        sleep 2
+        _elapsed=$(( _elapsed + 2 ))
+    done
+    return 1
+}
+
+# wc_wait_cri_ids_unchanged VM BEFORE_IDS [TIMEOUT] — stable ctr IDs after control restart.
+wc_wait_cri_ids_unchanged() {
+    local _vm="$1" _before="$2" _timeout="${3:-120}" _elapsed=0 _after=""
+    while (( _elapsed < _timeout )); do
+        _after="$(wc_cri_container_ids "${_vm}")"
+        if [[ -n "${_after// /}" && "${_before}" == "${_after}" ]]; then
+            printf '%s' "${_after}"
+            return 0
+        fi
+        sleep 2
+        _elapsed=$(( _elapsed + 2 ))
+    done
+    return 1
+}
+
 # wc_ms_local_running VM MS_NAME — MS listed in local source with running state.
 wc_ms_local_running() {
     local _vm="$1" _ms="$2"

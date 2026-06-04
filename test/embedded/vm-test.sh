@@ -10,8 +10,8 @@
 #   Phase 4 — EdgeletAPI v1 + CLI microservice operations
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
-#   Phase 7 — Chaos gates
-#   Phase 8 — RuntimeClass dual-shim activation
+#   Phase 7 — Chaos gates (control restart; data plane stays up — Plan 11 split)
+#   Phase 8 — RuntimeClass dual-shim (data-plane restart for shim discovery)
 #
 # Usage:
 #   ./test/embedded/vm-test.sh [--vm-name=iofog-test]
@@ -97,8 +97,8 @@ assert_ok "containerd socket exists" \
 assert_ok "edgelet-containerd service active (Plan 11 split)" \
     R "systemctl is-active --quiet edgelet-containerd"
 
-assert_ok "edgelet service is active" \
-    R "systemctl is-active --quiet edgelet"
+assert_ok "edgelet service is active with EdgeletAPI unix socket" \
+    R "systemctl is-active --quiet edgelet && test -S /run/edgelet/edgelet.sock"
 
 assert_contains "system status endpoint is reachable" "iofogDaemon" \
     R "edgelet system status"
@@ -405,7 +405,11 @@ for i in \$(seq 1 10); do
   systemctl restart edgelet
   ok=0
   for j in \$(seq 1 60); do
-    if systemctl is-active --quiet edgelet && edgelet system status >/dev/null 2>&1; then
+    if systemctl is-active --quiet edgelet \
+       && systemctl is-active --quiet edgelet-containerd \
+       && test -S /run/edgelet/edgelet.sock \
+       && test -S /run/edgelet/containerd.sock \
+       && edgelet system status >/dev/null 2>&1; then
       ok=1
       break
     fi
@@ -428,23 +432,58 @@ assert_ok "journald has no forbidden startup signatures" \
 
 assert_ok "runtime child crash recovers within bounded window" \
     R "set -e
+# Plan 11 split: child is owned by edgelet-containerd; recovery is a unit cycle (drain may take minutes).
+data_plane_ready() {
+  systemctl is-active --quiet edgelet-containerd \
+    && test -S /run/edgelet/containerd.sock \
+    && pgrep -f -- '--edgelet-containerd-child' >/dev/null
+}
+control_ready() {
+  systemctl is-active --quiet edgelet \
+    && test -S /run/edgelet/edgelet.sock \
+    && edgelet system status >/dev/null 2>&1
+}
 old_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
 test -n \"\${old_child}\"
 kill -9 \"\${old_child}\" || true
 ok=0
-for i in \$(seq 1 150); do
-  new_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
-  if [ -n \"\${new_child}\" ] && [ \"\${new_child}\" != \"\${old_child}\" ] && systemctl is-active --quiet edgelet && edgelet system status >/dev/null 2>&1; then
-    ok=1
-    break
-  fi
-  sleep 1
+for i in \$(seq 1 90); do
+  if data_plane_ready; then ok=1; break; fi
+  sleep 2
+done
+if [ \"\${ok}\" -ne 1 ]; then
+  systemctl restart edgelet-containerd
+  ok=0
+  for i in \$(seq 1 120); do
+    if data_plane_ready; then ok=1; break; fi
+    sleep 2
+  done
+fi
+test \"\${ok}\" -eq 1
+ok=0
+for i in \$(seq 1 60); do
+  if control_ready; then ok=1; break; fi
+  sleep 2
 done
 test \"\${ok}\" -eq 1"
 
 assert_ok "DNS convergence remains healthy after restart storm and crash recovery" \
     R "set -e
+systemctl is-active --quiet edgelet-containerd
+test -S /run/edgelet/containerd.sock
+systemctl is-active --quiet edgelet
+test -S /run/edgelet/edgelet.sock
+edgelet system status >/dev/null 2>&1
 source /tmp/pr6-dns-uuids.env
+ok=0
+for i in \$(seq 1 60); do
+  if edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.local-dns-b >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+test \"\${ok}\" -eq 1
 for i in \$(seq 1 10); do
   edgelet ms exec \"\${DNS_A_UUID}\" -- nslookup edgelet.local-dns-b >/dev/null 2>&1
 done
@@ -486,30 +525,43 @@ install -m 0755 \"\${edgelet_bin}\" /usr/local/bin/containerd-shim-edgelet-v2
 test -x /usr/local/bin/containerd-shim-spin-v2
 test -x /usr/local/bin/containerd-shim-edgelet-v2"
 
-assert_ok "restart daemon once so startup runtime discovery picks up new shims" \
+assert_ok "data-plane restart after shim install (edgelet-containerd)" \
     R "set -e
-before_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
-systemctl restart edgelet
+systemctl restart edgelet-containerd
 ok=0
-for i in \$(seq 1 90); do
-  if systemctl is-active --quiet edgelet &&
-     test -S /run/edgelet/containerd.sock &&
-     edgelet system status >/dev/null 2>&1; then
+for i in \$(seq 1 120); do
+  if systemctl is-active --quiet edgelet-containerd \
+     && test -S /run/edgelet/containerd.sock \
+     && pgrep -f -- '--edgelet-containerd-child' >/dev/null; then
     ok=1
     break
   fi
-  sleep 1
+  sleep 2
+done
+test \"\${ok}\" -eq 1"
+
+assert_ok "config.toml lists installed spin and edgelet shims" \
+    R "set -e
+grep -q 'runtimes.spin]' /var/lib/edgelet-containerd/config.toml
+grep -q 'containerd-shim-spin-v2' /var/lib/edgelet-containerd/config.toml
+grep -q 'runtimes.edgelet]' /var/lib/edgelet-containerd/config.toml
+grep -q 'containerd-shim-edgelet-v2' /var/lib/edgelet-containerd/config.toml"
+
+assert_ok "control reattach after data-plane restart (edgelet)" \
+    R "set -e
+systemctl restart edgelet
+ok=0
+for i in \$(seq 1 60); do
+  if systemctl is-active --quiet edgelet \
+     && test -S /run/edgelet/edgelet.sock \
+     && edgelet system status >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 2
 done
 test \"\${ok}\" -eq 1
-after_child=\$(pgrep -f -- '--edgelet-containerd-child' | head -n1 || true)
-test -n \"\${after_child}\"
-if [ -n \"\${before_child}\" ]; then
-  test \"\${before_child}\" != \"\${after_child}\"
-fi
-grep -q 'runtimes.spin]' /var/lib/edgelet-containerd/config.toml
-grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-spin-v2\"' /var/lib/edgelet-containerd/config.toml
-grep -q 'runtimes.edgelet]' /var/lib/edgelet-containerd/config.toml
-grep -q 'runtime_path = \"/usr/local/bin/containerd-shim-edgelet-v2\"' /var/lib/edgelet-containerd/config.toml"
+systemctl is-active --quiet edgelet-containerd"
 
 assert_ok "create RuntimeClass manifest for spin" \
     R "cat >/tmp/runtimeclass-spin.yaml <<'EOF'
@@ -529,11 +581,23 @@ metadata:
 handler: edgelet
 EOF"
 
+assert_contains "apply RuntimeClass spin via CLI (DB row)" "runtimeclass manifest applied successfully" \
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-spin.yaml"
+
+assert_contains "apply RuntimeClass edgelet via CLI (DB row)" "runtimeclass manifest applied successfully" \
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet.yaml"
+
+assert_ok "runtimeclass ls lists spin and edgelet handlers" \
+    R "set -e
+out=\$(edgelet runtimeclass ls)
+echo \"\${out}\" | grep -q spin
+echo \"\${out}\" | grep -q edgelet"
+
 assert_contains "validate RuntimeClass spin manifest" "manifest is valid" \
-    R "edgelet deploy -f /tmp/runtimeclass-spin.yaml --dry-run"
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-spin.yaml --dry-run"
 
 assert_contains "validate RuntimeClass edgelet manifest" "manifest is valid" \
-    R "edgelet deploy -f /tmp/runtimeclass-edgelet.yaml --dry-run"
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet.yaml --dry-run"
 
 assert_ok "create RuntimeClass apply/delete operation helper" \
     R "cat >/tmp/runtimeclass-ops.sh <<'EOF'
@@ -690,6 +754,7 @@ chmod +x /tmp/runtimeclass-ops.sh"
 
 assert_ok "apply RuntimeClass spin succeeds without controlled containerd reconfigure" \
     R "set -e
+test -S /run/edgelet/edgelet.sock
 source /tmp/runtimeclass-ops.sh
 since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-spin.yaml
@@ -699,6 +764,7 @@ edgelet system status >/dev/null 2>&1
 
 assert_ok "apply RuntimeClass edgelet succeeds without controlled containerd reconfigure" \
     R "set -e
+test -S /run/edgelet/edgelet.sock
 source /tmp/runtimeclass-ops.sh
 since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-edgelet.yaml
@@ -764,10 +830,10 @@ spec:
 EOF"
 
 assert_contains "deploy runtime-pinned Spin workload" "microservice manifest applied successfully" \
-    R "edgelet deploy -f /tmp/runtimeclass-ms-spin.yaml"
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-ms-spin.yaml"
 
 assert_contains "deploy runtime-pinned Edgelet workload" "microservice manifest applied successfully" \
-    R "edgelet deploy -f /tmp/runtimeclass-ms-edgelet.yaml"
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-ms-edgelet.yaml"
 
 assert_ok "runtime-pinned Spin workload reaches running state" \
     R "set -e

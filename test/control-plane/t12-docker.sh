@@ -33,6 +33,8 @@ log_step "T12-C controller /api/v3/status"
 cp_assert_status_api "${VM_NAME}"
 
 log_step "T12-D ms lifecycle block + controlplane delete"
+cp_deploy "${VM_NAME}" "${FIXTURE}"
+cp_wait_running "${VM_NAME}"
 cp_assert_lifecycle "${VM_NAME}"
 
 print_summary

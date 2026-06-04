@@ -45,6 +45,8 @@ All of:
 - `/etc/systemd/system/edgelet-containerd.service` present
 - At least one container in `ctr -n k8s.io containers list`
 
+After changing `edgelet-containerd.service`, reinstall on the VM (`install.sh` or copy the unit) and run `systemctl daemon-reload` before T11-C/D.
+
 ## Lima VMs
 
 | VM | Purpose |
