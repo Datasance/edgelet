@@ -61,7 +61,7 @@ profiles:
 
 	for _, value := range []interface{}{"false", "0", "no"} {
 		cfg.WatchdogEnabled = true
-		errors := cfg.SetConfig(map[string]interface{}{"idc": value})
+		errors := cfg.SetConfig(map[string]interface{}{"wd": value})
 		if len(errors) > 0 {
 			t.Fatalf("expected no setconfig error for value=%v, got: %+v", value, errors)
 		}

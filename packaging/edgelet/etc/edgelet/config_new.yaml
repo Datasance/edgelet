@@ -25,17 +25,17 @@ profiles:
     # containerEngine selects the container runtime.
     # Supported values:
     #   docker  — use Docker daemon (requires Docker installed on host).
-    #             dockerUrl specifies the socket path.
+    #             containerEngineUrl specifies the socket path.
     #   podman  — use Podman daemon via its Docker-compatible API.
-    #             dockerUrl is used as the Podman socket path; if empty,
+    #             containerEngineUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
     #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
-    #             dockerUrl is ignored; the daemon always connects to its private
+    #             containerEngineUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
     containerEngine: "edgelet"
-    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    containerEngineUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
@@ -51,9 +51,9 @@ profiles:
     gpsCoordinates: "0,0"
     gpsDevice: ""
     gpsScanFrequency: "60"
-    isolatedDockerContainer: "off"
+    watchdogEnabled: "off"
     edgeGuardFreq: "0"
-    dockerPruningFrequency: "0"
+    pruningFrequency: "0"
     availableDiskThreshold: "20"
     upgradeScanFrequency: "24"
     timeZone: ""
@@ -70,17 +70,17 @@ profiles:
     # containerEngine selects the container runtime.
     # Supported values:
     #   docker  — use Docker daemon (requires Docker installed on host).
-    #             dockerUrl specifies the socket path.
+    #             containerEngineUrl specifies the socket path.
     #   podman  — use Podman daemon via its Docker-compatible API.
-    #             dockerUrl is used as the Podman socket path; if empty,
+    #             containerEngineUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
     #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
-    #             dockerUrl is ignored; the daemon always connects to its private
+    #             containerEngineUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
     containerEngine: "edgelet"
-    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    containerEngineUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
@@ -96,9 +96,9 @@ profiles:
     gpsCoordinates: "0,0"
     gpsDevice: ""
     gpsScanFrequency: "60"
-    isolatedDockerContainer: "off"
+    watchdogEnabled: "off"
     edgeGuardFreq: "0"
-    dockerPruningFrequency: "0"
+    pruningFrequency: "0"
     availableDiskThreshold: "20"
     upgradeScanFrequency: "24"
     timeZone: ""
@@ -115,17 +115,17 @@ profiles:
     # containerEngine selects the container runtime.
     # Supported values:
     #   docker  — use Docker daemon (requires Docker installed on host).
-    #             dockerUrl specifies the socket path.
+    #             containerEngineUrl specifies the socket path.
     #   podman  — use Podman daemon via its Docker-compatible API.
-    #             dockerUrl is used as the Podman socket path; if empty,
+    #             containerEngineUrl is used as the Podman socket path; if empty,
     #             the default Podman socket is auto-detected.
     #   edgelet — use the embedded containerd engine bundled with edgelet (linux only).
-    #             dockerUrl is ignored; the daemon always connects to its private
+    #             containerEngineUrl is ignored; the daemon always connects to its private
     #             socket at /run/edgelet/containerd.sock.
     #             Persistent data lives in /var/lib/edgelet-containerd/ and
     #             is NOT counted against diskDirectory/diskConsumptionLimit.
     containerEngine: "edgelet"
-    dockerUrl: "unix:///run/edgelet/containerd.sock"
+    containerEngineUrl: "unix:///run/edgelet/containerd.sock"
     diskConsumptionLimit: "10"
     diskDirectory: "/var/lib/edgelet/"
     memoryConsumptionLimit: "4096"
@@ -141,9 +141,9 @@ profiles:
     gpsCoordinates: "0,0"
     gpsDevice: ""
     gpsScanFrequency: "60"
-    isolatedDockerContainer: "off"
+    watchdogEnabled: "off"
     edgeGuardFreq: "0"
-    dockerPruningFrequency: "0"
+    pruningFrequency: "0"
     availableDiskThreshold: "20"
     upgradeScanFrequency: "24"
     timeZone: ""

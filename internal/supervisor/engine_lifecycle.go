@@ -18,20 +18,20 @@ import (
 
 // reloadEngineContext carries per-reload metadata for warm reload revert.
 type reloadEngineContext struct {
-	priorDockerURL string
+	priorContainerEngineURL string
 }
 
 func (s *Supervisor) handleEngineConfigReload(reloadCtx *reloadEngineContext) error {
 	cfg := config.GetInstance()
 	rs := runtime.GetState()
 	startupEngine := rs.StartupEngine()
-	priorURL := reloadCtx.priorDockerURL
+	priorURL := reloadCtx.priorContainerEngineURL
 
 	changeClass := config.ClassifyEngineConfigChange(
 		startupEngine,
 		cfg.ContainerEngine,
 		startupEngineURL(startupEngine, priorURL),
-		startupEngineURL(cfg.ContainerEngine, cfg.DockerURL),
+		startupEngineURL(cfg.ContainerEngine, cfg.ContainerEngineURL),
 		nil,
 	)
 
@@ -39,17 +39,17 @@ func (s *Supervisor) handleEngineConfigReload(reloadCtx *reloadEngineContext) er
 	case config.ChangeClassCold:
 		return s.handleColdEngineChange()
 	case config.ChangeClassWarm:
-		return s.handleWarmDockerURLReload(reloadCtx)
+		return s.handleWarmContainerEngineURLReload(reloadCtx)
 	default:
 		return nil
 	}
 }
 
-func startupEngineURL(engineName, dockerURL string) string {
+func startupEngineURL(engineName, containerEngineURL string) string {
 	if strings.EqualFold(strings.TrimSpace(engineName), constants.EngineEdgelet) {
-		return constants.EdgeletEngineDockerURL()
+		return constants.EdgeletEngineSocketURL()
 	}
-	return strings.TrimSpace(dockerURL)
+	return strings.TrimSpace(containerEngineURL)
 }
 
 func (s *Supervisor) handleColdEngineChange() error {
@@ -81,25 +81,25 @@ func (s *Supervisor) handleColdEngineChange() error {
 	return nil
 }
 
-func (s *Supervisor) handleWarmDockerURLReload(reloadCtx *reloadEngineContext) error {
+func (s *Supervisor) handleWarmContainerEngineURLReload(reloadCtx *reloadEngineContext) error {
 	cfg := config.GetInstance()
 	if cfg.ContainerEngine != constants.EngineDocker && cfg.ContainerEngine != constants.EnginePodman {
 		return nil
 	}
 
 	engConfig := engine.EngineConfig{
-		SocketURL:  cfg.DockerURL,
+		SocketURL:  cfg.ContainerEngineURL,
 		APIVersion: cfg.DockerAPIVersion,
 		LogDir:     cfg.LogDiskDirectory + "containers",
 	}
 
 	newEng, err := initExternalEngineAttempt(cfg.ContainerEngine, engConfig)
 	if err != nil {
-		logging.LogError(moduleName, "Warm dockerUrl reload failed; reverting config", err)
+		logging.LogError(moduleName, "Warm containerEngineUrl reload failed; reverting config", err)
 		if revertErr := s.revertWarmReload(reloadCtx); revertErr != nil {
 			logging.LogError(moduleName, "Failed to revert config after warm reload failure", revertErr)
 		}
-		return fmt.Errorf("dockerUrl reconnect failed: %w", err)
+		return fmt.Errorf("containerEngineUrl reconnect failed: %w", err)
 	}
 
 	if err := s.swapContainerEngine(newEng, cfg.ContainerEngine); err != nil {
@@ -110,30 +110,30 @@ func (s *Supervisor) handleWarmDockerURLReload(reloadCtx *reloadEngineContext) e
 		return err
 	}
 
-	logging.LogInfo(moduleName, fmt.Sprintf("Warm %s dockerUrl reload succeeded", cfg.ContainerEngine))
+	logging.LogInfo(moduleName, fmt.Sprintf("Warm %s containerEngineUrl reload succeeded", cfg.ContainerEngine))
 	return nil
 }
 
 func (s *Supervisor) revertWarmReload(reloadCtx *reloadEngineContext) error {
-	if reloadCtx == nil || reloadCtx.priorDockerURL == "" {
-		return fmt.Errorf("missing warm reload prior dockerUrl")
+	if reloadCtx == nil || reloadCtx.priorContainerEngineURL == "" {
+		return fmt.Errorf("missing warm reload prior containerEngineUrl")
 	}
-	return config.GetInstance().RevertDockerURL(reloadCtx.priorDockerURL)
+	return config.GetInstance().RevertContainerEngineURL(reloadCtx.priorContainerEngineURL)
 }
 
-// CaptureReloadEngineContext snapshots dockerUrl before config reload for warm revert.
+// CaptureReloadEngineContext snapshots containerEngineUrl before config reload for warm revert.
 func (s *Supervisor) CaptureReloadEngineContext() *reloadEngineContext {
 	return s.captureReloadEngineContext()
 }
 
 func (s *Supervisor) captureReloadEngineContext() *reloadEngineContext {
 	cfg := config.GetInstance()
-	priorURL := cfg.DockerURL
-	if snap, ok := cfg.ConsumeReloadPriorDockerURL(); ok {
+	priorURL := cfg.ContainerEngineURL
+	if snap, ok := cfg.ConsumeReloadPriorContainerEngineURL(); ok {
 		priorURL = snap
 	}
 	return &reloadEngineContext{
-		priorDockerURL: priorURL,
+		priorContainerEngineURL: priorURL,
 	}
 }
 
@@ -158,7 +158,7 @@ func (s *Supervisor) swapContainerEngine(eng engine.ContainerEngine, engineType 
 func (s *Supervisor) liveExternalEngineConfig() engine.EngineConfig {
 	cfg := config.GetInstance()
 	return engine.EngineConfig{
-		SocketURL:  cfg.DockerURL,
+		SocketURL:  cfg.ContainerEngineURL,
 		APIVersion: cfg.DockerAPIVersion,
 		LogDir:     cfg.LogDiskDirectory + "containers",
 	}

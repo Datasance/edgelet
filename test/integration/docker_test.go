@@ -19,7 +19,7 @@ func TestDockerConnection(t *testing.T) {
 	client := docker.GetInstance()
 
 	// Initialize Docker client
-	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
+	err := client.Init(cfg.ContainerEngineURL, cfg.DockerAPIVersion)
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestDockerImagePull(t *testing.T) {
 	cfg := config.GetInstance()
 	client := docker.GetInstance()
 
-	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
+	err := client.Init(cfg.ContainerEngineURL, cfg.DockerAPIVersion)
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestDockerContainerLifecycle(t *testing.T) {
 	cfg := config.GetInstance()
 	client := docker.GetInstance()
 
-	err := client.Init(cfg.DockerURL, cfg.DockerAPIVersion)
+	err := client.Init(cfg.ContainerEngineURL, cfg.DockerAPIVersion)
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}

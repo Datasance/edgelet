@@ -777,7 +777,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			"controllerUrl":          cfg.ControllerURL,
 			"controllerCert":         cfg.ControllerCert,
 			"containerEngine":        cfg.ContainerEngine,
-			"dockerUrl":              cfg.DockerURL,
+			"containerEngineUrl":     cfg.ContainerEngineURL,
 			"networkInterface":       cfg.NetworkInterface,
 			"diskLimitGiB":           cfg.DiskLimit,
 			"diskDirectory":          cfg.DiskDirectory,
@@ -798,7 +798,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			"gpsScanFrequency":       cfg.GPSScanFrequency,
 			"arch":                   cfg.Arch,
 			"secureMode":             cfg.SecureMode,
-			"dockerPruningFrequency": cfg.DockerPruningFrequency,
+			"pruningFrequency":       cfg.PruningFrequency,
 			"availableDiskThreshold": cfg.AvailableDiskThreshold,
 			"upgradeScanFrequency":   cfg.UpgradeScanFrequency,
 			"devMode":                cfg.DevMode,
@@ -2496,8 +2496,8 @@ func configKeyToShortCode(key string) (string, bool) {
 		return "ac", true
 	case "ce", "containerEngine":
 		return "ce", true
-	case "c", "dockerUrl":
-		return "c", true
+	case "cu", "containerEngineUrl":
+		return "cu", true
 	case "n", "networkInterface":
 		return "n", true
 	case "d", "diskLimitGiB":
@@ -2522,8 +2522,8 @@ func configKeyToShortCode(key string) (string, bool) {
 		return "cf", true
 	case "sd", "deviceScanFrequency":
 		return "sd", true
-	case "idc", "watchdogEnabled":
-		return "idc", true
+	case "wd", "watchdogEnabled":
+		return "wd", true
 	case "egf", "edgeGuardFrequency":
 		return "egf", true
 	case "gps", "gpsMode":
@@ -2538,7 +2538,7 @@ func configKeyToShortCode(key string) (string, bool) {
 		return "ft", true
 	case "sec", "secureMode":
 		return "sec", true
-	case "pf", "dockerPruningFrequency":
+	case "pf", "pruningFrequency":
 		return "pf", true
 	case "dt", "availableDiskThreshold":
 		return "dt", true

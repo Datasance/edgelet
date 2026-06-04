@@ -60,7 +60,7 @@ const (
 	PodmanDefaultDockerURL = "unix:///run/podman/podman.sock"
 )
 
-// EdgeletEngineDockerURL returns the required dockerUrl when using embedded containerd (edgelet engine).
-func EdgeletEngineDockerURL() string {
+// EdgeletEngineSocketURL returns the required containerEngineUrl when using embedded containerd (edgelet engine).
+func EdgeletEngineSocketURL() string {
 	return "unix://" + EdgeletContainerdSocket
 }

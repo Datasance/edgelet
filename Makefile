@@ -275,7 +275,7 @@ install-dev: build-edgelet-local ## Install edgelet and setup local dev environm
 			'    arch: "auto"' \
 			'    networkInterface: "dynamic"' \
 			'    containerEngine: "docker"' \
-			'    dockerUrl: "unix:///var/run/docker.sock"' \
+			'    containerEngineUrl: "unix:///var/run/docker.sock"' \
 			'    diskConsumptionLimit: "10"' \
 			"    diskDirectory: \"$(DEV_VAR_LIB)/\"" \
 			'    memoryConsumptionLimit: "4096"' \
@@ -291,9 +291,9 @@ install-dev: build-edgelet-local ## Install edgelet and setup local dev environm
 			'    gpsCoordinates: "0,0"' \
 			'    gpsDevice: ""' \
 			'    gpsScanFrequency: "60"' \
-			'    isolatedDockerContainer: "off"' \
+			'    watchdogEnabled: "off"' \
 			'    edgeGuardFrequency: "0"' \
-			'    dockerPruningFrequency: "0"' \
+			'    pruningFrequency: "0"' \
 			'    availableDiskThreshold: "20"' \
 			'    upgradeScanFrequency: "24"' \
 			'    timeZone: ""' \

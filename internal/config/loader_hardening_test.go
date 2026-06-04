@@ -107,7 +107,7 @@ func TestLoadConfigFailureKeepsLastGoodRuntimeValues(t *testing.T) {
 	validYAML := `currentProfile: default
 profiles:
   default:
-    dockerPruningFrequency: "9"
+    pruningFrequency: "9"
 `
 	if err := os.WriteFile(configPath, []byte(validYAML), 0600); err != nil {
 		t.Fatalf("failed to write valid primary config: %v", err)
@@ -120,8 +120,8 @@ profiles:
 	if err := LoadConfig(configPath); err != nil {
 		t.Fatalf("expected initial valid load to succeed: %v", err)
 	}
-	if got := GetInstance().DockerPruningFrequency; got != 9 {
-		t.Fatalf("expected initial dockerPruningFrequency=9, got %d", got)
+	if got := GetInstance().PruningFrequency; got != 9 {
+		t.Fatalf("expected initial pruningFrequency=9, got %d", got)
 	}
 
 	invalidYAML := "currentProfile: [invalid"
@@ -135,7 +135,7 @@ profiles:
 	if err := LoadConfig(configPath); err == nil {
 		t.Fatal("expected malformed reload to fail")
 	}
-	if got := GetInstance().DockerPruningFrequency; got != 9 {
-		t.Fatalf("expected runtime to keep last-good dockerPruningFrequency=9 after failed reload, got %d", got)
+	if got := GetInstance().PruningFrequency; got != 9 {
+		t.Fatalf("expected runtime to keep last-good pruningFrequency=9 after failed reload, got %d", got)
 	}
 }

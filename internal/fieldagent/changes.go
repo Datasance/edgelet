@@ -302,7 +302,7 @@ func (fa *FieldAgent) getFogConfig() error {
 		"processorConsumptionLimit": "p",
 		"controllerUrl":             "a",
 		"controllerCert":            "ac",
-		"dockerUrl":                 "c",
+		"containerEngineUrl":        "cu",
 		"containerEngine":           "ce",
 		"networkInterface":          "n",
 		"logDiskConsumptionLimit":   "l",
@@ -312,14 +312,14 @@ func (fa *FieldAgent) getFogConfig() error {
 		"statusFrequency":           "sf",
 		"changeFrequency":           "cf",
 		"deviceScanFrequency":       "sd",
-		"watchdogEnabled":           "idc",
+		"watchdogEnabled":           "wd",
 		"edgeGuardFrequency":        "egf",
 		"gpsMode":                   "gps",
 		"gpsDevice":                 "gpsd",
 		"gpsScanFrequency":          "gpsf",
 		"arch":                      "ft",
 		"secureMode":                "sec",
-		"dockerPruningFrequency":    "pf",
+		"pruningFrequency":          "pf",
 		"availableDiskThreshold":    "dt",
 		"upgradeScanFrequency":      "uf",
 		"devMode":                   "dev",
@@ -388,7 +388,7 @@ func (fa *FieldAgent) postFogConfig() error {
 	// Build config data
 	configData := map[string]interface{}{
 		"networkInterface":          networkInterfaceName,
-		"dockerUrl":                 cfg.DockerURL,
+		"containerEngineUrl":        cfg.ContainerEngineURL,
 		"diskConsumptionLimit":      cfg.DiskLimit,
 		"diskDirectory":             cfg.DiskDirectory,
 		"memoryConsumptionLimit":    cfg.MemoryLimit,
@@ -408,7 +408,7 @@ func (fa *FieldAgent) postFogConfig() error {
 		"longitude":                 longitude,
 		"logLevel":                  strings.ToUpper(cfg.LogLevel),
 		"availableDiskThreshold":    cfg.AvailableDiskThreshold,
-		"dockerPruningFrequency":    cfg.DockerPruningFrequency,
+		"pruningFrequency":          cfg.PruningFrequency,
 		"upgradeScanFrequency":      cfg.UpgradeScanFrequency,
 	}
 

@@ -25,11 +25,11 @@ chmod 640 /etc/edgelet/cert.crt
 sed -i "s/containerEngine: \"edgelet\"/containerEngine: \"${START_ENGINE}\"/" /etc/edgelet/config.yaml
 sed -i "s/containerEngine: edgelet/containerEngine: ${START_ENGINE}/" /etc/edgelet/config.yaml
 if [[ "${START_ENGINE}" == "edgelet" ]]; then
-    sed -i 's|dockerUrl: "unix:///var/run/docker.sock"|dockerUrl: "unix:///run/edgelet/containerd.sock"|' /etc/edgelet/config.yaml
-    sed -i 's|dockerUrl: unix:///var/run/docker.sock|dockerUrl: unix:///run/edgelet/containerd.sock|' /etc/edgelet/config.yaml
+    sed -i 's|containerEngineUrl: "unix:///var/run/docker.sock"|containerEngineUrl: "unix:///run/edgelet/containerd.sock"|' /etc/edgelet/config.yaml
+    sed -i 's|containerEngineUrl: unix:///var/run/docker.sock|containerEngineUrl: unix:///run/edgelet/containerd.sock|' /etc/edgelet/config.yaml
 else
-    sed -i 's|dockerUrl: "unix:///run/edgelet/containerd.sock"|dockerUrl: "unix:///var/run/docker.sock"|' /etc/edgelet/config.yaml
-    sed -i 's|dockerUrl: unix:///run/edgelet/containerd.sock|dockerUrl: unix:///var/run/docker.sock|' /etc/edgelet/config.yaml
+    sed -i 's|containerEngineUrl: "unix:///run/edgelet/containerd.sock"|containerEngineUrl: "unix:///var/run/docker.sock"|' /etc/edgelet/config.yaml
+    sed -i 's|containerEngineUrl: unix:///run/edgelet/containerd.sock|containerEngineUrl: unix:///var/run/docker.sock|' /etc/edgelet/config.yaml
 fi
 
 cat > /etc/systemd/system/edgelet.service << 'UNIT'

@@ -17,11 +17,11 @@ const (
 	ChangeClassCold
 )
 
-// DefaultDockerURLForEngine returns the platform default socket URL for an engine family.
-func DefaultDockerURLForEngine(engine string) string {
+// DefaultContainerEngineURLForEngine returns the platform default socket URL for an engine family.
+func DefaultContainerEngineURLForEngine(engine string) string {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case constants.EngineEdgelet:
-		return constants.EdgeletEngineDockerURL()
+		return constants.EdgeletEngineSocketURL()
 	case constants.EnginePodman:
 		return constants.PodmanDefaultDockerURL
 	default:
@@ -49,14 +49,14 @@ func ClassifyEngineConfigChange(startupEngine, newEngine, startupURL, newURL str
 	return ChangeClassHot
 }
 
-// ApplyEngineDefaults updates dockerUrl when containerEngine changes in-memory and YAML.
+// ApplyEngineDefaults updates containerEngineUrl when containerEngine changes in-memory and YAML.
 func (c *Config) ApplyEngineDefaults(engine string) error {
 	engine = strings.ToLower(strings.TrimSpace(engine))
-	defaultURL := DefaultDockerURLForEngine(engine)
+	defaultURL := DefaultContainerEngineURLForEngine(engine)
 
 	c.mu.Lock()
 	c.ContainerEngine = engine
-	c.DockerURL = defaultURL
+	c.ContainerEngineURL = defaultURL
 	yaml := c.yamlConfig
 	profileName := c.currentProfile.FullValue()
 	c.mu.Unlock()
@@ -69,7 +69,7 @@ func (c *Config) ApplyEngineDefaults(engine string) error {
 		return nil
 	}
 	profile.SetProperty("containerEngine", engine)
-	profile.SetProperty("dockerUrl", defaultURL)
+	profile.SetProperty("containerEngineUrl", defaultURL)
 	return nil
 }
 
@@ -87,12 +87,12 @@ func SnapshotYAML(path string) ([]byte, error) {
 	return out, nil
 }
 
-// RevertDockerURL restores dockerUrl in memory and YAML after a failed warm reload.
-func (c *Config) RevertDockerURL(dockerURL string) error {
+// RevertContainerEngineURL restores containerEngineUrl in memory and YAML after a failed warm reload.
+func (c *Config) RevertContainerEngineURL(containerEngineURL string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.DockerURL = dockerURL
-	if err := c.setYamlProperty("dockerUrl", dockerURL); err != nil {
+	c.ContainerEngineURL = containerEngineURL
+	if err := c.setYamlProperty("containerEngineUrl", containerEngineURL); err != nil {
 		return err
 	}
 	return c.saveConfigUpdatesLocked()

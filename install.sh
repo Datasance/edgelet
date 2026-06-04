@@ -231,7 +231,7 @@ install_config_samples() {
 write_default_config_if_missing() {
     [ -f "$CONFIG_FILE" ] && return 0
     _eng="${CONTAINER_ENGINE:-edgelet}"
-    _du=$(default_docker_url_for_engine "$_eng")
+    _du=$(default_container_engine_url_for_engine "$_eng")
     mkdir -p "$CONFIG_DIR"
     cat >"$CONFIG_FILE" <<YAML
 currentProfile: production
@@ -241,7 +241,7 @@ profiles:
     controllerCert: "${CERT_FILE}"
     arch: auto
     containerEngine: ${_eng}
-    dockerUrl: ${_du}
+    containerEngineUrl: ${_du}
     diskDirectory: /var/lib/edgelet/
     logDiskDirectory: /var/log/edgelet/
     logLevel: INFO
@@ -250,7 +250,7 @@ YAML
     info "Default config installed at ${CONFIG_FILE}"
 }
 
-default_docker_url_for_engine() {
+default_container_engine_url_for_engine() {
     case "$1" in
         docker) echo "unix:///var/run/docker.sock" ;;
         podman) echo "unix:///run/podman/podman.sock" ;;
@@ -330,8 +330,8 @@ apply_container_engine_to_config() {
     [ -f "$CONFIG_FILE" ] || return 0
     command -v sed >/dev/null 2>&1 || return 0
     sed -i "s|containerEngine:.*|containerEngine: ${CONTAINER_ENGINE}|" "$CONFIG_FILE" 2>/dev/null || true
-    _durl=$(default_docker_url_for_engine "$CONTAINER_ENGINE")
-    sed -i "s|dockerUrl:.*|dockerUrl: ${_durl}|" "$CONFIG_FILE" 2>/dev/null || true
+    _durl=$(default_container_engine_url_for_engine "$CONTAINER_ENGINE")
+    sed -i "s|containerEngineUrl:.*|containerEngineUrl: ${_durl}|" "$CONFIG_FILE" 2>/dev/null || true
 }
 
 download_or_stage_binary() {
