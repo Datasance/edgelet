@@ -67,7 +67,7 @@ until limactl --tty=false shell "${VM_NAME}" -- echo "SSH OK" &>/dev/null; do
 done
 echo ""
 
-log_step "Ensuring T10-B guest packages (jq, bash, curl)..."
+log_step "Ensuring Alpine openrc smoke guest packages (jq, bash, curl)..."
 limactl --tty=false shell "${VM_NAME}" -- sudo sh -c '
     set -e
     command -v jq >/dev/null 2>&1 || apk add --no-cache jq bash curl ca-certificates iproute2 file binutils
@@ -96,4 +96,4 @@ limactl --tty=false shell "${VM_NAME}" -- sudo sh -c '
     mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
 '
 
-log_success "VM '${VM_NAME}' is ready for T10-B / T10-B+ (./test/init/alpine-openrc-smoke.sh)"
+log_success "VM '${VM_NAME}' is ready for Alpine openrc smoke / Alpine openrc runtime smoke (./test/init/alpine-openrc-smoke.sh)"

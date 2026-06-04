@@ -1,4 +1,4 @@
-# Lima VM profile for cgroup v1/hybrid embedded IT (Plan 9B).
+# Lima VM profile for cgroup v1/hybrid embedded IT.
 # Ubuntu 24.04 + systemd.unified_cgroup_hierarchy=0 → hybrid (v1 controllers + unified/).
 #
 # Create:

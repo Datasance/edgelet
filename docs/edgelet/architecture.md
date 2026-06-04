@@ -174,7 +174,7 @@ SQLite stores cached microservices, registries, and volume mount records. Schema
 
 ---
 
-## Release OTA (Plan 8 — two layers)
+## Release OTA (two layers)
 
 Fleet upgrades use **two coordinated layers** . See [deployment.md](deployment.md).
 

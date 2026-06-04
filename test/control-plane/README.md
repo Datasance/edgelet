@@ -1,6 +1,8 @@
-# Plan 12 — ControlPlane integration tests
+# ControlPlane integration tests
 
 Lima-based IT for Edgelet-managed Controller (`kind: ControlPlane`).
+
+Operator guide: [docs/edgelet/control-plane.md](../../docs/edgelet/control-plane.md)
 
 ## Fixture identity
 
@@ -14,15 +16,15 @@ Lima-based IT for Edgelet-managed Controller (`kind: ControlPlane`).
 
 ## Tests
 
-| ID | Script | VM | Engine |
-|----|--------|-----|--------|
-| T12-A | `t12-embedded.sh` | `iofog-test` | embedded |
-| T12-B | `t12-docker.sh` | `edgelet-engine-lifecycle` | docker |
-| T12-C | both | — | `curl :51121/api/v3/status` |
-| T12-D | both | — | `ms rm` rejected; `controlplane delete` |
-| T12-E | `t12-embedded.sh` only | — | nslookup 3 FQDNs from probe MS |
+| Case | Script | VM | Engine |
+|------|--------|-----|--------|
+| embedded apply | `t12-embedded.sh` | `iofog-test` | embedded |
+| docker apply | `t12-docker.sh` | `edgelet-engine-lifecycle` | docker |
+| controller status API | both | — | `curl :51121/api/v3/status` |
+| lifecycle guards | both | — | `ms rm` rejected; `controlplane delete` |
+| DNS resolution | `t12-embedded.sh` only | — | nslookup 3 FQDNs from probe MS |
 
-Deploy is **strict** (Plan 12-9): `cp_deploy` fails the suite on non-zero `edgelet deploy` exit. Async apply polls until terminal, then CLI checks `runtimeState=running`. Optional **`cp_wait_running`** sanity check after deploy.
+Deploy is **strict** (async apply): `cp_deploy` fails the suite on non-zero `edgelet deploy` exit. Async apply polls until terminal, then CLI checks `runtimeState=running`. Optional **`cp_wait_running`** sanity check after deploy.
 
 ## Run
 

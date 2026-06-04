@@ -1,8 +1,8 @@
 # Edgelet SQLite persistence (operator guide)
 
-Edgelet stores on-device state in a single SQLite database. This document covers **backup and restore**, **Plan 13 wipe-only upgrades**, **secrets-at-rest expectations**, and known **JSON-in-column** schema debt.
+Edgelet stores on-device state in a single SQLite database. This document covers **backup and restore**, **wipe-only upgrades**, **secrets-at-rest expectations**, and known **JSON-in-column** schema debt.
 
-There is **no** EdgeletAPI or CLI backup command in Plan 13 — operators use filesystem copy after stopping services.
+There is **no** EdgeletAPI or CLI backup command — operators use filesystem copy after stopping services.
 
 ---
 
@@ -24,7 +24,7 @@ edgelet system info -o json | jq -r '.diskDirectory'
 
 On open, Edgelet creates `diskDirectory` with mode **0700** if missing. SQLite runs with **WAL** journal mode (`_journal_mode=WAL`).
 
-**Schema version:** fresh installs apply embedded migration `001_edgelet_schema_v1.sql` and record version **1** in `schema_versions`. There is no in-place upgrade from pre–Plan 13 databases (see [Wipe-only upgrade](#wipe-only-upgrade-plan-13)).
+**Schema version:** fresh installs apply embedded migration `001_edgelet_schema_v1.sql` and record version **1** in `schema_versions`. There is no in-place upgrade from pre–schema-v1 databases (see [Wipe-only upgrade](#wipe-only-upgrade)).
 
 ---
 
@@ -121,7 +121,7 @@ sudo journalctl -u edgelet -n 30 --no-pager
 
 ## Restore runbook (R85)
 
-Restore only onto a node running a **Plan 13+** build with **schema version 1**. Restoring a pre–Plan 13 backup onto a v1 binary is unsupported — use [wipe-only upgrade](#wipe-only-upgrade-plan-13) and let the controller/EdgeletAPI repopulate state instead.
+Restore only onto a node running a **schema v1** build with **schema version 1**. Restoring a pre–v1 backup onto a current binary is unsupported — use [wipe-only upgrade](#wipe-only-upgrade) and let the controller/EdgeletAPI repopulate state instead.
 
 ### Steps
 
@@ -144,13 +144,13 @@ sudo systemctl start edgelet-containerd.service 2>/dev/null || true
 sudo systemctl start edgelet.service
 ```
 
-**Not covered:** HA, replication, or online hot backup. Plan 13 does not ship Litestream or a second SQL tier.
+**Not covered:** HA, replication, or online hot backup. Edgelet does not ship Litestream or a second SQL tier.
 
 ---
 
-## Wipe-only upgrade (Plan 13)
+## Wipe-only upgrade
 
-**RFC R80:** Edgelet does **not** migrate in-place from the old incremental schema (migrations 001–011 era) to v1. Operators on dev or lab nodes that already had an `edgelet.db` from pre–Plan 13 builds must **delete** the database before the first Plan 13 binary run.
+**RFC R80:** Edgelet does **not** migrate in-place from the old incremental schema (migrations 001–011 era) to v1. Operators on dev or lab nodes that already had an `edgelet.db` from pre–v1 builds must **delete** the database before the first schema-v1 binary run.
 
 No published production fleets require a 012→013 migrator; fresh Lima VMs and wiped DBs are the integration-test baseline.
 
@@ -206,7 +206,7 @@ Future schema version bumps (v2+) may run an optional one-time `VACUUM` after mi
 | Service account material | `local_service_account_tokens` (`token_sha256`, `claims_json`, `rules_by_group_json`, …) |
 | Volume / MS config blobs | JSON/text columns on controller and local tables |
 
-Edgelet does **not** encrypt these fields at the application layer in Plan 13.
+Edgelet does **not** encrypt these fields at the application layer in schema v1.
 
 ### Trust boundary
 
@@ -217,7 +217,7 @@ Protection relies on **edge node tenancy** and **host filesystem** controls:
 - A single `edgelet` process holds one DB (`store.GetInstance()` singleton).
 - Physical or root access to the node implies read access to the DB and backups.
 
-### Out of scope (Plan 13)
+### Out of scope (schema v1)
 
 - SQLCipher or field-level encryption
 - TPM-sealed keys or OS full-disk encryption policy (operator choice outside Edgelet)
@@ -238,13 +238,13 @@ Several v1 tables store structured data as **JSON text columns** instead of norm
 | `local_service_account_tokens` | `rules_by_group_json`, `claims_json` |
 | `local_workloads` | `manifest_yaml` (YAML blob) |
 
-**Accepted for Plan 13:** behavior and Pot snapshot semantics stay unchanged; queries and migrations remain simple.
+**Accepted in schema v1:** behavior and Pot snapshot semantics stay unchanged; queries and migrations remain simple.
 
-**Future work:** normalize hot paths (ports, env, RBAC rules) into relational tables with strict migrator versions — tracked as schema debt under **RFC R87**, not scheduled in Plan 13. See spec [§4 Schema v1](../../.cursor/edgelet/docs/13-persistence.md#4-schema-v1-tables) and tracker [13-persistence.md](../../.cursor/edgelet/plans/13-persistence.md).
+**Future work:** normalize hot paths (ports, env, RBAC rules) into relational tables with strict migrator versions — tracked as schema debt under **RFC R87** (see [persistence.md](persistence.md) table list above).
 
 ---
 
-## Plan 13 regression gates (Lima IT)
+## Regression gates (Lima IT)
 
 Integration tests assume a **fresh schema v1 database**. Wipe the VM disk or delete `edgelet.db` (+ WAL/SHM) on the Lima guest before running the gates below.
 

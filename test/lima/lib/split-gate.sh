@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test/lima/lib/split-gate.sh — Plan 11 split unit gates. Source only.
+# test/lima/lib/split-gate.sh — runtime split unit gates. Source only.
 
 # lima_embedded_split_active VM — both split units installed and active.
 lima_embedded_split_active() {

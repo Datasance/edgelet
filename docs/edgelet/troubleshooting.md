@@ -60,13 +60,13 @@ Common issues when running Edgelet on edge nodes.
 
 3. **Hybrid v1+v2:** edgelet logs a warning and prefers unified v2 — migrate the host to pure cgroup v2 when possible. See [cgroups.md](cgroups.md).
 
-4. **Nested `edgelet-linux` in Docker:** `--privileged` is required:
+4. **Nested edgelet container in Docker:** `--privileged` is required:
 
    ```bash
    docker run -d --name edgelet --privileged \
      -v /var/lib/edgelet:/var/lib/edgelet \
      -v /etc/edgelet:/etc/edgelet \
-     ghcr.io/datasance/edgelet-linux:<tag>
+     ghcr.io/datasance/edgelet:<tag>
    ```
 
    Without `--privileged`, cpu/memory/pids controllers are not delegated and CRI cannot create sandboxes.
@@ -111,9 +111,9 @@ See [cgroups.md](cgroups.md) for the full matrix.
 
 4. **Monolithic embedded** (no `edgelet-containerd` active): `restart edgelet` still drains MS — enable runtime split per [workload-continuity.md](workload-continuity.md).
 
-5. **Cold engine change** (Plan 9A): changing `containerEngine` always recreates MS — this is expected and unrelated to workload continuity.
+5. **Cold engine change**: changing `containerEngine` always recreates MS — this is expected and unrelated to workload continuity.
 
-6. **Legacy unit on VM:** if `systemctl cat edgelet-containerd` shows `PartOf=edgelet.service`, reinstall packaging and run `systemctl daemon-reload` — that forces data-plane stop on control restart (T11-C failure).
+6. **Legacy unit on VM:** if `systemctl cat edgelet-containerd` shows `PartOf=edgelet.service`, reinstall packaging and run `systemctl daemon-reload` — that forces data-plane stop on control restart (embedded control-only restart gate failure).
 
 See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
 
@@ -198,10 +198,10 @@ See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
 ```bash
 sudo systemctl status docker    # or podman.socket
 ls -la /var/run/docker.sock
-grep dockerUrl /etc/edgelet/config.yaml
+grep containerEngineUrl /etc/edgelet/config.yaml
 ```
 
-Ensure the configured `dockerUrl` matches the running engine socket.
+Ensure the configured `containerEngineUrl` matches the running engine socket.
 
 ---
 

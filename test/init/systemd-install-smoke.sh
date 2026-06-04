@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T10-A — systemd install smoke (Lima iofog-test VM or native linux root).
+# systemd install smoke — systemd install smoke (Lima iofog-test VM or native linux root).
 #
 # Usage (macOS):
 #   ./test/embedded/build.sh
@@ -48,7 +48,7 @@ run_remote() {
     echo "$*" | limactl --tty=false shell "${VM_NAME}" -- sudo bash
 }
 
-log_step "T10-A systemd install smoke (vm=${VM_NAME} native=${NATIVE})"
+log_step "systemd install smoke systemd install smoke (vm=${VM_NAME} native=${NATIVE})"
 
 if [[ "${NATIVE}" == true ]]; then
     log_info "Running install.sh from repo root (native)..."
@@ -120,4 +120,4 @@ assert_ok "cgroup driver policy (systemd or cgroupfs)" \
 driver=$(edgelet system status -o json | jq -r .cgroupDriver)
 case "${driver}" in systemd|cgroupfs) ;; *) echo "unexpected driver=${driver}"; exit 1 ;; esac'
 
-log_success "T10-A systemd install smoke passed"
+log_success "systemd install smoke systemd install smoke passed"

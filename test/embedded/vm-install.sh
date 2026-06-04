@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test/embedded/vm-install.sh
 #
-# Installs edgelet in the Lima VM via production install.sh + Plan 11 split units
+# install via production install.sh + runtime split units
 # (edgelet-containerd.service + edgelet.service). No host-only bpf/crun prep.
 #
 # Usage:

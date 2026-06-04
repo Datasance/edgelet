@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test/init/lib/embed-runtime.sh — Alpine/BusyBox helpers for embedded engine IT (Plan 10-9).
+# test/init/lib/embed-runtime.sh — Alpine/BusyBox helpers for embedded engine IT.
 # Source from test/init/*-smoke.sh — do not execute directly.
 
 # shellcheck shell=bash

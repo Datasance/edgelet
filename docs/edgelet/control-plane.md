@@ -1,15 +1,20 @@
 # Edgelet ControlPlane (operator guide)
 
-> **Status:** Done (Plan 12, 2026-06-04) — spec: `.cursor/edgelet/docs/12-control-plane-controller.md`
-
 Edgelet can host **one** Datasance Controller container per node when you apply a `kind: ControlPlane` manifest. There is **no** default controller on install.
+
+## Core rules
+
+- At most **one** controller deployment per Edgelet (SQLite singleton).
+- Edgelet may run with `controllerUrl` pointing to a **remote** cluster; local ControlPlane is optional.
+- Reconcile runs **before** managed microservices; accidental `docker rm` recreates the container while the DB row exists.
+- Only `edgelet controlplane delete` (or `DELETE /v1/system/controlplane`) removes the deployment and cleans volumes.
 
 ## Fixtures
 
 | Path | `metadata.namespace` | `metadata.name` | Use |
 |------|----------------------|-------------------|-----|
-| `test/deployment-yamls/controlplane.yaml` | `bar` | `foo` | Dev smoke / manual 12-3 |
-| IT fixture (12-8) | `default` | `pot` | `test/control-plane/fixtures/controlplane-it.yaml` — DNS: `edgelet.controller…`, `controller.default…`, `default.pot…` |
+| `test/deployment-yamls/controlplane.yaml` | `bar` | `foo` | Dev smoke / manual apply |
+| IT fixture | `default` | `pot` | `test/control-plane/fixtures/controlplane-it.yaml` — DNS: `edgelet.controller…`, `controller.default…`, `default.pot…` |
 
 ## Deploy
 
@@ -22,7 +27,7 @@ edgelet deploy -f controlplane.yaml --timeout=20m   # optional: override default
 - `kind: ControlPlane`
 - Re-apply updates image/env (same controller UUID). To change `metadata.name` or `metadata.namespace`, delete first.
 
-### Long deploys (Plan 12-9)
+### Long deploys (async apply)
 
 Control plane apply is **asynchronous** (Kubernetes-style): the CLI returns **202** immediately, polls apply status, then confirms `edgelet controlplane get` shows `runtimeState: running`.
 
@@ -85,7 +90,11 @@ Set `controllerUrl` in Edgelet config separately (Edgelet does not auto-update i
 
 Not in the Edgelet `ControlPlane` manifest. Use **potctl/iofogctl** to import site/local CA material via the Controller REST API after the controller is up.
 
-## Image load (global CLI, Plan 12-9)
+## Watchdog
+
+Edgelet does **not** delete the controller container when labels match the DB row (`edgelet.iofog.org/system=true`, `role=controller`, UUID, container ID, image ref). Manual `docker run` without matching identity may be removed by the watchdog.
+
+## Image load (global CLI)
 
 Large archives use async load (same pattern as `edgelet image pull`):
 
@@ -95,6 +104,10 @@ edgelet image load /path/to/archive.tar
 
 Default poll budget **30 minutes**; use `edgelet --timeout` to override.
 
-## Full contract
+## Integration tests
 
-See `.cursor/edgelet/CONTROL-PLANE.md` in the Edgelet repository. Production CLI rules: RFC §25 in `.cursor/edgelet/docs/00-rfc.md`.
+```bash
+./test/control-plane/run-all.sh
+```
+
+See [test/control-plane/README.md](../../test/control-plane/README.md).

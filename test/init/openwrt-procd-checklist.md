@@ -1,9 +1,9 @@
-# T10-D — OpenWrt procd manual checklist (Plan 10-10)
+# OpenWrt procd manual checklist
 
-> **Spec:** [.cursor/edgelet/docs/10-init-systems-enterprise.md](../../.cursor/edgelet/docs/10-init-systems-enterprise.md)  
+> **Operator doc:** [docs/edgelet/init-systems.md](../../docs/edgelet/init-systems.md)  
 > **Template:** `packaging/init/procd/edgelet`
 
-Lab gate for OpenWrt (or OpenWrt-derived) devices with **procd** as init. Requires **Plan 10-8** static embed in the installed bundle (musl-compatible fat `edgelet`).
+Lab gate for OpenWrt (or OpenWrt-derived) devices with **procd** as init. Requires **static embed** in the installed bundle (musl-compatible fat `edgelet`).
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ Lab gate for OpenWrt (or OpenWrt-derived) devices with **procd** as init. Requir
 - [ ] `/etc/init.d/edgelet` installed from `packaging/init/procd/edgelet`
 - [ ] `/usr/libexec/edgelet/edgelet-shutdown` present
 
-## Static embed (10-8)
+## Static embed
 
 - [ ] `file /var/lib/edgelet/data/current/bin/edgelet` → **statically linked** (no `ld-linux` interpreter)
 - [ ] Embedded shim/crun under extract tree also static (no musl loader missing errors in `logread`)

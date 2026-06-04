@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T10-B+ — Alpine openrc embedded runtime smoke (Plan 10-9).
+# Alpine openrc embedded runtime smoke.
 #
 # Requires 10-8 static embed in the thin bundle (fat ELF statically linked).
 #
@@ -68,7 +68,7 @@ assert_openrc_pid1() {
     fi
 }
 
-log_step "T10-B+ Alpine openrc runtime smoke (${VM_NAME})"
+log_step "Alpine openrc runtime smoke Alpine openrc runtime smoke (${VM_NAME})"
 assert_openrc_pid1
 
 SSH_CONFIG="${HOME}/.lima/${VM_NAME}/ssh.config"
@@ -76,11 +76,11 @@ SSH_HOST="lima-${VM_NAME}"
 STAGE="/tmp/edgelet-t10b-runtime"
 
 if [[ "${AFTER_T10_B}" == true ]]; then
-    log_info "Continuing after T10-B (no reinstall — avoids orphaned containerd-child)"
+    log_info "Continuing after Alpine openrc smoke (no reinstall — avoids orphaned containerd-child)"
     if ! run_remote "test -x /usr/local/bin/edgelet"; then
-        die "T10-B+ --after-t10-b requires edgelet installed from alpine-openrc-smoke.sh"
+        die "Alpine openrc runtime smoke --after-t10-b requires edgelet installed from alpine-openrc-smoke.sh"
     fi
-    log_info "Restart split OpenRC units after T10-B binary refresh"
+    log_info "Restart split OpenRC units after Alpine openrc smoke binary refresh"
     run_remote "rc-service edgelet-containerd restart"
     run_remote "rc-service edgelet restart"
 else
@@ -95,7 +95,7 @@ else
     "
 fi
 
-log_step "Fat runtime must be statically linked (Plan 10-8)"
+log_step "Fat runtime must be statically linked (static embed default)"
 run_remote "${EMBED_RUNTIME_ASSERT_STATIC_SNIPPET}"
 
 log_step "Wait for EdgeletAPI + embedded engine (up to 240s)"
@@ -150,4 +150,4 @@ run_remote "
     test -S /run/edgelet/edgelet.sock
 "
 
-log_success "T10-B+ Alpine openrc runtime smoke passed"
+log_success "Alpine openrc runtime smoke Alpine openrc runtime smoke passed"

@@ -17,7 +17,7 @@ test/embedded/
 ├── vm-test-cgroup-v1.sh    # Hybrid v1 gate: host probe, status, deploy smoke
 ├── vm-stop.sh              # Stop (and optionally delete) the VM
 ├── lima-ubuntu.yaml        # Lima VM definition (Ubuntu 24.04, cgroups v2, overlayfs)
-├── lima-ubuntu-v1.yaml     # Lima VM definition (hybrid cgroup v1, Plan 9B / Plan 11-7)
+├── lima-ubuntu-v1.yaml     # Lima VM definition (hybrid cgroup v1)
 └── lib/
     ├── log.sh              # Shared colour logging + assert helpers
     └── cgroup-v1-host.sh   # cgroup_v1_hybrid_host_ready (shared with vm-test-cgroup-v1.sh)
@@ -37,7 +37,7 @@ cd agent-go
 # or just rerun the test script directly:
 ./test/embedded/vm-test.sh
 
-# Hybrid cgroup v1 suite (separate VM — Plan 11-7 / Plan 9B):
+# Hybrid cgroup v1 suite (separate VM):
 ./test/embedded/run-all-cgroup-v1.sh
 ```
 
@@ -86,9 +86,8 @@ Separate from the default v2 embedded matrix. Uses **`iofog-test-v1`** and
 | Lima YAML | `lima-ubuntu.yaml` | `lima-ubuntu-v1.yaml` |
 | Test script | `vm-test.sh` (full matrix) | `vm-test-cgroup-v1.sh` (bootstrap + deploy) |
 
-Plan 11-7 migrated both suites to **`install.sh` split** install via `test/lima/lib/install-split.sh`.
-See [.cursor/edgelet/docs/11-workload-continuity.md](../../.cursor/edgelet/docs/11-workload-continuity.md)
-(Phase 11-7).
+Both embedded suites use **`install.sh` split** install via `test/lima/lib/install-split.sh`.
+See [docs/edgelet/workload-continuity.md](../../docs/edgelet/workload-continuity.md).
 
 Unified orchestrator:
 
@@ -100,17 +99,17 @@ Unified orchestrator:
 
 ### Nested Docker suite (`nested-docker`)
 
-Runs on the **Mac host** with Docker (no Lima). Builds `Dockerfile.edgelet-linux`, then deploy + engine-switch smokes:
+Runs on the **Mac host** with Docker (no Lima). Builds root `Dockerfile`, then deploy + engine-switch smokes:
 
 ```bash
 ./test/embedded/run-all-nested-docker.sh
-./test/embedded/run-all-nested-docker.sh --skip-build --image=edgelet-linux:local
+./test/embedded/run-all-nested-docker.sh --skip-build --image=edgelet:local
 ./test/run-all.sh --suite=nested-docker --skip-build
 ```
 
 ## Build pipeline
 
-`build.sh` uses the Plan 6 two-layer embed pipeline:
+`build.sh` uses the two-layer embed pipeline:
 
 1. `scripts/download`
 2. `scripts/build-embedded`

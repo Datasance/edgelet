@@ -18,7 +18,9 @@ Factory: `internal/engines/factory_linux.go` / `factory_desktop.go`. Invalid pai
 profiles:
   production:
     containerEngine: edgelet
-    dockerUrl: unix:///run/edgelet/containerd.sock
+    containerEngineUrl: unix:///run/edgelet/containerd.sock
+    pruningFrequency: 24
+    watchdogEnabled: true
 ```
 
 ---
@@ -28,7 +30,7 @@ profiles:
 | Value | Platform | Socket / backend |
 |-------|----------|------------------|
 | `edgelet` | **linux only** | Embedded containerd at `/run/edgelet/containerd.sock` |
-| `docker` | linux, darwin, windows | Host Docker (`dockerUrl`, e.g. `unix:///var/run/docker.sock`) |
+| `docker` | linux, darwin, windows | Host Docker (`containerEngineUrl`, e.g. `unix:///var/run/docker.sock`) |
 | `podman` | linux, darwin, windows | Host Podman socket |
 
 **No engine fallback:** If docker/podman is configured, Edgelet does not switch to the embedded engine on failure.

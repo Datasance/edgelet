@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T11-C — embedded split: restart edgelet only; CRI workloads survive.
+# embedded control restart — embedded split: restart edgelet only; CRI workloads survive.
 #
 # Usage:
 #   ./test/workload-continuity/embedded-restart.sh [--vm-name=iofog-test]
@@ -22,7 +22,7 @@ command -v limactl >/dev/null || die "limactl required"
 
 R() { wc_remote "${VM_NAME}" "$*"; }
 
-log_step "T11-C embedded control restart leaves CRI workloads running"
+log_step "embedded control restart embedded control restart leaves CRI workloads running"
 
 wc_embedded_split_gate "${VM_NAME}" || die "embedded split gate failed — run run-all.sh or ensure install.sh split + MS"
 
@@ -33,7 +33,7 @@ assert_ok "edgelet active" \
     R "systemctl is-active --quiet edgelet"
 
 BEFORE="$(wc_cri_container_ids "${VM_NAME}")"
-[[ -n "${BEFORE// /}" ]] || die "No CRI containers — deploy an MS before T11-C"
+[[ -n "${BEFORE// /}" ]] || die "No CRI containers — deploy an MS before embedded control restart"
 log_info "CRI containers before: ${BEFORE}"
 
 R "systemctl restart edgelet"

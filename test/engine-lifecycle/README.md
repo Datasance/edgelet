@@ -22,7 +22,7 @@ test/engine-lifecycle/
 ├── vm-install.sh                  # copy edgelet into VM; --start-engine=edgelet|docker
 ├── vm-setup-inside.sh             # in-VM install (runs via vm-install.sh)
 ├── engine-switch-test.sh          # main assertions (runs inside VM via lima shell)
-├── docker-url-reload-test.sh      # optional: warm dockerUrl reload (same engine)
+├── container-engine-url-reload-test.sh      # optional: warm containerEngineUrl reload (same engine)
 ├── fixtures/
 │   └── engine-switch-ms.yaml      # single MS manifest for deploy step
 └── lib/
@@ -53,7 +53,7 @@ Each switch case follows the same six steps:
 | `edgelet-to-docker` | `edgelet` | `docker` |
 | `docker-to-edgelet` | `docker` | `edgelet` |
 
-**Optional:** `docker-url-reload-test.sh` — same `containerEngine: docker`, change `dockerUrl` only; no restart; container stays reachable.
+**Optional:** `container-engine-url-reload-test.sh` — same `containerEngine: docker`, change `containerEngineUrl` only; no restart; container stays reachable.
 
 ---
 

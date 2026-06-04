@@ -1,8 +1,16 @@
 # Edgelet deployment
 
-Production installation for Edgelet on **linux**, **darwin**, and **windows**. Plan 8 ships **raw release binaries** (no `.tar.gz` bundles, no DEB/RPM).
+Production installation for Edgelet on **linux**, **darwin**, and **windows**. Releases ship **raw binaries** only (no `.tar.gz` bundles, no DEB/RPM).
 
-Contract reference: [.cursor/edgelet/RELEASE-INSTALL.md](../../.cursor/edgelet/RELEASE-INSTALL.md).
+## Product model
+
+| Platform | Binary | Embedded engine | `containerEngine` | Default engine |
+|----------|--------|-----------------|-------------------|----------------|
+| **linux** | Thin wrapper (~30 MB) + fat in zstd embed | Yes | `edgelet`, `docker`, `podman` | `edgelet` |
+| **darwin** | Monolithic | No | `docker`, `podman` | `docker` |
+| **windows** | Monolithic `.exe` | No | `docker`, `podman` | `docker` |
+
+Linux thin path: `/usr/local/bin/edgelet` → lazy extract → `/var/lib/edgelet/data/current/bin/edgelet` (fat).
 
 ## Prerequisites
 
@@ -79,7 +87,7 @@ Controller CA (`/etc/edgelet/cert.crt`) is **not** installed by default. Use `--
 | `--with-sample-ca` | Copy sample controller CA if `cert.crt` missing |
 | `--container-engine=` | `edgelet`, `docker`, or `podman` (linux default: **edgelet**) |
 
-**Removed (Plan 8):** `--flavor`, `--provision-key`, `--non-interactive`, `--tarball-path`.
+**Removed:** `--flavor`, `--provision-key`, `--non-interactive`, `--tarball-path`.
 
 ### Install paths
 
@@ -94,7 +102,7 @@ Controller CA (`/etc/edgelet/cert.crt`) is **not** installed by default. Use `--
 
 Linux init: **systemd**, **procd** (OpenWrt), OpenRC, SysV, upstart, s6, runit (auto-detected). Templates: `packaging/init/`.
 
-### Portable embedded build (Plan 10-8)
+### Portable embedded build (static fat)
 
 The fat runtime inside the zstd embed tar is **statically linked by default** (`STATIC_BUILD=true` in `scripts/build-edgelet` / `make deps`). That lets `containerEngine=edgelet` run on **glibc and musl** (Alpine, OpenWrt) without a separate `-musl` release artifact.
 
@@ -170,7 +178,7 @@ On thin upgrade with a new embed hash, `edgelet daemon` extracts to `/var/lib/ed
 
 Coordinated rollback: controller triggers `install.sh --rollback` + service restart; operators may reuse an on-disk hash tree if still present.
 
-### Service restart matrix (Plan 11)
+### Service restart matrix (workload continuity)
 
 After install/OTA, restart the minimum unit set so MS stay running when possible:
 
@@ -190,7 +198,9 @@ currentProfile: production
 profiles:
   production:
     containerEngine: edgelet   # linux default
-    dockerUrl: unix:///run/edgelet/containerd.sock
+    containerEngineUrl: unix:///run/edgelet/containerd.sock
+    pruningFrequency: 24       # hours between image prune cycles
+    watchdogEnabled: true      # orphan container cleanup
     arch: auto
 ```
 
@@ -221,7 +231,38 @@ edgelet deprovision
 
 ## Container image (linux)
 
-Scratch image: `ghcr.io/datasance/edgelet-linux:<tag>`. OTA = orchestrator replaces image tag (`EDGELET_DAEMON=container`). See `Dockerfile.edgelet-linux`
+| Item | Value |
+|------|--------|
+| Image | `ghcr.io/datasance/edgelet:<tag>` (multi-arch manifest) |
+| Dockerfile | Root `Dockerfile` (scratch + CA certs layer) |
+| Entrypoint | `edgelet daemon` |
+| Env | `EDGELET_DAEMON=container` |
+| Volumes | `/var/lib/edgelet`, `/etc/edgelet` (optional override) |
+| OTA | Orchestrator replaces image tag |
+
+Local IT tag: `edgelet:local` (`EDGELET_IMAGE=edgelet:local` in nested-docker smokes).
+
+## Controller OTA (version handler)
+
+| API | Behavior |
+|-----|----------|
+| `IsReadyToUpgrade()` | `installed_version != target` AND `/usr/share/edgelet/install.sh` exists AND daemon healthy AND not mid-OTA |
+| `IsReadyToRollback()` | `previous-release` exists AND (cached binary OR reachable `previous_download_url`) |
+| `ChangeVersion()` | Detached `sh /usr/share/edgelet/install.sh --upgrade\|--rollback …` |
+| `EDGELET_DAEMON=container` | Image-tag readiness only; orchestrator replaces image |
+
+Field agent heartbeat exposes `readyToUpgrade` / `readyToRollback`. **Forbidden:** `iofog-agentvc.jar`, apt/dnf/yum edgelet packages.
+
+## FogType (`provision.type`)
+
+| ID | Architecture |
+|----|--------------|
+| 1 | amd64 |
+| 2 | arm64 |
+| 3 | riscv64 |
+| 4 | arm (32-bit) |
+
+Config `arch` values: `auto`, `amd64`, `arm64`, `arm`, `riscv64`.
 
 ## Uninstall
 

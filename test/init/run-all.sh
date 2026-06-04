@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test/init/run-all.sh — Plan 10 init IT master runner.
+# test/init/run-all.sh — init IT master runner.
 #
 # Usage:
 #   ./test/init/run-all.sh
@@ -28,14 +28,14 @@ for arg in "$@"; do
 done
 
 run_systemd() {
-    log_step "T10-A systemd install smoke"
+    log_step "systemd install smoke systemd install smoke"
     "${SCRIPT_DIR}/systemd-install-smoke.sh"
 }
 
 run_openrc() {
-    log_step "T10-B Alpine openrc smoke"
+    log_step "Alpine openrc smoke Alpine openrc smoke"
     if ! command -v limactl >/dev/null; then
-        log_warn "limactl not found — skipping T10-B"
+        log_warn "limactl not found — skipping Alpine openrc smoke"
         return 0
     fi
     "${SCRIPT_DIR}/vm-start-alpine.sh"
@@ -44,7 +44,7 @@ run_openrc() {
 }
 
 run_cgroup_regression() {
-    log_step "cgroup unit regression (Plan 9B)"
+    log_step "cgroup unit regression (embedded engine)"
     (cd "${REPO_ROOT}" && go test ./internal/cgroups/...)
 }
 

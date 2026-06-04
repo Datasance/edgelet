@@ -10,7 +10,7 @@
 #   Phase 4 — EdgeletAPI v1 + CLI microservice operations
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
-#   Phase 7 — Chaos gates (control restart; data plane stays up — Plan 11 split)
+#   Phase 7 — Chaos gates (control restart; data plane stays up — runtime split)
 #   Phase 8 — RuntimeClass dual-shim (data-plane restart for shim discovery)
 #
 # Usage:
@@ -94,7 +94,7 @@ assert_ok "containerd config has edgelet socket" \
 assert_ok "containerd socket exists" \
     R "test -S /run/edgelet/containerd.sock"
 
-assert_ok "edgelet-containerd service active (Plan 11 split)" \
+assert_ok "edgelet-containerd service active (runtime split)" \
     R "systemctl is-active --quiet edgelet-containerd"
 
 assert_ok "edgelet service is active with EdgeletAPI unix socket" \
@@ -106,7 +106,7 @@ assert_contains "system status endpoint is reachable" "iofogDaemon" \
 assert_contains "status exposes cgroup mode" "cgroupMode" \
     R "edgelet system status -o json"
 
-assert_ok "cgroup policy matches Plan 11 split (systemd data plane)" \
+assert_ok "cgroup policy matches runtime split (systemd data plane)" \
     R "set -e
 systemctl is-active --quiet edgelet-containerd
 grep -q 'SystemdCgroup = false' /var/lib/edgelet-containerd/config.toml
@@ -432,7 +432,7 @@ assert_ok "journald has no forbidden startup signatures" \
 
 assert_ok "runtime child crash recovers within bounded window" \
     R "set -e
-# Plan 11 split: child is owned by edgelet-containerd; recovery is a unit cycle (drain may take minutes).
+# Runtime split: child is owned by edgelet-containerd; recovery is a unit cycle (drain may take minutes).
 data_plane_ready() {
   systemctl is-active --quiet edgelet-containerd \
     && test -S /run/edgelet/containerd.sock \

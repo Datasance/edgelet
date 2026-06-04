@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test/init/lib/stage-install-bundle.sh
-# Build a minimal repo layout for install.sh inside a Lima VM (Plan 10 IT).
+# Build a minimal repo layout for install.sh inside a Lima VM (init IT).
 # Source from test/init/*-smoke.sh — do not execute directly.
 
 # validate_install_bundle_sources REPO_ROOT

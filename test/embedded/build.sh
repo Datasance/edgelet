@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test/embedded/build.sh
 #
-# Runs the Plan 6 two-layer embed pipeline and cross-compiles the unified linux
+# Runs the two-layer embed pipeline and cross-compiles the unified linux
 # thin edgelet binary for the Linux target that will run inside the Lima VM.
 #
 # Output:
@@ -50,7 +50,7 @@ run_embed_pipeline() {
 }
 
 ###############################################################################
-# Step 1: Plan 6 embed pipeline (download → build-embedded → fat → package-data)
+# Step 1: two-layer embed pipeline (download → build-embedded → fat → package-data)
 ###############################################################################
 log_step "Embed pipeline: download → build-embedded → fat → package-data"
 

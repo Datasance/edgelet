@@ -1,4 +1,4 @@
-# Plan 12 IT fixture — identity drives DNS FQDNs (not hardcoded "controller" as MS name).
+# ControlPlane IT fixture — identity drives DNS FQDNs (not hardcoded "controller" as MS name).
 # metadata.namespace=default, metadata.name=pot →
 #   edgelet.controller.svc.bridge.local
 #   controller.default.svc.bridge.local

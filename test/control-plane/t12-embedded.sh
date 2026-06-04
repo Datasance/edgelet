@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T12-A + T12-C + T12-D + T12-E on embedded engine (iofog-test Lima VM).
+# embedded CP apply + controller status API + CP lifecycle guards + CP DNS resolution on embedded engine (iofog-test Lima VM).
 #
 # Usage: ./test/control-plane/t12-embedded.sh [--vm-name=iofog-test] [--skip-setup]
 
@@ -23,20 +23,20 @@ for arg in "$@"; do
 done
 
 cp_fixture_metadata "${FIXTURE}"
-log_step "T12-A embedded (${VM_NAME}) — ControlPlane ${CP_NS}/${CP_NAME}"
+log_step "embedded CP apply embedded (${VM_NAME}) — ControlPlane ${CP_NS}/${CP_NAME}"
 
 cp_ensure_embedded_vm "${CP_REPO_ROOT}" "${VM_NAME}" "${TARGET_ARCH}" "${SKIP_SETUP}"
 cp_deploy "${VM_NAME}" "${FIXTURE}"
 cp_wait_running "${VM_NAME}"
 cp_assert_deployed "${VM_NAME}"
 
-log_step "T12-C controller /api/v3/status"
+log_step "controller status API controller /api/v3/status"
 cp_assert_status_api "${VM_NAME}"
 
-log_step "T12-E DNS (fixture namespace/name FQDNs)"
+log_step "CP DNS resolution DNS (fixture namespace/name FQDNs)"
 cp_assert_dns "${VM_NAME}"
 
-log_step "T12-D ms lifecycle block + controlplane delete"
+log_step "CP lifecycle guards ms lifecycle block + controlplane delete"
 cp_deploy "${VM_NAME}" "${FIXTURE}"
 cp_wait_running "${VM_NAME}"
 cp_assert_lifecycle "${VM_NAME}"
