@@ -105,7 +105,7 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 
 	vmm := &VolumeMountManager{
 		baseDirectory: baseDir,
-		indexData: map[string]interface{}{
+		mountIndex: map[string]interface{}{
 			"vm-secret": map[string]interface{}{"name": "secret-a", "type": "secret"},
 			"vm-config": map[string]interface{}{"name": "config-a", "type": "configMap"},
 		},
@@ -137,8 +137,8 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 		t.Fatalf("expected data file preserved, got err=%v", err)
 	}
 
-	if len(vmm.indexData) != 0 {
-		t.Fatalf("expected in-memory index cleared, got %d entries", len(vmm.indexData))
+	if len(vmm.mountIndex) != 0 {
+		t.Fatalf("expected in-memory mount index cleared, got %d entries", len(vmm.mountIndex))
 	}
 	if len(vmm.typeCache) != 0 {
 		t.Fatalf("expected type cache cleared, got %d entries", len(vmm.typeCache))
