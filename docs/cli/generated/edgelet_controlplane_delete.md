@@ -1,16 +1,15 @@
-## edgelet ms ls
+## edgelet controlplane delete
 
-List microservices
+Remove the control plane deployment
 
 ```
-edgelet ms ls [flags]
+edgelet controlplane delete [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help            help for ls
-      --source string   Filter list: managed, local, controlplane, or all (default "all")
+  -h, --help   help for delete
 ```
 
 ### Options inherited from parent commands
@@ -27,6 +26,6 @@ edgelet ms ls [flags]
 
 ### SEE ALSO
 
-* [edgelet ms](edgelet_ms.md)	 - Microservice operations
+* [edgelet controlplane](edgelet_controlplane.md)	 - Control plane controller operations
 
 

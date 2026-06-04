@@ -1,16 +1,16 @@
-## edgelet ms ls
+## edgelet controlplane get
 
-List microservices
+Show control plane deployment status or masked manifest
 
 ```
-edgelet ms ls [flags]
+edgelet controlplane get [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help            help for ls
-      --source string   Filter list: managed, local, controlplane, or all (default "all")
+  -h, --help       help for get
+      --manifest   Return secrets-masked ControlPlane manifest YAML
 ```
 
 ### Options inherited from parent commands
@@ -27,6 +27,6 @@ edgelet ms ls [flags]
 
 ### SEE ALSO
 
-* [edgelet ms](edgelet_ms.md)	 - Microservice operations
+* [edgelet controlplane](edgelet_controlplane.md)	 - Control plane controller operations
 
 

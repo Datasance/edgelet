@@ -31,6 +31,7 @@ edgelet [flags]
 * [edgelet auth](edgelet_auth.md)	 - Authentication operations
 * [edgelet completion](edgelet_completion.md)	 - Generate shell completion scripts
 * [edgelet config](edgelet_config.md)	 - Update agent configuration
+* [edgelet controlplane](edgelet_controlplane.md)	 - Control plane controller operations
 * [edgelet deploy](edgelet_deploy.md)	 - Deploy a local manifest
 * [edgelet deprovision](edgelet_deprovision.md)	 - Deprovision the agent
 * [edgelet image](edgelet_image.md)	 - Image operations
