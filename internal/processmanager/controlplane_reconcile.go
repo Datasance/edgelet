@@ -13,7 +13,7 @@ import (
 )
 
 func (pm *ProcessManager) reconcileControlPlane() {
-	item, found, err := store.GetInstance().GetControlPlaneDeployment()
+	item, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil {
 		pm.logger.Warnf("control plane reconcile get deployment failed: %v", err)
 		return
@@ -36,7 +36,7 @@ func (pm *ProcessManager) reconcileControlPlane() {
 		item.LastError = err.Error()
 		item.RuntimeState = "unknown"
 		item.State = item.RuntimeState
-		_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return
 	}
 
@@ -77,14 +77,14 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredDeleted(item *models.Contr
 			item.LastError = err.Error()
 			item.RuntimeState = "deleting"
 			item.State = item.RuntimeState
-			_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+			_ = store.GetInstance().UpsertSystemControlPlane(item)
 			return
 		}
 	}
 	item.ContainerID = ""
 	item.LastError = ""
 	item.FailureCount = 0
-	_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+	_ = store.GetInstance().UpsertSystemControlPlane(item)
 }
 
 func (pm *ProcessManager) reconcileControlPlaneDesiredStopped(item *models.ControlPlaneDeployment, container *engine.Container, now int64) {
@@ -95,7 +95,7 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredStopped(item *models.Contr
 			item.LastError = err.Error()
 			item.RuntimeState = "stopping"
 			item.State = item.RuntimeState
-			_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+			_ = store.GetInstance().UpsertSystemControlPlane(item)
 			return
 		}
 	}
@@ -103,7 +103,7 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredStopped(item *models.Contr
 	item.State = item.RuntimeState
 	item.LastError = ""
 	item.FailureCount = 0
-	_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+	_ = store.GetInstance().UpsertSystemControlPlane(item)
 }
 
 func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.ControlPlaneDeployment, container *engine.Container, now int64) {
@@ -133,7 +133,7 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 		item.State = item.RuntimeState
 		item.LastError = err.Error()
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return
 	}
 
@@ -206,7 +206,7 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 			item.LastError = ""
 			item.FailureCount = 0
 		}
-		_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return
 	case "failed", "unknown":
 		pm.bumpControlPlaneFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
@@ -216,7 +216,7 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 		}
 	}
 
-	_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+	_ = store.GetInstance().UpsertSystemControlPlane(item)
 }
 
 func controlPlaneLaunchInFlight(item *models.ControlPlaneDeployment, now int64) bool {
@@ -273,7 +273,7 @@ func (pm *ProcessManager) launchControlPlaneWithProgress(item *models.ControlPla
 		item.State = item.RuntimeState
 		pm.bumpControlPlaneFailure(item, err, item.RuntimeState)
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return
 	}
 
@@ -282,7 +282,7 @@ func (pm *ProcessManager) launchControlPlaneWithProgress(item *models.ControlPla
 	item.LastStartAttemptAt = now
 	item.LastTransitionAt = now
 	item.Image = doc.ManifestControllerImage()
-	_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+	_ = store.GetInstance().UpsertSystemControlPlane(item)
 
 	hostIP := network.GetInstance().GetCurrentIPAddress()
 	containerID, err := pm.LaunchLocalMicroserviceWithProgress(ms, registry, hostIP, progress)
@@ -291,7 +291,7 @@ func (pm *ProcessManager) launchControlPlaneWithProgress(item *models.ControlPla
 		item.State = item.RuntimeState
 		pm.bumpControlPlaneFailure(item, err, item.RuntimeState)
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return
 	}
 
@@ -303,7 +303,7 @@ func (pm *ProcessManager) launchControlPlaneWithProgress(item *models.ControlPla
 	item.LastError = ""
 	item.FailureCount = 0
 	item.LastTransitionAt = now
-	_ = store.GetInstance().UpsertControlPlaneDeployment(item)
+	_ = store.GetInstance().UpsertSystemControlPlane(item)
 	pm.syncControlPlaneDNS(item, true)
 }
 
@@ -341,7 +341,7 @@ func (pm *ProcessManager) recreateControlPlaneDeploymentWithProgress(item *model
 	item.LastError = ""
 	item.FailureCount = 0
 	item.LastTransitionAt = now
-	if err := store.GetInstance().UpsertControlPlaneDeployment(item); err != nil {
+	if err := store.GetInstance().UpsertSystemControlPlane(item); err != nil {
 		return err
 	}
 	pm.syncControlPlaneDNS(item, true)

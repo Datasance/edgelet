@@ -229,7 +229,7 @@ func TestControlPlaneHandlers_ApplyGetManifestDelete(t *testing.T) {
 		t.Fatalf("expected 2 volume removals, got %#v", eng.removeVolumeNames)
 	}
 
-	_, found, err := store.GetInstance().GetControlPlaneDeployment()
+	_, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil {
 		t.Fatalf("get after delete: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestControlPlaneHandlers_ValidateDryRun(t *testing.T) {
 	if final["status"] != "succeeded" {
 		t.Fatalf("expected dry-run succeeded, got %#v", final)
 	}
-	_, found, err := store.GetInstance().GetControlPlaneDeployment()
+	_, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil {
 		t.Fatalf("get after dry-run: %v", err)
 	}

@@ -107,7 +107,7 @@ func (vmm *VolumeMountManager) loadIndex() {
 		return
 	}
 
-	records, err := db.LoadAllVolumeMounts()
+	records, err := db.LoadAllControllerVolumeMounts()
 	if err != nil {
 		logging.LogError(moduleName, "Error loading volume mounts from SQLite", err)
 		vmm.indexData = make(map[string]interface{})
@@ -212,7 +212,7 @@ func (vmm *VolumeMountManager) saveIndex() {
 		})
 	}
 
-	if err := db.ReplaceAllVolumeMounts(records); err != nil {
+	if err := db.ReplaceAllControllerVolumeMounts(records); err != nil {
 		logging.LogError(moduleName, "Error saving volume mounts to SQLite", err)
 	}
 
@@ -1363,7 +1363,7 @@ func (vmm *VolumeMountManager) Clear() error {
 
 	// Clear SQLite volume mount records
 	if db := store.GetInstance(); db.Conn() != nil {
-		if err := db.ClearAllVolumeMounts(); err != nil {
+		if err := db.ClearAllControllerVolumeMounts(); err != nil {
 			logging.LogError(moduleName, "Error clearing volume mounts from SQLite", err)
 		}
 	}
@@ -1399,7 +1399,7 @@ func (vmm *VolumeMountManager) ClearControllerArtifacts() error {
 
 	// Clear persisted volume_mounts records.
 	if db := store.GetInstance(); db.Conn() != nil {
-		if err := db.ClearAllVolumeMounts(); err != nil {
+		if err := db.ClearAllControllerVolumeMounts(); err != nil {
 			logging.LogError(moduleName, "Error clearing controller volume mounts from SQLite", err)
 		}
 	}

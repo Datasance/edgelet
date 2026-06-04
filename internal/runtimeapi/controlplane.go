@@ -49,7 +49,7 @@ func (f *Facade) ParseAndValidateControlPlaneManifest(manifest string) (*models.
 
 // GetControlPlaneDeployment returns the singleton control plane row.
 func (f *Facade) GetControlPlaneDeployment() (*models.ControlPlaneDeployment, error) {
-	item, found, err := f.db.GetControlPlaneDeployment()
+	item, found, err := f.db.GetSystemControlPlane()
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 
 	var existing *models.ControlPlaneDeployment
 	if f.db.Conn() != nil {
-		item, found, getErr := f.db.GetControlPlaneDeployment()
+		item, found, getErr := f.db.GetSystemControlPlane()
 		if getErr != nil {
 			return nil, getErr
 		}
@@ -187,7 +187,7 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 	}
 
 	emitDeployProgress(progress, DeployStagePersisting, "saving control plane deployment")
-	if err := f.db.UpsertControlPlaneDeployment(item); err != nil {
+	if err := f.db.UpsertSystemControlPlane(item); err != nil {
 		return nil, err
 	}
 

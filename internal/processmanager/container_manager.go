@@ -45,27 +45,27 @@ func NewContainerManager(eng engine.ContainerEngine, microserviceManager Microse
 // GetContainerForMicroservice returns the container for a microservice, using DB-first
 // lookup when available (iofog engine) with label-based fallback.
 func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string) (*engine.Container, error) {
-	if cs, err := store.GetInstance().GetContainerState(microserviceUUID); err == nil && cs != nil && cs.WorkloadID != "" {
+	if cs, err := store.GetInstance().GetRuntimeContainerRef(microserviceUUID, store.RuntimeScopeController); err == nil && cs != nil && cs.WorkloadID != "" {
 		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
 			return c, nil
 		}
 		cm.logger.Warnf(
-			"runtime drift cleanup: stale container_state entry msUUID=%s containerID=%s decision=cleanup-stale-db",
+			"runtime drift cleanup: stale runtime_container_refs (controller) msUUID=%s containerID=%s decision=cleanup-stale-db",
 			microserviceUUID,
 			cs.WorkloadID,
 		)
-		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeController)
 	}
-	if cs, err := store.GetInstance().GetLocalContainerState(microserviceUUID); err == nil && cs != nil && cs.WorkloadID != "" {
+	if cs, err := store.GetInstance().GetRuntimeContainerRef(microserviceUUID, store.RuntimeScopeLocal); err == nil && cs != nil && cs.WorkloadID != "" {
 		if c, err := cm.engine.GetContainerByID(cs.WorkloadID); err == nil && c != nil {
 			return c, nil
 		}
 		cm.logger.Warnf(
-			"runtime drift cleanup: stale local_container_state entry msUUID=%s containerID=%s decision=cleanup-stale-db",
+			"runtime drift cleanup: stale runtime_container_refs (local) msUUID=%s containerID=%s decision=cleanup-stale-db",
 			microserviceUUID,
 			cs.WorkloadID,
 		)
-		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeLocal)
 	}
 	c, err := cm.engine.GetContainer(microserviceUUID)
 	if err != nil {
@@ -73,7 +73,7 @@ func (cm *ContainerManager) GetContainerForMicroservice(microserviceUUID string)
 	}
 	if c != nil {
 		if sandboxID, _ := cm.engine.GetContainerSandboxID(c.ID); sandboxID != "" {
-			_ = store.GetInstance().SaveContainerState(microserviceUUID, c.ID, sandboxID)
+			_ = store.GetInstance().UpsertRuntimeContainerRef(microserviceUUID, store.RuntimeScopeController, c.ID, sandboxID)
 		}
 	}
 	return c, nil
@@ -239,8 +239,8 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(ctx context.Contex
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
 			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
-		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
-		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeController)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeLocal)
 	} else {
 		imageRef := container.Image
 		statusreporter.GetInstance().UpdateProcessManagerStatus(func(s *models.ProcessManagerStatus) {
@@ -253,8 +253,8 @@ func (cm *ContainerManager) RemoveContainerByMicroserviceUUID(ctx context.Contex
 			s.SetMicroservicesState(microserviceUUID, models.MicroserviceStateDeleted)
 			s.SetMicroservicesStatusErrorMessage(microserviceUUID, "")
 		})
-		_ = store.GetInstance().DeleteContainerState(microserviceUUID)
-		_ = store.GetInstance().DeleteLocalContainerState(microserviceUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeController)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(microserviceUUID, store.RuntimeScopeLocal)
 	}
 
 	volumemount.GetInstance().CleanupMicroserviceVolumes(microserviceUUID)
@@ -295,9 +295,9 @@ func (cm *ContainerManager) RemoveContainerByID(ctx context.Context, containerID
 			s.SetMicroservicesState(msUUID, models.MicroserviceStateDeleted)
 			s.SetMicroservicesStatusErrorMessage(msUUID, "")
 		})
-		_ = store.GetInstance().DeleteContainerState(msUUID)
-		_ = store.GetInstance().DeleteLocalContainerState(msUUID)
-		_ = store.GetInstance().DeleteLocalDeployedMicroservice(msUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(msUUID, store.RuntimeScopeController)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(msUUID, store.RuntimeScopeLocal)
+		_ = store.GetInstance().DeleteLocalWorkload(msUUID)
 		volumemount.GetInstance().CleanupMicroserviceVolumes(msUUID)
 	}
 
@@ -688,7 +688,7 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 
 	sandboxID, _ := cm.engine.GetContainerSandboxID(containerID)
 	if sandboxID != "" {
-		_ = store.GetInstance().SaveContainerState(ms.MicroserviceUUID, containerID, sandboxID)
+		_ = store.GetInstance().UpsertRuntimeContainerRef(ms.MicroserviceUUID, store.RuntimeScopeController, containerID, sandboxID)
 	}
 
 	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{

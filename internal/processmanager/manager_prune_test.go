@@ -103,7 +103,7 @@ func TestPruneStaleProcessManagerStatuses_KeepsManagedLocalAndRuntimeOwned(t *te
 		ImageName:        "nginx:latest",
 		State:            "running",
 	}
-	if err := store.GetInstance().UpsertLocalDeployedMicroservice(local); err != nil {
+	if err := store.GetInstance().UpsertLocalWorkload(local); err != nil {
 		t.Fatalf("failed to seed local deployment: %v", err)
 	}
 

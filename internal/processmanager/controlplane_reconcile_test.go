@@ -46,13 +46,13 @@ func TestReconcileControlPlane_LaunchesMissingContainer(t *testing.T) {
 		DesiredState:   "running",
 		Generation:     1,
 	}
-	if err := store.GetInstance().UpsertControlPlaneDeployment(dep); err != nil {
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert control plane: %v", err)
 	}
 
 	pm.reconcileControlPlane()
 
-	got, found, err := store.GetInstance().GetControlPlaneDeployment()
+	got, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil || !found {
 		t.Fatalf("get control plane: found=%v err=%v", found, err)
 	}
@@ -83,7 +83,7 @@ func TestReconcileControlPlane_SkipsLaunchWhenApplyInFlight(t *testing.T) {
 		RuntimeState:       "starting",
 		LastStartAttemptAt: 9999999999,
 	}
-	if err := store.GetInstance().UpsertControlPlaneDeployment(dep); err != nil {
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert control plane: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestReconcileControlPlane_RecreatesOnGenerationBump(t *testing.T) {
 		RuntimeState:       "running",
 		ContainerID:        "old-cid",
 	}
-	if err := store.GetInstance().UpsertControlPlaneDeployment(dep); err != nil {
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert control plane: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestReconcileControlPlane_RecreatesOnGenerationBump(t *testing.T) {
 
 	pm.reconcileControlPlane()
 
-	got, found, err := store.GetInstance().GetControlPlaneDeployment()
+	got, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil || !found {
 		t.Fatalf("get control plane: found=%v err=%v", found, err)
 	}

@@ -28,7 +28,7 @@ func (f *Facade) controlPlaneDeploymentRow() (*models.ControlPlaneDeployment, bo
 	if f == nil || f.db == nil || f.db.Conn() == nil {
 		return nil, false
 	}
-	item, found, err := f.db.GetControlPlaneDeployment()
+	item, found, err := f.db.GetSystemControlPlane()
 	if err != nil || !found || item == nil {
 		return nil, false
 	}
