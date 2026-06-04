@@ -5,7 +5,8 @@ Documentation=https://github.com/datasance/edgelet
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target
-PartOf=edgelet.service
+# Intentionally NOT PartOf=edgelet.service: control restart/stop must not
+# stop the data plane (Plan 11 attach-only). Full teardown: stop both units.
 
 [Service]
 Type=simple
