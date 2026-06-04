@@ -6,6 +6,7 @@ Operator and developer documentation for the Edgelet edge agent.
 |----------|-------------|
 | [architecture.md](architecture.md) | Module layout, data flows, EdgeletAPI vs Controller API |
 | [deployment.md](deployment.md) | Install, systemd, full/lite flavors, provisioning |
+| [persistence.md](persistence.md) | SQLite backup/restore, wipe-only upgrade, secrets threat model |
 | [troubleshooting.md](troubleshooting.md) | Daemon, containerd, auth, CLI connectivity |
 | [logging.md](logging.md) | Structured events, log levels, journald queries |
 | [container-engine.md](container-engine.md) | `edgelet` / `docker` / `podman` engines, CNI, RuntimeClass |

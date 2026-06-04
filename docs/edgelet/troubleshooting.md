@@ -113,6 +113,8 @@ See [cgroups.md](cgroups.md) for the full matrix.
 
 5. **Cold engine change** (Plan 9A): changing `containerEngine` always recreates MS — this is expected and unrelated to workload continuity.
 
+6. **Legacy unit on VM:** if `systemctl cat edgelet-containerd` shows `PartOf=edgelet.service`, reinstall packaging and run `systemctl daemon-reload` — that forces data-plane stop on control restart (T11-C failure).
+
 See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
 
 ---

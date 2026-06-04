@@ -54,6 +54,14 @@ systemctl restart edgelet-containerd   # data plane — MS stop then reconcile (
 
 Cgroup bootstrap (**C1**) runs in `edgelet runtime-bootstrap` on the containerd unit. Control unit **attach-only** (`EDGELET_RUNTIME_SPLIT=1`).
 
+**systemd coupling:** `edgelet-containerd.service` is **not** `PartOf=edgelet.service`. Stopping or restarting **only** `edgelet` leaves the data plane running (T11-C).
+
+**Full embedded shutdown** (backup, uninstall, wipe):
+
+```bash
+sudo systemctl stop edgelet-containerd.service edgelet.service
+```
+
 ---
 
 ## Before runtime split (monolithic embedded)

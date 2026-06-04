@@ -79,6 +79,8 @@ systemctl show edgelet -p DelegateSubgroup,TimeoutStopSec
 
 After Plan 11: enable `edgelet-containerd.service` before `edgelet.service` for embedded split.
 
+Split embedded units are **siblings**: `Wants`/`After` on `edgelet.service` only orders **start**. There is no `PartOf` — `systemctl stop edgelet` does not stop `edgelet-containerd`. Full teardown stops both units (see [workload-continuity.md](workload-continuity.md)).
+
 **Monolithic embedded:** the control unit omits `ProtectSystem=strict` until the data-plane unit owns containerd (embedded needs `/etc/cni`, `/run`, `/opt`, etc.). `init-edgelet.sh` creates `/etc/cni/net.d`, `/run/edgelet`, and `/run/containerd` before `systemctl start`.
 
 ---
