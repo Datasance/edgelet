@@ -8,8 +8,8 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 )
 
-// UpsertLocalDeployedMicroservice upserts a locally deployed microservice record.
-func (d *DB) UpsertLocalDeployedMicroservice(ms *models.LocalDeployedMicroservice) error {
+// UpsertLocalWorkload upserts a local workload record.
+func (d *DB) UpsertLocalWorkload(ms *models.LocalDeployedMicroservice) error {
 	if ms == nil {
 		return fmt.Errorf("local deployed microservice is nil")
 	}
@@ -21,7 +21,7 @@ func (d *DB) UpsertLocalDeployedMicroservice(ms *models.LocalDeployedMicroservic
 	}
 	ms.NormalizeDefaults()
 
-	_, err := d.Conn().Exec(`INSERT INTO local_deployed_microservices (
+	_, err := d.Conn().Exec(`INSERT INTO local_workloads (
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name,
 		state, container_id, desired_state, runtime_state, last_error, restart_count, last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
 		deleted_at, generation, observed_generation, created_at, updated_at
@@ -53,20 +53,23 @@ func (d *DB) UpsertLocalDeployedMicroservice(ms *models.LocalDeployedMicroservic
 		ms.LastReconcileAt, ms.LastStartAttemptAt, ms.FailureCount, ms.DeletedAt, ms.Generation, ms.ObservedGeneration, time.Now().Unix(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to upsert local deployed microservice: %w", err)
+		return fmt.Errorf("failed to upsert local workload: %w", err)
 	}
 	return nil
 }
 
-// ListLocalDeployedMicroservices returns all locally deployed microservices.
-func (d *DB) ListLocalDeployedMicroservices() ([]*models.LocalDeployedMicroservice, error) {
+// ListLocalWorkloads returns all local workload records.
+func (d *DB) ListLocalWorkloads() ([]*models.LocalDeployedMicroservice, error) {
+	if d.Conn() == nil {
+		return nil, fmt.Errorf("database is closed")
+	}
 	rows, err := d.Conn().Query(`SELECT
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name, state, container_id,
 		desired_state, runtime_state, last_error, restart_count, last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
 		deleted_at, generation, observed_generation
-		FROM local_deployed_microservices ORDER BY created_at DESC`)
+		FROM local_workloads ORDER BY created_at DESC`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query local_deployed_microservices: %w", err)
+		return nil, fmt.Errorf("failed to query local_workloads: %w", err)
 	}
 	defer rows.Close()
 
@@ -79,7 +82,7 @@ func (d *DB) ListLocalDeployedMicroservices() ([]*models.LocalDeployedMicroservi
 			&item.RestartCount, &item.LastTransitionAt, &item.LastReconcileAt, &item.LastStartAttemptAt, &item.FailureCount,
 			&item.DeletedAt, &item.Generation, &item.ObservedGeneration,
 		); scanErr != nil {
-			return nil, fmt.Errorf("failed to scan local_deployed_microservices row: %w", scanErr)
+			return nil, fmt.Errorf("failed to scan local_workloads row: %w", scanErr)
 		}
 		item.NormalizeDefaults()
 		result = append(result, item)
@@ -90,13 +93,13 @@ func (d *DB) ListLocalDeployedMicroservices() ([]*models.LocalDeployedMicroservi
 	return result, rows.Err()
 }
 
-// GetLocalDeployedMicroservice retrieves one local deployment record by id.
-func (d *DB) GetLocalDeployedMicroservice(id string) (*models.LocalDeployedMicroservice, error) {
+// GetLocalWorkload retrieves one local workload record by id.
+func (d *DB) GetLocalWorkload(id string) (*models.LocalDeployedMicroservice, error) {
 	row := d.Conn().QueryRow(`SELECT
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name, state, container_id,
 		desired_state, runtime_state, last_error, restart_count, last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
 		deleted_at, generation, observed_generation
-		FROM local_deployed_microservices WHERE local_uuid = ?`, id)
+		FROM local_workloads WHERE local_uuid = ?`, id)
 	item := &models.LocalDeployedMicroservice{}
 	if err := row.Scan(
 		&item.LocalUUID, &item.ApplicationName, &item.MicroserviceName, &item.SourceName, &item.ManifestYAML,
@@ -110,8 +113,8 @@ func (d *DB) GetLocalDeployedMicroservice(id string) (*models.LocalDeployedMicro
 	return item, nil
 }
 
-// FindLocalDeployedMicroservicesByAppAndName finds local deployments by app/name.
-func (d *DB) FindLocalDeployedMicroservicesByAppAndName(application, name string) ([]*models.LocalDeployedMicroservice, error) {
+// FindLocalWorkloadsByAppAndName finds local workloads by app/name.
+func (d *DB) FindLocalWorkloadsByAppAndName(application, name string) ([]*models.LocalDeployedMicroservice, error) {
 	app := strings.TrimSpace(application)
 	msName := strings.TrimSpace(name)
 	if app == "" || msName == "" {
@@ -124,12 +127,12 @@ func (d *DB) FindLocalDeployedMicroservicesByAppAndName(application, name string
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name, state, container_id,
 		desired_state, runtime_state, last_error, restart_count, last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
 		deleted_at, generation, observed_generation
-		FROM local_deployed_microservices
+		FROM local_workloads
 		WHERE application_name = ? COLLATE NOCASE
 		  AND microservice_name = ? COLLATE NOCASE
 		ORDER BY updated_at DESC, created_at DESC`, app, msName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query local_deployed_microservices by app/name: %w", err)
+		return nil, fmt.Errorf("failed to query local_workloads by app/name: %w", err)
 	}
 	defer rows.Close()
 
@@ -142,7 +145,7 @@ func (d *DB) FindLocalDeployedMicroservicesByAppAndName(application, name string
 			&item.RestartCount, &item.LastTransitionAt, &item.LastReconcileAt, &item.LastStartAttemptAt, &item.FailureCount,
 			&item.DeletedAt, &item.Generation, &item.ObservedGeneration,
 		); scanErr != nil {
-			return nil, fmt.Errorf("failed to scan local_deployed_microservices by app/name row: %w", scanErr)
+			return nil, fmt.Errorf("failed to scan local_workloads by app/name row: %w", scanErr)
 		}
 		item.NormalizeDefaults()
 		items = append(items, item)
@@ -150,14 +153,14 @@ func (d *DB) FindLocalDeployedMicroservicesByAppAndName(application, name string
 	return items, rows.Err()
 }
 
-// DeleteLocalDeployedMicroservice removes a local deployment record by id.
-func (d *DB) DeleteLocalDeployedMicroservice(id string) error {
-	_, err := d.Conn().Exec(`DELETE FROM local_deployed_microservices WHERE local_uuid = ?`, id)
+// DeleteLocalWorkload removes a local workload record by id.
+func (d *DB) DeleteLocalWorkload(id string) error {
+	_, err := d.Conn().Exec(`DELETE FROM local_workloads WHERE local_uuid = ?`, id)
 	return err
 }
 
-// ClearLocalDeployedMicroservices removes all local deployment records.
-func (d *DB) ClearLocalDeployedMicroservices() error {
-	_, err := d.Conn().Exec(`DELETE FROM local_deployed_microservices`)
+// ClearLocalWorkloads removes all local workload records.
+func (d *DB) ClearLocalWorkloads() error {
+	_, err := d.Conn().Exec(`DELETE FROM local_workloads`)
 	return err
 }

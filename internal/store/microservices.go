@@ -9,16 +9,16 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 )
 
-// SaveMicroservices replaces all microservice rows in a single transaction.
-func (d *DB) SaveMicroservices(microservices []*models.Microservice) error {
+// SaveControllerMicroservices replaces all controller microservice rows in a single transaction.
+func (d *DB) SaveControllerMicroservices(microservices []*models.Microservice) error {
 	tx, err := d.Conn().Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback() // #nosec G104 -- data written by this process; parse failure yields empty/zero value
 
-	if _, err := tx.Exec("DELETE FROM microservices"); err != nil {
-		return fmt.Errorf("failed to clear microservices: %w", err)
+	if _, err := tx.Exec("DELETE FROM controller_microservices"); err != nil {
+		return fmt.Errorf("failed to clear controller_microservices: %w", err)
 	}
 
 	for _, ms := range microservices {
@@ -30,8 +30,8 @@ func (d *DB) SaveMicroservices(microservices []*models.Microservice) error {
 	return tx.Commit()
 }
 
-// LoadMicroservices retrieves all microservices ordered by uuid.
-func (d *DB) LoadMicroservices() ([]*models.Microservice, error) {
+// LoadControllerMicroservices retrieves all controller microservices ordered by uuid.
+func (d *DB) LoadControllerMicroservices() ([]*models.Microservice, error) {
 	rows, err := d.Conn().Query(`SELECT
 		uuid, image_name, container_id, registry_id,
 		rebuild, host_network_mode, is_privileged, log_size,
@@ -42,9 +42,9 @@ func (d *DB) LoadMicroservices() ([]*models.Microservice, error) {
 		annotations, pid_mode, ipc_mode, cpu_set_cpus, memory_limit,
 		port_mappings, volume_mappings, env_vars, args,
 		cdi_devs, cap_add, cap_drop, extra_hosts, healthcheck
-	FROM microservices ORDER BY uuid`)
+	FROM controller_microservices ORDER BY uuid`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query microservices: %w", err)
+		return nil, fmt.Errorf("failed to query controller_microservices: %w", err)
 	}
 	defer rows.Close()
 
@@ -62,9 +62,9 @@ func (d *DB) LoadMicroservices() ([]*models.Microservice, error) {
 	return result, rows.Err()
 }
 
-// ClearMicroservices removes all microservice rows (used on deprovision).
-func (d *DB) ClearMicroservices() error {
-	_, err := d.Conn().Exec("DELETE FROM microservices")
+// ClearControllerMicroservices removes all controller microservice rows (used on deprovision).
+func (d *DB) ClearControllerMicroservices() error {
+	_, err := d.Conn().Exec("DELETE FROM controller_microservices")
 	return err
 }
 
@@ -85,7 +85,7 @@ func insertMicroservice(tx *sql.Tx, ms *models.Microservice) error {
 		healthcheckJSON = &s
 	}
 
-	_, err := tx.Exec(`INSERT OR REPLACE INTO microservices (
+	_, err := tx.Exec(`INSERT OR REPLACE INTO controller_microservices (
 		uuid, image_name, container_id, registry_id,
 		rebuild, host_network_mode, is_privileged, log_size,
 		is_router, exec_enabled, microservice_name, application_name,

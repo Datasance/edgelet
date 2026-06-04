@@ -2,19 +2,19 @@ package store
 
 import "testing"
 
-func TestEnsureDefaultRegistries(t *testing.T) {
+func TestEnsureDefaultControllerRegistries(t *testing.T) {
 	db := GetInstance()
 	if err := db.Open(t.TempDir()); err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := db.EnsureDefaultRegistries(); err != nil {
-		t.Fatalf("EnsureDefaultRegistries failed: %v", err)
+	if err := db.EnsureDefaultControllerRegistries(); err != nil {
+		t.Fatalf("EnsureDefaultControllerRegistries failed: %v", err)
 	}
-	registries, err := db.LoadRegistries()
+	registries, err := db.LoadControllerRegistries()
 	if err != nil {
-		t.Fatalf("LoadRegistries failed: %v", err)
+		t.Fatalf("LoadControllerRegistries failed: %v", err)
 	}
 
 	foundDockerIO := false

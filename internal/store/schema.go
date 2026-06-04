@@ -18,7 +18,6 @@ var migrationFiles embed.FS
 // migrate bootstraps the schema_versions table, then applies all .sql files
 // whose version number exceeds the currently stored maximum version.
 func (d *DB) migrate() error {
-	// Bootstrap: ensure schema_versions exists before anything else
 	if _, err := d.db.Exec(`CREATE TABLE IF NOT EXISTS schema_versions (
 		version     INTEGER PRIMARY KEY,
 		description TEXT    NOT NULL,
@@ -27,13 +26,11 @@ func (d *DB) migrate() error {
 		return fmt.Errorf("failed to bootstrap schema_versions: %w", err)
 	}
 
-	// Determine current schema version
 	var currentVersion int
 	if err := d.db.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_versions").Scan(&currentVersion); err != nil {
 		return fmt.Errorf("failed to read current schema version: %w", err)
 	}
 
-	// Enumerate migration files sorted by name (001_..., 002_..., etc.)
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("failed to read migration directory: %w", err)
@@ -46,8 +43,7 @@ func (d *DB) migrate() error {
 
 		version, err := parseMigrationVersion(entry.Name())
 		if err != nil {
-			logging.LogWarn(storageModuleName, fmt.Sprintf("Skipping migration file with unparseable version: %s", entry.Name()))
-			continue
+			return fmt.Errorf("unparseable migration filename %s: %w", entry.Name(), err)
 		}
 
 		if version <= currentVersion {
@@ -64,6 +60,9 @@ func (d *DB) migrate() error {
 		if err := d.runMigration(version, entry.Name(), string(sqlBytes)); err != nil {
 			return fmt.Errorf("migration v%d failed: %w", version, err)
 		}
+		if err := d.vacuumAfterSchemaBump(version); err != nil {
+			return fmt.Errorf("post-migration maintenance after v%d: %w", version, err)
+		}
 		logging.LogInfo(storageModuleName, fmt.Sprintf("Migration v%d applied successfully", version))
 	}
 
@@ -71,8 +70,7 @@ func (d *DB) migrate() error {
 }
 
 // runMigration executes all statements in a single .sql file inside a transaction.
-// Statements that fail with "already exists" or "UNIQUE constraint" errors are
-// logged as warnings and skipped rather than aborting the migration.
+// v1 SQL is semicolon-free: one statement per non-empty, non-comment line.
 func (d *DB) runMigration(version int, description, sqlContent string) error {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -82,17 +80,12 @@ func (d *DB) runMigration(version int, description, sqlContent string) error {
 
 	for _, stmt := range splitStatements(sqlContent) {
 		if _, err := tx.Exec(stmt); err != nil {
-			if isAlreadyExistsOrDuplicate(err) {
-				logging.LogWarn(storageModuleName, fmt.Sprintf("Migration v%d statement skipped (already applied): %v", version, err))
-				continue
-			}
 			return fmt.Errorf("statement failed: %w\nSQL: %s", err, stmt)
 		}
 	}
 
-	// Record this migration as applied
 	if _, err := tx.Exec(
-		"INSERT OR IGNORE INTO schema_versions (version, description) VALUES (?, ?)",
+		"INSERT INTO schema_versions (version, description) VALUES (?, ?)",
 		version, description,
 	); err != nil {
 		return fmt.Errorf("failed to record schema version: %w", err)
@@ -101,7 +94,20 @@ func (d *DB) runMigration(version int, description, sqlContent string) error {
 	return tx.Commit()
 }
 
-// parseMigrationVersion extracts the leading integer from a filename like "001_initial_schema.sql"
+// vacuumAfterSchemaBump runs an optional one-time PRAGMA VACUUM after a newly applied
+// schema migration. Schema v1 skips this (no VACUUM on every boot). Enable for v2+
+// when adding 002_*.sql so file layout is compacted once per upgrade, not each Open.
+func (d *DB) vacuumAfterSchemaBump(appliedVersion int) error {
+	if appliedVersion < 2 {
+		return nil
+	}
+	logging.LogInfo(storageModuleName, fmt.Sprintf("Running post-migration VACUUM after schema v%d", appliedVersion))
+	if _, err := d.db.Exec("VACUUM"); err != nil {
+		return fmt.Errorf("VACUUM after schema v%d: %w", appliedVersion, err)
+	}
+	return nil
+}
+
 func parseMigrationVersion(name string) (int, error) {
 	base := filepath.Base(name)
 	parts := strings.SplitN(base, "_", 2)
@@ -115,26 +121,31 @@ func parseMigrationVersion(name string) (int, error) {
 	return v, nil
 }
 
-// splitStatements splits a SQL string on ";" and returns non-empty trimmed statements
+// splitStatements returns one SQL statement per line block.
+// Blocks are separated by blank lines; consecutive non-comment lines form one statement.
+// Migration files must not use semicolons as statement separators.
 func splitStatements(sql string) []string {
-	parts := strings.Split(sql, ";")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if s := strings.TrimSpace(part); s != "" {
-			result = append(result, s)
+	var result []string
+	var buf strings.Builder
+	flush := func() {
+		if buf.Len() == 0 {
+			return
 		}
+		result = append(result, strings.TrimSpace(buf.String()))
+		buf.Reset()
 	}
-	return result
-}
 
-// isAlreadyExistsOrDuplicate returns true for errors indicating a statement was
-// already applied: table exists, UNIQUE constraint, or duplicate entry.
-func isAlreadyExistsOrDuplicate(err error) bool {
-	if err == nil {
-		return false
+	for _, line := range strings.Split(sql, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			flush()
+			continue
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(trimmed)
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "already exists") ||
-		strings.Contains(msg, "unique constraint failed") ||
-		strings.Contains(msg, "duplicate")
+	flush()
+	return result
 }
