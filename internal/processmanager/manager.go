@@ -474,7 +474,7 @@ func (pm *ProcessManager) containersMonitor() {
 }
 
 func (pm *ProcessManager) reconcileLocalDeployments() {
-	items, err := store.GetInstance().ListLocalDeployedMicroservices()
+	items, err := store.GetInstance().ListLocalWorkloads()
 	if err != nil {
 		pm.logger.Warnf("local reconcile list deployments failed: %v", err)
 		return
@@ -504,7 +504,7 @@ func (pm *ProcessManager) pruneStaleProcessManagerStatuses() {
 		}
 	}
 
-	localItems, err := store.GetInstance().ListLocalDeployedMicroservices()
+	localItems, err := store.GetInstance().ListLocalWorkloads()
 	if err != nil {
 		pm.logger.Warnf("process-manager status prune skipped: local deployment list unavailable err=%v", err)
 		return
@@ -595,7 +595,7 @@ func (pm *ProcessManager) reconcileOneLocalDeployment(item *models.LocalDeployed
 	if err != nil {
 		item.LastError = err.Error()
 		item.RuntimeState = "unknown"
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		_ = store.GetInstance().UpsertLocalWorkload(item)
 		return
 	}
 
@@ -623,14 +623,14 @@ func (pm *ProcessManager) reconcileLocalDesiredDeleted(item *models.LocalDeploye
 			item.LastError = err.Error()
 			item.RuntimeState = "deleting"
 			item.State = item.RuntimeState
-			_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+			_ = store.GetInstance().UpsertLocalWorkload(item)
 			return
 		}
 	}
 	item.ContainerID = ""
 	item.LastError = ""
 	item.FailureCount = 0
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
@@ -641,7 +641,7 @@ func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeploye
 			item.LastError = err.Error()
 			item.RuntimeState = "stopping"
 			item.State = item.RuntimeState
-			_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+			_ = store.GetInstance().UpsertLocalWorkload(item)
 			return
 		}
 	}
@@ -649,7 +649,7 @@ func (pm *ProcessManager) reconcileLocalDesiredStopped(item *models.LocalDeploye
 	item.State = item.RuntimeState
 	item.LastError = ""
 	item.FailureCount = 0
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeployedMicroservice, container *engine.Container, now int64) {
@@ -673,7 +673,7 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 		item.State = item.RuntimeState
 		item.LastError = err.Error()
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		_ = store.GetInstance().UpsertLocalWorkload(item)
 		return
 	}
 
@@ -747,7 +747,7 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 			item.LastError = ""
 			item.FailureCount = 0
 		}
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		_ = store.GetInstance().UpsertLocalWorkload(item)
 		return
 	case "failed", "unknown":
 		pm.bumpLocalFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
@@ -757,7 +757,7 @@ func (pm *ProcessManager) reconcileLocalDesiredRunning(item *models.LocalDeploye
 		}
 	}
 
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func (pm *ProcessManager) bumpLocalFailure(item *models.LocalDeployedMicroservice, cause error, runtime string) {
@@ -782,7 +782,7 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 		item.State = item.RuntimeState
 		pm.bumpLocalFailure(item, err, item.RuntimeState)
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		_ = store.GetInstance().UpsertLocalWorkload(item)
 		return
 	}
 
@@ -800,7 +800,7 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 	item.State = item.RuntimeState
 	item.LastStartAttemptAt = now
 	item.LastTransitionAt = now
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 
 	hostIP := network.GetInstance().GetCurrentIPAddress()
 	containerID, err := pm.LaunchLocalMicroservice(localMS, registry, hostIP)
@@ -809,7 +809,7 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 		item.State = item.RuntimeState
 		pm.bumpLocalFailure(item, err, item.RuntimeState)
 		item.LastTransitionAt = now
-		_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+		_ = store.GetInstance().UpsertLocalWorkload(item)
 		return
 	}
 	item.ContainerID = containerID
@@ -820,7 +820,7 @@ func (pm *ProcessManager) launchLocalDeployment(item *models.LocalDeployedMicros
 	item.LastError = ""
 	item.FailureCount = 0
 	item.LastTransitionAt = now
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func (pm *ProcessManager) startLocalMicroservice(microserviceUUID string) error {
@@ -1442,7 +1442,7 @@ func (pm *ProcessManager) deleteRemainingMicroservices() {
 	cfg := config.GetInstance()
 
 	var cpDep *models.ControlPlaneDeployment
-	if item, found, err := store.GetInstance().GetControlPlaneDeployment(); err == nil && found {
+	if item, found, err := store.GetInstance().GetSystemControlPlane(); err == nil && found {
 		cpDep = item
 	}
 
@@ -1623,7 +1623,7 @@ func (pm *ProcessManager) resolveMicroserviceForLifecycle(microserviceUUID strin
 			return ms, nil
 		}
 	}
-	item, err := store.GetInstance().GetLocalDeployedMicroservice(microserviceUUID)
+	item, err := store.GetInstance().GetLocalWorkload(microserviceUUID)
 	if err != nil || item == nil {
 		return nil, fmt.Errorf("microservice spec not found")
 	}
@@ -1703,14 +1703,14 @@ func (pm *ProcessManager) recreateLocalDeployment(item *models.LocalDeployedMicr
 	item.LastTransitionAt = now
 	if pm.engine != nil {
 		if sandboxID, sbErr := pm.engine.GetContainerSandboxID(newID); sbErr == nil && sandboxID != "" {
-			_ = store.GetInstance().SaveLocalContainerState(item.LocalUUID, newID, sandboxID)
+			_ = store.GetInstance().UpsertRuntimeContainerRef(item.LocalUUID, store.RuntimeScopeLocal, newID, sandboxID)
 		}
 	}
-	return store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	return store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func (pm *ProcessManager) updateLocalContainerAfterRecreate(microserviceUUID, containerID string) {
-	item, err := store.GetInstance().GetLocalDeployedMicroservice(microserviceUUID)
+	item, err := store.GetInstance().GetLocalWorkload(microserviceUUID)
 	if err != nil || item == nil {
 		return
 	}
@@ -1719,10 +1719,10 @@ func (pm *ProcessManager) updateLocalContainerAfterRecreate(microserviceUUID, co
 	item.State = item.RuntimeState
 	item.LastError = ""
 	item.LastTransitionAt = time.Now().Unix()
-	_ = store.GetInstance().UpsertLocalDeployedMicroservice(item)
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 	if pm.engine != nil {
 		if sandboxID, sbErr := pm.engine.GetContainerSandboxID(containerID); sbErr == nil && sandboxID != "" {
-			_ = store.GetInstance().SaveLocalContainerState(microserviceUUID, containerID, sandboxID)
+			_ = store.GetInstance().UpsertRuntimeContainerRef(microserviceUUID, store.RuntimeScopeLocal, containerID, sandboxID)
 		}
 	}
 }
@@ -1961,12 +1961,12 @@ func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.M
 		return "", err
 	}
 	if sandboxID, _ := pm.engine.GetContainerSandboxID(containerID); sandboxID != "" {
-		_ = store.GetInstance().SaveLocalContainerState(ms.MicroserviceUUID, containerID, sandboxID)
+		_ = store.GetInstance().UpsertRuntimeContainerRef(ms.MicroserviceUUID, store.RuntimeScopeLocal, containerID, sandboxID)
 	}
 	emitLocalDeployProgress(progress, "starting", "starting container")
 	if err := pm.engine.StartContainer(containerID); err != nil {
 		_ = pm.engine.RemoveContainer(containerID, false)
-		_ = store.GetInstance().DeleteLocalContainerState(ms.MicroserviceUUID)
+		_ = store.GetInstance().DeleteRuntimeContainerRef(ms.MicroserviceUUID, store.RuntimeScopeLocal)
 		return "", fmt.Errorf("failed to start local microservice runtime: %w", err)
 	}
 	return containerID, nil

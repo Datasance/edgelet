@@ -58,7 +58,7 @@ type ContainerEngine interface {
 	// Container lifecycle
 	GetContainer(microserviceUUID string) (*Container, error)
 	// GetContainerByID returns a container by its engine-assigned ID. Used when the caller
-	// already has the ID (e.g. from container_state DB). Returns nil if not found.
+	// already has the ID (e.g. from runtime_container_refs). Returns nil if not found.
 	GetContainerByID(containerID string) (*Container, error)
 	// GetContainerSandboxID returns the sandbox (pause) container ID for the given workload
 	// container. Only meaningful for iofog/CRI; Docker/Podman return "".

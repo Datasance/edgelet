@@ -11,8 +11,8 @@ import (
 
 const controlPlaneSingletonID = 1
 
-// UpsertControlPlaneDeployment stores the singleton ControlPlane deployment row.
-func (d *DB) UpsertControlPlaneDeployment(dep *models.ControlPlaneDeployment) error {
+// UpsertSystemControlPlane stores the singleton system control plane row.
+func (d *DB) UpsertSystemControlPlane(dep *models.ControlPlaneDeployment) error {
 	if dep == nil {
 		return fmt.Errorf("control plane deployment is nil")
 	}
@@ -31,7 +31,7 @@ func (d *DB) UpsertControlPlaneDeployment(dep *models.ControlPlaneDeployment) er
 
 	dep.NormalizeDefaults()
 
-	_, err := d.Conn().Exec(`INSERT INTO control_plane_deployments (
+	_, err := d.Conn().Exec(`INSERT INTO system_control_plane (
 		id, controller_uuid, namespace, name, manifest_yaml, image, container_id,
 		state, desired_state, runtime_state, last_error, restart_count,
 		last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
@@ -66,14 +66,14 @@ func (d *DB) UpsertControlPlaneDeployment(dep *models.ControlPlaneDeployment) er
 		dep.DeletedAt, dep.Generation, dep.ObservedGeneration, time.Now().Unix(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to upsert control plane deployment: %w", err)
+		return fmt.Errorf("failed to upsert system control plane: %w", err)
 	}
 	return nil
 }
 
-// GetControlPlaneDeployment reads the singleton ControlPlane deployment row.
+// GetSystemControlPlane reads the singleton system control plane row.
 // Returns found=false when no deployment is stored.
-func (d *DB) GetControlPlaneDeployment() (*models.ControlPlaneDeployment, bool, error) {
+func (d *DB) GetSystemControlPlane() (*models.ControlPlaneDeployment, bool, error) {
 	if d.Conn() == nil {
 		return nil, false, fmt.Errorf("database is closed")
 	}
@@ -84,7 +84,7 @@ func (d *DB) GetControlPlaneDeployment() (*models.ControlPlaneDeployment, bool, 
 		state, desired_state, runtime_state, last_error, restart_count,
 		last_transition_at, last_reconcile_at, last_start_attempt_at, failure_count,
 		deleted_at, generation, observed_generation
-		FROM control_plane_deployments WHERE id = ?`, controlPlaneSingletonID).Scan(
+		FROM system_control_plane WHERE id = ?`, controlPlaneSingletonID).Scan(
 		&item.ControllerUUID, &item.Namespace, &item.Name, &item.ManifestYAML, &item.Image, &item.ContainerID,
 		&item.State, &item.DesiredState, &item.RuntimeState, &item.LastError, &item.RestartCount,
 		&item.LastTransitionAt, &item.LastReconcileAt, &item.LastStartAttemptAt, &item.FailureCount,
@@ -94,19 +94,19 @@ func (d *DB) GetControlPlaneDeployment() (*models.ControlPlaneDeployment, bool, 
 		return nil, false, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get control plane deployment: %w", err)
+		return nil, false, fmt.Errorf("failed to get system control plane: %w", err)
 	}
 	item.NormalizeDefaults()
 	return item, true, nil
 }
 
-// DeleteControlPlaneDeployment removes the singleton ControlPlane deployment row.
-func (d *DB) DeleteControlPlaneDeployment() error {
+// DeleteSystemControlPlane removes the singleton system control plane row.
+func (d *DB) DeleteSystemControlPlane() error {
 	if d.Conn() == nil {
 		return fmt.Errorf("database is closed")
 	}
-	if _, err := d.Conn().Exec(`DELETE FROM control_plane_deployments WHERE id = ?`, controlPlaneSingletonID); err != nil {
-		return fmt.Errorf("failed to delete control plane deployment: %w", err)
+	if _, err := d.Conn().Exec(`DELETE FROM system_control_plane WHERE id = ?`, controlPlaneSingletonID); err != nil {
+		return fmt.Errorf("failed to delete system control plane: %w", err)
 	}
 	return nil
 }

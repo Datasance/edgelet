@@ -30,7 +30,7 @@ func TestFacadeListRuntimeMicroservices_IncludesControlPlaneEntry(t *testing.T) 
 		ContainerID:    "cid-1",
 		DesiredState:   "running",
 	}
-	if err := f.db.UpsertControlPlaneDeployment(dep); err != nil {
+	if err := f.db.UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert control plane: %v", err)
 	}
 	f.sr.UpdateProcessManagerStatus(func(pm *models.ProcessManagerStatus) {
@@ -70,7 +70,7 @@ func TestFacadeGuardControlPlaneMicroserviceMutation_BlocksLifecycle(t *testing.
 		Image:          "img",
 		DesiredState:   "running",
 	}
-	if err := f.db.UpsertControlPlaneDeployment(dep); err != nil {
+	if err := f.db.UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestFacadeGetRuntimeMicroservice_ControlPlane(t *testing.T) {
 		RuntimeState:   "running",
 		DesiredState:   "running",
 	}
-	if err := f.db.UpsertControlPlaneDeployment(dep); err != nil {
+	if err := f.db.UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 

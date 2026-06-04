@@ -45,15 +45,21 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
+assert_ok "edgelet active after restart" \
+    R "systemctl is-active --quiet edgelet"
+
+wc_wait_embedded_control_ready "${VM_NAME}" 120 \
+    || die "embedded control not ready after restart (containerd/socket/API)"
+
 assert_ok "edgelet-containerd still active (data plane)" \
     R "systemctl is-active --quiet edgelet-containerd"
 
-AFTER="$(wc_cri_container_ids "${VM_NAME}")"
-if [[ "${BEFORE}" == "${AFTER}" ]]; then
+AFTER="$(wc_wait_cri_ids_unchanged "${VM_NAME}" "${BEFORE}" 120 || true)"
+if [[ "${BEFORE}" == "${AFTER}" && -n "${AFTER// /}" ]]; then
     log_ok "same CRI container IDs after control restart"
     (( TESTS_PASSED++ )) || true
 else
-    log_fail "CRI containers changed: before='${BEFORE}' after='${AFTER}'"
+    log_fail "CRI containers changed: before='${BEFORE}' after='${AFTER:-<none>}'"
     (( TESTS_FAILED++ )) || true
 fi
 

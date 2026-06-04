@@ -27,7 +27,7 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 	if fromFile {
 		// Load from SQLite store
 		logging.LogDebug(moduleName, "Loading microservices from SQLite store")
-		stored, err := loadMicroservicesFromStore()
+		stored, err := loadControllerMicroservicesFromStore()
 		if err != nil || len(stored) == 0 {
 			// Fall back to controller on store miss or error
 			logging.LogDebug(moduleName, "Store read returned empty/error, falling back to controller")
@@ -72,7 +72,7 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 			logging.LogDebug(moduleName, fmt.Sprintf("Successfully parsed %d out of %d microservices", len(microserviceList), len(msArray)))
 
 			// Persist to SQLite store
-			if err := saveMicroservicesToStore(microserviceList); err != nil {
+			if err := saveControllerMicroservicesToStore(microserviceList); err != nil {
 				logging.LogError(moduleName, "Failed to save microservices to store", err)
 			}
 		} else {
@@ -429,7 +429,7 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 
 	if fromFile {
 		// Load from SQLite store
-		stored, err := loadRegistriesFromStore()
+		stored, err := loadControllerRegistriesFromStore()
 		if err != nil || len(stored) == 0 {
 			// Fall back to controller on store miss or error
 			return fa.loadRegistries(false)
@@ -462,7 +462,7 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 		}
 
 		// Persist to SQLite store
-		if err := saveRegistriesToStore(registries); err != nil {
+		if err := saveControllerRegistriesToStore(registries); err != nil {
 			logging.LogError(moduleName, "Failed to save registries to store", err)
 		}
 	}

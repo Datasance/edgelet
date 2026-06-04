@@ -314,7 +314,7 @@ func TestFacadeListRuntimeMicroservices_DoesNotDuplicateLocalUUIDAsManaged(t *te
 		State:            "running",
 		RuntimeState:     "running",
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(local); err != nil {
+	if err := f.db.UpsertLocalWorkload(local); err != nil {
 		t.Fatalf("failed to upsert local deployment: %v", err)
 	}
 	f.sr.UpdateProcessManagerStatus(func(pm *models.ProcessManagerStatus) {
@@ -408,7 +408,7 @@ func TestResolveMicroserviceID_LocalDottedSelector(t *testing.T) {
 		ImageName:        "nginx:latest",
 		State:            "running",
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(item); err != nil {
+	if err := f.db.UpsertLocalWorkload(item); err != nil {
 		t.Fatalf("failed to upsert local deployment: %v", err)
 	}
 
@@ -448,10 +448,10 @@ func TestResolveMicroserviceID_LocalDottedSelectorDuplicateRejected(t *testing.T
 			State:            "running",
 		},
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(items[0]); err != nil {
+	if err := f.db.UpsertLocalWorkload(items[0]); err != nil {
 		t.Fatalf("failed to upsert local deployment %s: %v", items[0].LocalUUID, err)
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(items[1]); err == nil {
+	if err := f.db.UpsertLocalWorkload(items[1]); err == nil {
 		t.Fatalf("expected duplicate local dotted selector insert to fail")
 	}
 
@@ -523,13 +523,13 @@ func TestFacadeStartRuntimeMicroservice_LocalPersistsDesiredState(t *testing.T) 
 		RuntimeState:     "failed",
 		Generation:       1,
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(item); err != nil {
+	if err := f.db.UpsertLocalWorkload(item); err != nil {
 		t.Fatalf("failed to seed local deployment: %v", err)
 	}
 
 	_, _ = f.StartRuntimeMicroservice("local-start-1")
 
-	got, err := f.db.GetLocalDeployedMicroservice("local-start-1")
+	got, err := f.db.GetLocalWorkload("local-start-1")
 	if err != nil {
 		t.Fatalf("failed to load local deployment: %v", err)
 	}
@@ -563,13 +563,13 @@ func TestFacadeStopRuntimeMicroservice_LocalPersistsDesiredState(t *testing.T) {
 		RuntimeState:     "running",
 		Generation:       2,
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(item); err != nil {
+	if err := f.db.UpsertLocalWorkload(item); err != nil {
 		t.Fatalf("failed to seed local deployment: %v", err)
 	}
 
 	_, _ = f.StopRuntimeMicroservice("local-stop-1")
 
-	got, err := f.db.GetLocalDeployedMicroservice("local-stop-1")
+	got, err := f.db.GetLocalWorkload("local-stop-1")
 	if err != nil {
 		t.Fatalf("failed to load local deployment: %v", err)
 	}
@@ -761,7 +761,7 @@ spec:
 		RuntimeState: "running",
 		DesiredState: "running",
 	}
-	if err := f.db.UpsertLocalDeployedMicroservice(ms); err != nil {
+	if err := f.db.UpsertLocalWorkload(ms); err != nil {
 		t.Fatalf("failed to seed local deployed microservice: %v", err)
 	}
 

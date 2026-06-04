@@ -557,7 +557,7 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 		msByUUID[ms.MicroserviceUUID] = ms
 	}
 	localByUUID := make(map[string]*models.LocalDeployedMicroservice)
-	if locals, err := f.db.ListLocalDeployedMicroservices(); err == nil {
+	if locals, err := f.db.ListLocalWorkloads(); err == nil {
 		for _, item := range locals {
 			localByUUID[item.LocalUUID] = item
 		}
@@ -657,7 +657,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 		return entry, nil
 	}
 	containerInspect := f.engineInspectForMicroservice(uuid)
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		state := strings.TrimSpace(local.RuntimeState)
 		if state == "" {
 			state = strings.TrimSpace(local.State)
@@ -764,7 +764,7 @@ func shouldSuppressManagedRuntimeEntry(
 	if _, ok := managedByUUID[uuid]; ok {
 		return false
 	}
-	// Local deployments are rendered from local_deployed_microservices rows.
+	// Local deployments are rendered from local_workloads rows.
 	// Suppress process-manager projection for the same UUID to avoid duplicates.
 	if _, ok := localByUUID[uuid]; ok {
 		return true
@@ -840,7 +840,7 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 	if f.fa.FindLatestMicroserviceByUUID(trimmed) != nil {
 		return trimmed, nil
 	}
-	if local, err := f.db.GetLocalDeployedMicroservice(trimmed); err == nil && local != nil {
+	if local, err := f.db.GetLocalWorkload(trimmed); err == nil && local != nil {
 		return trimmed, nil
 	}
 	if item, ok := f.controlPlaneDeploymentRow(); ok && strings.TrimSpace(item.ControllerUUID) == trimmed {
@@ -865,7 +865,7 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 				matches = append(matches, ms.MicroserviceUUID)
 			}
 		}
-		if locals, err := f.db.ListLocalDeployedMicroservices(); err == nil {
+		if locals, err := f.db.ListLocalWorkloads(); err == nil {
 			for _, item := range locals {
 				if !strings.EqualFold(strings.TrimSpace(item.ApplicationName), app) ||
 					!strings.EqualFold(strings.TrimSpace(item.MicroserviceName), name) {
@@ -931,26 +931,26 @@ func (f *Facade) StartRuntimeMicroservice(selector string) (string, error) {
 	if err := f.guardControlPlaneMicroserviceMutation(uuid, "start"); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		local.DesiredState = "running"
 		local.RuntimeState = "starting"
 		local.State = local.RuntimeState
 		local.LastError = ""
 		local.Generation++
 		local.LastTransitionAt = time.Now().Unix()
-		if err := f.db.UpsertLocalDeployedMicroservice(local); err != nil {
+		if err := f.db.UpsertLocalWorkload(local); err != nil {
 			return "", err
 		}
 	}
 	if err := processmanager.GetInstance().StartMicroservice(uuid); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		local.RuntimeState = "running"
 		local.State = local.RuntimeState
 		local.LastError = ""
 		local.LastTransitionAt = time.Now().Unix()
-		_ = f.db.UpsertLocalDeployedMicroservice(local)
+		_ = f.db.UpsertLocalWorkload(local)
 	}
 	return uuid, nil
 }
@@ -963,14 +963,14 @@ func (f *Facade) StopRuntimeMicroservice(selector string) (string, error) {
 	if err := f.guardControlPlaneMicroserviceMutation(uuid, "stop"); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		local.DesiredState = "stopped"
 		local.RuntimeState = "stopping"
 		local.State = local.RuntimeState
 		local.LastError = ""
 		local.Generation++
 		local.LastTransitionAt = time.Now().Unix()
-		if err := f.db.UpsertLocalDeployedMicroservice(local); err != nil {
+		if err := f.db.UpsertLocalWorkload(local); err != nil {
 			return "", err
 		}
 	}
@@ -1002,7 +1002,7 @@ func (f *Facade) RestartRuntimeMicroservice(selector string) (string, error) {
 	if err := f.guardControlPlaneMicroserviceMutation(uuid, "restart"); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		local.DesiredState = "running"
 		local.RuntimeState = "restarting"
 		local.State = local.RuntimeState
@@ -1010,19 +1010,19 @@ func (f *Facade) RestartRuntimeMicroservice(selector string) (string, error) {
 		local.RestartCount++
 		local.Generation++
 		local.LastTransitionAt = time.Now().Unix()
-		if err := f.db.UpsertLocalDeployedMicroservice(local); err != nil {
+		if err := f.db.UpsertLocalWorkload(local); err != nil {
 			return "", err
 		}
 	}
 	if err := processmanager.GetInstance().RestartMicroservice(uuid); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		local.RuntimeState = "running"
 		local.State = local.RuntimeState
 		local.LastError = ""
 		local.LastTransitionAt = time.Now().Unix()
-		_ = f.db.UpsertLocalDeployedMicroservice(local)
+		_ = f.db.UpsertLocalWorkload(local)
 	}
 	return uuid, nil
 }
@@ -1035,18 +1035,18 @@ func (f *Facade) RemoveRuntimeMicroservice(selector string) (string, error) {
 	if err := f.guardControlPlaneMicroserviceMutation(uuid, "rm"); err != nil {
 		return "", err
 	}
-	if local, localErr := f.db.GetLocalDeployedMicroservice(uuid); localErr == nil && local != nil {
+	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
 		now := time.Now().Unix()
 		local.DesiredState = "deleted"
 		local.RuntimeState = "deleting"
 		local.State = local.RuntimeState
 		local.LastTransitionAt = now
 		local.DeletedAt = &now
-		_ = f.db.UpsertLocalDeployedMicroservice(local)
+		_ = f.db.UpsertLocalWorkload(local)
 		if strings.TrimSpace(local.ContainerID) != "" {
 			_ = processmanager.GetInstance().RemoveContainerByContainerID(local.ContainerID)
 		}
-		if err := f.db.DeleteLocalDeployedMicroservice(uuid); err != nil {
+		if err := f.db.DeleteLocalWorkload(uuid); err != nil {
 			return "", err
 		}
 		return uuid, nil
@@ -1079,22 +1079,22 @@ func (f *Facade) GetRuntimeMicroserviceLogs(selector string, tailLines int, sinc
 
 // UpsertLocalDeployment upserts one local deployment record.
 func (f *Facade) UpsertLocalDeployment(ms *models.LocalDeployedMicroservice) error {
-	return f.db.UpsertLocalDeployedMicroservice(ms)
+	return f.db.UpsertLocalWorkload(ms)
 }
 
 // ListLocalDeployments lists local deployment records.
 func (f *Facade) ListLocalDeployments() ([]*models.LocalDeployedMicroservice, error) {
-	return f.db.ListLocalDeployedMicroservices()
+	return f.db.ListLocalWorkloads()
 }
 
 // GetLocalDeployment gets local deployment by id.
 func (f *Facade) GetLocalDeployment(id string) (*models.LocalDeployedMicroservice, error) {
-	return f.db.GetLocalDeployedMicroservice(id)
+	return f.db.GetLocalWorkload(id)
 }
 
 // DeleteLocalDeployment removes local deployment by id.
 func (f *Facade) DeleteLocalDeployment(id string) error {
-	return f.db.DeleteLocalDeployedMicroservice(id)
+	return f.db.DeleteLocalWorkload(id)
 }
 
 func (f *Facade) ensureRuntimeClassSupported() error {
@@ -1205,7 +1205,7 @@ func (f *Facade) ensureRuntimeClassNotInUse(item *models.LocalRuntimeClass) erro
 	if item == nil {
 		return nil
 	}
-	items, err := f.db.ListLocalDeployedMicroservices()
+	items, err := f.db.ListLocalWorkloads()
 	if err != nil {
 		return fmt.Errorf("failed to list local deployments while checking runtimeclass delete: %w", err)
 	}
@@ -1316,7 +1316,7 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 	var existing *models.LocalDeployedMicroservice
 	deploymentID := uuid.NewString()
 	if f.db.Conn() != nil {
-		existingItems, findErr := f.db.FindLocalDeployedMicroservicesByAppAndName(workloadmeta.LocalDeployApplicationName, doc.Metadata.Name)
+		existingItems, findErr := f.db.FindLocalWorkloadsByAppAndName(workloadmeta.LocalDeployApplicationName, doc.Metadata.Name)
 		if findErr != nil {
 			return "", nil, fmt.Errorf("failed to resolve existing local deployment: %w", findErr)
 		}

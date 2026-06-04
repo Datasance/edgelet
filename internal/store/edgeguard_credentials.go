@@ -14,7 +14,7 @@ func (d *DB) UpsertEdgeGuardSignature(jwt string) error {
 	}
 
 	_, err := d.Conn().Exec(
-		`INSERT INTO edgeguard_signature (id, signature_jwt, updated_at)
+		`INSERT INTO agent_edgeguard_signature (id, signature_jwt, updated_at)
 		 VALUES (?, ?, strftime('%s','now'))
 		 ON CONFLICT(id) DO UPDATE SET
 		   signature_jwt = excluded.signature_jwt,
@@ -36,7 +36,7 @@ func (d *DB) GetEdgeGuardSignature() (signature string, found bool, err error) {
 	}
 
 	err = d.Conn().QueryRow(
-		`SELECT signature_jwt FROM edgeguard_signature WHERE id = ?`,
+		`SELECT signature_jwt FROM agent_edgeguard_signature WHERE id = ?`,
 		singletonRowID,
 	).Scan(&signature)
 	if err == sql.ErrNoRows {
@@ -56,7 +56,7 @@ func (d *DB) DeleteEdgeGuardSignature() error {
 	}
 
 	if _, err := d.Conn().Exec(
-		`DELETE FROM edgeguard_signature WHERE id = ?`,
+		`DELETE FROM agent_edgeguard_signature WHERE id = ?`,
 		singletonRowID,
 	); err != nil {
 		return fmt.Errorf("delete edgeguard signature: %w", err)

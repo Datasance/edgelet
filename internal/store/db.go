@@ -51,17 +51,42 @@ func (d *DB) Open(dir string) error {
 	db.SetMaxOpenConns(1)
 
 	d.db = db
-	return d.migrate()
+	if err := d.migrate(); err != nil {
+		return err
+	}
+	return d.checkIntegrity()
 }
 
-// Close closes the database connection
+// Close checkpoints the WAL (TRUNCATE) then closes the connection.
+// Production path: internal/supervisor.(*Supervisor).Stop() calls store.GetInstance().Close() last.
 func (d *DB) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.db != nil {
-		return d.db.Close()
+	if d.db == nil {
+		return nil
+	}
+	if err := d.checkpointWAL(); err != nil {
+		return fmt.Errorf("wal checkpoint: %w", err)
+	}
+	err := d.db.Close()
+	d.db = nil
+	return err
+}
+
+func (d *DB) checkIntegrity() error {
+	var result string
+	if err := d.db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
+		return fmt.Errorf("integrity_check: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("sqlite integrity_check failed: %s", result)
 	}
 	return nil
+}
+
+func (d *DB) checkpointWAL() error {
+	_, err := d.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
 }
 
 // Conn returns the underlying *sql.DB

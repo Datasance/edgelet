@@ -105,9 +105,6 @@ func GetInstance() *FieldAgent {
 func (fa *FieldAgent) Start() error {
 	logging.LogDebug(moduleName, "Starting Field Agent")
 
-	// One-time migration: import legacy JSON cache files into SQLite if they exist
-	MigrateJSONToSQLite()
-
 	// Initialize API client
 	apiClient, err := NewAPIClient()
 	if err != nil {
@@ -939,18 +936,18 @@ func (fa *FieldAgent) clearSQLiteCacheTablesOnDeprovision(preserveLocal bool) {
 	if db.Conn() == nil {
 		return
 	}
-	if err := db.ClearMicroservices(); err != nil {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing microservices table: %v", err))
+	if err := db.ClearControllerMicroservices(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing controller_microservices table: %v", err))
 	}
-	if err := db.ClearRegistries(); err != nil {
-		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing registries table: %v", err))
+	if err := db.ClearControllerRegistries(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing controller_registries table: %v", err))
 	}
 	if !preserveLocal {
-		if err := db.ClearLocalDeployedMicroservices(); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local deployments table: %v", err))
+		if err := db.ClearLocalWorkloads(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local_workloads table: %v", err))
 		}
-		if err := db.ClearLocalContainerStates(); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local container state table: %v", err))
+		if err := db.ClearRuntimeContainerRefs(store.RuntimeScopeLocal); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local runtime_container_refs: %v", err))
 		}
 	}
 	logging.LogDebug(moduleName, "SQLite cache tables cleared on deprovision")

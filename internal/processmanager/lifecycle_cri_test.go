@@ -38,7 +38,7 @@ func TestResolveMicroserviceForLifecycle_Managed(t *testing.T) {
 func TestResolveMicroserviceForLifecycle_Local(t *testing.T) {
 	openLocalReconcileTestDB(t)
 	pm := &ProcessManager{}
-	if err := store.GetInstance().UpsertLocalDeployedMicroservice(&models.LocalDeployedMicroservice{
+	if err := store.GetInstance().UpsertLocalWorkload(&models.LocalDeployedMicroservice{
 		LocalUUID:    "local-resolve",
 		ManifestYAML: minimalLocalManifestYAML(),
 		DesiredState: "running",
@@ -398,7 +398,7 @@ func TestRestartMicroservice_UpdatesLocalDB(t *testing.T) {
 		},
 		running: true,
 	}
-	if err := store.GetInstance().UpsertLocalDeployedMicroservice(&models.LocalDeployedMicroservice{
+	if err := store.GetInstance().UpsertLocalWorkload(&models.LocalDeployedMicroservice{
 		LocalUUID:    "local-db",
 		ManifestYAML: minimalLocalManifestYAML(),
 		DesiredState: "running",
@@ -415,7 +415,7 @@ func TestRestartMicroservice_UpdatesLocalDB(t *testing.T) {
 	if err := pm.RestartMicroservice("local-db"); err != nil {
 		t.Fatalf("RestartMicroservice: %v", err)
 	}
-	item, err := store.GetInstance().GetLocalDeployedMicroservice("local-db")
+	item, err := store.GetInstance().GetLocalWorkload("local-db")
 	if err != nil {
 		t.Fatalf("get local: %v", err)
 	}

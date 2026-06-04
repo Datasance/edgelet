@@ -43,7 +43,7 @@ func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPl
 		pm.launchControlPlaneWithProgress(item, now, progress)
 	}
 
-	got, found, err := store.GetInstance().GetControlPlaneDeployment()
+	got, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPl
 
 // DeleteControlPlane stops the controller container, removes volumes, and deletes the singleton row.
 func (pm *ProcessManager) DeleteControlPlane() error {
-	item, found, err := store.GetInstance().GetControlPlaneDeployment()
+	item, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (pm *ProcessManager) DeleteControlPlane() error {
 
 	pm.removeControlPlaneVolumes()
 
-	if err := store.GetInstance().DeleteControlPlaneDeployment(); err != nil {
+	if err := store.GetInstance().DeleteSystemControlPlane(); err != nil {
 		return err
 	}
 	return nil

@@ -80,7 +80,7 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 		}
 	}
 
-	if err := db.UpsertVolumeMount(store.VolumeMountRecord{
+	if err := db.UpsertControllerVolumeMount(store.VolumeMountRecord{
 		UUID:          "vm-secret",
 		Name:          "secret-a",
 		Version:       1,
@@ -91,7 +91,7 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 	}); err != nil {
 		t.Fatalf("failed inserting secret volume_mount row: %v", err)
 	}
-	if err := db.UpsertVolumeMount(store.VolumeMountRecord{
+	if err := db.UpsertControllerVolumeMount(store.VolumeMountRecord{
 		UUID:          "vm-config",
 		Name:          "config-a",
 		Version:       1,
@@ -119,7 +119,7 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 		t.Fatalf("ClearControllerArtifacts returned error: %v", err)
 	}
 
-	records, err := db.LoadAllVolumeMounts()
+	records, err := db.LoadAllControllerVolumeMounts()
 	if err != nil {
 		t.Fatalf("failed to load volume mounts after clear: %v", err)
 	}

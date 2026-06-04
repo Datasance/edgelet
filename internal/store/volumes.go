@@ -20,8 +20,8 @@ type VolumeMountRecord struct {
 	UpdatedAt     int64
 }
 
-// UpsertVolumeMount inserts or replaces a volume mount record.
-func (d *DB) UpsertVolumeMount(rec VolumeMountRecord) error {
+// UpsertControllerVolumeMount inserts or replaces a controller volume mount record.
+func (d *DB) UpsertControllerVolumeMount(rec VolumeMountRecord) error {
 	microservicesJSON, err := json.Marshal(rec.Microservices)
 	if err != nil {
 		return fmt.Errorf("failed to marshal microservices list: %w", err)
@@ -32,7 +32,7 @@ func (d *DB) UpsertVolumeMount(rec VolumeMountRecord) error {
 	}
 
 	_, err = d.Conn().Exec(
-		`INSERT OR REPLACE INTO volume_mounts
+		`INSERT OR REPLACE INTO controller_volume_mounts
 		 (uuid, name, version, kind, checksum, microservices, data, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.UUID, rec.Name, rec.Version, rec.Kind, rec.Checksum,
@@ -42,16 +42,16 @@ func (d *DB) UpsertVolumeMount(rec VolumeMountRecord) error {
 	return err
 }
 
-// DeleteVolumeMount removes a volume mount record by UUID.
-func (d *DB) DeleteVolumeMount(uuid string) error {
-	_, err := d.Conn().Exec("DELETE FROM volume_mounts WHERE uuid = ?", uuid)
+// DeleteControllerVolumeMount removes a controller volume mount record by UUID.
+func (d *DB) DeleteControllerVolumeMount(uuid string) error {
+	_, err := d.Conn().Exec("DELETE FROM controller_volume_mounts WHERE uuid = ?", uuid)
 	return err
 }
 
-// LoadAllVolumeMounts retrieves all volume mount records.
-func (d *DB) LoadAllVolumeMounts() ([]VolumeMountRecord, error) {
+// LoadAllControllerVolumeMounts retrieves all controller volume mount records.
+func (d *DB) LoadAllControllerVolumeMounts() ([]VolumeMountRecord, error) {
 	rows, err := d.Conn().Query(
-		"SELECT uuid, name, version, kind, checksum, microservices, data, updated_at FROM volume_mounts",
+		"SELECT uuid, name, version, kind, checksum, microservices, data, updated_at FROM controller_volume_mounts",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query volume mounts: %w", err)
@@ -84,10 +84,10 @@ func (d *DB) LoadAllVolumeMounts() ([]VolumeMountRecord, error) {
 	return result, rows.Err()
 }
 
-// GetVolumeMountByUUID retrieves a single volume mount record by UUID.
-func (d *DB) GetVolumeMountByUUID(uuid string) (*VolumeMountRecord, error) {
+// GetControllerVolumeMountByUUID retrieves a single controller volume mount record by UUID.
+func (d *DB) GetControllerVolumeMountByUUID(uuid string) (*VolumeMountRecord, error) {
 	row := d.Conn().QueryRow(
-		"SELECT uuid, name, version, kind, checksum, microservices, data, updated_at FROM volume_mounts WHERE uuid = ?",
+		"SELECT uuid, name, version, kind, checksum, microservices, data, updated_at FROM controller_volume_mounts WHERE uuid = ?",
 		uuid,
 	)
 	var rec VolumeMountRecord
@@ -109,23 +109,23 @@ func (d *DB) GetVolumeMountByUUID(uuid string) (*VolumeMountRecord, error) {
 	return &rec, nil
 }
 
-// ClearAllVolumeMounts removes all volume mount rows (used on deprovision).
-func (d *DB) ClearAllVolumeMounts() error {
-	_, err := d.Conn().Exec("DELETE FROM volume_mounts")
+// ClearAllControllerVolumeMounts removes all controller volume mount rows (used on deprovision).
+func (d *DB) ClearAllControllerVolumeMounts() error {
+	_, err := d.Conn().Exec("DELETE FROM controller_volume_mounts")
 	return err
 }
 
-// ReplaceAllVolumeMounts atomically replaces all volume mount rows.
+// ReplaceAllControllerVolumeMounts atomically replaces all controller volume mount rows.
 // Used by the volume mount manager's full-save on every write.
-func (d *DB) ReplaceAllVolumeMounts(records []VolumeMountRecord) error {
+func (d *DB) ReplaceAllControllerVolumeMounts(records []VolumeMountRecord) error {
 	tx, err := d.Conn().Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback() // #nosec G104 -- data written by this process; parse failure yields empty/zero value
 
-	if _, err := tx.Exec("DELETE FROM volume_mounts"); err != nil {
-		return fmt.Errorf("failed to clear volume_mounts: %w", err)
+	if _, err := tx.Exec("DELETE FROM controller_volume_mounts"); err != nil {
+		return fmt.Errorf("failed to clear controller_volume_mounts: %w", err)
 	}
 
 	now := time.Now().Unix()
@@ -133,7 +133,7 @@ func (d *DB) ReplaceAllVolumeMounts(records []VolumeMountRecord) error {
 		msJSON, _ := json.Marshal(rec.Microservices)
 		dataJSON, _ := json.Marshal(rec.Data)
 		if _, err := tx.Exec(
-			`INSERT INTO volume_mounts (uuid, name, version, kind, checksum, microservices, data, updated_at)
+			`INSERT INTO controller_volume_mounts (uuid, name, version, kind, checksum, microservices, data, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			rec.UUID, rec.Name, rec.Version, rec.Kind, rec.Checksum,
 			string(msJSON), string(dataJSON), now,

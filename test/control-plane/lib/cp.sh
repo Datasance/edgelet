@@ -174,6 +174,7 @@ cp_assert_status_api() {
 }
 
 # cp_assert_lifecycle VM — T12-D (leaves CP deleted)
+# Poll limits align with cp_delete_if_present (docker engine delete can be slow under load).
 cp_assert_lifecycle() {
     local _vm="$1"
     local _uuid
@@ -193,19 +194,28 @@ cp_assert_lifecycle() {
     assert_ok "controlplane delete succeeds" \
         cp_remote "${_vm}" "
             set -e
-            edgelet controlplane delete | grep -Eiq 'ok|deleted|removed'
-            for i in \$(seq 1 30); do
+            out=\$(edgelet controlplane delete 2>&1) || { echo \"\${out}\"; exit 1; }
+            echo \"\${out}\" | grep -Eiq 'ok|deleted|removed'
+            for i in \$(seq 1 45); do
                 edgelet controlplane get >/dev/null 2>&1 || exit 0
                 sleep 2
             done
+            edgelet controlplane get 2>&1 || true
             exit 1
         "
 
     assert_ok "ms ls --source controlplane empty after delete" \
         cp_remote "${_vm}" "
             set -e
-            out=\$(edgelet ms ls --source controlplane 2>/dev/null || true)
-            ! echo \"\${out}\" | grep -qi running
+            for i in \$(seq 1 45); do
+                out=\$(edgelet ms ls --source controlplane 2>/dev/null || true)
+                if ! echo \"\${out}\" | grep -qi running; then
+                    exit 0
+                fi
+                sleep 2
+            done
+            edgelet ms ls --source controlplane 2>/dev/null || true
+            exit 1
         "
 }
 

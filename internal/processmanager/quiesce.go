@@ -57,7 +57,7 @@ func (pm *ProcessManager) CleanupForEngineSwitch(ctx context.Context) error {
 				_ = pm.containerManager.RemoveContainerByMicroserviceUUID(ctx, ms.MicroserviceUUID, false, false)
 			}
 		}
-		if items, err := store.GetInstance().ListLocalDeployedMicroservices(); err == nil {
+		if items, err := store.GetInstance().ListLocalWorkloads(); err == nil {
 			for _, item := range items {
 				if item == nil {
 					continue
@@ -74,16 +74,13 @@ func (pm *ProcessManager) CleanupForEngineSwitch(ctx context.Context) error {
 	}
 
 	db := store.GetInstance()
-	if err := db.ClearAllContainerStates(); err != nil {
+	if err := db.ClearRuntimeContainerRefs(""); err != nil {
 		return err
 	}
-	if err := db.ClearLocalContainerStates(); err != nil {
+	if err := db.ClearControllerMicroserviceRuntimeFields(); err != nil {
 		return err
 	}
-	if err := db.ClearMicroserviceRuntimeFields(); err != nil {
-		return err
-	}
-	if err := db.ClearLocalDeployedRuntimeFields(); err != nil {
+	if err := db.ClearLocalWorkloadRuntimeFields(); err != nil {
 		return err
 	}
 

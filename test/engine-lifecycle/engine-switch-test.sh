@@ -75,7 +75,7 @@ sock = '/run/edgelet/containerd.sock'
 if not os.path.exists(sock):
     sys.exit(0)
 c = sqlite3.connect('/var/lib/edgelet/edgelet.db')
-rows = c.execute('select local_uuid from local_deployed_microservices where microservice_name=?', (ms,)).fetchall()
+rows = c.execute('select local_uuid from local_workloads where microservice_name=?', (ms,)).fetchall()
 if not rows:
     sys.exit(0)
 listed = subprocess.run(['ctr', '--address', sock, '-n', 'k8s.io', 'containers', 'list', '-q'], capture_output=True, text=True)
@@ -106,7 +106,7 @@ for i in \$(seq 1 \"\${POLL}\"); do
 import sqlite3, subprocess, sys
 ms = sys.argv[1]
 c = sqlite3.connect('/var/lib/edgelet/edgelet.db')
-rows = c.execute('select local_uuid from local_deployed_microservices where microservice_name=?', (ms,)).fetchall()
+rows = c.execute('select local_uuid from local_workloads where microservice_name=?', (ms,)).fetchall()
 for (uuid,) in rows:
     r = subprocess.run(['docker', 'ps', '-q', f'--filter=label=edgelet.iofog.org/microservice-uid={uuid}'], capture_output=True, text=True)
     if r.stdout.strip():
@@ -122,7 +122,7 @@ test \"\${ok}\" -eq 1"
 fi
 
 assert_contains "local deploy spec retained in DB" "engine-switch-ms" \
-    R "python3 -c \"import sqlite3; c=sqlite3.connect('/var/lib/edgelet/edgelet.db'); print(c.execute('select microservice_name from local_deployed_microservices').fetchall())\""
+    R "python3 -c \"import sqlite3; c=sqlite3.connect('/var/lib/edgelet/edgelet.db'); print(c.execute('select microservice_name from local_workloads').fetchall())\""
 
 R "systemctl restart edgelet"
 
@@ -208,7 +208,7 @@ done"
 import sqlite3
 c=sqlite3.connect('/var/lib/edgelet/edgelet.db')
 row=c.execute(
-  \\\"select failure_count, runtime_state from local_deployed_microservices where microservice_name='${MS_NAME}'\\\"
+  \\\"select failure_count, runtime_state from local_workloads where microservice_name='${MS_NAME}'\\\"
 ).fetchone()
 assert row is not None, 'missing local deploy row'
 fc, rs = row

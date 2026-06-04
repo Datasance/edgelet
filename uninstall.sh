@@ -43,10 +43,13 @@ for arg in "$@"; do
 done
 
 stop_systemd() {
+    if systemctl is-active --quiet edgelet-containerd 2>/dev/null; then
+        systemctl stop edgelet-containerd
+    fi
     if systemctl is-active --quiet edgelet 2>/dev/null; then
         systemctl stop edgelet
     fi
-    systemctl disable edgelet 2>/dev/null || true
+    systemctl disable edgelet edgelet-containerd 2>/dev/null || true
     rm -f /etc/systemd/system/edgelet.service
     rm -f /etc/systemd/system/edgelet-containerd.service
     rm -rf /etc/systemd/system/edgelet.service.d
@@ -62,7 +65,9 @@ stop_procd() {
 }
 
 stop_openrc() {
+    rc-service edgelet-containerd stop 2>/dev/null || true
     rc-service edgelet stop 2>/dev/null || true
+    rc-update del edgelet-containerd default 2>/dev/null || true
     rc-update del edgelet default 2>/dev/null || true
     rm -f /etc/init.d/edgelet /etc/init.d/edgelet-containerd
     info "OpenRC service removed."

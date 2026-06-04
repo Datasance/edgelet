@@ -6,8 +6,8 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 )
 
-func TestControlPlaneDeploymentCRUD(t *testing.T) {
-	db := openStoreForLocalAPIV3Tests(t)
+func TestSystemControlPlaneCRUD(t *testing.T) {
+	db := openFreshStoreDB(t)
 
 	dep := &models.ControlPlaneDeployment{
 		ControllerUUID: "cp-uuid-1",
@@ -19,13 +19,13 @@ func TestControlPlaneDeploymentCRUD(t *testing.T) {
 		ContainerID:    "cid-cp-1",
 		Generation:     2,
 	}
-	if err := db.UpsertControlPlaneDeployment(dep); err != nil {
-		t.Fatalf("upsert control plane deployment: %v", err)
+	if err := db.UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert system control plane: %v", err)
 	}
 
-	got, found, err := db.GetControlPlaneDeployment()
+	got, found, err := db.GetSystemControlPlane()
 	if err != nil {
-		t.Fatalf("get control plane deployment: %v", err)
+		t.Fatalf("get system control plane: %v", err)
 	}
 	if !found {
 		t.Fatal("expected deployment to exist")
@@ -54,58 +54,58 @@ func TestControlPlaneDeploymentCRUD(t *testing.T) {
 
 	dep.Image = "datasance/controller:v2"
 	dep.Generation = 3
-	if err := db.UpsertControlPlaneDeployment(dep); err != nil {
-		t.Fatalf("upsert control plane deployment patch: %v", err)
+	if err := db.UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert system control plane patch: %v", err)
 	}
 
-	got, found, err = db.GetControlPlaneDeployment()
+	got, found, err = db.GetSystemControlPlane()
 	if err != nil {
-		t.Fatalf("get control plane deployment after patch: %v", err)
+		t.Fatalf("get system control plane after patch: %v", err)
 	}
 	if !found || got.Image != "datasance/controller:v2" || got.Generation != 3 {
 		t.Fatalf("unexpected row after patch: found=%v image=%q generation=%d", found, got.Image, got.Generation)
 	}
 
-	if err := db.DeleteControlPlaneDeployment(); err != nil {
-		t.Fatalf("delete control plane deployment: %v", err)
+	if err := db.DeleteSystemControlPlane(); err != nil {
+		t.Fatalf("delete system control plane: %v", err)
 	}
 
-	_, found, err = db.GetControlPlaneDeployment()
+	_, found, err = db.GetSystemControlPlane()
 	if err != nil {
-		t.Fatalf("get control plane deployment after delete: %v", err)
+		t.Fatalf("get system control plane after delete: %v", err)
 	}
 	if found {
 		t.Fatal("expected no deployment after delete")
 	}
 }
 
-func TestControlPlaneDeploymentSingletonConstraint(t *testing.T) {
-	db := openStoreForLocalAPIV3Tests(t)
+func TestSystemControlPlaneSingletonConstraint(t *testing.T) {
+	db := openFreshStoreDB(t)
 
 	dep := &models.ControlPlaneDeployment{
 		ControllerUUID: "cp-uuid-1",
 		Name:           "pot",
 		ManifestYAML:   "kind: ControlPlane",
 	}
-	if err := db.UpsertControlPlaneDeployment(dep); err != nil {
-		t.Fatalf("upsert control plane deployment: %v", err)
+	if err := db.UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert system control plane: %v", err)
 	}
 
-	_, err := db.Conn().Exec(`INSERT INTO control_plane_deployments (
+	_, err := db.Conn().Exec(`INSERT INTO system_control_plane (
 		id, controller_uuid, namespace, name, manifest_yaml
 	) VALUES (2, 'other-uuid', 'default', 'other', 'kind: ControlPlane')`)
 	if err == nil {
-		t.Fatal("expected CHECK constraint to reject second control_plane_deployments row")
+		t.Fatal("expected CHECK constraint to reject second system_control_plane row")
 	}
 }
 
-func TestControlPlaneDeploymentUpsertValidation(t *testing.T) {
-	db := openStoreForLocalAPIV3Tests(t)
+func TestSystemControlPlaneUpsertValidation(t *testing.T) {
+	db := openFreshStoreDB(t)
 
-	if err := db.UpsertControlPlaneDeployment(nil); err == nil {
+	if err := db.UpsertSystemControlPlane(nil); err == nil {
 		t.Fatal("expected error for nil deployment")
 	}
-	if err := db.UpsertControlPlaneDeployment(&models.ControlPlaneDeployment{
+	if err := db.UpsertSystemControlPlane(&models.ControlPlaneDeployment{
 		Name:         "pot",
 		ManifestYAML: "kind: ControlPlane",
 	}); err == nil {

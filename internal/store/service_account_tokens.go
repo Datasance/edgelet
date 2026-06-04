@@ -14,7 +14,7 @@ func (d *DB) UpsertServiceAccountToken(token *models.ServiceAccountToken) error 
 		return fmt.Errorf("token is nil")
 	}
 
-	_, err := d.Conn().Exec(`INSERT OR REPLACE INTO service_account_tokens (
+	_, err := d.Conn().Exec(`INSERT OR REPLACE INTO local_service_account_tokens (
 		id, token_use, principal_type, subject, microservice_uuid, application_name,
 		service_account_name, role_ref_kind, role_ref_name, rbac_version, rules_by_group_json, claims_json,
 		issuer, audience, alg, jti, token_sha256, issued_at, not_before, expires_at,
@@ -39,7 +39,7 @@ func (d *DB) RevokeServiceAccountToken(jti string, revokedAt int64) error {
 	if revokedAt == 0 {
 		revokedAt = time.Now().Unix()
 	}
-	_, err := d.Conn().Exec(`UPDATE service_account_tokens SET revoked_at = ?, updated_at = ? WHERE jti = ?`, revokedAt, time.Now().Unix(), jti)
+	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE jti = ?`, revokedAt, time.Now().Unix(), jti)
 	return err
 }
 
@@ -50,9 +50,9 @@ func (d *DB) ListServiceAccountTokens() ([]*models.ServiceAccountToken, error) {
 		rbac_version, rules_by_group_json, claims_json,
 		issuer, audience, alg, jti, token_sha256, issued_at, not_before, expires_at,
 		revoked_at, rotated_from_jti
-		FROM service_account_tokens ORDER BY created_at DESC`)
+		FROM local_service_account_tokens ORDER BY created_at DESC`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query service_account_tokens: %w", err)
+		return nil, fmt.Errorf("failed to query local_service_account_tokens: %w", err)
 	}
 	defer rows.Close()
 
@@ -66,7 +66,7 @@ func (d *DB) ListServiceAccountTokens() ([]*models.ServiceAccountToken, error) {
 			&item.Issuer, &item.Audience, &item.Alg, &item.JTI, &item.TokenSHA256, &item.IssuedAt, &item.NotBefore, &item.ExpiresAt,
 			&revoked, &item.RotatedFromJTI,
 		); scanErr != nil {
-			return nil, fmt.Errorf("failed to scan service_account_tokens row: %w", scanErr)
+			return nil, fmt.Errorf("failed to scan local_service_account_tokens row: %w", scanErr)
 		}
 		if revoked.Valid {
 			item.RevokedAt = &revoked.Int64
@@ -86,9 +86,9 @@ func (d *DB) ListActiveServiceAccountTokens() ([]*models.ServiceAccountToken, er
 		rbac_version, rules_by_group_json, claims_json,
 		issuer, audience, alg, jti, token_sha256, issued_at, not_before, expires_at,
 		revoked_at, rotated_from_jti
-		FROM service_account_tokens WHERE revoked_at IS NULL ORDER BY issued_at DESC`)
+		FROM local_service_account_tokens WHERE revoked_at IS NULL ORDER BY issued_at DESC`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query active service_account_tokens: %w", err)
+		return nil, fmt.Errorf("failed to query active local_service_account_tokens: %w", err)
 	}
 	defer rows.Close()
 
@@ -102,7 +102,7 @@ func (d *DB) ListActiveServiceAccountTokens() ([]*models.ServiceAccountToken, er
 			&item.Issuer, &item.Audience, &item.Alg, &item.JTI, &item.TokenSHA256, &item.IssuedAt, &item.NotBefore, &item.ExpiresAt,
 			&revoked, &item.RotatedFromJTI,
 		); scanErr != nil {
-			return nil, fmt.Errorf("failed to scan active service_account_tokens row: %w", scanErr)
+			return nil, fmt.Errorf("failed to scan active local_service_account_tokens row: %w", scanErr)
 		}
 		if revoked.Valid {
 			item.RevokedAt = &revoked.Int64
@@ -120,12 +120,12 @@ func (d *DB) RevokeAllServiceAccountTokens(revokedAt int64) error {
 	if revokedAt == 0 {
 		revokedAt = time.Now().Unix()
 	}
-	_, err := d.Conn().Exec(`UPDATE service_account_tokens SET revoked_at = ?, updated_at = ? WHERE revoked_at IS NULL`, revokedAt, time.Now().Unix())
+	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE revoked_at IS NULL`, revokedAt, time.Now().Unix())
 	return err
 }
 
 // ClearServiceAccountTokens removes all token metadata rows.
 func (d *DB) ClearServiceAccountTokens() error {
-	_, err := d.Conn().Exec(`DELETE FROM service_account_tokens`)
+	_, err := d.Conn().Exec(`DELETE FROM local_service_account_tokens`)
 	return err
 }

@@ -27,23 +27,23 @@ func TestClearSQLiteCacheTablesOnDeprovision_AllClearsLocalRows(t *testing.T) {
 		ImageName:        "nginx:latest",
 		State:            "running",
 	}
-	if err := db.UpsertLocalDeployedMicroservice(local); err != nil {
+	if err := db.UpsertLocalWorkload(local); err != nil {
 		t.Fatalf("failed to insert local deployment: %v", err)
 	}
-	if err := db.SaveLocalContainerState("local-1", "cid-1", "sandbox-1"); err != nil {
+	if err := db.UpsertRuntimeContainerRef("local-1", store.RuntimeScopeLocal, "cid-1", "sandbox-1"); err != nil {
 		t.Fatalf("failed to insert local container state: %v", err)
 	}
 
 	GetInstance().clearSQLiteCacheTablesOnDeprovision(false)
 
-	locals, err := db.ListLocalDeployedMicroservices()
+	locals, err := db.ListLocalWorkloads()
 	if err != nil {
 		t.Fatalf("failed listing locals: %v", err)
 	}
 	if len(locals) != 0 {
 		t.Fatalf("expected local deployments cleared, got %d", len(locals))
 	}
-	state, err := db.GetLocalContainerState("local-1")
+	state, err := db.GetRuntimeContainerRef("local-1", store.RuntimeScopeLocal)
 	if err != nil {
 		t.Fatalf("failed reading local container state: %v", err)
 	}
@@ -69,23 +69,23 @@ func TestClearSQLiteCacheTablesOnDeprovision_LocalScopePreservesLocalRows(t *tes
 		ImageName:        "nodered/node-red:latest",
 		State:            "running",
 	}
-	if err := db.UpsertLocalDeployedMicroservice(local); err != nil {
+	if err := db.UpsertLocalWorkload(local); err != nil {
 		t.Fatalf("failed to insert local deployment: %v", err)
 	}
-	if err := db.SaveLocalContainerState("local-2", "cid-2", "sandbox-2"); err != nil {
+	if err := db.UpsertRuntimeContainerRef("local-2", store.RuntimeScopeLocal, "cid-2", "sandbox-2"); err != nil {
 		t.Fatalf("failed to insert local container state: %v", err)
 	}
 
 	GetInstance().clearSQLiteCacheTablesOnDeprovision(true)
 
-	locals, err := db.ListLocalDeployedMicroservices()
+	locals, err := db.ListLocalWorkloads()
 	if err != nil {
 		t.Fatalf("failed listing locals: %v", err)
 	}
 	if len(locals) != 1 {
 		t.Fatalf("expected local deployment preserved, got %d", len(locals))
 	}
-	state, err := db.GetLocalContainerState("local-2")
+	state, err := db.GetRuntimeContainerRef("local-2", store.RuntimeScopeLocal)
 	if err != nil {
 		t.Fatalf("failed reading local container state: %v", err)
 	}
