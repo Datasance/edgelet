@@ -41,6 +41,7 @@ edgelet config [flags]
       --available-disk-threshold int   available disk threshold. Alias: --dt
       --change-frequency-seconds int   change polling frequency (seconds). Alias: --cf
       --container-engine string        container engine (docker|podman|edgelet). Alias: --ce
+      --container-engine-url string    runtime socket URL. Alias: --cu
       --controller-cert string         controller CA certificate file path. Alias: --ac
       --controller-url string          controller URL. Alias: --a
       --cpu-limit-percent float        CPU limit (%). Alias: --p
@@ -48,8 +49,6 @@ edgelet config [flags]
       --device-scan-frequency int      device scan frequency (seconds). Alias: --sd
       --disk-directory string          disk directory. Alias: --dl
       --disk-limit-gib float           disk usage limit (GiB). Alias: --d
-      --docker-pruning-frequency int   prune frequency. Alias: --pf
-      --docker-url string              runtime socket URL. Alias: --c
       --edge-guard-frequency int       edge guard frequency. Alias: --egf
       --gps-coordinates string         GPS coordinates lat,lon. Alias: --gpsc
       --gps-device string              GPS device. Alias: --gpsd
@@ -62,11 +61,12 @@ edgelet config [flags]
       --log-level string               log level (DEBUG|INFO|WARN|ERROR). Alias: --ll
       --memory-limit-mib float         memory limit (MiB). Alias: --m
       --network-interface string       network interface. Alias: --n
+      --pruning-frequency int          prune frequency. Alias: --pf
       --secure-mode                    secure mode. Alias: --sec
       --status-frequency-seconds int   status frequency (seconds). Alias: --sf
       --timezone string                timezone. Alias: --tz
       --upgrade-scan-frequency int     upgrade scan frequency. Alias: --uf
-      --watchdog-enabled               watchdog enable. Alias: --idc
+      --watchdog-enabled               watchdog enable. Alias: --wd
 ```
 
 ### Options inherited from parent commands

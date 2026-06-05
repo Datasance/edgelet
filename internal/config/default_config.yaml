@@ -7,7 +7,7 @@ profiles:
     controllerCert: "/etc/edgelet/cert.crt"
     arch: "auto"
     containerEngine: edgelet
-    dockerUrl: unix:///run/edgelet/containerd.sock
+    containerEngineUrl: unix:///run/edgelet/containerd.sock
     diskDirectory: /var/lib/edgelet/
     logDiskDirectory: /var/log/edgelet/
     logLevel: INFO

@@ -8,7 +8,7 @@ import (
 )
 
 func TestStartupEngineURL(t *testing.T) {
-	if got := startupEngineURL(constants.EngineEdgelet, "unix:///var/run/docker.sock"); got != constants.EdgeletEngineDockerURL() {
+	if got := startupEngineURL(constants.EngineEdgelet, "unix:///var/run/docker.sock"); got != constants.EdgeletEngineSocketURL() {
 		t.Fatalf("edgelet url = %q", got)
 	}
 	if got := startupEngineURL(constants.EngineDocker, "unix:///var/run/docker.sock"); got != "unix:///var/run/docker.sock" {
@@ -20,7 +20,7 @@ func TestCaptureReloadEngineContextUsesStartupSnapshot(t *testing.T) {
 	runtime.ResetForTests()
 	s := NewSupervisor()
 	cfg := captureReloadEngineContextViaSupervisor(s)
-	if cfg.priorDockerURL != "" {
+	if cfg.priorContainerEngineURL != "" {
 		// empty config defaults are fine
 	}
 	_ = cfg

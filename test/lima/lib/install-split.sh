@@ -20,7 +20,7 @@ lima_install_embedded_split() {
     source "${_root}/test/init/lib/stage-install-bundle.sh"
     validate_install_bundle_sources "${_root}"
     [[ -f "${_root}/packaging/init/systemd/edgelet-containerd.service" ]] \
-        || die "Missing edgelet-containerd.service (Plan 11 split)"
+        || die "Missing edgelet-containerd.service (runtime split)"
 
     _stage="/tmp/edgelet-lima-install"
     _ssh_config="$(lima_ssh_config "${_vm}")"

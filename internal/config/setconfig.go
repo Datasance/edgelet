@@ -23,7 +23,7 @@ var ConfigParamMap = map[string]string{
 	"p":    "cpuLimit",
 	"a":    "controllerURL",
 	"ac":   "controllerCert",
-	"c":    "dockerURL",
+	"cu":   "containerEngineURL",
 	"ce":   "containerEngine",
 	"n":    "networkInterface",
 	"l":    "logDiskLimit",
@@ -33,7 +33,7 @@ var ConfigParamMap = map[string]string{
 	"sf":   "statusFrequency",
 	"cf":   "changeFrequency",
 	"sd":   "deviceScanFrequency",
-	"idc":  "watchdogEnabled",
+	"wd":   "watchdogEnabled",
 	"egf":  "edgeGuardFrequency",
 	"gps":  "gpsMode",
 	"gpsc": "gpsCoordinates",
@@ -41,7 +41,7 @@ var ConfigParamMap = map[string]string{
 	"gpsf": "gpsScanFrequency",
 	"ft":   "arch",
 	"sec":  "secureMode",
-	"pf":   "dockerPruningFrequency",
+	"pf":   "pruningFrequency",
 	"dt":   "availableDiskThreshold",
 	"uf":   "upgradeScanFrequency",
 	"dev":  "devMode",
@@ -178,12 +178,12 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
-	case "dockerURL":
+	case "containerEngineURL":
 		if strings.EqualFold(strings.TrimSpace(c.ContainerEngine), constants.EngineEdgelet) {
-			return fmt.Errorf("dockerUrl is fixed for containerEngine edgelet (%s)", constants.EdgeletEngineDockerURL())
+			return fmt.Errorf("containerEngineUrl is fixed for containerEngine edgelet (%s)", constants.EdgeletEngineSocketURL())
 		}
-		c.DockerURL = value
-		if err := c.setYamlProperty("dockerUrl", value); err != nil {
+		c.ContainerEngineURL = value
+		if err := c.setYamlProperty("containerEngineUrl", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -196,10 +196,10 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 				logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 			}
 			if prevEngine != value {
-				defaultURL := DefaultDockerURLForEngine(value)
-				c.DockerURL = defaultURL
-				if err := c.setYamlProperty("dockerUrl", defaultURL); err != nil {
-					logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist dockerUrl default: %v", err))
+				defaultURL := DefaultContainerEngineURLForEngine(value)
+				c.ContainerEngineURL = defaultURL
+				if err := c.setYamlProperty("containerEngineUrl", defaultURL); err != nil {
+					logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist containerEngineUrl default: %v", err))
 				}
 			}
 		default:
@@ -356,13 +356,13 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
-	case "dockerPruningFrequency":
+	case "pruningFrequency":
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			return fmt.Errorf("invalid docker pruning frequency: %w", err)
+			return fmt.Errorf("invalid pruning frequency: %w", err)
 		}
-		c.DockerPruningFrequency = val
-		if err := c.setYamlProperty("dockerPruningFrequency", value); err != nil {
+		c.PruningFrequency = val
+		if err := c.setYamlProperty("pruningFrequency", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
@@ -485,7 +485,7 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	defaultProfile.SetProperty("controllerUrl", "http://localhost:54421/api/v3/")
 	defaultProfile.SetProperty("controllerCert", "/etc/edgelet/cert.crt")
 	defaultProfile.SetProperty("networkInterface", "dynamic")
-	defaultProfile.SetProperty("dockerUrl", "unix:///var/run/docker.sock")
+	defaultProfile.SetProperty("containerEngineUrl", "unix:///var/run/docker.sock")
 	defaultProfile.SetProperty("diskDirectory", "/var/lib/edgelet/")
 	defaultProfile.SetProperty("diskLimit", "10")
 	defaultProfile.SetProperty("memoryLimit", "4096")
@@ -505,7 +505,7 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 	defaultProfile.SetProperty("gpsCoordinates", "0,0")
 	defaultProfile.SetProperty("arch", "auto")
 	defaultProfile.SetProperty("secureMode", "off")
-	defaultProfile.SetProperty("dockerPruningFrequency", "1")
+	defaultProfile.SetProperty("pruningFrequency", "1")
 	defaultProfile.SetProperty("availableDiskThreshold", "20")
 	defaultProfile.SetProperty("upgradeScanFrequency", "24")
 	defaultProfile.SetProperty("devMode", "off")

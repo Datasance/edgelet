@@ -86,10 +86,10 @@ func ValidateConfig(cfg *Config) error {
 		}
 	}
 
-	// Validate docker URL
-	if cfg.DockerURL != "" {
-		if !strings.HasPrefix(cfg.DockerURL, "tcp://") && !strings.HasPrefix(cfg.DockerURL, "unix://") {
-			errors = append(errors, "docker URL must start with 'tcp://' or 'unix://'")
+	// Validate container engine URL
+	if cfg.ContainerEngineURL != "" {
+		if !strings.HasPrefix(cfg.ContainerEngineURL, "tcp://") && !strings.HasPrefix(cfg.ContainerEngineURL, "unix://") {
+			errors = append(errors, "container engine URL must start with 'tcp://' or 'unix://'")
 		}
 	}
 
@@ -110,15 +110,15 @@ func ValidateConfig(cfg *Config) error {
 		errors = append(errors, "containerEngine must be one of: docker, podman, edgelet")
 	}
 
-	// dockerUrl rules per engine
+	// containerEngineUrl rules per engine
 	if eng == constants.EngineEdgelet {
-		want := constants.EdgeletEngineDockerURL()
-		if cfg.DockerURL != want {
-			errors = append(errors, fmt.Sprintf("dockerUrl for containerEngine edgelet must be %q (got %q)", want, cfg.DockerURL))
+		want := constants.EdgeletEngineSocketURL()
+		if cfg.ContainerEngineURL != want {
+			errors = append(errors, fmt.Sprintf("containerEngineUrl for containerEngine edgelet must be %q (got %q)", want, cfg.ContainerEngineURL))
 		}
 	}
-	if eng == constants.EnginePodman && strings.TrimSpace(cfg.DockerURL) == "" {
-		errors = append(errors, "dockerUrl is required when containerEngine is podman (e.g. unix:///run/podman/podman.sock)")
+	if eng == constants.EnginePodman && strings.TrimSpace(cfg.ContainerEngineURL) == "" {
+		errors = append(errors, "containerEngineUrl is required when containerEngine is podman (e.g. unix:///run/podman/podman.sock)")
 	}
 
 	// Validate shutdown grace period
@@ -233,9 +233,9 @@ func ValidateProperty(key, value string) error {
 		if _, err := normalizeGPSCoordinates(value); err != nil {
 			return err
 		}
-	case "dockerUrl":
+	case "containerEngineUrl":
 		if value != "" && !strings.HasPrefix(value, "tcp://") && !strings.HasPrefix(value, "unix://") {
-			return fmt.Errorf("docker URL must start with 'tcp://' or 'unix://'")
+			return fmt.Errorf("container engine URL must start with 'tcp://' or 'unix://'")
 		}
 	case "shutdownPolicy":
 		switch strings.ToLower(strings.TrimSpace(value)) {

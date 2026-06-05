@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test/embedded/run-all-cgroup-v1.sh
 #
-# Hybrid cgroup v1 embedded IT suite (Plan 11-7 extension, Plan 9B coverage).
+# Hybrid cgroup v1 embedded IT suite (hybrid cgroup v1 embedded coverage).
 # Separate from test/embedded/run-all.sh — uses iofog-test-v1 + lima-ubuntu-v1.yaml.
 #
 # Usage:
@@ -23,7 +23,7 @@
 #   0  All tests passed
 #   1  One or more tests failed (or setup/build/install error)
 #
-# See: .cursor/edgelet/docs/11-workload-continuity.md (Phase 11-7)
+# See docs/edgelet/workload-continuity.md
 
 set -euo pipefail
 
@@ -111,7 +111,7 @@ else
     log_info "Skipping VM start (--skip-start)"
 fi
 
-# Plan 11-7: install.sh split (same path as iofog-test).
+# install.sh split (same path as iofog-test).
 log_step "Step 4/5: Installing agent in VM (install.sh split)"
 "${SCRIPT_DIR}/vm-install.sh" --vm-name="${VM_NAME}" --arch="${TARGET_ARCH}"
 

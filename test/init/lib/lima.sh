@@ -1,4 +1,4 @@
-# test/init/lib/lima.sh — Lima VM helpers (Plan 10 T10-B).
+# test/init/lib/lima.sh — Lima VM helpers (Alpine openrc smoke).
 #
 # Lima 2.x emits JSONL (one object per line). Do not use '.[] | select(...)' on
 # limactl list --json output — that breaks with "Cannot index string with name".

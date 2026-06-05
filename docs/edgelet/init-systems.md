@@ -1,9 +1,5 @@
 # Edgelet init systems (operator guide)
 
-> **Status:** Implemented (Plan 10)  
-> **Spec:** [.cursor/edgelet/docs/10-init-systems-enterprise.md](../../.cursor/edgelet/docs/10-init-systems-enterprise.md)  
-> **Contract:** [.cursor/edgelet/INIT-SYSTEMS.md](../../.cursor/edgelet/INIT-SYSTEMS.md)
-
 Production-grade Linux init integration: ordering, cgroup delegation, engine dependencies, and a shared control-plane stop path.
 
 ---
@@ -12,7 +8,7 @@ Production-grade Linux init integration: ordering, cgroup delegation, engine dep
 
 | Tier | Init systems | SLA |
 |------|--------------|-----|
-| **Tier 1 (production)** | **systemd**, **openrc** (Alpine/Gentoo), **procd** (OpenWrt) | Full IT (`test/init/`) or manual checklist (T10-D) |
+| **Tier 1 (production)** | **systemd**, **openrc** (Alpine/Gentoo), **procd** (OpenWrt) | Full IT (`test/init/`) or manual checklist ([OpenWrt procd gate](../../test/init/openwrt-procd-checklist.md)) |
 | **Tier 2 (best effort)** | sysvinit, s6, runit, upstart | Hardened templates; same preflight/shutdown helpers; documented limits |
 
 ---
@@ -28,7 +24,7 @@ Production-grade Linux init integration: ordering, cgroup delegation, engine dep
 | Container / minimal | s6, runit | 2 | Allowed | Operator wires engine separately |
 | Ubuntu 14–16 era | upstart | 2 | Allowed | `pre-start` preflight only |
 
-**Production SLA:** prefer **systemd** for embedded (`edgelet`) so cgroup v2 delegation uses `DelegateSubgroup`. Non-systemd embedded is supported (Plan 9B cgroupfs) but documented as best-effort for tier 2.
+**Production SLA:** prefer **systemd** for embedded (`edgelet`) so cgroup v2 delegation uses `DelegateSubgroup`. Non-systemd embedded is supported (cgroupfs driver) but documented as best-effort for tier 2.
 
 ---
 
@@ -37,7 +33,7 @@ Production-grade Linux init integration: ordering, cgroup delegation, engine dep
 | Item | Path |
 |------|------|
 | systemd control unit | `packaging/init/systemd/edgelet.service` |
-| systemd data-plane stub | `packaging/init/systemd/edgelet-containerd.service` (Plan 11) |
+| systemd data-plane stub | `packaging/init/systemd/edgelet-containerd.service` |
 | Engine drop-ins | `packaging/init/systemd/edgelet.service.d/{docker,podman}.conf` |
 | openrc / procd / sysv / s6 / runit / upstart | `packaging/init/{openrc,procd,sysvinit,s6,runit,upstart}/` |
 | Shutdown helper | `scripts/edgelet-shutdown` → `/usr/libexec/edgelet/edgelet-shutdown` |
@@ -56,9 +52,9 @@ Install uses **`packaging/init/` only** — there is no `packaging/systemd/` ins
 
 Preflight on the **thin** `/usr/local/bin/edgelet` uses a procfs/cgroupfs-only probe (`DetectPreflight`); full cgroup subtree setup stays in the **fat** runtime (`Detect` / `Bootstrap` with `containerd/cgroups`).
 
-`edgelet shutdown` tries EdgeletAPI graceful stop, then SIGTERM/SIGKILL fallback. **Drain / leave-running policy** is owned by Plan 11; Plan 10 only defines the stop entry.
+`edgelet shutdown` tries EdgeletAPI graceful stop, then SIGTERM/SIGKILL fallback. **Drain / leave-running policy** is defined in [workload-continuity.md](workload-continuity.md); init templates only define the stop entry.
 
-`TimeoutStopSec=120` on systemd equals default `shutdownGracePeriodSeconds` (90) + 30s buffer (Plan 11). Embedded engine uses `edgelet.service.d/edgelet.conf` drop-in with `EDGELET_RUNTIME_SPLIT=1`.
+`TimeoutStopSec=120` on systemd equals default `shutdownGracePeriodSeconds` (90) + 30s buffer. Embedded engine uses `edgelet.service.d/edgelet.conf` drop-in with `EDGELET_RUNTIME_SPLIT=1`.
 
 ---
 
@@ -77,7 +73,7 @@ systemctl cat edgelet
 systemctl show edgelet -p DelegateSubgroup,TimeoutStopSec
 ```
 
-After Plan 11: enable `edgelet-containerd.service` before `edgelet.service` for embedded split.
+Enable `edgelet-containerd.service` before `edgelet.service` for embedded split.
 
 Split embedded units are **siblings**: `Wants`/`After` on `edgelet.service` only orders **start**. There is no `PartOf` — `systemctl stop edgelet` does not stop `edgelet-containerd`. Full teardown stops both units (see [workload-continuity.md](workload-continuity.md)).
 
@@ -90,7 +86,7 @@ Split embedded units are **siblings**: `Wants`/`After` on `edgelet.service` only
 - `depend()`: `net` + optional `docker` / `podman` (install-time)
 - `start_pre`: `edgelet cgroup-preflight`
 - `stop`: `edgelet-shutdown`
-- Stub: `/etc/init.d/edgelet-containerd` (Plan 11 chain)
+- Stub: `/etc/init.d/edgelet-containerd` (runtime split chain)
 
 ```bash
 rc-service edgelet start
@@ -121,11 +117,11 @@ rc-service edgelet stop
 
 On some images the binary lives at `/usr/sbin/edgelet`; install.sh still defaults to `/usr/local/bin/edgelet` — adjust paths in the template if your image requires it.
 
-Manual gate: [test/init/openwrt-procd-checklist.md](../../test/init/openwrt-procd-checklist.md) (T10-D).
+Manual gate: [test/init/openwrt-procd-checklist.md](../../test/init/openwrt-procd-checklist.md).
 
 ---
 
-## Portable embedded engine (Plan 10-8)
+## Portable embedded engine (static fat)
 
 Fat `edgelet` in the embed tar is **statically linked by default** so musl hosts (Alpine, OpenWrt) can `exec` the runtime without glibc `ld-linux`. Build with `make build-linux-<arch>`; opt out via `STATIC_BUILD=false` for faster local builds only.
 
@@ -136,9 +132,9 @@ Fat `edgelet` in the embed tar is **statically linked by default** so musl hosts
 | Topic | Tier 2 behavior |
 |-------|-----------------|
 | `DelegateSubgroup` | **Not available** — no systemd delegation |
-| Embedded cgroup driver | **cgroupfs** on non-systemd (Plan 9B) |
+| Embedded cgroup driver | **cgroupfs** on non-systemd |
 | Engine ordering | Manual / site-specific (except openrc tier 1) |
-| MS survival on control restart | Document monolithic behavior until Plan 11 split |
+| MS survival on control restart | Document monolithic behavior until runtime split |
 
 All tier-2 templates call the same **`edgelet-shutdown`** helper as systemd.
 
@@ -156,12 +152,12 @@ Init detection: `scripts/lib/init-detect.sh` (OpenRC when the supervisor is acti
 
 ## Integration tests
 
-See [test/init/README.md](../../test/init/README.md): T10-A (systemd), T10-B (Alpine openrc init), T10-B+ (Alpine runtime), T10-C (RHEL sysv), T10-D (OpenWrt procd).
+See [test/init/README.md](../../test/init/README.md): systemd install smoke, Alpine openrc init/runtime, RHEL sysv checklist, OpenWrt procd checklist.
 
 ---
 
 ## Related docs
 
-- [cgroups.md](cgroups.md) — Plan 9B driver detection (unchanged by Plan 10)
-- [workload-continuity.md](workload-continuity.md) — Plan 11 control/data plane split
+- [cgroups.md](cgroups.md) — cgroup driver detection for embedded engine
+- [workload-continuity.md](workload-continuity.md) — control/data plane split
 - [deployment.md](deployment.md) — install paths

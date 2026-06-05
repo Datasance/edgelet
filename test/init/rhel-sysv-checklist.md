@@ -1,6 +1,6 @@
-# T10-C — RHEL/sysvinit manual gate (Plan 10)
+# RHEL/sysvinit manual gate
 
-> **Spec:** [.cursor/edgelet/docs/10-init-systems-enterprise.md](../../.cursor/edgelet/docs/10-init-systems-enterprise.md)
+> **Operator doc:** [docs/edgelet/init-systems.md](../../docs/edgelet/init-systems.md)
 
 Manual checklist for Tier 2 sysvinit on RHEL-family distros. Mark each item when validated on a lab node.
 

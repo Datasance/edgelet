@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T10-B — Alpine openrc start/stop smoke (Lima edgelet-openrc profile).
+# Alpine openrc smoke — Alpine openrc start/stop smoke (Lima edgelet-openrc profile).
 #
 # Prerequisites:
 #   ./test/init/vm-start-alpine.sh
@@ -55,7 +55,7 @@ assert_openrc_pid1() {
     fi
 }
 
-log_step "T10-B Alpine openrc smoke (${VM_NAME})"
+log_step "Alpine openrc smoke Alpine openrc smoke (${VM_NAME})"
 assert_openrc_pid1
 
 SSH_CONFIG="${HOME}/.lima/${VM_NAME}/ssh.config"
@@ -76,4 +76,4 @@ run_remote "rc-service edgelet-containerd restart"
 run_remote "rc-service edgelet restart"
 run_remote "pgrep -f '[e]dgelet daemon'"
 
-log_success "T10-B Alpine openrc smoke passed"
+log_success "Alpine openrc smoke Alpine openrc smoke passed"

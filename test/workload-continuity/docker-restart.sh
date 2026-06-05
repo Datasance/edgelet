@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T11-A — docker leave-running: restart edgelet control plane; MS keep same container ID.
+# docker-restart — docker leave-running: restart edgelet control plane; MS keep same container ID.
 #
 # Usage:
 #   ./test/workload-continuity/docker-restart.sh [--vm-name=edgelet-engine-lifecycle]
@@ -23,13 +23,13 @@ command -v limactl >/dev/null || die "limactl required"
 
 R() { wc_remote "${VM_NAME}" "$*"; }
 
-log_step "T11-A docker control restart leaves MS running"
+log_step "docker-restart docker control restart leaves MS running"
 
 assert_ok "edgelet active before restart" \
     R "systemctl is-active --quiet edgelet"
 
 CONTAINER_ID="$(wc_docker_ms_container_id "${VM_NAME}" "${MS_NAME}")"
-[[ -n "${CONTAINER_ID}" ]] || die "No running ${MS_NAME} found — deploy an MS before T11-A"
+[[ -n "${CONTAINER_ID}" ]] || die "No running ${MS_NAME} found — deploy an MS before docker-restart"
 
 log_info "MS container before restart: ${CONTAINER_ID}"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test/control-plane/lib/cp.sh — Plan 12 control-plane IT helpers. Source only.
+# test/control-plane/lib/cp.sh — ControlPlane integration tests helpers. Source only.
 
 # shellcheck shell=bash
 
@@ -140,7 +140,7 @@ cp_controlplane_uuid() {
         | tr -d '\r'
 }
 
-# cp_assert_deployed VM — T12-A/B container running checks.
+# cp_assert_deployed VM — embedded CP apply/B container running checks.
 cp_assert_deployed() {
     local _vm="$1"
     assert_ok "controlplane get shows namespace=${CP_NS} name=${CP_NAME}" \
@@ -162,7 +162,7 @@ cp_assert_deployed() {
         "
 }
 
-# cp_assert_status_api VM — T12-C
+# cp_assert_status_api VM — controller status API
 cp_assert_status_api() {
     local _vm="$1"
     assert_ok "GET :51121/api/v3/status returns online" \
@@ -173,7 +173,7 @@ cp_assert_status_api() {
         "
 }
 
-# cp_assert_lifecycle VM — T12-D (leaves CP deleted)
+# cp_assert_lifecycle VM — CP lifecycle guards (leaves CP deleted)
 # Poll limits align with cp_delete_if_present (docker engine delete can be slow under load).
 cp_assert_lifecycle() {
     local _vm="$1"
@@ -258,7 +258,7 @@ cp_dns_probe_uuid() {
         | tr -d '\r'
 }
 
-# cp_assert_dns VM — T12-E (embedded engine resolver)
+# cp_assert_dns VM — CP DNS resolution (embedded engine resolver)
 cp_assert_dns() {
     local _vm="$1"
     local _probe _fqdn1 _fqdn2 _fqdn3
@@ -295,7 +295,7 @@ cp_assert_dns() {
 # cp_ensure_docker_vm REPO VM SKIP_SETUP
 cp_ensure_docker_vm() {
     local _root="$1" _vm="$2" _skip_setup="$3"
-    command -v limactl >/dev/null || die "limactl required for T12-B"
+    command -v limactl >/dev/null || die "limactl required for docker CP apply"
     if [[ "${_skip_setup}" != true ]]; then
         "${_root}/test/engine-lifecycle/setup.sh"
     fi
@@ -316,7 +316,7 @@ cp_ensure_docker_vm() {
 # cp_ensure_embedded_vm REPO VM ARCH SKIP_SETUP
 cp_ensure_embedded_vm() {
     local _root="$1" _vm="$2" _arch="$3" _skip_setup="$4"
-    command -v limactl >/dev/null || die "limactl required for T12-A"
+    command -v limactl >/dev/null || die "limactl required for embedded CP apply"
     "${_root}/test/embedded/vm-start.sh" --vm-name="${_vm}"
     if cp_remote "${_vm}" "
         systemctl is-active --quiet edgelet-containerd && \

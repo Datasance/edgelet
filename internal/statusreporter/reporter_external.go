@@ -19,7 +19,7 @@ var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 	}
 
 	opts := []client.Opt{
-		client.WithHost(strings.TrimSpace(cfg.DockerURL)),
+		client.WithHost(strings.TrimSpace(cfg.ContainerEngineURL)),
 		client.WithAPIVersionNegotiation(),
 	}
 	if strings.TrimSpace(cfg.DockerAPIVersion) != "" {

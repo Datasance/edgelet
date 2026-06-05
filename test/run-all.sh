@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified Lima / regression test orchestrator (Plan 11-7).
+# Unified Lima / regression test orchestrator.
 #
 # Usage:
 #   ./test/run-all.sh --suite=workload-continuity
@@ -28,13 +28,13 @@ for arg in "$@"; do
 Usage: $0 --suite=NAME [suite-specific options]
 
 Suites:
-  workload-continuity   Plan 11 T11-A–D (test/workload-continuity/run-all.sh)
-  control-plane         Plan 12 T12-A–E (test/control-plane/run-all.sh)
+  workload-continuity   docker/embedded restart gates (test/workload-continuity/run-all.sh)
+  control-plane         ControlPlane apply + DNS (test/control-plane/run-all.sh)
   embedded              Full embedded matrix on iofog-test
   embedded-cgroup-v1    Hybrid cgroup v1 gate on iofog-test-v1 (optional)
-  engine-lifecycle      Plan 9A cold engine switch
-  init                  Plan 10 packaging smokes
-  nested-docker         Build edgelet-linux image + nested Docker smokes (Mac host)
+  engine-lifecycle      Cold engine switch
+  init                  Init packaging smokes
+  nested-docker         Build edgelet image + nested Docker smokes (Mac host)
   unit                  go test internal/cgroups + supervisor (short)
 
 Additional flags are forwarded to the suite runner (e.g. --skip-build).

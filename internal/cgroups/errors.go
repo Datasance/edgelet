@@ -15,7 +15,7 @@ func (e *ErrDelegation) Error() string {
 	}
 	base := fmt.Sprintf("controller %s is not available", e.Controller)
 	if e.Nested {
-		return base + ": nested edgelet-linux requires `docker run --privileged` so cpu/memory/pids controllers are delegated; see docs/edgelet/cgroups.md"
+		return base + ": nested edgelet container requires `docker run --privileged` so cpu/memory/pids controllers are delegated; see docs/edgelet/cgroups.md"
 	}
 	switch e.Mode {
 	case ModeHybrid:

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # test/embedded/engine-switch-container.sh
 #
-# Nested edgelet-linux container: deploy on edgelet engine, cold-switch to docker,
+# Nested edgelet container: deploy on edgelet engine, cold-switch to docker,
 # docker restart, verify MS reconciles on host Docker.
 #
 # Usage:
 #   ./test/embedded/run-all-nested-docker.sh
-#   EDGELET_IMAGE=edgelet-linux:local ./test/embedded/engine-switch-container.sh
+#   EDGELET_IMAGE=edgelet:local ./test/embedded/engine-switch-container.sh
 #
-# Prerequisites: docker CLI, jq, locally built/pulled edgelet-linux image.
+# Prerequisites: docker CLI, jq, locally built/pulled edgelet image.
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${SCRIPT_DIR}/lib/log.sh"
 
-IMAGE="${EDGELET_IMAGE:-edgelet-linux:local}"
+IMAGE="${EDGELET_IMAGE:-edgelet:local}"
 NAME="${EDGELET_CONTAINER_NAME:-edgelet-engine-switch-smoke}"
 LIB_VOL="${EDGELET_LIB_VOL:-edgelet-engine-switch-lib}"
 ETC_VOL="${EDGELET_ETC_VOL:-edgelet-engine-switch-etc}"

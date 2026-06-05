@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Plan 12 control-plane IT — T12-A through T12-E + Plan 10/11 regression gates.
+# ControlPlane integration tests — embedded CP apply through CP DNS resolution + init and workload continuity regression.
 #
 # Usage:
 #   ./test/control-plane/run-all.sh
@@ -40,12 +40,12 @@ for arg in "$@"; do
             cat <<EOF
 Usage: $0 [options]
 
-Runs Plan 12 IT:
-  T12-A  embedded (iofog-test)
-  T12-B  docker (edgelet-engine-lifecycle)
-  T12-C  /api/v3/status (in t12-embedded.sh / t12-docker.sh)
-  T12-D  ms rm blocked; controlplane delete
-  T12-E  DNS 3 FQDNs from fixture metadata (embedded only)
+Runs ControlPlane IT:
+  embedded CP apply  embedded (iofog-test)
+  docker CP apply  docker (edgelet-engine-lifecycle)
+  controller status API  /api/v3/status (in t12-embedded.sh / t12-docker.sh)
+  CP lifecycle guards  ms rm blocked; controlplane delete
+  CP DNS resolution  DNS 3 FQDNs from fixture metadata (embedded only)
 
 Options:
   --case=embedded|docker|all   default: all
@@ -116,7 +116,7 @@ if [[ "${FAIL}" -ne 0 ]]; then
 fi
 
 if [[ "${SKIP_REGRESSION}" == true ]]; then
-    log_success "control-plane run-all complete (T12-A–E; regression skipped)"
+    log_success "control-plane run-all complete (regression skipped)"
 else
-    log_success "control-plane run-all complete (T12-A–E + regression)"
+    log_success "control-plane run-all complete (+ regression)"
 fi

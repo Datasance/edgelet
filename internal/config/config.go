@@ -26,7 +26,7 @@ type Config struct {
 	ContainerEngine                 string
 	ControllerCert                  string
 	NetworkInterface                string
-	DockerURL                       string
+	ContainerEngineURL              string
 	DiskLimit                       float64
 	MemoryLimit                     float64
 	DiskDirectory                   string
@@ -49,7 +49,7 @@ type Config struct {
 	IPAddressExternal               string
 	RouterUUID                      string
 	IsRouterInterior                bool
-	DockerPruningFrequency          int64
+	PruningFrequency                int64
 	AvailableDiskThreshold          int64
 	UpgradeScanFrequency            int
 	DevMode                         bool
@@ -82,8 +82,8 @@ type Config struct {
 	reloadCallback func() error
 	// GPS config update callback
 	gpsConfigCallback func() error
-	// Reload snapshot for warm dockerUrl revert (set before SetConfig from API).
-	reloadPriorDockerURL string
+	// Reload snapshot for warm containerEngineUrl revert (set before SetConfig from API).
+	reloadPriorContainerEngineURL string
 }
 
 var (
@@ -138,25 +138,25 @@ func GetInstance() *Config {
 	return instance
 }
 
-// SnapshotForReload records dockerUrl before an in-process config mutation (API PATCH).
+// SnapshotForReload records containerEngineUrl before an in-process config mutation (API PATCH).
 func (c *Config) SnapshotForReload() {
 	c.mu.RLock()
-	prior := c.DockerURL
+	prior := c.ContainerEngineURL
 	c.mu.RUnlock()
 	c.mu.Lock()
-	c.reloadPriorDockerURL = prior
+	c.reloadPriorContainerEngineURL = prior
 	c.mu.Unlock()
 }
 
-// ConsumeReloadPriorDockerURL returns and clears a reload snapshot if present.
-func (c *Config) ConsumeReloadPriorDockerURL() (string, bool) {
+// ConsumeReloadPriorContainerEngineURL returns and clears a reload snapshot if present.
+func (c *Config) ConsumeReloadPriorContainerEngineURL() (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.reloadPriorDockerURL == "" {
+	if c.reloadPriorContainerEngineURL == "" {
 		return "", false
 	}
-	prior := c.reloadPriorDockerURL
-	c.reloadPriorDockerURL = ""
+	prior := c.reloadPriorContainerEngineURL
+	c.reloadPriorContainerEngineURL = ""
 	return prior, true
 }
 
@@ -344,8 +344,8 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	// Controller cert
 	buildLine("Controller Cert", c.ControllerCert)
 
-	// Docker URL
-	buildLine("Docker URL", c.DockerURL)
+	// Container engine socket URL
+	buildLine("Container Engine URL", c.ContainerEngineURL)
 
 	// Container engine
 	buildLine("Container Engine", c.ContainerEngine)
@@ -408,8 +408,8 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	// Architecture (resolved for display; never "auto")
 	buildLine("Fog Type", DisplayArch(c.Arch))
 
-	// Docker pruning frequency
-	buildLine("Docker Pruning Frequency", fmt.Sprintf("%d", c.DockerPruningFrequency))
+	// Pruning frequency
+	buildLine("Pruning Frequency", fmt.Sprintf("%d", c.PruningFrequency))
 
 	// Available disk threshold
 	buildLine("Available Disk Threshold", fmt.Sprintf("%d", c.AvailableDiskThreshold))

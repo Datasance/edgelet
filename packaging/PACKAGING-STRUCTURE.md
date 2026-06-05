@@ -113,8 +113,8 @@ Operator matrix: `docs/edgelet/init-systems.md` (Plan 10). IT: `test/init/README
 
 | Item | Value |
 |------|--------|
-| Image | `ghcr.io/datasance/edgelet-linux:<tag>` |
-| Dockerfile | `Dockerfile.edgelet-linux` |
+| Image | `ghcr.io/datasance/edgelet:<tag>` |
+| Dockerfile | `Dockerfile` |
 | Entry | `edgelet daemon` with `EDGELET_DAEMON=container` |
 
 ---

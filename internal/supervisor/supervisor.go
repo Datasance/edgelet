@@ -188,7 +188,7 @@ func (s *Supervisor) Start() error {
 	}
 
 	engConfig := engine.EngineConfig{
-		SocketURL:  cfg.DockerURL,
+		SocketURL:  cfg.ContainerEngineURL,
 		APIVersion: cfg.DockerAPIVersion,
 		LogDir:     cfg.LogDiskDirectory + "containers",
 	}

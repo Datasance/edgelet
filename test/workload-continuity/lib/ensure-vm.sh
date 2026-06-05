@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test/workload-continuity/lib/ensure-vm.sh
-# VM prep for Plan 11 workload-continuity IT. Source from run-all.sh — do not execute directly.
+# VM prep for workload-continuity IT. Source from run-all.sh — do not execute directly.
 
 # shellcheck shell=bash
 
@@ -171,7 +171,7 @@ ensure_docker_vm() {
     local _root="$1" _vm="$2" _skip_setup="$3" _fixture="$4"
     local _ms="workload-ms"
 
-    command -v limactl >/dev/null || die "limactl required for T11-A"
+    command -v limactl >/dev/null || die "limactl required for docker-restart"
 
     if [[ "${_skip_setup}" != true ]]; then
         "${_root}/test/engine-lifecycle/setup.sh"
@@ -192,7 +192,7 @@ ensure_docker_vm() {
         wc_deploy_ms "${_vm}" "${_fixture}" "${_ms}" || die "failed to deploy ${_ms} on docker VM"
         for _i in $(seq 1 15); do
             if wc_docker_ms_present "${_vm}" "${_ms}"; then
-                log_ok "Docker VM ${_vm} ready for T11-A"
+                log_ok "Docker VM ${_vm} ready for docker-restart"
                 return 0
             fi
             sleep 2
@@ -206,7 +206,7 @@ ensure_docker_vm() {
     wc_deploy_ms "${_vm}" "${_fixture}" "${_ms}" || die "failed to deploy ${_ms} on docker VM"
     for _i in $(seq 1 15); do
         if wc_docker_ms_present "${_vm}" "${_ms}"; then
-            log_ok "Docker VM ${_vm} ready for T11-A"
+            log_ok "Docker VM ${_vm} ready for docker-restart"
             return 0
         fi
         sleep 2
@@ -220,7 +220,7 @@ ensure_embedded_split() {
 
     command -v limactl >/dev/null || {
         [[ "${_strict}" == true ]] && die "limactl required for embedded tests"
-        log_warn "limactl not found — cannot run T11-C/D"
+        log_warn "limactl not found — cannot run embedded control restart/D"
         return 1
     }
 
@@ -250,6 +250,6 @@ ensure_embedded_split() {
         [[ "${_strict}" == true ]] && die "embedded split gate failed after prep"
         return 1
     }
-    log_ok "Embedded VM ${_vm} ready for T11-C/D"
+    log_ok "Embedded VM ${_vm} ready for embedded control restart/D"
     return 0
 }

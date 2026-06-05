@@ -64,10 +64,10 @@ func TestValidateConfig(t *testing.T) {
 	cfg.GPSScanFrequency = 60
 	if buildmeta.HasEmbeddedEngine() {
 		cfg.ContainerEngine = constants.EngineEdgelet
-		cfg.DockerURL = constants.EdgeletEngineDockerURL()
+		cfg.ContainerEngineURL = constants.EdgeletEngineSocketURL()
 	} else {
 		cfg.ContainerEngine = constants.EngineDocker
-		cfg.DockerURL = "unix:///var/run/docker.sock"
+		cfg.ContainerEngineURL = "unix:///var/run/docker.sock"
 	}
 	cfg.ShutdownGracePeriodSeconds = 90
 	cfg.ControllerRequestTimeoutSeconds = 30

@@ -8,7 +8,7 @@ on:
 env:
   GO_VERSION: '1.26.2'
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/datasance/edgelet-linux
+  IMAGE: ghcr.io/datasance/edgelet
 
 permissions:
   contents: write
@@ -174,7 +174,7 @@ jobs:
 
           ### Container
           \`\`\`bash
-          docker pull ghcr.io/datasance/edgelet-linux:${{ github.ref_name }}
+          docker pull ghcr.io/datasance/edgelet:${{ github.ref_name }}
           \`\`\`
           EOF
 
@@ -187,7 +187,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
 
   container:
-    name: Push edgelet-linux image
+    name: Push edgelet image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -205,7 +205,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.edgelet-linux
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
           push: true
           build-args: |

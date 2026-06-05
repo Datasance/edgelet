@@ -93,49 +93,6 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		return mountPath, nil
 	}
 
-	// Legacy handling for $VolumeMount/ prefix (backward compatibility)
-	if strings.HasPrefix(hostDestination, "$VolumeMount/") {
-		volumeName := hostDestination[len("$VolumeMount/"):]
-
-		// Check if agent is running in container
-		iofogDaemon := os.Getenv("EDGELET_DAEMON")
-		isContainer := strings.ToLower(iofogDaemon) == "container"
-
-		cfg := config.GetInstance()
-		diskDir := cfg.DiskDirectory
-
-		if !isContainer {
-			// Agent running on host - use disk directory directly
-			return diskDir + "volumes/" + volumeName, nil
-		}
-
-		// Agent running in container - need to check volume mounting
-		dockerClient := GetInstance()
-		cli := dockerClient.GetClient()
-		if cli != nil {
-			ctx := dockerClient.GetContext()
-			// Check if edgelet-directory volume exists
-			volumes, err := cli.VolumeList(ctx, volume.ListOptions{
-				Filters: filters.NewArgs(),
-			})
-			if err == nil {
-				for _, vol := range volumes.Volumes {
-					if vol.Name == "edgelet-directory" {
-						// Volume exists - inspect it to get mount point
-						volumeInfo, err := cli.VolumeInspect(ctx, "edgelet-directory")
-						if err == nil {
-							mountPoint := volumeInfo.Mountpoint
-							return mountPoint + "/volumes/" + volumeName, nil
-						}
-					}
-				}
-			}
-		}
-
-		// Volume doesn't exist - assume bind mount, use disk directory
-		return diskDir + "volumes/" + volumeName, nil
-	}
-
 	// Return as-is for BIND and VOLUME types
 	return hostDestination, nil
 }

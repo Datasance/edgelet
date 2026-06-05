@@ -1527,8 +1527,12 @@ components:
           type: string
         containerEngine:
           type: string
-        dockerUrl:
+        containerEngineUrl:
           type: string
+        pruningFrequency:
+          type: integer
+        watchdogEnabled:
+          type: boolean
         networkInterface:
           type: string
         diskLimitGiB:

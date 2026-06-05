@@ -57,14 +57,16 @@ Runtime selection via `containerEngine` in config (validated per GOOS):
 | Value | Description |
 |-------|-------------|
 | `edgelet` | Embedded containerd (linux only) |
-| `docker` | Host Docker (`dockerUrl` e.g. `unix:///var/run/docker.sock`) |
-| `podman` | Host Podman |
+| `docker` | Host Docker (`containerEngineUrl` e.g. `unix:///var/run/docker.sock`) |
+| `podman` | Host Podman (`containerEngineUrl` e.g. `unix:///run/podman/podman.sock`) |
 
 ```yaml
 profiles:
   production:
     containerEngine: edgelet
-    dockerUrl: unix:///run/edgelet/containerd.sock
+    containerEngineUrl: unix:///run/edgelet/containerd.sock
+    pruningFrequency: 24
+    watchdogEnabled: true
 ```
 
 Details: [docs/edgelet/container-engine.md](docs/edgelet/container-engine.md)
@@ -134,6 +136,8 @@ edgelet provision <key>           # register with Controller (post-install)
 ```
 
 Deployment guide: [docs/edgelet/deployment.md](docs/edgelet/deployment.md)
+
+Container image (linux IT / nested deploy): `ghcr.io/datasance/edgelet:<tag>`, built from root `Dockerfile`. Local tag: `edgelet:local`.
 
 ### Uninstall
 

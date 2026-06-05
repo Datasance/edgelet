@@ -1,17 +1,16 @@
-# Plan 11 — Workload continuity integration tests
+# Workload continuity integration tests
 
-> **Spec:** [.cursor/edgelet/docs/11-workload-continuity.md](../../.cursor/edgelet/docs/11-workload-continuity.md)  
-> **IT consolidation (Plan 11-7):** same spec doc, Phase 11-7
+Operator guide: [docs/edgelet/workload-continuity.md](../../docs/edgelet/workload-continuity.md)
 
 ## Test matrix
 
-| ID | Script | When | Pass criteria |
-|----|--------|------|---------------|
-| **T11-A** | `docker-restart.sh` | After 11-1 | `restart edgelet` → same Docker container IDs; MS running |
-| **T11-B** | (regression) | After 11-1 | `test/engine-lifecycle/run-all.sh` still green |
-| **T11-C** | `embedded-restart.sh` | After 11-4 | restart **edgelet** only → CRI containers survive |
-| **T11-D** | `embedded-runtime-restart.sh` | After 11-4 | restart containerd unit; poll until CRI drain (0 ctr rows), then MS reconciles |
-| **T11-E** | doc | Pre-11-4 | Monolithic embedded restart still drains MS |
+| Case | Script | When | Pass criteria |
+|------|--------|------|---------------|
+| **docker-restart** | `docker-restart.sh` | leave-running policy | `restart edgelet` → same Docker container IDs; MS running |
+| **engine-lifecycle regression** | (regression) | after leave-running | `test/engine-lifecycle/run-all.sh` still green |
+| **embedded-restart** | `embedded-restart.sh` | runtime split active | restart **edgelet** only → CRI containers survive |
+| **embedded-runtime-restart** | `embedded-runtime-restart.sh` | runtime split active | restart containerd unit; poll until CRI drain (0 ctr rows), then MS reconciles |
+| **monolithic doc** | doc | pre-split | Monolithic embedded restart still drains MS |
 
 ## Runner
 
@@ -25,10 +24,10 @@
 
 `run-all.sh` builds **once** (`test/embedded/build.sh`), then:
 
-1. **T11-A/B:** `engine-lifecycle/setup.sh` → `vm-start` → docker engine + MS deploy → tests
-2. **T11-C/D:** `embedded/vm-start` → `install.sh` with Plan 11 split units + MS deploy → tests (strict — no skip)
+1. **docker / engine-lifecycle:** `engine-lifecycle/setup.sh` → `vm-start` → docker engine + MS deploy → tests
+2. **embedded split:** `embedded/vm-start` → `install.sh` with split units + MS deploy → tests (strict — no skip)
 
-## Install path (Plan 11-7)
+## Install path
 
 Embedded cases use the **production install path** shared with embedded IT:
 
@@ -36,7 +35,7 @@ Embedded cases use the **production install path** shared with embedded IT:
 - Split units: `edgelet-containerd.service` + `edgelet.service`
 - No manual bpf/crun prep in suite scripts
 
-## Embedded split gate (T11-C/D)
+## Embedded split gate
 
 All of:
 
@@ -45,18 +44,16 @@ All of:
 - `/etc/systemd/system/edgelet-containerd.service` present
 - At least one container in `ctr -n k8s.io containers list`
 
-After changing `edgelet-containerd.service`, reinstall on the VM (`install.sh` or copy the unit) and run `systemctl daemon-reload` before T11-C/D.
+After changing `edgelet-containerd.service`, reinstall on the VM (`install.sh` or copy the unit) and run `systemctl daemon-reload` before embedded split tests.
 
 ## Lima VMs
 
 | VM | Purpose |
 |----|---------|
-| `edgelet-engine-lifecycle` | T11-A, T11-B (docker + engine switch) |
-| `iofog-test` | T11-C, T11-D (embedded split via `install.sh`) |
+| `edgelet-engine-lifecycle` | docker-restart + engine-lifecycle regression |
+| `iofog-test` | embedded split via `install.sh` |
 
-## Related suites (Plan 11-7)
-
-This directory owns **T11-A–D** only. Other regression suites:
+## Related suites
 
 | Suite | Runner | VM |
 |-------|--------|-----|
@@ -65,7 +62,7 @@ This directory owns **T11-A–D** only. Other regression suites:
 | engine-lifecycle | `../engine-lifecycle/run-all.sh` | `edgelet-engine-lifecycle` |
 | init | `../init/run-all.sh` | `iofog-test`, Alpine OpenRC |
 
-Post–step 7: top-level `./test/run-all.sh --suite=workload-continuity` (and `--suite=embedded-cgroup-v1`, etc.).
+Top-level orchestrator:
 
 ```bash
 ./test/run-all.sh --suite=workload-continuity

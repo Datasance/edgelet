@@ -17,14 +17,14 @@ This document defines execution gates for a strict v1-only EdgeletAPI surface.
 - `go test ./internal/auth ./internal/edgeletapi ./internal/serviceaccount`
 - Verifies bootstrap/provisioned JWT policy and serviceaccount projection writes.
 
-## Gate 3: Storage (Plan 13)
+## Gate 3: Storage (schema v1)
 
 - `go test ./internal/store` — schema v1 contract (`001_edgelet_schema_v1.sql`, `schema_versions` max = 1), including:
   - `local_service_account_tokens`
   - `local_workloads`
   - `runtime_container_refs` (`scope` controller \| local)
-- **Wipe-only:** no in-place upgrade from pre–Plan 13 DBs — see [persistence.md](persistence.md)
-- **Lima (merge gate):** `./test/control-plane/run-all.sh` (includes store-backed CP + regression) and `./test/embedded/run-all.sh` on fresh VM — [Plan 13 tracker § Ready for review](../../.cursor/edgelet/plans/13-persistence.md#ready-for-review-pre-merge-closure--2026-06-04)
+- **Wipe-only:** no in-place upgrade from pre–v1 DBs — see [persistence.md](persistence.md)
+- **Lima (merge gate):** `./test/control-plane/run-all.sh` (includes store-backed CP + regression) and `./test/embedded/run-all.sh` on fresh VM
 
 ## Gate 4: Runtime API Binding
 

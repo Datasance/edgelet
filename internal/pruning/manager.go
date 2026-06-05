@@ -103,7 +103,7 @@ func (m *Manager) Start() error {
 	go m.thresholdPruningWorker()
 
 	// Start frequency-based pruning if configured (0 = disabled)
-	pruningFrequency := m.config.DockerPruningFrequency
+	pruningFrequency := m.config.PruningFrequency
 	runImmediate := m.shouldRunImmediateFrequencyPrune(pruningFrequency)
 	if pruningFrequency > 0 {
 		duration := time.Duration(pruningFrequency) * time.Hour
@@ -420,7 +420,7 @@ func (m *Manager) PruneAgent() string {
 // ChangePruningFreqInterval reschedules frequency-based pruning with new interval.
 // Cancels the old frequency goroutine before launching a new one to prevent leaks.
 func (m *Manager) ChangePruningFreqInterval() {
-	pruningFrequency := m.config.DockerPruningFrequency
+	pruningFrequency := m.config.PruningFrequency
 	runImmediate := m.shouldRunImmediateFrequencyPrune(pruningFrequency)
 
 	// Cancel the old frequency worker goroutine first.

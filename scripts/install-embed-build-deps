@@ -2,7 +2,7 @@
 # Install apt packages for static crun + embed pipeline.
 # Uses BUILDARCH (builder CPU) and TARGETARCH (artifact arch).
 #
-# Docker:  TARGETARCH + BUILDARCH from BuildKit (Dockerfile.edgelet-linux).
+# Docker:  TARGETARCH + BUILDARCH from BuildKit (Dockerfile).
 # CI:      TARGETARCH=<matrix.arch> BUILDARCH=<runner native> (release.yml).
 # Embedded image (--ci): native host + safe cross set for scripts/ci on that host.
 set -euo pipefail

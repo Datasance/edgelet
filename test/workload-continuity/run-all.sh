@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Plan 11 workload continuity IT master runner.
+# Workload continuity IT master runner.
 #
 # Usage:
 #   ./test/workload-continuity/run-all.sh
@@ -37,10 +37,10 @@ for arg in "$@"; do
 Usage: $0 [--case=NAME] [--skip-build] [--skip-setup] [--vm-docker=NAME] [--vm-embed=NAME]
 
 Cases:
-  docker-restart              T11-A only
-  embedded-restart            T11-C only
-  embedded-runtime-restart    T11-D only
-  (default)                   T11-A, T11-B, T11-C, T11-D when prerequisites allow
+  docker-restart              docker-restart only
+  embedded-restart            embedded control restart only
+  embedded-runtime-restart    embedded data-plane restart only
+  (default)                   docker-restart, engine-lifecycle regression, embedded control restart, embedded data-plane restart when prerequisites allow
 EOF
             exit 0
             ;;
@@ -69,7 +69,7 @@ run_docker_restart() {
 }
 
 run_engine_lifecycle_regression() {
-    log_info "T11-B regression: engine-lifecycle"
+    log_info "engine-lifecycle regression regression: engine-lifecycle"
     # VM already started by ensure_docker_vm; only run switch tests.
     "${REPO_ROOT}/test/engine-lifecycle/run-all.sh" \
         --skip-build --skip-setup --skip-start --vm-name="${VM_DOCKER}" || return 1

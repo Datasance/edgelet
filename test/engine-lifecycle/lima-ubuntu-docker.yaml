@@ -1,4 +1,4 @@
-# Lima VM for Plan 9A engine lifecycle IT — Ubuntu 24.04 + Docker + edgelet deps.
+# Lima VM for engine lifecycle IT — Ubuntu 24.04 + Docker + edgelet deps.
 vmType: vz
 os: Linux
 arch: aarch64

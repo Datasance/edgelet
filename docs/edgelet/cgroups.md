@@ -1,6 +1,6 @@
 # Edgelet cgroups (embedded engine)
 
-Plan 9B cgroup bootstrap for `containerEngine: edgelet` only. Docker and Podman keep using the host engine cgroup configuration.
+Cgroup bootstrap for `containerEngine: edgelet` only. Docker and Podman keep using the host engine cgroup configuration.
 
 ## Overview
 
@@ -33,7 +33,7 @@ When the cgroupfs driver is selected (nested containers, missing root cpuset, no
 
 Do **not** set `SystemdCgroup=true` for crun — it fails with systemd D-Bus or BPF errors when creating pod sandboxes. Do **not** combine `cgroup.path` with bare-metal systemd driver selection.
 
-## Nested `edgelet-linux` container
+## Nested edgelet container
 
 Development deploys of the scratch image inside Docker are supported when the container is started with **`--privileged`**:
 
@@ -41,7 +41,7 @@ Development deploys of the scratch image inside Docker are supported when the co
 docker run -d --name edgelet --privileged \
   -v /var/lib/edgelet:/var/lib/edgelet \
   -v /etc/edgelet:/etc/edgelet \
-  ghcr.io/datasance/edgelet-linux:<tag>
+  ghcr.io/datasance/edgelet:<tag>
 ```
 
 Without `--privileged`, cgroup controller delegation fails and edgelet exits or CRI returns errors such as `controller cpu is not available`.

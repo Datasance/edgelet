@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T11-D — embedded split: restart edgelet-containerd; MS stop then reconcile.
+# embedded data-plane restart — embedded split: restart edgelet-containerd; MS stop then reconcile.
 #
 # Usage:
 #   ./test/workload-continuity/embedded-runtime-restart.sh [--vm-name=iofog-test]
@@ -41,12 +41,12 @@ wait_cri_drained() {
     return 1
 }
 
-log_step "T11-D data-plane restart stops MS then reconciles"
+log_step "embedded data-plane restart data-plane restart stops MS then reconciles"
 
 wc_embedded_split_gate "${VM_NAME}" || die "embedded split gate failed — run run-all.sh or ensure install.sh split + MS"
 
 BEFORE_COUNT="$(cri_container_count)"
-[[ "${BEFORE_COUNT}" -gt 0 ]] || die "No CRI containers — deploy an MS before T11-D"
+[[ "${BEFORE_COUNT}" -gt 0 ]] || die "No CRI containers — deploy an MS before embedded data-plane restart"
 
 R "systemctl restart edgelet-containerd"
 

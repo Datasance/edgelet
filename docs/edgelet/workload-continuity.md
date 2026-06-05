@@ -1,11 +1,8 @@
 # Edgelet workload continuity (operator guide)
 
-> **Spec:** [.cursor/edgelet/docs/11-workload-continuity.md](../../.cursor/edgelet/docs/11-workload-continuity.md)  
-> **Contract:** [.cursor/edgelet/WORKLOAD-CONTINUITY.md](../../.cursor/edgelet/WORKLOAD-CONTINUITY.md)
-
 ## Principle
 
-Restarting **`edgelet`** (control plane) must **not** stop microservice containers unless you restart the **runtime** unit or perform a **cold engine change** (Plan 9A).
+Restarting **`edgelet`** (control plane) must **not** stop microservice containers unless you restart the **runtime** unit or perform a **cold engine change** (see [container-engine-lifecycle.md](container-engine-lifecycle.md)).
 
 | Layer | systemd unit | Owns |
 |-------|--------------|------|
@@ -30,6 +27,8 @@ Config (`/etc/edgelet/config.yaml`):
 ```yaml
 shutdownPolicy: leave-running   # default for docker/podman
 shutdownGracePeriodSeconds: 90  # used for optional maintenance / data-plane stops
+pruningFrequency: 24            # hours between image prune cycles (engine-neutral key)
+watchdogEnabled: true           # orphan container cleanup (short: wd)
 ```
 
 Verify after control restart:
@@ -45,16 +44,16 @@ Reattach uses **labels + DB** — not Docker `RestartPolicy`.
 
 ## embedded engine (runtime split)
 
-After Plan 11-4, production embedded installs use two units:
+Production embedded installs use two units:
 
 ```bash
-systemctl restart edgelet              # control only — MS survive (T11-C)
-systemctl restart edgelet-containerd   # data plane — MS stop then reconcile (T11-D)
+systemctl restart edgelet              # control only — MS survive
+systemctl restart edgelet-containerd   # data plane — MS stop then reconcile
 ```
 
-Cgroup bootstrap (**C1**) runs in `edgelet runtime-bootstrap` on the containerd unit. Control unit **attach-only** (`EDGELET_RUNTIME_SPLIT=1`).
+Cgroup bootstrap runs in `edgelet runtime-bootstrap` on the containerd unit. Control unit **attach-only** (`EDGELET_RUNTIME_SPLIT=1`).
 
-**systemd coupling:** `edgelet-containerd.service` is **not** `PartOf=edgelet.service`. Stopping or restarting **only** `edgelet` leaves the data plane running (T11-C).
+**systemd coupling:** `edgelet-containerd.service` is **not** `PartOf=edgelet.service`. Stopping or restarting **only** `edgelet` leaves the data plane running.
 
 **Full embedded shutdown** (backup, uninstall, wipe):
 
@@ -62,11 +61,35 @@ Cgroup bootstrap (**C1**) runs in `edgelet runtime-bootstrap` on the containerd 
 sudo systemctl stop edgelet-containerd.service edgelet.service
 ```
 
+### Unit dependency (systemd)
+
+```mermaid
+flowchart LR
+  subgraph data [edgelet-containerd.service]
+    bootstrap[runtime-bootstrap]
+    ctd[containerd + MS]
+  end
+  subgraph control [edgelet.service]
+    sup[supervisor reconcile]
+  end
+  bootstrap --> ctd
+  control -->|Wants + After| data
+  control -->|CRI attach| ctd
+```
+
+| Unit | `Wants` / `After` | Bootstrap |
+|------|-------------------|-----------|
+| `edgelet-containerd.service` | `network-online.target` | `edgelet runtime-bootstrap` |
+| `edgelet.service` | `edgelet-containerd.service` | attach-only (no subtree mutation) |
+| openrc `edgelet-containerd` | `before edgelet` | light `cgroup-preflight` in `start_pre` |
+
 ---
 
 ## Before runtime split (monolithic embedded)
 
-Until **`edgelet-containerd.service`** is active with runtime split, a monolithic `systemctl restart edgelet` still **drains MS** (`shutdownPolicy=drain-all` default). Expect brief MS outage (Q12b).
+Until **`edgelet-containerd.service`** is active with runtime split, a monolithic `systemctl restart edgelet` still **drains MS** (`shutdownPolicy=drain-all` default). Expect brief MS outage.
+
+**Migration:** enable `edgelet-containerd`, install `edgelet.service.d/edgelet.conf` drop-in, restart data plane then control.
 
 ---
 
@@ -78,9 +101,9 @@ Until **`edgelet-containerd.service`** is active with runtime split, a monolithi
 
 ---
 
-## Cold engine change (unchanged — Plan 9A)
+## Cold engine change (unchanged)
 
-Changing **`containerEngine`** still requires quiesce, MS cleanup, `pendingRestart`, service restart, and recreate from DB. Plan 11 does **not** relax this path.
+Changing **`containerEngine`** still requires quiesce, MS cleanup, `pendingRestart`, service restart, and recreate from DB. Workload continuity does **not** relax this path.
 
 ---
 
@@ -103,7 +126,7 @@ See [deployment.md](deployment.md) and install docs for hash-based OTA details.
 ./test/workload-continuity/run-all.sh --case=embedded-restart
 ```
 
-### Suite matrix (Plan 11-7)
+### Related regression suites
 
 | Suite | Runner | VM |
 |-------|--------|-----|
@@ -111,4 +134,4 @@ See [deployment.md](deployment.md) and install docs for hash-based OTA details.
 | embedded (v2) | `test/embedded/run-all.sh` | `iofog-test` |
 | embedded-cgroup-v1 | `test/embedded/run-all-cgroup-v1.sh` | `iofog-test-v1` (hybrid v1) |
 
-Full IT consolidation plan: [.cursor/edgelet/docs/11-workload-continuity.md](../../.cursor/edgelet/docs/11-workload-continuity.md) (Phase 11-7).
+Unified orchestrator: `./test/run-all.sh` (see [test/workload-continuity/README.md](../../test/workload-continuity/README.md)).

@@ -30,7 +30,7 @@ var infoOutputOrder = []string{
 	"controllerCert",
 	"secureMode",
 	"containerEngine",
-	"dockerUrl",
+	"containerEngineUrl",
 	"arch",
 	"availableDiskThreshold",
 	"changeFrequency",
@@ -67,7 +67,6 @@ var infoAliasToCanonical = map[string]string{
 	"logLevel":             "logFilesLevel",
 	"upgradeScanFrequency": "readyToUpgradeScanFrequency",
 	"deviceScanFrequency":  "scanDevicesFrequency",
-	"pruningFrequency":     "dockerPruningFrequency",
 }
 
 // FormatEdgeletAPIHuman renders human-readable output for a EdgeletAPI v1 route payload.

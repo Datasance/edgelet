@@ -85,12 +85,12 @@ func TestEngineUnavailable(t *testing.T) {
 	// Use Docker with non-existent socket to simulate engine unavailable
 	cfg := config.GetInstance()
 	originalEngine := cfg.ContainerEngine
-	originalDockerURL := cfg.DockerURL
+	originalContainerEngineURL := cfg.ContainerEngineURL
 	cfg.ContainerEngine = "docker"
-	cfg.DockerURL = "unix:///var/run/nonexistent-docker.sock"
+	cfg.ContainerEngineURL = "unix:///var/run/nonexistent-docker.sock"
 	defer func() {
 		cfg.ContainerEngine = originalEngine
-		cfg.DockerURL = originalDockerURL
+		cfg.ContainerEngineURL = originalContainerEngineURL
 	}()
 
 	sup := supervisor.NewSupervisor()
