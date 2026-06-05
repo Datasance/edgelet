@@ -18,7 +18,33 @@ depend() {
 
 start_pre() {
     # C3: light preflight only; primary cgroup bootstrap is in runtime-bootstrap (C1).
+    mountpoint -q /sys/fs/bpf 2>/dev/null || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
     /usr/local/bin/edgelet cgroup-preflight || return $?
+}
+
+start_post() {
+    # Block dependency satisfaction until CRI socket answers (Plan 11 split).
+    _timeout="${EDGELET_CONTAINERD_READY_SEC:-120}"
+    _elapsed=0
+    _sock="/run/edgelet/containerd.sock"
+    while [ "${_elapsed}" -lt "${_timeout}" ]; do
+        if [ -S "${_sock}" ] || [ -S /var/run/edgelet/containerd.sock ]; then
+            [ -S "${_sock}" ] || _sock="/var/run/edgelet/containerd.sock"
+            _ctr=""
+            if [ -x /var/lib/edgelet/data/current/bin/ctr ]; then
+                _ctr=/var/lib/edgelet/data/current/bin/ctr
+            elif command -v ctr >/dev/null 2>&1; then
+                _ctr=ctr
+            fi
+            if [ -z "${_ctr}" ] || "${_ctr}" --address "${_sock}" version >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        sleep 2
+        _elapsed=$(( _elapsed + 2 ))
+    done
+    ewarn "containerd socket not ready after ${_timeout}s"
+    return 1
 }
 
 stop() {
@@ -27,8 +53,16 @@ stop() {
         _pid=$(cat "${pidfile}" 2>/dev/null || true)
         if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
             kill -TERM "${_pid}" 2>/dev/null || true
-            sleep 2
-            kill -KILL "${_pid}" 2>/dev/null || true
+            _grace="${EDGELET_CONTAINERD_STOP_SEC:-30}"
+            _elapsed=0
+            while kill -0 "${_pid}" 2>/dev/null; do
+                if [ "${_elapsed}" -ge "${_grace}" ]; then
+                    kill -KILL "${_pid}" 2>/dev/null || true
+                    break
+                fi
+                sleep 2
+                _elapsed=$(( _elapsed + 2 ))
+            done
         fi
     fi
     rm -f "${pidfile}" 2>/dev/null || true
