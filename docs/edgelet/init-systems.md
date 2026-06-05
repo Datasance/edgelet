@@ -89,9 +89,16 @@ Split embedded units are **siblings**: `Wants`/`After` on `edgelet.service` only
 - Stub: `/etc/init.d/edgelet-containerd` (runtime split chain)
 
 ```bash
-rc-service edgelet start
+rc-service edgelet-containerd restart   # need edgelet-containerd also restarts edgelet
 rc-service edgelet stop
 ```
+
+**Split embedded:** `need edgelet-containerd` means `rc-service edgelet-containerd restart`
+stops and restarts `edgelet` automatically. Do **not** chain `rc-service edgelet restart`
+immediately after — that double-cycles the control plane and can fail attach.
+For control-only restart (MS survive): `rc-service edgelet restart` alone.
+OpenRC units wait for `/run/edgelet/containerd.sock` in `start_post` / `start_pre`; control
+plane uses `supervise-daemon` respawn (`respawn_max=0`, parity with systemd `Restart=always`).
 
 ### Logging (openrc)
 

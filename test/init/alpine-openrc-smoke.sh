@@ -18,6 +18,8 @@ source "${REPO_ROOT}/test/embedded/lib/log.sh"
 source "${SCRIPT_DIR}/lib/stage-install-bundle.sh"
 # shellcheck source=test/init/lib/lima.sh
 source "${SCRIPT_DIR}/lib/lima.sh"
+# shellcheck source=test/init/lib/openrc-split-gate.sh
+source "${SCRIPT_DIR}/lib/openrc-split-gate.sh"
 
 VM_NAME="edgelet-openrc"
 TARGET_ARCH="arm64"
@@ -71,9 +73,17 @@ run_remote "
     ${STAGE}/install.sh --bin-path=${STAGE}/edgelet --version=dev-t10b --arch=${TARGET_ARCH} --container-engine=edgelet
 "
 
-run_remote "rc-service edgelet status" || true
-run_remote "rc-service edgelet-containerd restart"
-run_remote "rc-service edgelet restart"
-run_remote "pgrep -f '[e]dgelet daemon'"
+log_step "OpenRC split restart (data plane only; need restarts edgelet)"
+run_remote "API_WAIT_SEC=180
+${OPENRC_RESTART_DATAPLANE_SNIPPET}
+${OPENRC_WAIT_SPLIT_READY_SNIPPET}"
+
+run_remote "
+    set -e
+    rc-service edgelet status
+    test -S /run/edgelet/containerd.sock
+    test -S /run/edgelet/edgelet.sock
+    edgelet system status -o json | jq -e '.[\"runtime.engineReady\"] == \"true\"' >/dev/null
+"
 
 log_success "Alpine openrc smoke Alpine openrc smoke passed"

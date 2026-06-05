@@ -80,9 +80,9 @@ if [[ "${AFTER_T10_B}" == true ]]; then
     if ! run_remote "test -x /usr/local/bin/edgelet"; then
         die "Alpine openrc runtime smoke --after-t10-b requires edgelet installed from alpine-openrc-smoke.sh"
     fi
-    log_info "Restart split OpenRC units after Alpine openrc smoke binary refresh"
-    run_remote "rc-service edgelet-containerd restart"
-    run_remote "rc-service edgelet restart"
+    log_info "Smoke already validated split restart — confirm readiness"
+    run_remote "API_WAIT_SEC=120
+${EMBED_RUNTIME_WAIT_API_SNIPPET}"
 else
     log_info "Fresh install path (stage + install.sh)"
     stage_install_bundle_ssh "${SSH_CONFIG}" "${SSH_HOST}" "${STAGE}" "${REPO_ROOT}" "${BIN}"
@@ -93,14 +93,13 @@ else
         chmod +x ${STAGE}/install.sh ${STAGE}/edgelet ${STAGE}/scripts/edgelet-shutdown
         ${STAGE}/install.sh --bin-path=${STAGE}/edgelet --version=dev-t10b-runtime --arch=${TARGET_ARCH} --container-engine=edgelet
     "
+    log_step "Wait for split install readiness (install.sh starts units via need)"
+    run_remote "API_WAIT_SEC=240
+${EMBED_RUNTIME_WAIT_API_SNIPPET}"
 fi
 
 log_step "Fat runtime must be statically linked (static embed default)"
 run_remote "${EMBED_RUNTIME_ASSERT_STATIC_SNIPPET}"
-
-log_step "Wait for EdgeletAPI + embedded engine (up to 240s)"
-run_remote "API_WAIT_SEC=240
-${EMBED_RUNTIME_WAIT_API_SNIPPET}"
 
 log_step "EdgeletAPI and cgroupfs driver on non-systemd"
 run_remote "
@@ -138,16 +137,25 @@ EOF
     edgelet ms ls | grep -q t10b-runtime-ms
 "
 
-log_step "rc-service edgelet restart stability (bounded stop + runtime cleanup)"
+log_step "OpenRC control-plane restart stability (data plane stays up)"
 run_remote "STOP_TIMEOUT_SEC=180
 API_WAIT_SEC=180
 ${EMBED_RUNTIME_RESTART_SNIPPET}"
+run_remote "MS_NAME=t10b-runtime-ms
+MS_WAIT_SEC=120
+${EMBED_RUNTIME_OPENRC_WAIT_MS_SNIPPET}"
 run_remote "
     set -e
-    edgelet ms ls | grep -q t10b-runtime-ms
     test \"\$(pgrep -f edgelet-containerd-child | wc -l | tr -d ' ')\" -eq 1
-    test -S /run/edgelet/containerd.sock
-    test -S /run/edgelet/edgelet.sock
+    test -S /run/edgelet/containerd.sock || test -S /var/run/edgelet/containerd.sock
+    test -S /run/edgelet/edgelet.sock || test -S /var/run/edgelet/edgelet.sock
 "
+
+log_step "OpenRC data-plane restart (MS stop then reconcile via need)"
+run_remote "API_WAIT_SEC=240
+${EMBED_RUNTIME_OPENRC_RESTART_DATAPLANE_SNIPPET}"
+run_remote "MS_NAME=t10b-runtime-ms
+MS_WAIT_SEC=240
+${EMBED_RUNTIME_OPENRC_WAIT_MS_SNIPPET}"
 
 log_success "Alpine openrc runtime smoke Alpine openrc runtime smoke passed"

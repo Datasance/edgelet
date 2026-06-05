@@ -4,6 +4,11 @@
 
 # shellcheck shell=bash
 
+# shellcheck source=test/init/lib/openrc-split-gate.sh
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${_SCRIPT_DIR}/openrc-split-gate.sh"
+
 # Remote bash snippet: reap stray --edgelet-containerd-child (BusyBox-safe pgrep).
 # Optional STOP_OPENRC=1 runs rc-service edgelet stop first (may take up to STOP_TIMEOUT_SEC).
 EMBED_RUNTIME_CLEANUP_SNIPPET='set -e
@@ -44,8 +49,8 @@ EMBED_RUNTIME_WAIT_API_SNIPPET='set -e
 _elapsed=0
 _timeout="${API_WAIT_SEC:-180}"
 while [ "${_elapsed}" -lt "${_timeout}" ]; do
-  if [ -S /run/edgelet/edgelet.sock ] && \
-     [ -S /run/edgelet/containerd.sock ] && \
+  if { [ -S /run/edgelet/edgelet.sock ] || [ -S /var/run/edgelet/edgelet.sock ]; } && \
+     { [ -S /run/edgelet/containerd.sock ] || [ -S /var/run/edgelet/containerd.sock ]; } && \
      edgelet system status 2>/dev/null | grep -q iofogDaemon && \
      edgelet system status -o json 2>/dev/null | jq -e ".[\"runtime.engineReady\"] == \"true\"" >/dev/null; then
     exit 0
@@ -73,6 +78,7 @@ else
 fi'
 
 # Remote bash snippet: bounded OpenRC stop (edgelet-shutdown; no SSD --retry hang).
+# Control-plane only — do not kill edgelet-containerd-child (Plan 11 split data plane).
 EMBED_RUNTIME_OPENRC_STOP_SNIPPET='set -e
 _stop_timeout="${STOP_TIMEOUT_SEC:-120}"
 rc-service edgelet stop &
@@ -86,14 +92,21 @@ while kill -0 "${_spid}" 2>/dev/null; do
   sleep 2
   _elapsed=$(( _elapsed + 2 ))
 done
-wait "${_spid}" 2>/dev/null || true
-_pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
-for _p in ${_pids}; do kill -TERM "${_p}" 2>/dev/null || true; done
-sleep 1
-_pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
-for _p in ${_pids}; do kill -KILL "${_p}" 2>/dev/null || true; done'
+wait "${_spid}" 2>/dev/null || true'
+
+# Remote bash snippet: OpenRC data-plane restart (need edgelet-containerd restarts edgelet).
+# Never chain rc-service edgelet restart after this.
+EMBED_RUNTIME_OPENRC_RESTART_DATAPLANE_HEAD="${OPENRC_RESTART_DATAPLANE_SNIPPET}"
+EMBED_RUNTIME_OPENRC_RESTART_DATAPLANE_SNIPPET="${EMBED_RUNTIME_OPENRC_RESTART_DATAPLANE_HEAD}
+API_WAIT_SEC=\"\${API_WAIT_SEC:-180}\"
+${OPENRC_WAIT_SPLIT_READY_SNIPPET}"
+
+# Remote bash snippet: poll MS running after OpenRC restart (API + reconcile).
+# Env: MS_NAME, MS_WAIT_SEC (optional).
+EMBED_RUNTIME_OPENRC_WAIT_MS_SNIPPET="${OPENRC_WAIT_MS_RUNNING_SNIPPET}"
 
 # Remote bash snippet: OpenRC restart (stop + start + API wait).
+# Control-plane only — containerd stays up.
 EMBED_RUNTIME_RESTART_SNIPPET='set -e
 STOP_TIMEOUT_SEC="${STOP_TIMEOUT_SEC:-180}"
 '"${EMBED_RUNTIME_OPENRC_STOP_SNIPPET}"'
