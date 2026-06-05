@@ -60,8 +60,18 @@ func runDaemon() {
 	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
 		if runtimeSplit {
 			attached := edgeletcontainerdd.NewAttachedService()
-			if err := attached.Start(); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", err)
+			var attachErr error
+			for attempt := 1; attempt <= 3; attempt++ {
+				attachErr = attached.Start()
+				if attachErr == nil {
+					break
+				}
+				logging.LogWarn("MAIN_DAEMON", fmt.Sprintf(
+					"Attach to data-plane containerd attempt %d/3 failed: %v", attempt, attachErr))
+				time.Sleep(5 * time.Second)
+			}
+			if attachErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", attachErr)
 				os.Exit(1)
 			}
 			prestarted = attached
