@@ -23,7 +23,9 @@ func TestDockerConnection(t *testing.T) {
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	// Test Docker info via GetClient
 	cli := client.GetClient()
@@ -54,7 +56,9 @@ func TestDockerImagePull(t *testing.T) {
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	// Test pulling a small image
 	testImage := "alpine:latest"
@@ -80,7 +84,9 @@ func TestDockerContainerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	// Ensure alpine image exists
 	testImage := "alpine:latest"

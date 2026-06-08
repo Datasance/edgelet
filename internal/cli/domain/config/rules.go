@@ -3,9 +3,10 @@ package config
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -61,22 +62,22 @@ var configKeyRules = map[string]configKeyRule{
 	"timezone":               {Key: "timezone", Aliases: []string{"tz"}, Type: configValueString, Help: "timezone"},
 }
 
-func validateAndNormalizeConfigValue(rule configKeyRule, value string) (interface{}, error) {
+func validateAndNormalizeConfigValue(rule configKeyRule, value string) (any, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return nil, fmt.Errorf("value cannot be empty")
+		return nil, errors.New("value cannot be empty")
 	}
 	if rule.Key == "controllerCert" {
 		data, err := os.ReadFile(value) // #nosec G304 -- user-supplied path intentionally validated for local cert file
 		if err != nil {
-			return nil, fmt.Errorf("must be a readable PEM certificate file path")
+			return nil, errors.New("must be a readable PEM certificate file path")
 		}
 		block, _ := pem.Decode(data)
 		if block == nil || block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("must be a readable PEM certificate file path")
+			return nil, errors.New("must be a readable PEM certificate file path")
 		}
 		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-			return nil, fmt.Errorf("must be a readable PEM certificate file path")
+			return nil, errors.New("must be a readable PEM certificate file path")
 		}
 		return value, nil
 	}
@@ -84,13 +85,13 @@ func validateAndNormalizeConfigValue(rule configKeyRule, value string) (interfac
 	case configValueInt:
 		i, err := strconv.Atoi(value)
 		if err != nil {
-			return nil, fmt.Errorf("must be an integer")
+			return nil, errors.New("must be an integer")
 		}
 		return i, nil
 	case configValueFloat:
 		f, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return nil, fmt.Errorf("must be a number")
+			return nil, errors.New("must be a number")
 		}
 		return f, nil
 	case configValueBool:
@@ -100,7 +101,7 @@ func validateAndNormalizeConfigValue(rule configKeyRule, value string) (interfac
 		case "false", "0", "off", "no":
 			return false, nil
 		default:
-			return nil, fmt.Errorf("must be one of true|false|on|off|1|0")
+			return nil, errors.New("must be one of true|false|on|off|1|0")
 		}
 	default:
 		if len(rule.Enums) > 0 {
@@ -120,6 +121,6 @@ func sortedConfigRuleKeys() []string {
 	for key := range configKeyRules {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }

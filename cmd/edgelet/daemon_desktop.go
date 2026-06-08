@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/datasance/edgelet/internal/branding"
@@ -23,33 +21,33 @@ import (
 // exitDaemon removes the PID file then exits. defer does not run on os.Exit.
 func exitDaemon(code int) {
 	_ = utils.RemovePIDFile()
-	os.Exit(code)
+	os.Exit(code) //nolint:revive // deep-exit: centralized daemon exit helper
 }
 
 func runDaemon() {
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		exitDaemon(1)
 	}
 
 	if err := config.ValidateConfig(config.GetInstance()); err != nil {
-		fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
+		exitDaemon(1)
 	}
 
 	setupEnvironment()
 	startLoggingService()
 
 	if utils.IsAnotherInstanceRunning() {
-		fmt.Println("Edgelet is already running.")
-		os.Exit(0)
+		_, _ = fmt.Println("Edgelet is already running.")
+		exitDaemon(0)
 	}
 
 	if err := utils.WritePIDFile(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write PID file: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to write PID file: %v\n", err)
+		exitDaemon(1)
 	}
-	defer utils.RemovePIDFile()
+	defer func() { _ = utils.RemovePIDFile() }()
 
 	cfg := config.GetInstance()
 
@@ -58,8 +56,8 @@ func runDaemon() {
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
-			os.Exit(1)
+			_, _ = fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
+			exitDaemon(1)
 		}
 		logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor")
 	}
@@ -69,7 +67,7 @@ func runDaemon() {
 		sup.SetPrestartedContainerd(prestarted)
 	}
 	if err := sup.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
 		exitDaemon(1)
 	}
 
@@ -79,22 +77,20 @@ func runDaemon() {
 	} else {
 		watcher.OnChange(func() {
 			if config.IsReloadSuppressedForDeprovision() {
-				logging.LogDebug("Daemon", "Skipping SIGHUP for deprovision config save")
+				logging.LogDebug("Daemon", "Skipping config reload for deprovision config save")
 				return
 			}
 			if config.IsReloadSuppressedForInProcessMutation() {
-				logging.LogDebug("Daemon", "Skipping SIGHUP for in-process config mutation")
+				logging.LogDebug("Daemon", "Skipping config reload for in-process config mutation")
 				return
 			}
-			logging.LogInfo("Daemon", "Configuration file changed, sending SIGHUP to trigger reload...")
-			if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
-				logging.LogError("Daemon", "Failed to send SIGHUP for config reload", err)
-			}
+			logging.LogInfo("Daemon", "Configuration file changed, triggering reload...")
+			onConfigFileChanged(sup)
 		})
 	}
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	registerDaemonSignals(sigChan)
 
 	var lastReloadTime time.Time
 	const reloadDebounceInterval = 2 * time.Second
@@ -103,7 +99,7 @@ func runDaemon() {
 		sig := <-sigChan
 		logging.LogInfo("Daemon", fmt.Sprintf("Received signal: %v", sig))
 
-		if sig == syscall.SIGHUP {
+		if isConfigReloadSignal(sig) {
 			now := time.Now()
 			if now.Sub(lastReloadTime) < reloadDebounceInterval {
 				logging.LogInfo("Daemon", "Ignoring SIGHUP (debounce)")
@@ -147,8 +143,8 @@ func runDaemon() {
 func setupEnvironment() {
 	mkErr := os.MkdirAll(utils.VarRun, 0755) // #nosec G301
 	if mkErr != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
+		exitDaemon(1)
 	}
 }
 
@@ -160,13 +156,12 @@ func startLoggingService() {
 	cfg := config.GetInstance()
 	logo += fmt.Sprintf("  Log Level: %s\n", cfg.LogLevel)
 	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDiskDirectory)
-
-	fmt.Print(logo)
+	_, _ = fmt.Print(logo)
 
 	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
 	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
+		exitDaemon(1)
 	}
 
 	logging.LogInfo("MAIN_DAEMON", "Configuration loaded.")

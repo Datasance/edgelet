@@ -17,18 +17,18 @@ var ErrControlPlaneNotFound = errors.New("control plane deployment not found")
 // SyncApplyControlPlaneDeployment persists and synchronously launches or recreates the controller container.
 func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPlaneDeployment, progress LocalDeployProgressCallback) error {
 	if item == nil {
-		return fmt.Errorf("control plane deployment is nil")
+		return errors.New("control plane deployment is nil")
 	}
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 
 	item.NormalizeDefaults()
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item.DesiredState = "running"
 	item.DeletedAt = nil
-	item.LastStartAttemptAt = now
-	item.LastTransitionAt = now
+	item.LastStartAttemptAt = nowSec
+	item.LastTransitionAt = nowSec
 
 	container, contErr := pm.containerForControlPlane(item.ControllerUUID, item.ContainerID)
 	if contErr != nil {
@@ -36,11 +36,11 @@ func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPl
 	}
 
 	if container != nil {
-		if err := pm.recreateControlPlaneDeploymentWithProgress(item, false, now, progress); err != nil {
+		if err := pm.recreateControlPlaneDeploymentWithProgress(item, false, nowSec, progress); err != nil {
 			return err
 		}
 	} else {
-		pm.launchControlPlaneWithProgress(item, now, progress)
+		pm.launchControlPlaneWithProgress(item, nowSec, progress)
 	}
 
 	got, found, err := store.GetInstance().GetSystemControlPlane()
@@ -48,13 +48,13 @@ func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPl
 		return err
 	}
 	if !found || got == nil {
-		return fmt.Errorf("control plane deployment missing after apply")
+		return errors.New("control plane deployment missing after apply")
 	}
 	if strings.EqualFold(strings.TrimSpace(got.RuntimeState), "failed") {
 		if msg := strings.TrimSpace(got.LastError); msg != "" {
 			return fmt.Errorf("%s", msg)
 		}
-		return fmt.Errorf("control plane launch failed")
+		return errors.New("control plane launch failed")
 	}
 	return nil
 }
@@ -83,10 +83,7 @@ func (pm *ProcessManager) DeleteControlPlane() error {
 
 	pm.removeControlPlaneVolumes()
 
-	if err := store.GetInstance().DeleteSystemControlPlane(); err != nil {
-		return err
-	}
-	return nil
+	return store.GetInstance().DeleteSystemControlPlane()
 }
 
 func (pm *ProcessManager) removeControlPlaneVolumes() {

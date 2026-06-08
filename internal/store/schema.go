@@ -142,9 +142,9 @@ func splitStatements(sql string) []string {
 			continue
 		}
 		if buf.Len() > 0 {
-			buf.WriteByte('\n')
+			_ = buf.WriteByte('\n')
 		}
-		buf.WriteString(trimmed)
+		_, _ = buf.WriteString(trimmed)
 	}
 	flush()
 	return result

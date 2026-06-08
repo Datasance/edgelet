@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -168,7 +169,7 @@ func ValidateProperty(key, value string) error {
 			return fmt.Errorf("invalid memory limit value: %w", err)
 		}
 		if val < 128 || val > 1048576 {
-			return fmt.Errorf("memory limit must be between 128 and 1048576 MB")
+			return errors.New("memory limit must be between 128 and 1048576 MB")
 		}
 	case "cpuLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -176,7 +177,7 @@ func ValidateProperty(key, value string) error {
 			return fmt.Errorf("invalid CPU limit value: %w", err)
 		}
 		if val < 5 || val > 100 {
-			return fmt.Errorf("CPU limit must be between 5%% and 100%%")
+			return errors.New("CPU limit must be between 5% and 100%")
 		}
 	case "logLimit":
 		val, err := strconv.ParseFloat(value, 64)
@@ -192,7 +193,7 @@ func ValidateProperty(key, value string) error {
 			return fmt.Errorf("invalid log file count value: %w", err)
 		}
 		if val < 1 || val > 100 {
-			return fmt.Errorf("log file count must be between 1 and 100")
+			return errors.New("log file count must be between 1 and 100")
 		}
 	case "logLevel":
 		validLogLevels := map[string]bool{
@@ -204,7 +205,7 @@ func ValidateProperty(key, value string) error {
 			"OFF":   true,
 		}
 		if !validLogLevels[strings.ToUpper(value)] {
-			return fmt.Errorf("log level must be one of: DEBUG, INFO, WARN, ERROR, FATAL, OFF")
+			return errors.New("log level must be one of: DEBUG, INFO, WARN, ERROR, FATAL, OFF")
 		}
 	case "statusFrequency", "changeFrequency", "deviceScanFrequency":
 		val, err := strconv.Atoi(value)
@@ -212,7 +213,7 @@ func ValidateProperty(key, value string) error {
 			return fmt.Errorf("invalid frequency value: %w", err)
 		}
 		if val < 1 {
-			return fmt.Errorf("frequency must be greater than 0")
+			return errors.New("frequency must be greater than 0")
 		}
 	case "edgeGuardFrequency", "gpsScanFrequency":
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -220,14 +221,14 @@ func ValidateProperty(key, value string) error {
 			return fmt.Errorf("invalid frequency value: %w", err)
 		}
 		if val < 0 {
-			return fmt.Errorf("frequency must be positive")
+			return errors.New("frequency must be positive")
 		}
 	case "gpsMode":
 		mode := strings.ToLower(strings.TrimSpace(value))
 		switch mode {
 		case "auto", "dynamic", "manual", "off":
 		default:
-			return fmt.Errorf("GPS mode must be one of: auto, dynamic, manual, off")
+			return errors.New("GPS mode must be one of: auto, dynamic, manual, off")
 		}
 	case "gpsCoordinates":
 		if _, err := normalizeGPSCoordinates(value); err != nil {
@@ -235,7 +236,7 @@ func ValidateProperty(key, value string) error {
 		}
 	case "containerEngineUrl":
 		if value != "" && !strings.HasPrefix(value, "tcp://") && !strings.HasPrefix(value, "unix://") {
-			return fmt.Errorf("container engine URL must start with 'tcp://' or 'unix://'")
+			return errors.New("container engine URL must start with 'tcp://' or 'unix://'")
 		}
 	case "shutdownPolicy":
 		switch strings.ToLower(strings.TrimSpace(value)) {

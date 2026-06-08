@@ -13,11 +13,11 @@ import (
 )
 
 func bootstrapClaims() jwt.MapClaims {
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	return jwt.MapClaims{
-		"iat":      now,
-		"nbf":      now,
-		"exp":      now + 300,
+		"iat":      nowSec,
+		"nbf":      nowSec,
+		"exp":      nowSec + 300,
 		"jti":      "bootstrap-jti",
 		"iss":      jwtIssuer,
 		"aud":      []string{edgeletAPIAudience},
@@ -32,7 +32,7 @@ func createEd25519JWKBase64(t *testing.T) string {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
 	seed := privateKey.Seed()
-	jwk := map[string]interface{}{
+	jwk := map[string]any{
 		"kty": "OKP",
 		"crv": "Ed25519",
 		"d":   base64.RawURLEncoding.EncodeToString(seed),

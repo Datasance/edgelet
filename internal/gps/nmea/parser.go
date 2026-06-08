@@ -1,6 +1,7 @@
 package nmea
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -16,7 +17,7 @@ type Message interface {
 func Parse(sentence string) (Message, error) {
 	sentence = strings.TrimSpace(sentence)
 	if !strings.HasPrefix(sentence, "$") {
-		return nil, fmt.Errorf("invalid NMEA sentence: missing $ prefix")
+		return nil, errors.New("invalid NMEA sentence: missing $ prefix")
 	}
 
 	// Remove $ and checksum if present
@@ -26,7 +27,7 @@ func Parse(sentence string) (Message, error) {
 	// Split into fields
 	fields := strings.Split(body, ",")
 	if len(fields) < 2 {
-		return nil, fmt.Errorf("invalid NMEA sentence: too few fields")
+		return nil, errors.New("invalid NMEA sentence: too few fields")
 	}
 
 	// Parse based on sentence type
@@ -44,7 +45,7 @@ func Parse(sentence string) (Message, error) {
 // parseGGA parses a GGA (Global Positioning System Fix Data) sentence
 func parseGGA(fields []string) (*GGAMessage, error) {
 	if len(fields) < 15 {
-		return nil, fmt.Errorf("invalid GGA sentence: too few fields")
+		return nil, errors.New("invalid GGA sentence: too few fields")
 	}
 
 	msg := &GGAMessage{}
@@ -80,7 +81,7 @@ func parseGGA(fields []string) (*GGAMessage, error) {
 // parseRMC parses an RMC (Recommended Minimum Specific GPS/Transit Data) sentence
 func parseRMC(fields []string) (*RMCMessage, error) {
 	if len(fields) < 12 {
-		return nil, fmt.Errorf("invalid RMC sentence: too few fields")
+		return nil, errors.New("invalid RMC sentence: too few fields")
 	}
 
 	msg := &RMCMessage{}
@@ -114,12 +115,12 @@ func parseRMC(fields []string) (*RMCMessage, error) {
 // parseCoordinate parses a coordinate in NMEA format (DDMM.MMMM, N/S/E/W)
 func parseCoordinate(coordStr, direction string) (float64, error) {
 	if coordStr == "" {
-		return 0, fmt.Errorf("empty coordinate")
+		return 0, errors.New("empty coordinate")
 	}
 
 	// Parse degrees (first 2 digits) and minutes (rest)
 	if len(coordStr) < 2 {
-		return 0, fmt.Errorf("coordinate too short")
+		return 0, errors.New("coordinate too short")
 	}
 
 	var degrees, minutes float64

@@ -37,7 +37,7 @@ func MapAPIError(err error) error {
 }
 
 // WriteRouteData writes API payload to stdout using the selected output format.
-func WriteRouteData(ctx *CLIContext, routePath string, data map[string]interface{}) error {
+func WriteRouteData(ctx *CLIContext, routePath string, data map[string]any) error {
 	if ctx == nil {
 		return NewCLIError(CodeInternal, "cli context is nil", nil)
 	}
@@ -191,7 +191,7 @@ func writeBytes(w io.Writer, raw []byte) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	if _, err := io.WriteString(w, string(raw)); err != nil {
+	if _, err := w.Write(raw); err != nil {
 		return err
 	}
 	if !strings.HasSuffix(string(raw), "\n") {

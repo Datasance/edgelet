@@ -2,15 +2,14 @@ package client
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/datasance/edgelet/internal/cli/output"
@@ -30,9 +29,6 @@ func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
 	done := make(chan struct{})
 	var doneOnce sync.Once
 	exitCode := 0
-	resizeDone := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH)
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		if oldState, rawErr := term.MakeRaw(int(os.Stdin.Fd())); rawErr == nil {
 			defer func() {
@@ -45,19 +41,14 @@ func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
 		if err != nil {
 			return
 		}
-		_ = conn.WriteJSON(map[string]interface{}{
+		_ = conn.WriteJSON(map[string]any{
 			"type": "resize",
 			"cols": cols,
 			"rows": rows,
 		})
 	}
 	sendResize()
-	go func() {
-		defer close(resizeDone)
-		for range sigCh {
-			sendResize()
-		}
-	}()
+	stopResize := watchExecResize(sendResize)
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -80,17 +71,13 @@ func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
 	for {
 		select {
 		case <-done:
-			signal.Stop(sigCh)
-			close(sigCh)
-			<-resizeDone
+			stopResize()
 			return exitCode, nil
 		default:
 		}
-		var event map[string]interface{}
+		var event map[string]any
 		if err := conn.ReadJSON(&event); err != nil {
-			signal.Stop(sigCh)
-			close(sigCh)
-			<-resizeDone
+			stopResize()
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return exitCode, nil
 			}
@@ -113,9 +100,10 @@ func AttachExecSession(c *Client, selector, sessionID string) (int, error) {
 			}
 			continue
 		}
-		if stream == "stderr" {
+		switch stream {
+		case "stderr":
 			_, _ = io.WriteString(os.Stderr, line)
-		} else if stream == "stdout" {
+		case "stdout":
 			_, _ = io.WriteString(os.Stdout, line)
 		}
 	}
@@ -152,7 +140,7 @@ func streamLogs(c *Client, wsPath string, timestamps bool) error {
 	}
 	defer conn.Close()
 	for {
-		var event map[string]interface{}
+		var event map[string]any
 		if err := conn.ReadJSON(&event); err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return nil
@@ -187,11 +175,11 @@ func terminalSize() (uint32, uint32, error) {
 		return 0, 0, err
 	}
 	if (ws.Mode() & os.ModeCharDevice) == 0 {
-		return 0, 0, fmt.Errorf("stdout is not terminal")
+		return 0, 0, errors.New("stdout is not terminal")
 	}
 	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
 		return 0, 0, err
 	}
-	return uint32(cols), uint32(rows), nil
+	return uint32(cols), uint32(rows), nil // #nosec G115 -- terminal dimensions from term.GetSize are small positive ints
 }

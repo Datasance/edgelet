@@ -4,8 +4,8 @@ import "github.com/datasance/edgelet/internal/cli/client"
 
 // EdgeletAPIClient is the EdgeletAPI v1 client surface used by CLI commands.
 type EdgeletAPIClient interface {
-	Request(method, path string, requestBody interface{}) (map[string]interface{}, error)
-	RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error)
+	Request(method, path string, requestBody any) (map[string]any, error)
+	RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]any, error)
 	IsDaemonRunning() bool
 }
 

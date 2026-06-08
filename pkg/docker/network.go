@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,18 +31,18 @@ func (c *Client) ensureEdgeletNetworkExists() error {
 	baseCtx := c.ctx
 	c.mu.RUnlock()
 
-	return c.ensureNamedNetworkLockFree(cli, baseCtx, edgeletNetworkName)
+	return c.ensureNamedNetworkLockFree(baseCtx, cli, edgeletNetworkName)
 }
 
 // ensureNetworkLockFree is the mutex-free implementation; used when the caller
 // already holds c.mu (e.g. inside initDockerClient).
-func (c *Client) ensureNetworkLockFree(cli *client.Client, baseCtx context.Context) error {
-	return c.ensureNamedNetworkLockFree(cli, baseCtx, edgeletNetworkName)
+func (c *Client) ensureNetworkLockFree(baseCtx context.Context, cli *client.Client) error {
+	return c.ensureNamedNetworkLockFree(baseCtx, cli, edgeletNetworkName)
 }
 
-func (c *Client) ensureNamedNetworkLockFree(cli *client.Client, baseCtx context.Context, networkName string) error {
+func (c *Client) ensureNamedNetworkLockFree(baseCtx context.Context, cli *client.Client, networkName string) error {
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
@@ -85,7 +86,7 @@ func (c *Client) GetDockerBridgeName() (string, error) {
 	c.mu.RUnlock()
 
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{})
 	if err != nil {

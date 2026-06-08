@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -50,7 +51,7 @@ var ConfigParamMap = map[string]string{
 
 // SetConfig sets configuration values from a map of command line parameters
 // Returns a map of errors keyed by parameter name
-func (c *Config) SetConfig(configMap map[string]interface{}) map[string]string {
+func (c *Config) SetConfig(configMap map[string]any) map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -520,7 +521,7 @@ func (c *Config) createDefaultYamlConfig() *models.YamlConfig {
 func normalizeGPSCoordinates(value string) (string, error) {
 	parts := strings.Split(strings.TrimSpace(value), ",")
 	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid GPS coordinates format: expected lat,lon")
+		return "", errors.New("invalid GPS coordinates format: expected lat,lon")
 	}
 
 	lat, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
@@ -532,10 +533,10 @@ func normalizeGPSCoordinates(value string) (string, error) {
 		return "", fmt.Errorf("invalid longitude: %w", err)
 	}
 	if lat < -90 || lat > 90 {
-		return "", fmt.Errorf("latitude must be between -90 and 90")
+		return "", errors.New("latitude must be between -90 and 90")
 	}
 	if lon < -180 || lon > 180 {
-		return "", fmt.Errorf("longitude must be between -180 and 180")
+		return "", errors.New("longitude must be between -180 and 180")
 	}
 
 	return fmt.Sprintf("%.5f,%.5f", lat, lon), nil

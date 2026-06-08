@@ -2,7 +2,7 @@ package output
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -32,10 +32,10 @@ func formatMap(m map[string]any) string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "%s: %v\n", k, m[k])
+		_, _ = fmt.Fprintf(&b, "%s: %v\n", k, m[k])
 	}
 	return b.String()
 }

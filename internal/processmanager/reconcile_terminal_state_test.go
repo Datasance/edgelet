@@ -23,7 +23,7 @@ func TestShouldForceRecreateFromStatus(t *testing.T) {
 
 	force, reason, code := shouldForceRecreateFromStatus(status)
 	if !force {
-		t.Fatalf("expected force recreate for CONTAINER_EXITED")
+		t.Fatal("expected force recreate for CONTAINER_EXITED")
 	}
 	if reason != "CONTAINER_EXITED" || code != 255 {
 		t.Fatalf("unexpected parsed values reason=%q code=%d", reason, code)

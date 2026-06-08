@@ -8,7 +8,7 @@ import (
 // StopResult carries daemon stop outcome.
 type StopResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // Stop requests daemon shutdown via EdgeletAPI.

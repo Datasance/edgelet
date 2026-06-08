@@ -1,8 +1,10 @@
+//revive:disable:nested-structs
 package models
 
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,21 +73,27 @@ type ControlPlaneManifestSpec struct {
 	NATS *struct {
 		Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	} `yaml:"nats,omitempty" json:"nats,omitempty"`
-	ECNViewerPort *int   `yaml:"ecnViewerPort,omitempty" json:"ecnViewerPort,omitempty"`
-	ECNViewerURL  string `yaml:"ecnViewerUrl,omitempty" json:"ecnViewerUrl,omitempty"`
-	LogLevel      string `yaml:"logLevel,omitempty" json:"logLevel,omitempty"`
-	HTTPS         *struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	} `yaml:"https,omitempty" json:"https,omitempty"`
-	Vault *ControlPlaneVaultSpec `yaml:"vault,omitempty" json:"vault,omitempty"`
+	ECNViewerPort *int                     `yaml:"ecnViewerPort,omitempty" json:"ecnViewerPort,omitempty"`
+	ECNViewerURL  string                   `yaml:"ecnViewerUrl,omitempty" json:"ecnViewerUrl,omitempty"`
+	LogLevel      string                   `yaml:"logLevel,omitempty" json:"logLevel,omitempty"`
+	HTTPS         *ControlPlaneHTTPSConfig `yaml:"https,omitempty" json:"https,omitempty"`
+	Vault         *ControlPlaneVaultSpec   `yaml:"vault,omitempty" json:"vault,omitempty"`
 	// Forbidden in Edgelet ControlPlane YAML (potctl REST import only).
 	SiteCA  any `yaml:"siteCA,omitempty" json:"-"`
 	LocalCA any `yaml:"localCA,omitempty" json:"-"`
+}
+
+// ControlPlaneHTTPSBase64 holds inline TLS material for ControlPlane HTTPS.
+type ControlPlaneHTTPSBase64 struct {
+	CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
+	Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
+	Key  string `yaml:"key,omitempty" json:"key,omitempty"`
+}
+
+// ControlPlaneHTTPSConfig configures TLS for the control plane controller.
+type ControlPlaneHTTPSConfig struct {
+	Path   string                   `yaml:"path,omitempty" json:"path,omitempty"`
+	Base64 *ControlPlaneHTTPSBase64 `yaml:"base64,omitempty" json:"base64,omitempty"`
 }
 
 // ControlPlaneVaultSpec mirrors optional vault provider blocks.
@@ -142,65 +150,55 @@ func (m *ControlPlaneManifest) NormalizeDefaults() {
 // Validate checks ControlPlane manifest semantics.
 func (m *ControlPlaneManifest) Validate() error {
 	if m == nil {
-		return fmt.Errorf("manifest is nil")
+		return errors.New("manifest is nil")
 	}
 	if strings.TrimSpace(m.APIVersion) == "" {
-		return fmt.Errorf("apiVersion is required")
+		return errors.New("apiVersion is required")
 	}
 	if strings.TrimSpace(m.APIVersion) != controlPlaneAPIVersion {
 		return fmt.Errorf("apiVersion must be %s", controlPlaneAPIVersion)
 	}
 	if strings.TrimSpace(m.Kind) == "" {
-		return fmt.Errorf("kind is required")
+		return errors.New("kind is required")
 	}
 	if strings.TrimSpace(m.Kind) != controlPlaneKind {
 		return fmt.Errorf("kind must be %s", controlPlaneKind)
 	}
 	if len(m.Metadata.Labels) > 0 {
-		return fmt.Errorf("metadata.labels are forbidden on ControlPlane manifests")
+		return errors.New("metadata.labels are forbidden on ControlPlane manifests")
 	}
 	name := strings.TrimSpace(m.Metadata.Name)
 	if name == "" {
-		return fmt.Errorf("metadata.name is required")
+		return errors.New("metadata.name is required")
 	}
 	if len(name) > 63 || !localDeployNamePattern.MatchString(name) {
-		return fmt.Errorf("metadata.name must be <= 63 characters and follow DNS-1123 label format")
+		return errors.New("metadata.name must be <= 63 characters and follow DNS-1123 label format")
 	}
 	ns := strings.TrimSpace(m.Metadata.Namespace)
 	if ns != "" {
 		if len(ns) > 63 || !localDeployNamePattern.MatchString(ns) {
-			return fmt.Errorf("metadata.namespace must be <= 63 characters and follow DNS-1123 label format")
+			return errors.New("metadata.namespace must be <= 63 characters and follow DNS-1123 label format")
 		}
 	}
 	if m.Spec.SiteCA != nil {
-		return fmt.Errorf("spec.siteCA is not supported in ControlPlane manifests; import via Controller REST API after deploy")
+		return errors.New("spec.siteCA is not supported in ControlPlane manifests; import via Controller REST API after deploy")
 	}
 	if m.Spec.LocalCA != nil {
-		return fmt.Errorf("spec.localCA is not supported in ControlPlane manifests; import via Controller REST API after deploy")
+		return errors.New("spec.localCA is not supported in ControlPlane manifests; import via Controller REST API after deploy")
 	}
 	if strings.TrimSpace(m.Spec.Controller.Image) == "" {
-		return fmt.Errorf("spec.controller.image is required")
+		return errors.New("spec.controller.image is required")
 	}
 	if m.Spec.Controller.Port != nil && *m.Spec.Controller.Port <= 0 {
-		return fmt.Errorf("spec.controller.port must be positive when set")
+		return errors.New("spec.controller.port must be positive when set")
 	}
 	if m.Spec.ECNViewerPort != nil && *m.Spec.ECNViewerPort <= 0 {
-		return fmt.Errorf("spec.ecnViewerPort must be positive when set")
+		return errors.New("spec.ecnViewerPort must be positive when set")
 	}
-	if err := validateControlPlaneHTTPS(m.Spec.HTTPS); err != nil {
-		return err
-	}
-	return nil
+	return validateControlPlaneHTTPS(m.Spec.HTTPS)
 }
 
-func validateControlPlaneHTTPS(https *struct {
-	Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-	Base64 *struct {
-		CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-		Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-		Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-	} `yaml:"base64,omitempty" json:"base64,omitempty"`
-}) error {
+func validateControlPlaneHTTPS(https *ControlPlaneHTTPSConfig) error {
 	if https == nil {
 		return nil
 	}
@@ -210,21 +208,21 @@ func validateControlPlaneHTTPS(https *struct {
 		strings.TrimSpace(https.Base64.Key) != "" ||
 		strings.TrimSpace(https.Base64.CA) != "")
 	if hasPath && hasBase64 {
-		return fmt.Errorf("spec.https.path and spec.https.base64 are mutually exclusive")
+		return errors.New("spec.https.path and spec.https.base64 are mutually exclusive")
 	}
 	if !hasPath && !hasBase64 {
 		return nil
 	}
 	if hasPath {
 		if !isValidHostPath(path) {
-			return fmt.Errorf("spec.https.path must be an absolute host path")
+			return errors.New("spec.https.path must be an absolute host path")
 		}
 		info, err := os.Stat(path)
 		if err != nil {
 			return fmt.Errorf("spec.https.path must exist on the Edgelet host: %w", err)
 		}
 		if !info.IsDir() {
-			return fmt.Errorf("spec.https.path must be a directory")
+			return errors.New("spec.https.path must be a directory")
 		}
 		for _, file := range []string{ControlPlaneHTTPSCertFilename, ControlPlaneHTTPSKeyFilename} {
 			if _, err := os.Stat(filepath.Join(path, file)); err != nil {
@@ -235,10 +233,10 @@ func validateControlPlaneHTTPS(https *struct {
 	}
 	b := https.Base64
 	if strings.TrimSpace(b.Cert) == "" {
-		return fmt.Errorf("spec.https.base64.cert is required when spec.https.base64 is set")
+		return errors.New("spec.https.base64.cert is required when spec.https.base64 is set")
 	}
 	if strings.TrimSpace(b.Key) == "" {
-		return fmt.Errorf("spec.https.base64.key is required when spec.https.base64 is set")
+		return errors.New("spec.https.base64.key is required when spec.https.base64 is set")
 	}
 	for _, item := range []struct {
 		field string

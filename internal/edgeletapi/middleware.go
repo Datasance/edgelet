@@ -67,9 +67,9 @@ func authMiddlewareV1(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func writeV3Error(w http.ResponseWriter, status int, code, message string) {
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"success": false,
-		"error": map[string]interface{}{
+		"error": map[string]any{
 			"code":    code,
 			"message": message,
 		},
@@ -79,27 +79,27 @@ func writeV3Error(w http.ResponseWriter, status int, code, message string) {
 	_, _ = w.Write(body)
 }
 
-func safeTokenMeta(token string) map[string]interface{} {
+func safeTokenMeta(token string) map[string]any {
 	parsed, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
 	if err != nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	return safeClaimsMeta(claims)
 }
 
-func safeClaimsMeta(claims jwt.MapClaims) map[string]interface{} {
-	result := map[string]interface{}{}
-	if tokenUse, _ := claims["tokenUse"].(string); strings.TrimSpace(tokenUse) != "" {
+func safeClaimsMeta(claims jwt.MapClaims) map[string]any {
+	result := map[string]any{}
+	if tokenUse, ok := claims["tokenUse"].(string); ok && strings.TrimSpace(tokenUse) != "" {
 		result["tokenUse"] = tokenUse
 	}
-	if sub, _ := claims["sub"].(string); strings.TrimSpace(sub) != "" {
+	if sub, ok := claims["sub"].(string); ok && strings.TrimSpace(sub) != "" {
 		result["sub"] = sub
 	}
-	if jti, _ := claims["jti"].(string); strings.TrimSpace(jti) != "" {
+	if jti, ok := claims["jti"].(string); ok && strings.TrimSpace(jti) != "" {
 		result["jtiHash"] = hashJTI(jti)
 	}
 	return result

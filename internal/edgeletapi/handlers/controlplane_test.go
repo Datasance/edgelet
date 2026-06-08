@@ -76,7 +76,7 @@ func (e *controlPlaneAPITestEngine) GetContainerStats(string) (*engine.Container
 }
 func (e *controlPlaneAPITestEngine) GetContainerIPAddress(string) (string, error) { return "", nil }
 func (e *controlPlaneAPITestEngine) GetContainerStartedAt(string) (int64, error)  { return 0, nil }
-func (e *controlPlaneAPITestEngine) InspectContainerRaw(string) (map[string]interface{}, error) {
+func (e *controlPlaneAPITestEngine) InspectContainerRaw(string) (map[string]any, error) {
 	return nil, nil
 }
 func (e *controlPlaneAPITestEngine) TailContainerLogs(string, string, string, engine.LogTailHandler, *engine.TailConfig) error {
@@ -123,7 +123,7 @@ func ensureControlPlaneStoreDB(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 }
 
-func decodeSuccessData(t *testing.T, body []byte) map[string]interface{} {
+func decodeSuccessData(t *testing.T, body []byte) map[string]any {
 	t.Helper()
 	var envelope apiSuccessEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -132,14 +132,14 @@ func decodeSuccessData(t *testing.T, body []byte) map[string]interface{} {
 	if !envelope.Success {
 		t.Fatalf("expected success envelope, got %s", string(body))
 	}
-	data, ok := envelope.Data.(map[string]interface{})
+	data, ok := envelope.Data.(map[string]any)
 	if !ok {
 		t.Fatalf("expected data object, got %#v", envelope.Data)
 	}
 	return data
 }
 
-func pollControlPlaneApplyUntilTerminal(t *testing.T, handler *EdgeletAPIHandler, operationID string) map[string]interface{} {
+func pollControlPlaneApplyUntilTerminal(t *testing.T, handler *EdgeletAPIHandler, operationID string) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -150,7 +150,10 @@ func pollControlPlaneApplyUntilTerminal(t *testing.T, handler *EdgeletAPIHandler
 			t.Fatalf("status poll code=%d body=%s", statusRec.Code, statusRec.Body.String())
 		}
 		data := decodeSuccessData(t, statusRec.Body.Bytes())
-		status, _ := data["status"].(string)
+		status, ok := data["status"].(string)
+		if !ok {
+			t.Fatal("type assertion failed for status")
+		}
 		if status == "succeeded" || status == "failed" {
 			return data
 		}
@@ -170,7 +173,10 @@ func TestControlPlaneHandlers_ApplyGetManifestDelete(t *testing.T) {
 		t.Fatalf("apply status=%d body=%s", applyRec.Code, applyRec.Body.String())
 	}
 	applyData := decodeSuccessData(t, applyRec.Body.Bytes())
-	operationID, _ := applyData["operationId"].(string)
+	operationID, ok := applyData["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for operationID")
+	}
 	if strings.TrimSpace(operationID) == "" {
 		t.Fatalf("expected operationId, got %#v", applyData)
 	}
@@ -178,7 +184,10 @@ func TestControlPlaneHandlers_ApplyGetManifestDelete(t *testing.T) {
 	if final["status"] != "succeeded" {
 		t.Fatalf("expected succeeded, got %#v", final)
 	}
-	controllerUUID, _ := final["controllerUuid"].(string)
+	controllerUUID, ok := final["controllerUuid"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for controllerUUID")
+	}
 	if strings.TrimSpace(controllerUUID) == "" {
 		t.Fatal("expected controllerUuid in terminal apply status")
 	}
@@ -211,7 +220,10 @@ func TestControlPlaneHandlers_ApplyGetManifestDelete(t *testing.T) {
 		t.Fatalf("manifest status=%d body=%s", manifestRec.Code, manifestRec.Body.String())
 	}
 	manifestData := decodeSuccessData(t, manifestRec.Body.Bytes())
-	manifestYAML, _ := manifestData["manifestYaml"].(string)
+	manifestYAML, ok := manifestData["manifestYaml"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for manifestYAML")
+	}
 	if !strings.Contains(manifestYAML, "***") {
 		t.Fatalf("expected masked secret marker, got %q", manifestYAML)
 	}
@@ -259,7 +271,10 @@ func TestControlPlaneHandlers_ApplyConcurrentReturns409(t *testing.T) {
 		t.Fatalf("first apply status=%d body=%s", firstRec.Code, firstRec.Body.String())
 	}
 	firstData := decodeSuccessData(t, firstRec.Body.Bytes())
-	firstOp, _ := firstData["operationId"].(string)
+	firstOp, ok := firstData["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for firstOp")
+	}
 	if strings.TrimSpace(firstOp) == "" {
 		t.Fatal("expected first operationId")
 	}
@@ -277,7 +292,10 @@ func TestControlPlaneHandlers_ApplyConcurrentReturns409(t *testing.T) {
 	if errEnvelope.Error.Code != ErrCodeApplyInProgress {
 		t.Fatalf("expected %s, got %s", ErrCodeApplyInProgress, errEnvelope.Error.Code)
 	}
-	activeID, _ := errEnvelope.Error.Details["activeOperationId"].(string)
+	activeID, ok := errEnvelope.Error.Details["activeOperationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for activeID")
+	}
 	if activeID != firstOp {
 		t.Fatalf("expected activeOperationId=%q, got %q", firstOp, activeID)
 	}
@@ -295,7 +313,10 @@ func TestControlPlaneHandlers_PatchRejectsIdentityChange(t *testing.T) {
 		t.Fatalf("initial apply status=%d body=%s", applyRec.Code, applyRec.Body.String())
 	}
 	applyData := decodeSuccessData(t, applyRec.Body.Bytes())
-	opID, _ := applyData["operationId"].(string)
+	opID, ok := applyData["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for opID")
+	}
 	final := pollControlPlaneApplyUntilTerminal(t, handler, opID)
 	if final["status"] != "succeeded" {
 		t.Fatalf("initial apply failed: %#v", final)

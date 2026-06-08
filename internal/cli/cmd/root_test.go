@@ -12,7 +12,7 @@ import (
 
 type fakeClient struct {
 	running   bool
-	gets      map[string]map[string]interface{}
+	gets      map[string]map[string]any
 	errs      map[string]error
 	applyPoll int
 }
@@ -21,17 +21,17 @@ func (f *fakeClient) IsDaemonRunning() bool {
 	return f.running
 }
 
-func (f *fakeClient) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *fakeClient) Request(method, path string, _ any) (map[string]any, error) {
 	key := method + " " + path
 	if strings.Contains(path, ":apply/op-1") {
 		f.applyPoll++
 		switch f.applyPoll {
 		case 1:
-			return map[string]interface{}{"status": "running", "stage": "persisting"}, nil
+			return map[string]any{"status": "running", "stage": "persisting"}, nil
 		case 2:
-			return map[string]interface{}{"status": "running", "stage": "pulling"}, nil
+			return map[string]any{"status": "running", "stage": "pulling"}, nil
 		default:
-			return map[string]interface{}{"status": "succeeded", "deploymentId": "dep-1", "stage": "done"}, nil
+			return map[string]any{"status": "succeeded", "deploymentId": "dep-1", "stage": "done"}, nil
 		}
 	}
 	if err, ok := f.errs[key]; ok {
@@ -41,10 +41,10 @@ func (f *fakeClient) Request(method, path string, _ interface{}) (map[string]int
 		return data, nil
 	}
 	if method == "POST" && path == "/v1/images:pull" {
-		return map[string]interface{}{"status": "running", "operationId": "pull-1"}, nil
+		return map[string]any{"status": "running", "operationId": "pull-1"}, nil
 	}
 	if method == "GET" && strings.HasPrefix(path, "/v1/images:pull/") {
-		return map[string]interface{}{
+		return map[string]any{
 			"status":        "succeeded",
 			"resolvedImage": "docker.io/library/alpine:3.19",
 			"engine":        "edgelet",
@@ -52,13 +52,13 @@ func (f *fakeClient) Request(method, path string, _ interface{}) (map[string]int
 			"operationId":   "pull-1",
 		}, nil
 	}
-	return map[string]interface{}{}, nil
+	return map[string]any{}, nil
 }
 
 func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/status": {
 				"iofogDaemon":            "running",
 				"connectionToController": "ok",
@@ -72,7 +72,7 @@ func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected UX on stderr only, got stderr: %q", stderr)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v (%q)", err, stdout)
 	}
@@ -84,7 +84,7 @@ func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 func TestVersionMatchesSystemVersionHuman(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/version": {
 				"version":                "1.2.3",
 				"buildTime":              "2026-01-01",
@@ -109,7 +109,7 @@ func TestVersionMatchesSystemVersionHuman(t *testing.T) {
 func TestVersionMatchesSystemVersionJSON(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/version": {
 				"version":   "1.2.3",
 				"buildTime": "2026-01-01",

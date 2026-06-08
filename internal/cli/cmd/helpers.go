@@ -18,8 +18,8 @@ func printBannerTo(errOut io.Writer) {
 	if errOut == nil {
 		errOut = os.Stderr
 	}
-	fmt.Fprint(errOut, banner)
-	fmt.Fprintf(errOut, "  Version: %s\n\n", Version)
+	_, _ = fmt.Fprint(errOut, banner)
+	_, _ = fmt.Fprintf(errOut, "  Version: %s\n\n", Version)
 }
 
 func filterHelpArgs(args []string) []string {
@@ -66,7 +66,7 @@ func writeCommandError(err error) {
 		appCtx.UI.WriteError(msg)
 		return
 	}
-	fmt.Fprintln(os.Stderr, msg)
+	_, _ = fmt.Fprintln(os.Stderr, msg)
 }
 
 func contextOrBootstrap() *run.CLIContext {
@@ -81,8 +81,8 @@ func contextOrBootstrap() *run.CLIContext {
 	return appCtx
 }
 
-func runLocalVersion(ctx *run.CLIContext) error {
-	ctx = contextOrBootstrap()
+func runLocalVersion(_ *run.CLIContext) error {
+	ctx := contextOrBootstrap()
 	text := fmt.Sprintf(
 		"edgelet %s (build: %s, commit: %s)\n  embedded engine: %t\n  allowed containerEngine: %s\n",
 		ctx.Version,
@@ -97,8 +97,8 @@ func runLocalVersion(ctx *run.CLIContext) error {
 	return run.WriteHuman(ctx, text)
 }
 
-func runVersion(ctx *run.CLIContext) error {
-	ctx = contextOrBootstrap()
+func runVersion(_ *run.CLIContext) error {
+	ctx := contextOrBootstrap()
 	if err := run.RequireDaemon(ctx.Client); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func runVersion(ctx *run.CLIContext) error {
 	return run.WriteValue(ctx, output.FormatVersionHuman(ctx.Version, ctx.BuildTime, ctx.GitCommit, daemon, err))
 }
 
-func writeHumanOrData(ctx *run.CLIContext, human string, data map[string]interface{}) error {
+func writeHumanOrData(ctx *run.CLIContext, human string, data map[string]any) error {
 	if ctx == nil {
 		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
 	}
@@ -120,7 +120,7 @@ func writeHumanOrData(ctx *run.CLIContext, human string, data map[string]interfa
 	return run.WriteHuman(ctx, human)
 }
 
-func writeHumanOrRoute(ctx *run.CLIContext, routePath, human string, data map[string]interface{}) error {
+func writeHumanOrRoute(ctx *run.CLIContext, routePath, human string, data map[string]any) error {
 	if ctx == nil {
 		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
 	}
@@ -133,7 +133,7 @@ func writeHumanOrRoute(ctx *run.CLIContext, routePath, human string, data map[st
 	return run.WriteRouteData(ctx, routePath, data)
 }
 
-func writeHumanMutationOrData(ctx *run.CLIContext, human string, data map[string]interface{}) error {
+func writeHumanMutationOrData(ctx *run.CLIContext, human string, data map[string]any) error {
 	if ctx == nil {
 		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
 	}
@@ -146,7 +146,7 @@ func writeHumanMutationOrData(ctx *run.CLIContext, human string, data map[string
 	return run.WriteValue(ctx, data)
 }
 
-func writeHumanMutationOrRoute(ctx *run.CLIContext, routePath, human string, data map[string]interface{}) error {
+func writeHumanMutationOrRoute(ctx *run.CLIContext, routePath, human string, data map[string]any) error {
 	if ctx == nil {
 		return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
 	}

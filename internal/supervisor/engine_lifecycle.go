@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -116,12 +117,14 @@ func (s *Supervisor) handleWarmContainerEngineURLReload(reloadCtx *reloadEngineC
 
 func (s *Supervisor) revertWarmReload(reloadCtx *reloadEngineContext) error {
 	if reloadCtx == nil || reloadCtx.priorContainerEngineURL == "" {
-		return fmt.Errorf("missing warm reload prior containerEngineUrl")
+		return errors.New("missing warm reload prior containerEngineUrl")
 	}
 	return config.GetInstance().RevertContainerEngineURL(reloadCtx.priorContainerEngineURL)
 }
 
 // CaptureReloadEngineContext snapshots containerEngineUrl before config reload for warm revert.
+//
+//nolint:revive // returns internal reload snapshot type by design
 func (s *Supervisor) CaptureReloadEngineContext() *reloadEngineContext {
 	return s.captureReloadEngineContext()
 }
@@ -142,7 +145,7 @@ func (s *Supervisor) swapContainerEngine(eng engine.ContainerEngine, engineType 
 	defer s.engineWireMu.Unlock()
 
 	if s.processManager == nil {
-		return fmt.Errorf("process manager not initialized")
+		return errors.New("process manager not initialized")
 	}
 	s.processManager.SetEngine(eng, engineType)
 	s.containerEngine = eng

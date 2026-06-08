@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -138,7 +139,7 @@ func (o *optionalBool) Set(s string) error {
 	case "false", "0", "off", "no":
 		o.val = false
 	default:
-		return fmt.Errorf("must be one of true|false|on|off|1|0")
+		return errors.New("must be one of true|false|on|off|1|0")
 	}
 	return nil
 }
@@ -209,11 +210,11 @@ func (b *flagBinding) register(flags *pflag.FlagSet) {
 }
 
 // Collect reads changed flags into a validated set map.
-func (fs *FlagSet) Collect(flags *pflag.FlagSet) (map[string]interface{}, error) {
+func (fs *FlagSet) Collect(flags *pflag.FlagSet) (map[string]any, error) {
 	if fs == nil {
-		return nil, fmt.Errorf("config flags are unavailable")
+		return nil, errors.New("config flags are unavailable")
 	}
-	setMap := make(map[string]interface{})
+	setMap := make(map[string]any)
 	for _, binding := range fs.bindings {
 		if !binding.isChanged(flags) {
 			continue
@@ -229,7 +230,7 @@ func (fs *FlagSet) Collect(flags *pflag.FlagSet) (map[string]interface{}, error)
 		setMap[binding.canonical] = normalized
 	}
 	if len(setMap) == 0 {
-		return nil, fmt.Errorf("at least one config flag is required (see edgelet config --help)")
+		return nil, errors.New("at least one config flag is required (see edgelet config --help)")
 	}
 	return setMap, nil
 }
@@ -281,9 +282,9 @@ func camelToKebab(name string) string {
 	var b strings.Builder
 	for i, r := range name {
 		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('-')
+			_ = b.WriteByte('-')
 		}
-		b.WriteRune(r)
+		_, _ = b.WriteRune(r)
 	}
 	return strings.ToLower(b.String())
 }

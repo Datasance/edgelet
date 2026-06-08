@@ -7,6 +7,8 @@ import (
 )
 
 // WebSocketType represents the type of WebSocket connection
+//
+//nolint:revive // exported API
 type WebSocketType byte
 
 const (

@@ -21,7 +21,7 @@ import (
 // Client wraps the CRI RuntimeService gRPC client.
 type Client struct {
 	runtime runtimeapi.RuntimeServiceClient
-	conn   *grpc.ClientConn
+	conn    *grpc.ClientConn
 }
 
 // NewClient dials the containerd socket and creates a CRI RuntimeService client.
@@ -37,7 +37,7 @@ func NewClient(socketPath string) (*Client, error) {
 	}
 	return &Client{
 		runtime: runtimeapi.NewRuntimeServiceClient(conn),
-		conn:   conn,
+		conn:    conn,
 	}, nil
 }
 
@@ -138,7 +138,7 @@ func (c *Client) ListContainers(ctx context.Context, filter *runtimeapi.Containe
 func (c *Client) PodSandboxStatus(ctx context.Context, podSandboxID string) (*runtimeapi.PodSandboxStatusResponse, error) {
 	return c.runtime.PodSandboxStatus(ctx, &runtimeapi.PodSandboxStatusRequest{
 		PodSandboxId: podSandboxID,
-		Verbose:     false,
+		Verbose:      false,
 	})
 }
 

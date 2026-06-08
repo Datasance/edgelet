@@ -13,9 +13,9 @@ import (
 )
 
 func TestRequestIDMiddleware_GeneratesWhenMissing(t *testing.T) {
-	handler := requestIdMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	handler := requestIDMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if requestIDFromContext(r.Context()) == "" {
-			t.Fatalf("requestId missing from context")
+			t.Fatal("requestId missing from context")
 		}
 		w.WriteHeader(http.StatusOK)
 	})
@@ -28,7 +28,7 @@ func TestRequestIDMiddleware_GeneratesWhenMissing(t *testing.T) {
 }
 
 func TestRequestIDMiddleware_PassthroughWhenProvided(t *testing.T) {
-	handler := requestIdMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	handler := requestIDMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if got := requestIDFromContext(r.Context()); got != "req-123" {
 			t.Fatalf("unexpected requestId %q", got)
 		}
@@ -39,7 +39,7 @@ func TestRequestIDMiddleware_PassthroughWhenProvided(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Header().Get(requestIDHeader) != "req-123" {
-		t.Fatalf("expected passthrough requestId header")
+		t.Fatal("expected passthrough requestId header")
 	}
 }
 
@@ -49,7 +49,7 @@ func TestAccessLoggingMiddleware_EmitsStructuredAccessFields(t *testing.T) {
 	localAPILogSink = func(event structuredEvent) { captured = event }
 	defer func() { localAPILogSink = originalSink }()
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIDMiddleware(accessLoggingMiddleware(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte("ok"))
 	})))
@@ -70,7 +70,7 @@ func TestAccessLoggingMiddleware_EmitsStructuredAccessFields(t *testing.T) {
 		t.Fatalf("unexpected status: %#v", captured.Fields["status"])
 	}
 	if captured.Fields["requestId"] == "" {
-		t.Fatalf("requestId missing from access event")
+		t.Fatal("requestId missing from access event")
 	}
 }
 
@@ -80,7 +80,7 @@ func TestAuthMiddlewareV3_MissingBearerPrefixEmitsReasonCode(t *testing.T) {
 	localAPILogSink = func(event structuredEvent) { captured = event }
 	defer func() { localAPILogSink = originalSink }()
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIDMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
@@ -91,7 +91,7 @@ func TestAuthMiddlewareV3_MissingBearerPrefixEmitsReasonCode(t *testing.T) {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 	if captured.Fields["event"] != "edgeletapi.access" {
-		t.Fatalf("last event should be access completion")
+		t.Fatal("last event should be access completion")
 	}
 }
 
@@ -118,7 +118,7 @@ func TestAuthMiddlewareV3_UnmappedRouteStrictDenyAndReasonCode(t *testing.T) {
 		return rbacPermission{}, false
 	}
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/unmapped", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIDMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/unmapped", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
 	req := httptest.NewRequest(http.MethodGet, "/v1/unmapped", nil)
@@ -160,7 +160,7 @@ func TestAuthMiddlewareV3_RBACDeniedReasonCode(t *testing.T) {
 	}
 	isAuthorizedFn = func(jwt.MapClaims, rbacPermission) bool { return false }
 
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/config", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIDMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/config", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/config", nil)
@@ -193,7 +193,7 @@ func TestAuthMiddlewareV3_TokenIsRedactedFromRejectLogs(t *testing.T) {
 	}
 
 	rawToken := "secret-token-value"
-	handler := requestIdMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestIDMiddleware(accessLoggingMiddleware(authMiddlewareV1(withRoute("/v1/system/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))))
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/status", nil)
@@ -207,6 +207,6 @@ func TestAuthMiddlewareV3_TokenIsRedactedFromRejectLogs(t *testing.T) {
 	}
 	if _, exists := rejectEvent.Fields["jtiHash"]; exists {
 		// parseUnverified fails for raw token string; this field should not appear.
-		t.Fatalf("unexpected jtiHash for non-JWT token")
+		t.Fatal("unexpected jtiHash for non-JWT token")
 	}
 }

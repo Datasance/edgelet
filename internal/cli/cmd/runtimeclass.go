@@ -60,7 +60,7 @@ func runRuntimeClassRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v1/deploy/runtimeclasses/" + args[0]
-	var data map[string]interface{}
+	var data map[string]any
 	err := run.WithSpinner(appCtx, "Removing runtime class "+args[0]+"...", func() error {
 		var reqErr error
 		data, reqErr = appCtx.Client.Request("DELETE", path, nil)

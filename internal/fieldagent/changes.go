@@ -15,7 +15,7 @@ import (
 )
 
 // processChanges processes changes from the controller
-func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
+func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 	logging.LogDebug(moduleName, fmt.Sprintf("Starting processChanges with changes: %+v", changes))
 
 	resetChanges := true
@@ -86,9 +86,18 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 		}
 
 		// Process microservice-related changes
-		microserviceConfig, _ := changes["microserviceConfig"].(bool)
-		microserviceList, _ := changes["microserviceList"].(bool)
-		execSessions, _ := changes["execSessions"].(bool)
+		microserviceConfig, ok := changes["microserviceConfig"].(bool)
+		if !ok {
+			microserviceConfig = false
+		}
+		microserviceList, ok := changes["microserviceList"].(bool)
+		if !ok {
+			microserviceList = false
+		}
+		execSessions, ok := changes["execSessions"].(bool)
+		if !ok {
+			execSessions = false
+		}
 
 		if microserviceConfig || microserviceList || execSessions || initialization {
 			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v, execSessions: %v",
@@ -129,8 +138,14 @@ func (fa *FieldAgent) processChanges(changes map[string]interface{}) bool {
 		}
 
 		// Process log sessions changes
-		microserviceLogs, _ := changes["microserviceLogs"].(bool)
-		fogLogs, _ := changes["fogLogs"].(bool)
+		microserviceLogs, ok := changes["microserviceLogs"].(bool)
+		if !ok {
+			microserviceLogs = false
+		}
+		fogLogs, ok := changes["fogLogs"].(bool)
+		if !ok {
+			fogLogs = false
+		}
 		if microserviceLogs || fogLogs {
 			logging.LogDebug(moduleName, fmt.Sprintf("Processing log sessions changes - microserviceLogs: %v, fogLogs: %v", microserviceLogs, fogLogs))
 			// Fetch and handle log sessions
@@ -202,7 +217,7 @@ func (fa *FieldAgent) changeVersion() error {
 	}
 
 	// Extract version command from result
-	if versionData, ok := result["versionCommand"].(map[string]interface{}); ok {
+	if versionData, ok := result["versionCommand"].(map[string]any); ok {
 		versionHandler := version.GetInstance()
 		if err := versionHandler.ChangeVersion(versionData); err != nil {
 			return fmt.Errorf("failed to change version: %w", err)
@@ -241,7 +256,7 @@ func (fa *FieldAgent) updateTunnel() error {
 }
 
 // getProxyConfig gets proxy configuration from controller
-func (fa *FieldAgent) getProxyConfig() (map[string]interface{}, error) {
+func (fa *FieldAgent) getProxyConfig() (map[string]any, error) {
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		return nil, nil
 	}
@@ -256,7 +271,7 @@ func (fa *FieldAgent) getProxyConfig() (map[string]interface{}, error) {
 	}
 
 	// Extract tunnel config from response
-	if tunnelObj, ok := response["tunnel"].(map[string]interface{}); ok {
+	if tunnelObj, ok := response["tunnel"].(map[string]any); ok {
 		return tunnelObj, nil
 	}
 
@@ -285,14 +300,14 @@ func (fa *FieldAgent) getFogConfig() error {
 	}
 
 	// Check for nested config objects (instance-config or agent-config)
-	if instanceConfig, ok := configs["instance-config"].(map[string]interface{}); ok {
+	if instanceConfig, ok := configs["instance-config"].(map[string]any); ok {
 		configs = instanceConfig
-	} else if agentConfig, ok := configs["agent-config"].(map[string]interface{}); ok {
+	} else if agentConfig, ok := configs["agent-config"].(map[string]any); ok {
 		configs = agentConfig
 	}
 
 	// Map controller config keys to agent config keys (short codes)
-	configMap := make(map[string]interface{})
+	configMap := make(map[string]any)
 
 	// Mapping from controller JSON keys to internal short codes
 	keyMapping := map[string]string{
@@ -386,7 +401,7 @@ func (fa *FieldAgent) postFogConfig() error {
 	}
 
 	// Build config data
-	configData := map[string]interface{}{
+	configData := map[string]any{
 		"networkInterface":          networkInterfaceName,
 		"containerEngineUrl":        cfg.ContainerEngineURL,
 		"diskConsumptionLimit":      cfg.DiskLimit,
@@ -460,7 +475,7 @@ func (fa *FieldAgent) postGPSConfig() error {
 		return nil
 	}
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"latitude":  latitude,
 		"longitude": longitude,
 	}

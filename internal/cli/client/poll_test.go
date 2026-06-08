@@ -10,20 +10,20 @@ import (
 )
 
 type pollFakeAPI struct {
-	responses []map[string]interface{}
+	responses []map[string]any
 	calls     int
 }
 
-func (f *pollFakeAPI) Request(string, string, interface{}) (map[string]interface{}, error) {
+func (f *pollFakeAPI) Request(string, string, any) (map[string]any, error) {
 	if f.calls >= len(f.responses) {
-		return map[string]interface{}{"status": "running"}, nil
+		return map[string]any{"status": "running"}, nil
 	}
 	resp := f.responses[f.calls]
 	f.calls++
 	return resp, nil
 }
 
-func (f *pollFakeAPI) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
+func (f *pollFakeAPI) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]any, error) {
 	return nil, nil
 }
 
@@ -31,7 +31,7 @@ func (f *pollFakeAPI) IsDaemonRunning() bool { return true }
 
 func TestPollAsyncOperation_StageTerminalSuccess(t *testing.T) {
 	api := &pollFakeAPI{
-		responses: []map[string]interface{}{
+		responses: []map[string]any{
 			{"status": "running", "stage": "persisting"},
 			{"status": "running", "stage": "pulling"},
 			{"status": "succeeded", "deploymentId": "dep-1"},
@@ -42,7 +42,7 @@ func TestPollAsyncOperation_StageTerminalSuccess(t *testing.T) {
 	spin := u.StartSpinner("Applying microservice manifest...")
 	defer spin.Stop()
 
-	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
+	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]any, error) {
 		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
@@ -66,7 +66,7 @@ func TestPollAsyncOperation_StageTerminalSuccess(t *testing.T) {
 func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 	clearInteractiveEnv(t)
 	api := &pollFakeAPI{
-		responses: []map[string]interface{}{
+		responses: []map[string]any{
 			{"status": "running", "stage": "pulling"},
 			{"status": "succeeded", "deploymentId": "dep-2"},
 		},
@@ -75,7 +75,7 @@ func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{ForceTTY: true})
 	spin := u.StartSpinner("Applying microservice manifest...")
 
-	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
+	final, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]any, error) {
 		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
@@ -101,7 +101,7 @@ func TestPollAsyncOperation_SpinnerUsesStageSuffix(t *testing.T) {
 func TestPollAsyncOperation_StageSuffixNonInteractive(t *testing.T) {
 	t.Setenv("CI", "true")
 	api := &pollFakeAPI{
-		responses: []map[string]interface{}{
+		responses: []map[string]any{
 			{"status": "running", "stage": "pulling"},
 			{"status": "succeeded", "deploymentId": "dep-3"},
 		},
@@ -109,7 +109,7 @@ func TestPollAsyncOperation_StageSuffixNonInteractive(t *testing.T) {
 	var stderr strings.Builder
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{})
 
-	_, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]interface{}, error) {
+	_, stages, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond}, func() (map[string]any, error) {
 		return api.Request("GET", "/status", nil)
 	}, PollProgress{
 		UI:             u,
@@ -129,7 +129,7 @@ func TestPollAsyncOperation_StageSuffixNonInteractive(t *testing.T) {
 
 func TestPollAsyncOperation_PercentDone(t *testing.T) {
 	api := &pollFakeAPI{
-		responses: []map[string]interface{}{
+		responses: []map[string]any{
 			{"status": "running", "progress": 10},
 			{"status": "running", "progress": 20},
 			{"status": "succeeded", "progress": 100},
@@ -138,7 +138,7 @@ func TestPollAsyncOperation_PercentDone(t *testing.T) {
 	var stderr strings.Builder
 	u := ui.NewWithWriters(nil, &stderr, ui.Options{ForceTTY: true})
 
-	_, _, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond, PercentStep: 5}, func() (map[string]interface{}, error) {
+	_, _, err := PollAsyncOperation(context.Background(), PollConfig{Interval: time.Millisecond, PercentStep: 5}, func() (map[string]any, error) {
 		return api.Request("GET", "/status", nil)
 	}, PollProgress{UI: u, PercentLabel: "pulling image"})
 	if err != nil {

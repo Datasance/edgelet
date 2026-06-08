@@ -8,7 +8,7 @@ import (
 )
 
 // FormatValidateHuman renders validate endpoint output.
-func FormatValidateHuman(result map[string]interface{}) string {
+func FormatValidateHuman(result map[string]any) string {
 	if valid, ok := result["valid"].(bool); ok && valid {
 		return fmt.Sprintf("manifest is valid (kind=%v name=%v apiVersion=%v)", result["kind"], result["name"], result["apiVersion"])
 	}
@@ -16,7 +16,7 @@ func FormatValidateHuman(result map[string]interface{}) string {
 }
 
 // FormatApplyHuman renders apply endpoint output for human mode.
-func FormatApplyHuman(result map[string]interface{}) string {
+func FormatApplyHuman(result map[string]any) string {
 	status := normalizeStatus(output.MapValueAsString(result, "status"))
 	kind := strings.ToLower(strings.TrimSpace(output.MapValueAsString(result, "kind")))
 	operationID := strings.TrimSpace(output.MapValueAsString(result, "operationId"))
@@ -24,7 +24,7 @@ func FormatApplyHuman(result map[string]interface{}) string {
 	if accepted, ok := result["accepted"].(bool); ok && accepted {
 		switch strings.ToLower(strings.TrimSpace(output.MapValueAsString(result, "kind"))) {
 		case "registry":
-			if reg, ok := result["registry"].(map[string]interface{}); ok {
+			if reg, ok := result["registry"].(map[string]any); ok {
 				return fmt.Sprintf("registry manifest applied successfully (id=%s url=%s)", output.MapValueAsString(reg, "id"), output.MapValueAsString(reg, "url"))
 			}
 			return "registry manifest applied successfully"
@@ -34,7 +34,7 @@ func FormatApplyHuman(result map[string]interface{}) string {
 			}
 			return "microservice manifest applied successfully"
 		case "runtimeclass":
-			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+			if item, ok := result["runtimeClass"].(map[string]any); ok {
 				return fmt.Sprintf(
 					"runtimeclass manifest applied successfully (name=%s handler=%s)",
 					output.ValueOrDefault(output.MapValueAsString(item, "name"), "<unknown>"),
@@ -61,7 +61,7 @@ func FormatApplyHuman(result map[string]interface{}) string {
 	if kind == "runtimeclass" || result["runtimeClass"] != nil {
 		switch status {
 		case "succeeded":
-			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+			if item, ok := result["runtimeClass"].(map[string]any); ok {
 				return fmt.Sprintf(
 					"runtimeclass manifest applied successfully (name=%s handler=%s)",
 					output.ValueOrDefault(output.MapValueAsString(item, "name"), "<unknown>"),
@@ -103,10 +103,10 @@ func FormatApplyHuman(result map[string]interface{}) string {
 }
 
 // ApplyError extracts structured apply failure details.
-func ApplyError(result map[string]interface{}) (code, message string) {
+func ApplyError(result map[string]any) (code, message string) {
 	code = "INTERNAL"
 	message = ""
-	if rawErr, ok := result["error"].(map[string]interface{}); ok {
+	if rawErr, ok := result["error"].(map[string]any); ok {
 		if c := strings.TrimSpace(output.MapValueAsString(rawErr, "code")); c != "" && c != "<unknown>" {
 			code = c
 		}
@@ -160,18 +160,18 @@ func normalizeStage(raw string) string {
 }
 
 // WithStages attaches observed poll stages to a result map for structured output.
-func WithStages(result map[string]interface{}, stages []string) map[string]interface{} {
+func WithStages(result map[string]any, stages []string) map[string]any {
 	if result == nil {
-		result = map[string]interface{}{}
+		result = map[string]any{}
 	}
 	if len(stages) == 0 {
 		return result
 	}
-	out := make(map[string]interface{}, len(result)+1)
+	out := make(map[string]any, len(result)+1)
 	for k, v := range result {
 		out[k] = v
 	}
-	stageValues := make([]interface{}, len(stages))
+	stageValues := make([]any, len(stages))
 	for i, stage := range stages {
 		stageValues[i] = stage
 	}

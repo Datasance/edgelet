@@ -190,7 +190,7 @@ func TestMapRuntimeError(t *testing.T) {
 func TestCheckDelegatedControllersUsesSelfCgroup(t *testing.T) {
 	controllers := checkDelegatedControllers(defaultUnifiedMount)
 	if len(controllers) == 0 && Mode(detectModeString()) != ModeV1 {
-		t.Fatalf("expected delegated controllers on unified host, got none")
+		t.Fatal("expected delegated controllers on unified host, got none")
 	}
 }
 

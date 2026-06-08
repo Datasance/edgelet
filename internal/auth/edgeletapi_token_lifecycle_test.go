@@ -47,7 +47,10 @@ func TestEnsureLocalAPITokenForCurrentState_UnprovisionedWritesUnsignedJWT(t *te
 	if err != nil {
 		t.Fatalf("failed to parse bootstrap claims: %v", err)
 	}
-	jti, _ := claims["jti"].(string)
+	jti, ok := claims["jti"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for jti")
+	}
 	if matched, _ := regexp.MatchString(`^[A-Z2-7]+$`, jti); !matched {
 		t.Fatalf("expected base32 hash-like jti, got %q", jti)
 	}

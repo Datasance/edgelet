@@ -108,6 +108,8 @@ graph TD
     edgeletapi --> store
 ```
 
+Module startup order and Tier 1 deep dives: [modules/README.md](modules/README.md).
+
 ---
 
 ## EdgeletAPI
@@ -124,7 +126,7 @@ The **EdgeletAPI** is the daemon↔CLI HTTPS/WebSocket surface on the edge node.
 | JWT `tokenUse` | `edgeletapi` |
 | JWT `aud` | `edgelet://edgeletapi/v1` |
 
-Route groups include `/v1/system/*`, `/v1/ms/*`, `/v1/deploy/*`, `/v1/auth/*`, and `/v1/images/*`. Full contract: [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml). Operator guide: [edgelet-api-v1.md](edgelet-api-v1.md).
+Route groups include `/v1/system/*`, `/v1/ms/*`, `/v1/deploy/*`, `/v1/auth/*`, and `/v1/images/*`. Full contract: [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml). Operator guide: [edgelet-api-v1.md](edgelet-api-v1.md). Per-module runtime docs: [modules/README.md](modules/README.md).
 
 ---
 
@@ -149,7 +151,7 @@ See [container-engine.md](container-engine.md) for paths, CNI, and RuntimeClass 
 
 ## DNS (embedded engine)
 
-Linux deployments with `containerEngine: edgelet` can run an embedded authoritative DNS subsystem for bridge-network service discovery. Operational runbook: [../embedded-dns-runbook.md](../embedded-dns-runbook.md).
+Linux deployments with `containerEngine: edgelet` run an embedded authoritative DNS subsystem on the bridge gateway for `svc.bridge.local` service discovery. See [dns.md](dns.md).
 
 Agent DNS name: `edgelet.default.svc.bridge.local`.
 
@@ -176,7 +178,7 @@ SQLite stores cached microservices, registries, and volume mount records. Schema
 
 ## Release OTA (two layers)
 
-Fleet upgrades use **two coordinated layers** . See [deployment.md](deployment.md).
+Fleet upgrades use **two coordinated layers**. See [installation.md](installation.md).
 
 ```mermaid
 flowchart TB

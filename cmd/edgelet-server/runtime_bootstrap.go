@@ -19,21 +19,21 @@ import (
 
 func runRuntimeBootstrap() {
 	if !buildmeta.HasEmbeddedEngine() {
-		fmt.Fprintf(os.Stderr, "runtime-bootstrap requires embedded engine build\n")
+		_, _ = fmt.Fprintf(os.Stderr, "runtime-bootstrap requires embedded engine build\n")
 		os.Exit(1)
 	}
 
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(1)
 	}
 	cfg := config.GetInstance()
 	if err := config.ValidateConfig(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
 		os.Exit(1)
 	}
 	if cfg.ContainerEngine != constants.EngineEdgelet {
-		fmt.Fprintf(os.Stderr, "runtime-bootstrap requires containerEngine=edgelet (got %q)\n", cfg.ContainerEngine)
+		_, _ = fmt.Fprintf(os.Stderr, "runtime-bootstrap requires containerEngine=edgelet (got %q)\n", cfg.ContainerEngine)
 		os.Exit(1)
 	}
 
@@ -41,13 +41,13 @@ func runRuntimeBootstrap() {
 	startLoggingService()
 
 	if _, err := cgroups.Bootstrap(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
 		os.Exit(1)
 	}
 
 	svc, err := startEmbeddedContainerdWithRetry()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
 		os.Exit(1)
 	}
 

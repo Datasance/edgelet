@@ -1,13 +1,13 @@
 package version
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/datasance/edgelet/internal/models"
@@ -21,7 +21,7 @@ const (
 )
 
 // VersionCommand represents a version change command.
-type VersionCommand string
+type VersionCommand string //nolint:revive // exported API
 
 const (
 	VersionCommandUpgrade  VersionCommand = "UPGRADE"
@@ -29,10 +29,10 @@ const (
 )
 
 // ParseVersionCommand parses version command from JSON.
-func ParseVersionCommand(actionData map[string]interface{}) (VersionCommand, error) {
+func ParseVersionCommand(actionData map[string]any) (VersionCommand, error) {
 	cmdStr, ok := actionData["command"].(string)
 	if !ok {
-		return "", fmt.Errorf("command not found in action data")
+		return "", errors.New("command not found in action data")
 	}
 
 	cmd := VersionCommand(strings.ToUpper(cmdStr))
@@ -82,7 +82,7 @@ func GetInstance() *Handler {
 }
 
 // ChangeVersion performs a controller-initiated upgrade or rollback.
-func (h *Handler) ChangeVersion(actionData map[string]interface{}) error {
+func (h *Handler) ChangeVersion(actionData map[string]any) error {
 	logging.LogInfo(moduleName, "Start performing change version operation, received from ioFog controller")
 
 	if h.isContainer() {
@@ -101,7 +101,10 @@ func (h *Handler) ChangeVersion(actionData map[string]interface{}) error {
 		return err
 	}
 
-	provisionKey, _ := actionData["provisionKey"].(string)
+	provisionKey, ok := actionData["provisionKey"].(string)
+	if !ok {
+		provisionKey = ""
+	}
 
 	if h.isValidChangeVersionOperation(command, actionData) {
 		if err := h.executeChangeVersionScript(command, actionData, provisionKey); err != nil {
@@ -113,7 +116,7 @@ func (h *Handler) ChangeVersion(actionData map[string]interface{}) error {
 	return nil
 }
 
-func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData map[string]interface{}, provisionKey string) error {
+func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData map[string]any, provisionKey string) error {
 	if provisionKey != "" {
 		logging.LogInfo(moduleName, fmt.Sprintf("Change version audit provisionKey=%s", provisionKey))
 	}
@@ -142,7 +145,7 @@ func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData 
 	return nil
 }
 
-func (h *Handler) isValidChangeVersionOperation(command VersionCommand, actionData map[string]interface{}) bool {
+func (h *Handler) isValidChangeVersionOperation(command VersionCommand, actionData map[string]any) bool {
 	switch command {
 	case VersionCommandUpgrade:
 		return h.IsReadyToUpgradeWithAction(actionData)
@@ -159,7 +162,7 @@ func (h *Handler) IsReadyToUpgrade() bool {
 }
 
 // IsReadyToUpgradeWithAction reports upgrade readiness for an optional controller target.
-func (h *Handler) IsReadyToUpgradeWithAction(actionData map[string]interface{}) bool {
+func (h *Handler) IsReadyToUpgradeWithAction(actionData map[string]any) bool {
 	logging.LogDebug(moduleName, "Checking if ready to upgrade")
 
 	if h.otaInProgress() {
@@ -199,7 +202,7 @@ func (h *Handler) IsReadyToUpgradeWithAction(actionData map[string]interface{}) 
 	return ready
 }
 
-func (h *Handler) containerUpgradeReady(actionData map[string]interface{}) bool {
+func (h *Handler) containerUpgradeReady(actionData map[string]any) bool {
 	target, err := h.manager.GetCandidateVersion(actionData)
 	if err != nil || target == "" {
 		return false
@@ -287,9 +290,7 @@ func defaultStartDetached(script string, args ...string) error {
 	cmd := exec.Command("sh", cmdArgs...) // #nosec G204 -- script path is fixed contract path; args are validated flags
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	}
+	setDetachedProcAttr(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

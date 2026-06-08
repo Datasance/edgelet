@@ -590,28 +590,8 @@ paths:
           name: source
           schema:
             type: string
-            enum: [managed, local, all]
-        - in: query
-          name: application
-          schema:
-            type: string
-        - in: query
-          name: name
-          schema:
-            type: string
-        - in: query
-          name: state
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 1
-        - in: query
-          name: cursor
-          schema:
-            type: string
+            enum: [managed, local, controlplane, all]
+          description: Filter by workload source (default all).
       responses:
         "200":
           description: Microservice list
@@ -625,8 +605,6 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/MicroserviceRef"
-                  nextCursor:
-                    type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
   /v1/ms/{id}:

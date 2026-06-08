@@ -31,6 +31,6 @@ func TestClearControllerMicroserviceRuntimeFieldsKeepsSpec(t *testing.T) {
 		t.Fatalf("container_id should be cleared, got %q", loaded[0].ContainerID)
 	}
 	if loaded[0].ImageName != "alpine:3.19" {
-		t.Fatalf("spec image should remain")
+		t.Fatal("spec image should remain")
 	}
 }

@@ -1,0 +1,9 @@
+# Edgelet maintainers
+
+| Name | GitHub | Email |
+|------|--------|-------|
+| Emirhan Durmus | [@emirhandurmus](https://github.com/emirhandurmus) | emirhan.durmus@datasance.com |
+
+## Responsibility
+
+Maintainers review merges to `develop`, cut release tags, and triage security reports per [SECURITY.md](SECURITY.md).

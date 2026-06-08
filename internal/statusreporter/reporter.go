@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -128,8 +128,8 @@ func (sr *StatusReporter) setSystemTimeWorker() {
 		case <-ticker.C:
 			logging.LogDebug(moduleName, "Inside setStatusReporterSystemTime")
 			sr.mu.Lock()
-			now := time.Now().UnixMilli()
-			sr.statusReporterStatus.SetSystemTime(now)
+			nowMs := time.Now().UnixMilli()
+			sr.statusReporterStatus.SetSystemTime(nowMs)
 			sr.mu.Unlock()
 			logging.LogDebug(moduleName, "Finished setStatusReporterSystemTime")
 		}
@@ -279,7 +279,7 @@ func getAvailableRuntimesForEngine(engineName string, embeddedEdgelet bool) []st
 			}
 			extras = append(extras, runtimeName)
 		}
-		sort.Strings(extras)
+		slices.Sort(extras)
 
 		runtimes := make([]string, 0, len(baseline)+len(extras))
 		runtimes = append(runtimes, baseline...)
@@ -313,7 +313,7 @@ func sortedUniqueStrings(items []string) []string {
 	for item := range set {
 		out = append(out, item)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -372,7 +372,7 @@ func getAvailableNetworkInterfaces() []string {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 

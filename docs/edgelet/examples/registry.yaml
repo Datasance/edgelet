@@ -1,0 +1,9 @@
+# Example Registry manifest — apply with: edgelet deploy -f registry.yaml
+apiVersion: edgelet.iofog.org/v1
+kind: Registry
+spec:
+  url: quay.io
+  username: operator
+  password: "<replace-me>"
+  email: operator@example.com
+  private: true

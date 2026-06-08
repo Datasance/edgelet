@@ -27,7 +27,7 @@ test/embedded/
 
 ```bash
 # From the repository root:
-cd agent-go
+# From the repository root:
 
 # Full pipeline (first run ~5-10 minutes including VM boot + image pull):
 ./test/embedded/run-all.sh
@@ -138,7 +138,7 @@ Output: **`build/edgelet-linux-<arch>`** — unified linux thin binary (CLI + em
 
 - Spin shim:
   - `https://github.com/spinframework/containerd-shim-spin/releases/download/v0.24.0/containerd-shim-spin-v2-linux-aarch64.tar.gz`
-- Edgelet shim:
+- Edgelet WASM shim (handler **`edgelet-wasmtime`**, `io.containerd.edgelet.v2`):
   - `https://github.com/Datasance/containerd-shim-edgelet/releases/download/v0.1.0/containerd-shim-edgelet-wasm-v2-aarch64-linux-gnu.tar.gz`
 
 Coverage includes:

@@ -284,7 +284,8 @@ go test ./internal/store/... ./internal/fieldagent/... ./internal/processmanager
 
 | Document | Topic |
 |----------|--------|
-| [deployment.md](deployment.md) | Install, systemd units, `diskDirectory` layout |
+| [installation.md](installation.md) | Install, OTA, upgrade/rollback |
+| [deployment.md](deployment.md) | systemd units, `diskDirectory` layout |
 | [troubleshooting.md](troubleshooting.md) | Daemon won't start (includes disk space under `/var/lib/edgelet`) |
 | [control-plane.md](control-plane.md) | ControlPlane redeploy after DB wipe |
 | [container-engine.md](container-engine.md) | `/var/lib/edgelet` vs `edgelet-containerd` data paths |

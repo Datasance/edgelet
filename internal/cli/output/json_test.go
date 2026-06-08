@@ -28,8 +28,12 @@ func TestJSONFormatterGoldenRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	daemon, ok := decoded["daemon"].(map[string]any)
-	if !ok || daemon["running"] != true {
+	daemon, daemonOK := decoded["daemon"].(map[string]any)
+	if !daemonOK {
+		t.Fatalf("unexpected daemon payload: %#v", decoded["daemon"])
+	}
+	running, runningOK := daemon["running"].(bool)
+	if !runningOK || !running {
 		t.Fatalf("unexpected daemon payload: %#v", decoded["daemon"])
 	}
 }

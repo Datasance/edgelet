@@ -235,7 +235,7 @@ func (c *ExecSessionCallback) forwardToWebSocket(msgType byte, data []byte) {
 // WriteInput writes input data to stdin
 func (c *ExecSessionCallback) WriteInput(data []byte) error {
 	if !c.isRunning.Load() {
-		return fmt.Errorf("session is not running")
+		return errors.New("session is not running")
 	}
 
 	c.mu.RLock()
@@ -243,7 +243,7 @@ func (c *ExecSessionCallback) WriteInput(data []byte) error {
 	c.mu.RUnlock()
 
 	if stdin == nil {
-		return fmt.Errorf("stdin is not available")
+		return errors.New("stdin is not available")
 	}
 
 	_, err := stdin.Write(data)

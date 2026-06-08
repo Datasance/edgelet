@@ -59,7 +59,7 @@ func ValidateEdgeletAPIJWT(tokenString string) (*LocalJWTValidationResult, error
 	if err := validateEdgeletAPITokenClaims(claims); err != nil {
 		return nil, err
 	}
-	if tokenUse, _ := claims["tokenUse"].(string); tokenUse != tokenUseEdgeletAPI {
+	if tokenUse, ok := claims["tokenUse"].(string); ok && tokenUse != tokenUseEdgeletAPI {
 		return nil, errors.New("bootstrap mode only accepts edgeletapi tokenUse")
 	}
 	return &LocalJWTValidationResult{Claims: claims, Alg: alg}, nil
@@ -73,7 +73,10 @@ func parseClaimsUnverified(tokenString string) (jwt.MapClaims, string, error) {
 		return nil, "", err
 	}
 
-	alg, _ := token.Header["alg"].(string)
+	alg, ok := token.Header["alg"].(string)
+	if !ok {
+		alg = ""
+	}
 	return claims, alg, nil
 }
 
@@ -88,14 +91,20 @@ func validateRequiredTemporalClaims(claims jwt.MapClaims) error {
 }
 
 func validateEdgeletAPITokenClaims(claims jwt.MapClaims) error {
-	iss, _ := claims["iss"].(string)
-	if strings.TrimSpace(iss) != jwtIssuer {
-		return fmt.Errorf("invalid issuer")
+	iss, ok := claims["iss"].(string)
+	if !ok {
+		iss = ""
 	}
-	tokenUse, _ := claims["tokenUse"].(string)
+	if strings.TrimSpace(iss) != jwtIssuer {
+		return errors.New("invalid issuer")
+	}
+	tokenUse, ok := claims["tokenUse"].(string)
+	if !ok {
+		tokenUse = ""
+	}
 	tokenUse = strings.TrimSpace(tokenUse)
 	if tokenUse != tokenUseEdgeletAPI && tokenUse != tokenUseServiceAccount {
-		return fmt.Errorf("invalid token use")
+		return errors.New("invalid token use")
 	}
 	expectedAudience := edgeletAPIAudience
 	if tokenUse == tokenUseServiceAccount {
@@ -106,28 +115,28 @@ func validateEdgeletAPITokenClaims(claims jwt.MapClaims) error {
 		switch v := audRaw.(type) {
 		case string:
 			if strings.TrimSpace(v) != expectedAudience {
-				return fmt.Errorf("invalid audience")
+				return errors.New("invalid audience")
 			}
-		case []interface{}:
+		case []any:
 			for _, item := range v {
 				if aud, ok := item.(string); ok && strings.TrimSpace(aud) == expectedAudience {
 					return nil
 				}
 			}
-			return fmt.Errorf("invalid audience")
+			return errors.New("invalid audience")
 		case []string:
 			for _, aud := range v {
 				if strings.TrimSpace(aud) == expectedAudience {
 					return nil
 				}
 			}
-			return fmt.Errorf("invalid audience")
+			return errors.New("invalid audience")
 		default:
-			return fmt.Errorf("invalid audience")
+			return errors.New("invalid audience")
 		}
 		return nil
 	}
-	return fmt.Errorf("missing audience")
+	return errors.New("missing audience")
 }
 
 func isProvisionedForJWT() (bool, error) {

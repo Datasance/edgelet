@@ -130,7 +130,7 @@ func TestLoadCertificatesFromFile(t *testing.T) {
 	if _, err := tmpFile.Write(certPEM); err != nil {
 		t.Fatalf("Failed to write certificate: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Load certificates from file
 	certs, err := LoadCertificatesFromFile(tmpFile.Name())

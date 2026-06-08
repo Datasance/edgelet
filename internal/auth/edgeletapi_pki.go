@@ -121,10 +121,7 @@ func generateEdgeletAPIPKI(caPath, certPath, keyPath string) error {
 	if err := writeFileAtomically(certPath, srvPEM, 0644); err != nil {
 		return err
 	}
-	if err := writeFileAtomically(keyPath, srvKeyPEM, 0600); err != nil {
-		return err
-	}
-	return nil
+	return writeFileAtomically(keyPath, srvKeyPEM, 0600)
 }
 
 func writeFileAtomically(path string, data []byte, mode os.FileMode) error {

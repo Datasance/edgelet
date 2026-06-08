@@ -69,7 +69,9 @@ func TestIsInteractive_OsFileNotTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	if IsInteractive(f, Options{}) {
 		t.Fatal("expected non-interactive for regular file writer")
 	}
@@ -81,7 +83,9 @@ func TestIsInteractive_OsFileTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	prev := isTerminalFile
 	isTerminalFile = func(*os.File) bool { return true }

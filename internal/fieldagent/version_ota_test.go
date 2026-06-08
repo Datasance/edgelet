@@ -24,10 +24,12 @@ func TestChangeVersionReadinessStatusPayload(t *testing.T) {
 	fa := &FieldAgent{config: config.GetInstance(), state: NewState()}
 	status := fa.getFogStatus()
 
-	if status["isReadyToUpgrade"] != true {
+	readyToUpgrade, ok := status["isReadyToUpgrade"].(bool)
+	if !ok || !readyToUpgrade {
 		t.Fatalf("expected isReadyToUpgrade=true, got %v", status["isReadyToUpgrade"])
 	}
-	if status["isReadyToRollback"] != false {
+	readyToRollback, ok := status["isReadyToRollback"].(bool)
+	if !ok || readyToRollback {
 		t.Fatalf("expected isReadyToRollback=false, got %v", status["isReadyToRollback"])
 	}
 }

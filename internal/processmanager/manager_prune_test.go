@@ -78,7 +78,7 @@ func TestPruneStaleProcessManagerStatuses_PrunesOrphanManagedStatus(t *testing.T
 	pm.pruneStaleProcessManagerStatuses()
 
 	if _, ok := statusreporter.GetInstance().GetProcessManagerStatus().MicroservicesStatus["stale-managed"]; ok {
-		t.Fatalf("expected stale-managed status to be pruned")
+		t.Fatal("expected stale-managed status to be pruned")
 	}
 }
 
@@ -125,13 +125,13 @@ func TestPruneStaleProcessManagerStatuses_KeepsManagedLocalAndRuntimeOwned(t *te
 
 	statuses := statusreporter.GetInstance().GetProcessManagerStatus().MicroservicesStatus
 	if _, ok := statuses["managed-1"]; !ok {
-		t.Fatalf("expected managed status to be kept")
+		t.Fatal("expected managed status to be kept")
 	}
 	if _, ok := statuses["local-1"]; !ok {
-		t.Fatalf("expected local status to be kept")
+		t.Fatal("expected local status to be kept")
 	}
 	if _, ok := statuses["runtime-only-1"]; !ok {
-		t.Fatalf("expected runtime-only transitional status to be kept")
+		t.Fatal("expected runtime-only transitional status to be kept")
 	}
 }
 
@@ -145,7 +145,7 @@ func TestPruneStaleProcessManagerStatuses_FailOpenWhenLocalListFails(t *testing.
 	pm.pruneStaleProcessManagerStatuses()
 
 	if _, ok := statusreporter.GetInstance().GetProcessManagerStatus().MicroservicesStatus["stale-managed"]; !ok {
-		t.Fatalf("expected stale-managed status to remain when local list fails")
+		t.Fatal("expected stale-managed status to remain when local list fails")
 	}
 }
 
@@ -160,7 +160,7 @@ func TestPruneStaleProcessManagerStatuses_KeepsDeletedOrphanForControllerReport(
 
 	st, ok := statusreporter.GetInstance().GetProcessManagerStatus().MicroservicesStatus["removed-ms"]
 	if !ok {
-		t.Fatalf("expected deleted orphan status to remain for controller reporting")
+		t.Fatal("expected deleted orphan status to remain for controller reporting")
 	}
 	if st == nil || st.Status != models.MicroserviceStateDeleted {
 		t.Fatalf("expected deleted state to be preserved, got %#v", st)
@@ -200,6 +200,6 @@ func TestPruneStaleProcessManagerStatuses_FailOpenWhenRuntimeListFails(t *testin
 	pm.pruneStaleProcessManagerStatuses()
 
 	if _, ok := statusreporter.GetInstance().GetProcessManagerStatus().MicroservicesStatus["stale-managed"]; !ok {
-		t.Fatalf("expected stale-managed status to remain when runtime list fails")
+		t.Fatal("expected stale-managed status to remain when runtime list fails")
 	}
 }

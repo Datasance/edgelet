@@ -13,12 +13,12 @@ const requestIDHeader = "X-Request-Id"
 type contextKey string
 
 const (
-	requestIDContextKey contextKey = "edgeletapi.requestId"
+	requestIDContextKey contextKey = "edgeletapi.requestID"
 	routeContextKey     contextKey = "edgeletapi.route"
 	authMetaContextKey  contextKey = "edgeletapi.authMeta"
 )
 
-func requestIdMiddleware(next http.HandlerFunc) http.HandlerFunc {
+func requestIDMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestID := strings.TrimSpace(r.Header.Get(requestIDHeader))
 		if requestID == "" {
@@ -42,17 +42,17 @@ func requestIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-func withAuthMeta(r *http.Request, authMeta map[string]interface{}) *http.Request {
+func withAuthMeta(r *http.Request, authMeta map[string]any) *http.Request {
 	if len(authMeta) == 0 {
 		return r
 	}
 	return r.WithContext(context.WithValue(r.Context(), authMetaContextKey, authMeta))
 }
 
-func authMetaFromContext(ctx context.Context) map[string]interface{} {
-	meta, ok := ctx.Value(authMetaContextKey).(map[string]interface{})
+func authMetaFromContext(ctx context.Context) map[string]any {
+	meta, ok := ctx.Value(authMetaContextKey).(map[string]any)
 	if !ok || len(meta) == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	return meta
 }

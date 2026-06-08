@@ -20,7 +20,7 @@ func (c *Client) CreateExecSession(containerID string, command []string) (string
 
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -53,7 +53,7 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -70,7 +70,9 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		logging.LogError(execModuleName, "Error starting exec session", err)
 		return fmt.Errorf("failed to start exec session: %w", err)
 	}
-	defer execAttachResp.Close()
+	defer func() {
+		execAttachResp.Close()
+	}()
 
 	// Handle I/O in goroutines
 	done := make(chan error, 3)
@@ -116,7 +118,7 @@ func (c *Client) GetExecSessionStatus(execID string) (*types.ContainerExecInspec
 
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -138,7 +140,7 @@ func (c *Client) GetExecSessionExitCode(execID string) (int, error) {
 		return 0, err
 	}
 	if info.Running {
-		return 0, fmt.Errorf("exec session is still running")
+		return 0, errors.New("exec session is still running")
 	}
 	return info.ExitCode, nil
 }
@@ -147,7 +149,7 @@ func (c *Client) GetExecSessionExitCode(execID string) (int, error) {
 func (c *Client) ResizeExecSession(execID string, cols, rows uint32) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 	return cli.ContainerExecResize(c.GetContext(), execID, container.ResizeOptions{
 		Width:  uint(cols),
@@ -161,7 +163,7 @@ func (c *Client) KillExecSession(execID string) error {
 
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,13 +12,13 @@ import (
 // UpsertLocalWorkload upserts a local workload record.
 func (d *DB) UpsertLocalWorkload(ms *models.LocalDeployedMicroservice) error {
 	if ms == nil {
-		return fmt.Errorf("local deployed microservice is nil")
+		return errors.New("local deployed microservice is nil")
 	}
 	if ms.LocalUUID == "" {
-		return fmt.Errorf("local_uuid is required")
+		return errors.New("local_uuid is required")
 	}
 	if ms.ManifestYAML == "" {
-		return fmt.Errorf("manifest_yaml is required")
+		return errors.New("manifest_yaml is required")
 	}
 	ms.NormalizeDefaults()
 
@@ -61,7 +62,7 @@ func (d *DB) UpsertLocalWorkload(ms *models.LocalDeployedMicroservice) error {
 // ListLocalWorkloads returns all local workload records.
 func (d *DB) ListLocalWorkloads() ([]*models.LocalDeployedMicroservice, error) {
 	if d.Conn() == nil {
-		return nil, fmt.Errorf("database is closed")
+		return nil, errors.New("database is closed")
 	}
 	rows, err := d.Conn().Query(`SELECT
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name, state, container_id,
@@ -71,7 +72,9 @@ func (d *DB) ListLocalWorkloads() ([]*models.LocalDeployedMicroservice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query local_workloads: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.LocalDeployedMicroservice
 	for rows.Next() {
@@ -121,7 +124,7 @@ func (d *DB) FindLocalWorkloadsByAppAndName(application, name string) ([]*models
 		return make([]*models.LocalDeployedMicroservice, 0), nil
 	}
 	if d.Conn() == nil {
-		return nil, fmt.Errorf("database is closed")
+		return nil, errors.New("database is closed")
 	}
 	rows, err := d.Conn().Query(`SELECT
 		local_uuid, application_name, microservice_name, source_name, manifest_yaml, image_name, state, container_id,
@@ -134,7 +137,9 @@ func (d *DB) FindLocalWorkloadsByAppAndName(application, name string) ([]*models
 	if err != nil {
 		return nil, fmt.Errorf("failed to query local_workloads by app/name: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	items := make([]*models.LocalDeployedMicroservice, 0)
 	for rows.Next() {

@@ -1,12 +1,13 @@
 package resourceconsumption
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,7 +81,7 @@ func (rcm *Manager) Start() error {
 
 	// Start background worker
 	rcm.wg.Add(1)
-	go rcm.getUsageDataWorker()
+	go rcm.runUsageDataWorker()
 
 	logging.LogInfo(moduleName, "Resource Consumption Manager started")
 	return nil
@@ -174,8 +175,8 @@ func (rcm *Manager) InstanceConfigUpdated() {
 	rcm.cpuLimit = rcm.config.CPULimit                          // Percentage
 }
 
-// getUsageDataWorker periodically computes resource usage and updates status
-func (rcm *Manager) getUsageDataWorker() {
+// runUsageDataWorker periodically computes resource usage and updates status
+func (rcm *Manager) runUsageDataWorker() {
 	defer rcm.wg.Done()
 
 	cfg := rcm.config
@@ -435,10 +436,9 @@ func (rcm *Manager) removeArchives(amount int64) {
 			}
 		}
 	}
-
 	// Sort by timestamp (oldest first)
-	sort.Slice(fileInfos, func(i, j int) bool {
-		return fileInfos[i].timestamp < fileInfos[j].timestamp
+	slices.SortFunc(fileInfos, func(a, b fileInfo) int {
+		return cmp.Compare(a.timestamp, b.timestamp)
 	})
 
 	// Remove files until we've freed enough space

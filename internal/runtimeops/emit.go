@@ -137,11 +137,11 @@ func (e RuntimeEvent) toFieldsMap() map[string]any {
 	return m
 }
 
-func truncateString(s string, max int) string {
-	if max <= 0 || len(s) <= max {
+func truncateString(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
 		return s
 	}
-	return s[:max]
+	return s[:maxLen]
 }
 
 type truncatedError struct {

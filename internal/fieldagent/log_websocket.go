@@ -91,7 +91,11 @@ var (
 func GetLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string, isMicroserviceLog bool) *LogSessionWebSocketHandler {
 	key := sessionID
 	handler, _ := activeLogHandlers.LoadOrStore(key, newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID, isMicroserviceLog))
-	return handler.(*LogSessionWebSocketHandler)
+	h, ok := handler.(*LogSessionWebSocketHandler)
+	if !ok {
+		return nil
+	}
+	return h
 }
 
 // newLogSessionWebSocketHandler creates a new LogSessionWebSocketHandler
@@ -99,7 +103,7 @@ func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string
 	cfg := config.GetInstance()
 	controllerURL := cfg.ControllerURL
 	if controllerURL == "" {
-		logging.LogError(logWebSocketModuleName, "Controller URL is not configured", fmt.Errorf("controller URL is empty"))
+		logging.LogError(logWebSocketModuleName, "Controller URL is not configured", errors.New("controller URL is empty"))
 		return nil
 	}
 
@@ -162,7 +166,7 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	}
 
 	if !h.transitionState(LogStateDisconnected, LogStateConnecting) {
-		return fmt.Errorf("cannot connect: invalid state transition")
+		return errors.New("cannot connect: invalid state transition")
 	}
 
 	// Generate JWT token
@@ -235,7 +239,10 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 
 // transitionState safely transitions connection state
 func (h *LogSessionWebSocketHandler) transitionState(from, to LogConnectionState) bool {
-	current := h.state.Load().(LogConnectionState)
+	current, ok := h.state.Load().(LogConnectionState)
+	if !ok {
+		return false
+	}
 	if current == from {
 		h.state.Store(to)
 		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Connection state transition: %v -> %v", from, to))
@@ -248,7 +255,7 @@ func (h *LogSessionWebSocketHandler) transitionState(from, to LogConnectionState
 func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) error {
 	if !h.isConnected.Load() {
 		logging.LogWarn(logWebSocketModuleName, "Cannot send message - not connected")
-		return fmt.Errorf("not connected")
+		return errors.New("not connected")
 	}
 
 	// If not active, buffer the output
@@ -258,11 +265,11 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 		// Check buffer limits
 		if h.bufferedFrames.Load() >= logMaxBufferedFrames {
 			logging.LogWarn(logWebSocketModuleName, "Buffer full, dropping frame")
-			return fmt.Errorf("buffer full")
+			return errors.New("buffer full")
 		}
 		if h.bufferedSize.Load()+int64(len(data)) > logMaxBufferSize {
 			logging.LogWarn(logWebSocketModuleName, "Buffer size limit reached, dropping frame")
-			return fmt.Errorf("buffer size limit reached")
+			return errors.New("buffer size limit reached")
 		}
 
 		// Store both the type and data so flushBuffer can preserve the original msgType.
@@ -275,7 +282,7 @@ func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) erro
 			h.bufferedSize.Add(int64(len(data)))
 		default:
 			logging.LogWarn(logWebSocketModuleName, "Buffer channel full, dropping frame")
-			return fmt.Errorf("buffer channel full")
+			return errors.New("buffer channel full")
 		}
 		return nil
 	}
@@ -482,9 +489,10 @@ func (h *LogSessionWebSocketHandler) readWorker() {
 				return
 			}
 
-			if messageType == websocket.BinaryMessage {
+			switch messageType {
+			case websocket.BinaryMessage:
 				h.handleMessage(data)
-			} else if messageType == websocket.PongMessage {
+			case websocket.PongMessage:
 				// Handle pong
 				logging.LogDebug(logWebSocketModuleName, "Received pong")
 			}
@@ -537,15 +545,8 @@ func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 				return
 			}
 			sessionID = val
-		case "microserviceUuid", "iofogUuid", "timestamp":
-			// Skip these fields (not needed for processing)
-			err = dec.Skip()
-			if err != nil {
-				logging.LogError(logWebSocketModuleName, "Failed to skip value", err)
-				return
-			}
 		default:
-			// Skip unknown keys
+			// Skip unknown and unused fields (microserviceUuid, iofogUuid, timestamp, etc.)
 			err = dec.Skip()
 			if err != nil {
 				logging.LogError(logWebSocketModuleName, "Failed to skip value", err)
@@ -576,13 +577,13 @@ func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID strin
 	}
 
 	// Parse tailConfig from data
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal(data, &config); err != nil {
 		logging.LogError(logWebSocketModuleName, "Failed to parse LOG_START data as JSON", err)
 		return
 	}
 
-	tailConfigMap, ok := config["tailConfig"].(map[string]interface{})
+	tailConfigMap, ok := config["tailConfig"].(map[string]any)
 	if !ok {
 		logging.LogWarn(logWebSocketModuleName, "LOG_START message missing tailConfig")
 	}

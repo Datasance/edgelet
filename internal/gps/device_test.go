@@ -1,3 +1,5 @@
+//go:build unix
+
 package gps
 
 import (
@@ -13,8 +15,12 @@ func TestReadLineWithTimeout_TimesOutWithoutData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
-	defer readerEnd.Close()
-	defer writerEnd.Close()
+	defer func() {
+		_ = readerEnd.Close()
+	}()
+	defer func() {
+		_ = writerEnd.Close()
+	}()
 
 	d := &DeviceHandler{}
 	reader := bufio.NewReader(readerEnd)
@@ -27,6 +33,6 @@ func TestReadLineWithTimeout_TimesOutWithoutData(t *testing.T) {
 		t.Fatalf("expected timeout error, got %v", err)
 	}
 	if time.Since(start) < 40*time.Millisecond {
-		t.Fatalf("read returned too quickly, expected timeout wait")
+		t.Fatal("read returned too quickly, expected timeout wait")
 	}
 }

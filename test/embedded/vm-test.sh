@@ -544,7 +544,7 @@ assert_ok "config.toml lists installed spin and edgelet shims" \
     R "set -e
 grep -q 'runtimes.spin]' /var/lib/edgelet-containerd/config.toml
 grep -q 'containerd-shim-spin-v2' /var/lib/edgelet-containerd/config.toml
-grep -q 'runtimes.edgelet]' /var/lib/edgelet-containerd/config.toml
+grep -q 'runtimes.edgelet-wasmtime]' /var/lib/edgelet-containerd/config.toml
 grep -q 'containerd-shim-edgelet-v2' /var/lib/edgelet-containerd/config.toml"
 
 assert_ok "control reattach after data-plane restart (edgelet)" \
@@ -572,32 +572,32 @@ metadata:
 handler: spin
 EOF"
 
-assert_ok "create RuntimeClass manifest for edgelet" \
-    R "cat >/tmp/runtimeclass-edgelet.yaml <<'EOF'
+assert_ok "create RuntimeClass manifest for edgelet-wasmtime" \
+    R "cat >/tmp/runtimeclass-edgelet-wasmtime.yaml <<'EOF'
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 EOF"
 
 assert_contains "apply RuntimeClass spin via CLI (DB row)" "runtimeclass manifest applied successfully" \
     R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-spin.yaml"
 
-assert_contains "apply RuntimeClass edgelet via CLI (DB row)" "runtimeclass manifest applied successfully" \
-    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet.yaml"
+assert_contains "apply RuntimeClass edgelet-wasmtime via CLI (DB row)" "runtimeclass manifest applied successfully" \
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet-wasmtime.yaml"
 
-assert_ok "runtimeclass ls lists spin and edgelet handlers" \
+assert_ok "runtimeclass ls lists spin and edgelet-wasmtime handlers" \
     R "set -e
 out=\$(edgelet runtimeclass ls)
 echo \"\${out}\" | grep -q spin
-echo \"\${out}\" | grep -q edgelet"
+echo \"\${out}\" | grep -q edgelet-wasmtime"
 
 assert_contains "validate RuntimeClass spin manifest" "manifest is valid" \
     R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-spin.yaml --dry-run"
 
-assert_contains "validate RuntimeClass edgelet manifest" "manifest is valid" \
-    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet.yaml --dry-run"
+assert_contains "validate RuntimeClass edgelet-wasmtime manifest" "manifest is valid" \
+    R "test -S /run/edgelet/edgelet.sock && edgelet deploy -f /tmp/runtimeclass-edgelet-wasmtime.yaml --dry-run"
 
 assert_ok "create RuntimeClass apply/delete operation helper" \
     R "cat >/tmp/runtimeclass-ops.sh <<'EOF'
@@ -762,12 +762,12 @@ systemctl is-active --quiet edgelet
 edgelet system status >/dev/null 2>&1
 ! journalctl -u edgelet --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
 
-assert_ok "apply RuntimeClass edgelet succeeds without controlled containerd reconfigure" \
+assert_ok "apply RuntimeClass edgelet-wasmtime succeeds without controlled containerd reconfigure" \
     R "set -e
 test -S /run/edgelet/edgelet.sock
 source /tmp/runtimeclass-ops.sh
 since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
-runtimeclass_apply_wait /tmp/runtimeclass-edgelet.yaml
+runtimeclass_apply_wait /tmp/runtimeclass-edgelet-wasmtime.yaml
 systemctl is-active --quiet edgelet
 edgelet system status >/dev/null 2>&1
 ! journalctl -u edgelet --since \"\${since_ts}\" --no-pager | grep -q 'Starting controlled embedded containerd reconfigure'"
@@ -779,9 +779,9 @@ for i in \$(seq 1 60); do
   status=\$(edgelet system status || true)
   if echo \"\${status}\" | grep -q 'availableRuntimes' &&
      echo \"\${status}\" | grep -q 'spin' &&
-     echo \"\${status}\" | grep -q 'edgelet' &&
+     echo \"\${status}\" | grep -q 'edgelet-wasmtime' &&
      ! echo \"\${status}\" | grep -q 'spin-local' &&
-     ! echo \"\${status}\" | grep -q 'edgelet-local'; then
+     ! echo \"\${status}\" | grep -q 'edgelet-wasmtime-local'; then
     ok=1
     break
   fi
@@ -825,7 +825,7 @@ spec:
     hostNetworkMode: false
     isPrivileged: false
     platform: wasi/wasm
-    runtime: edgelet
+    runtime: edgelet-wasmtime
   schedule: 50
 EOF"
 
@@ -920,16 +920,16 @@ assert_ok "delete RuntimeClass spin converges (sync or async path)" \
 source /tmp/runtimeclass-ops.sh
 runtimeclass_delete_wait spin"
 
-assert_ok "delete RuntimeClass edgelet converges (sync or async path)" \
+assert_ok "delete RuntimeClass edgelet-wasmtime converges (sync or async path)" \
     R "set -e
 source /tmp/runtimeclass-ops.sh
-runtimeclass_delete_wait edgelet"
+runtimeclass_delete_wait edgelet-wasmtime"
 
 assert_ok "deleted RuntimeClass entries are no longer retrievable via API" \
     R "set -e
 source /tmp/runtimeclass-ops.sh
 runtimeclass_expect_missing spin
-runtimeclass_expect_missing edgelet"
+runtimeclass_expect_missing edgelet-wasmtime"
 
 ###############################################################################
 # Summary

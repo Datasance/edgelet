@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -66,7 +67,9 @@ func tableColumns(t *testing.T, db *DB, table string) map[string]struct {
 	if err != nil {
 		t.Fatalf("PRAGMA table_info(%s): %v", table, err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	out := make(map[string]struct {
 		ctype string
@@ -78,7 +81,7 @@ func tableColumns(t *testing.T, db *DB, table string) map[string]struct {
 			name      string
 			ctype     string
 			notnull   int
-			dfltValue interface{}
+			dfltValue any
 			pk        int
 		)
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
@@ -249,7 +252,7 @@ func TestSchemaV1_SystemControlPlaneKeyColumns(t *testing.T) {
 		"observed_generation",
 	})
 	if cols["id"].pk != 1 {
-		t.Fatalf("system_control_plane.id must be primary key")
+		t.Fatal("system_control_plane.id must be primary key")
 	}
 }
 
@@ -393,7 +396,7 @@ func TestLocalWorkloadCRUD(t *testing.T) {
 	if err := db.DeleteLocalWorkload("local-1"); err != nil {
 		t.Fatalf("delete local workload: %v", err)
 	}
-	if _, err := db.GetLocalWorkload("local-1"); err != sql.ErrNoRows {
+	if _, err := db.GetLocalWorkload("local-1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected ErrNoRows after delete, got %v", err)
 	}
 }
@@ -468,9 +471,9 @@ func TestLocalRuntimeClassCRUD(t *testing.T) {
 	db := openFreshStoreDB(t)
 
 	rc := &models.LocalRuntimeClass{
-		Name:        "edgelet",
-		Handler:     "edgelet",
-		RuntimeName: "edgelet",
+		Name:        "edgelet-wasmtime",
+		Handler:     "edgelet-wasmtime",
+		RuntimeName: "edgelet-wasmtime",
 	}
 	if err := db.UpsertLocalRuntimeClass(rc); err != nil {
 		t.Fatalf("upsert local runtime class: %v", err)
@@ -480,19 +483,19 @@ func TestLocalRuntimeClassCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list local runtime classes: %v", err)
 	}
-	if len(items) != 1 || items[0].RuntimeName != "edgelet" {
-		t.Fatalf("expected 1 edgelet runtime class, got %+v", items)
+	if len(items) != 1 || items[0].RuntimeName != "edgelet-wasmtime" {
+		t.Fatalf("expected 1 edgelet-wasmtime runtime class, got %+v", items)
 	}
 
-	got, err := db.GetLocalRuntimeClass("edgelet")
-	if err != nil || got.Handler != "edgelet" {
+	got, err := db.GetLocalRuntimeClass("edgelet-wasmtime")
+	if err != nil || got.Handler != "edgelet-wasmtime" {
 		t.Fatalf("get runtime class: %+v err=%v", got, err)
 	}
 
-	if err := db.DeleteLocalRuntimeClass("edgelet"); err != nil {
+	if err := db.DeleteLocalRuntimeClass("edgelet-wasmtime"); err != nil {
 		t.Fatalf("delete runtime class: %v", err)
 	}
-	if _, err := db.GetLocalRuntimeClass("edgelet"); err != sql.ErrNoRows {
+	if _, err := db.GetLocalRuntimeClass("edgelet-wasmtime"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected ErrNoRows after delete, got %v", err)
 	}
 }

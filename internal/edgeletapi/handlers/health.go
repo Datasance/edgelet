@@ -53,7 +53,7 @@ func HealthLiveHandler(w http.ResponseWriter, _ *http.Request) {
 	state := getEdgeletAPIStartupState()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","localApiPhase":"%s"}`, state.phase)))
+	_, _ = fmt.Fprintf(w, `{"status":"ok","localApiPhase":"%s"}`, state.phase)
 }
 
 // HealthReadyHandler handles /health/ready — readiness probe.
@@ -64,13 +64,13 @@ func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
 	if state.phase == EdgeletAPIStartupFailed {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_start_failed","detail":"%s"}`, state.reason)))
+		_, _ = fmt.Fprintf(w, `{"status":"not_ready","reason":"local_api_start_failed","detail":"%s"}`, state.reason)
 		return
 	}
 	if state.phase != EdgeletAPIStartupListening {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"not_ready","reason":"local_api_listener_not_ready","phase":"%s"}`, state.phase)))
+		_, _ = fmt.Fprintf(w, `{"status":"not_ready","reason":"local_api_listener_not_ready","phase":"%s"}`, state.phase)
 		return
 	}
 

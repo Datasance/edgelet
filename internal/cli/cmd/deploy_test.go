@@ -20,16 +20,16 @@ func writeTestManifest(t *testing.T) string {
 	return path
 }
 
-func (f *fakeClient) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
+func (f *fakeClient) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]any, error) {
 	switch {
 	case strings.Contains(path, ":validate"):
-		return map[string]interface{}{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil
+		return map[string]any{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil
 	case strings.Contains(path, ":apply") && !strings.Contains(path, ":apply/"):
-		return map[string]interface{}{"status": "running", "operationId": "op-1"}, nil
+		return map[string]any{"status": "running", "operationId": "op-1"}, nil
 	case strings.Contains(path, ":apply/op-1"):
-		return map[string]interface{}{"status": "succeeded", "deploymentId": "dep-1", "stage": "done"}, nil
+		return map[string]any{"status": "succeeded", "deploymentId": "dep-1", "stage": "done"}, nil
 	default:
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 }
 
@@ -40,11 +40,12 @@ func TestDeployDryRunJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if decoded["valid"] != true {
+	valid, ok := decoded["valid"].(bool)
+	if !ok || !valid {
 		t.Fatalf("expected validate payload, got %#v", decoded)
 	}
 }
@@ -56,7 +57,7 @@ func TestDeployApplyJSONIncludesStages(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}

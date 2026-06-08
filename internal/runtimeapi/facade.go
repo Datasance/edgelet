@@ -1,13 +1,15 @@
+//revive:disable:nested-structs
 package runtimeapi
 
 import (
 	"bytes"
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -73,8 +75,8 @@ func (e *ErrReservedRuntimeClassDelete) Error() string {
 	return fmt.Sprintf("runtimeclass delete is not allowed for reserved runtime name: %s", strings.TrimSpace(strings.ToLower(e.Name)))
 }
 
-func (e *ErrReservedRuntimeClassDelete) Details() map[string]interface{} {
-	return map[string]interface{}{
+func (e *ErrReservedRuntimeClassDelete) Details() map[string]any {
+	return map[string]any{
 		"runtimeClassName": strings.TrimSpace(strings.ToLower(e.Name)),
 	}
 }
@@ -98,8 +100,8 @@ func (e *ErrRuntimeClassInUse) Error() string {
 	return fmt.Sprintf("cannot delete runtimeclass '%s': microservice uuid=%s is still using runtime '%s'; delete dependent microservices first", name, firstUUID, runtimeUsed)
 }
 
-func (e *ErrRuntimeClassInUse) Details() map[string]interface{} {
-	return map[string]interface{}{
+func (e *ErrRuntimeClassInUse) Details() map[string]any {
+	return map[string]any{
 		"runtimeClassName":          strings.TrimSpace(strings.ToLower(e.Name)),
 		"runtimeNames":              append([]string{}, e.RuntimeNames...),
 		"blockingMicroserviceUuids": append([]string{}, e.BlockingMicroserviceUuids...),
@@ -125,12 +127,12 @@ func (e *ErrRuntimeClassOperation) Unwrap() error {
 	return e.Err
 }
 
-func (e *ErrRuntimeClassOperation) Details() map[string]interface{} {
+func (e *ErrRuntimeClassOperation) Details() map[string]any {
 	stage := NormalizeRuntimeClassOperationStage(e.Stage)
 	if stage == "" {
 		return nil
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"stage": stage,
 	}
 }
@@ -240,13 +242,13 @@ func normalizePruneMode(mode string) (string, error) {
 }
 
 // Prune triggers runtime prune for the requested mode.
-func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
+func (f *Facade) Prune(mode string) (map[string]any, error) {
 	normalizedMode, err := normalizePruneMode(mode)
 	if err != nil {
 		return nil, err
 	}
 	pm := processmanager.GetInstance()
-	result := map[string]interface{}{
+	result := map[string]any{
 		"status": "ok",
 		"mode":   normalizedMode,
 		"engine": currentEngineName(f.cfg),
@@ -265,7 +267,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			reclaimed = report.SpaceReclaimedBytes
 			deletedCount = report.DeletedCount
 		}
-		sort.Strings(deleted)
+		slices.Sort(deleted)
 		result["deleted"] = deleted
 		result["deletedCount"] = deletedCount
 		result["spaceReclaimedBytes"] = reclaimed
@@ -282,7 +284,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			deleted = append(deleted, report.Deleted...)
 			deletedCount = report.DeletedCount
 		}
-		sort.Strings(deleted)
+		slices.Sort(deleted)
 		result["deleted"] = deleted
 		result["deletedCount"] = deletedCount
 		result["message"] = "pruned containers"
@@ -299,7 +301,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			deletedCount = report.DeletedCount
 			reclaimed = report.SpaceReclaimedBytes
 		}
-		sort.Strings(deleted)
+		slices.Sort(deleted)
 		result["deleted"] = deleted
 		result["deletedCount"] = deletedCount
 		result["spaceReclaimedBytes"] = reclaimed
@@ -333,7 +335,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			containerDeleted = append(containerDeleted, containerReport.Deleted...)
 			containerDeletedCount = containerReport.DeletedCount
 		}
-		sort.Strings(containerDeleted)
+		slices.Sort(containerDeleted)
 		volumeDeleted := make([]string, 0)
 		volumeDeletedCount := 0
 		volumeReclaimed := int64(0)
@@ -342,7 +344,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			volumeDeletedCount = volumeReport.DeletedCount
 			volumeReclaimed = volumeReport.SpaceReclaimedBytes
 		}
-		sort.Strings(volumeDeleted)
+		slices.Sort(volumeDeleted)
 		imageDeleted := make([]string, 0)
 		imageDeletedCount := 0
 		imageReclaimed := int64(0)
@@ -351,7 +353,7 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 			imageDeletedCount = imageReport.DeletedCount
 			imageReclaimed = imageReport.SpaceReclaimedBytes
 		}
-		sort.Strings(imageDeleted)
+		slices.Sort(imageDeleted)
 		result["containersDeleted"] = containerDeleted
 		result["containersDeletedCount"] = containerDeletedCount
 		result["volumesDeleted"] = volumeDeleted
@@ -375,12 +377,12 @@ func (f *Facade) Prune(mode string) (map[string]interface{}, error) {
 }
 
 // ListImages returns normalized image list for local runtime engine.
-func (f *Facade) ListImages() ([]map[string]interface{}, error) {
+func (f *Facade) ListImages() ([]map[string]any, error) {
 	items, err := processmanager.GetInstance().ListImages()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]map[string]interface{}, 0, len(items))
+	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		repo := strings.TrimSpace(item.Repository)
 		tag := strings.TrimSpace(item.Tag)
@@ -405,7 +407,7 @@ func (f *Facade) ListImages() ([]map[string]interface{}, error) {
 		if !item.CreatedAt.IsZero() {
 			createdAt = item.CreatedAt.UTC().Format(time.RFC3339)
 		}
-		out = append(out, map[string]interface{}{
+		out = append(out, map[string]any{
 			"id":         item.ID,
 			"shortId":    shortID,
 			"repository": repo,
@@ -424,13 +426,13 @@ func (f *Facade) ListImages() ([]map[string]interface{}, error) {
 func (f *Facade) PullImage(imageRef string, registryID *int, platform string) (string, error) {
 	imageRef = strings.TrimSpace(imageRef)
 	if imageRef == "" {
-		return "", fmt.Errorf("image is required")
+		return "", errors.New("image is required")
 	}
 	resolvedImage := imageRef
 	var reg *models.Registry
 	if registryID != nil {
 		if *registryID <= 0 {
-			return "", fmt.Errorf("registryId must be greater than zero")
+			return "", errors.New("registryId must be greater than zero")
 		}
 		item, err := f.db.GetLocalRegistry(*registryID)
 		if err != nil || item == nil {
@@ -444,7 +446,7 @@ func (f *Facade) PullImage(imageRef string, registryID *int, platform string) (s
 	}
 	if p := strings.TrimSpace(platform); p != "" {
 		if !isValidOCIPlatform(p) {
-			return "", fmt.Errorf("platform must follow os/arch[/variant] format")
+			return "", errors.New("platform must follow os/arch[/variant] format")
 		}
 	}
 	if err := processmanager.GetInstance().PullImage(resolvedImage, reg, strings.TrimSpace(platform)); err != nil {
@@ -457,13 +459,13 @@ func (f *Facade) PullImage(imageRef string, registryID *int, platform string) (s
 func (f *Facade) PullImageWithProgress(imageRef string, registryID *int, platform string, onProgress func(float32)) (string, error) {
 	imageRef = strings.TrimSpace(imageRef)
 	if imageRef == "" {
-		return "", fmt.Errorf("image is required")
+		return "", errors.New("image is required")
 	}
 	resolvedImage := imageRef
 	var reg *models.Registry
 	if registryID != nil {
 		if *registryID <= 0 {
-			return "", fmt.Errorf("registryId must be greater than zero")
+			return "", errors.New("registryId must be greater than zero")
 		}
 		item, err := f.db.GetLocalRegistry(*registryID)
 		if err != nil || item == nil {
@@ -477,7 +479,7 @@ func (f *Facade) PullImageWithProgress(imageRef string, registryID *int, platfor
 	}
 	if p := strings.TrimSpace(platform); p != "" {
 		if !isValidOCIPlatform(p) {
-			return "", fmt.Errorf("platform must follow os/arch[/variant] format")
+			return "", errors.New("platform must follow os/arch[/variant] format")
 		}
 	}
 	if err := processmanager.GetInstance().PullImageWithProgress(resolvedImage, reg, strings.TrimSpace(platform), onProgress); err != nil {
@@ -490,14 +492,14 @@ func (f *Facade) PullImageWithProgress(imageRef string, registryID *int, platfor
 func (f *Facade) LoadImageFromPath(path string) ([]engine.LoadedImage, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, fmt.Errorf("path is required")
+		return nil, errors.New("path is required")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to access path: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("path must point to a regular file")
+		return nil, errors.New("path must point to a regular file")
 	}
 	return processmanager.GetInstance().LoadImageFromPath(path)
 }
@@ -506,7 +508,7 @@ func (f *Facade) LoadImageFromPath(path string) ([]engine.LoadedImage, error) {
 func (f *Facade) RemoveImage(selector string) (string, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
-		return "", fmt.Errorf("selector is required")
+		return "", errors.New("selector is required")
 	}
 	pm := processmanager.GetInstance()
 	if err := pm.RemoveImage(selector); err == nil {
@@ -535,7 +537,7 @@ func (f *Facade) RemoveImage(selector string) (string, error) {
 		}
 		return matches[0], nil
 	default:
-		sort.Strings(matches)
+		slices.Sort(matches)
 		candidates := matches
 		if len(candidates) > 5 {
 			candidates = candidates[:5]
@@ -545,13 +547,13 @@ func (f *Facade) RemoveImage(selector string) (string, error) {
 }
 
 // ListRuntimeMicroservices returns process-manager tracked microservices.
-func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
+func (f *Facade) ListRuntimeMicroservices() []map[string]any {
 	pmStatus := f.sr.GetProcessManagerStatus()
 	capHint := 0
 	if pmStatus != nil {
 		capHint = len(pmStatus.MicroservicesStatus)
 	}
-	result := make([]map[string]interface{}, 0, capHint)
+	result := make([]map[string]any, 0, capHint)
 	msByUUID := make(map[string]*models.Microservice)
 	for _, ms := range f.fa.GetLatestMicroservices() {
 		msByUUID[ms.MicroserviceUUID] = ms
@@ -588,7 +590,7 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 				application = ms.ApplicationName
 				image = ms.ImageName
 			}
-			entry := map[string]interface{}{
+			entry := map[string]any{
 				"uuid":        uuid,
 				"name":        name,
 				"application": application,
@@ -610,7 +612,7 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 		if state == "" {
 			state = strings.TrimSpace(item.State)
 		}
-		entry := map[string]interface{}{
+		entry := map[string]any{
 			"uuid":        item.LocalUUID,
 			"name":        item.MicroserviceName,
 			"application": item.ApplicationName,
@@ -631,15 +633,22 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]interface{} {
 			result = append(result, entry)
 		}
 	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i]["uuid"].(string) < result[j]["uuid"].(string)
+	slices.SortFunc(result, func(a, b map[string]any) int {
+		uuidA, ok := a["uuid"].(string)
+		if !ok {
+			uuidA = ""
+		}
+		uuidB, ok := b["uuid"].(string)
+		if !ok {
+			uuidB = ""
+		}
+		return cmp.Compare(uuidA, uuidB)
 	})
 	return result
 }
 
 // GetRuntimeMicroservice returns one process-manager tracked microservice.
-func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, error) {
+func (f *Facade) GetRuntimeMicroservice(id string) (map[string]any, error) {
 	uuid, err := f.ResolveMicroserviceID(id)
 	if err != nil {
 		return nil, err
@@ -647,9 +656,9 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 	if item, ok := f.controlPlaneDeploymentRow(); ok && strings.TrimSpace(item.ControllerUUID) == uuid {
 		entry := controlPlaneRuntimeListEntry(item)
 		if entry == nil {
-			return nil, fmt.Errorf("control plane deployment not found")
+			return nil, errors.New("control plane deployment not found")
 		}
-		entry["raw"] = map[string]interface{}{
+		entry["raw"] = map[string]any{
 			"engineInspect":        f.engineInspectForMicroservice(uuid),
 			"engineType":           currentEngineName(f.cfg),
 			"inspectSchemaVersion": "v1",
@@ -662,7 +671,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 		if state == "" {
 			state = strings.TrimSpace(local.State)
 		}
-		return map[string]interface{}{
+		return map[string]any{
 			"uuid":         local.LocalUUID,
 			"name":         local.MicroserviceName,
 			"application":  local.ApplicationName,
@@ -676,7 +685,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 			"lastError":    local.LastError,
 			"restartCount": local.RestartCount,
 			"manifestYAML": local.ManifestYAML,
-			"raw": map[string]interface{}{
+			"raw": map[string]any{
 				"localDeployment":      local,
 				"engineInspect":        containerInspect,
 				"engineType":           currentEngineName(f.cfg),
@@ -686,11 +695,11 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 	}
 	pmStatus := f.sr.GetProcessManagerStatus()
 	if pmStatus == nil {
-		return nil, fmt.Errorf("process manager status unavailable")
+		return nil, errors.New("process manager status unavailable")
 	}
 	status := pmStatus.GetMicroserviceStatus(uuid)
 	if status == nil || status.Status == models.MicroserviceStateUnknown {
-		return nil, fmt.Errorf("microservice not found")
+		return nil, errors.New("microservice not found")
 	}
 	name := ""
 	application := ""
@@ -700,7 +709,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 		application = ms.ApplicationName
 		image = ms.ImageName
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"uuid":         uuid,
 		"name":         name,
 		"application":  application,
@@ -712,7 +721,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 		"percentage":   status.Percentage,
 		"errorMessage": status.ErrorMessage,
 		"healthStatus": status.HealthStatus,
-		"raw": map[string]interface{}{
+		"raw": map[string]any{
 			"processManager":       status,
 			"engineInspect":        containerInspect,
 			"engineType":           currentEngineName(f.cfg),
@@ -721,12 +730,12 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]interface{}, erro
 	}, nil
 }
 
-func (f *Facade) engineInspectForMicroservice(microserviceUUID string) map[string]interface{} {
+func (f *Facade) engineInspectForMicroservice(microserviceUUID string) map[string]any {
 	if cont, contErr := processmanager.GetInstance().GetContainerForMicroservice(microserviceUUID); contErr == nil && cont != nil {
 		if rawInspect, rawErr := processmanager.GetInstance().InspectContainerRaw(cont.ID); rawErr == nil && rawInspect != nil {
 			return rawInspect
 		}
-		return map[string]interface{}{
+		return map[string]any{
 			"id":     cont.ID,
 			"names":  cont.Names,
 			"image":  cont.Image,
@@ -735,7 +744,7 @@ func (f *Facade) engineInspectForMicroservice(microserviceUUID string) map[strin
 			"labels": cont.Labels,
 		}
 	}
-	return map[string]interface{}{}
+	return map[string]any{}
 }
 
 func currentEngineName(cfg *config.Config) string {
@@ -834,7 +843,7 @@ func imageIDMatchesPrefix(imageID, prefix string) bool {
 func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 	trimmed := strings.TrimSpace(selector)
 	if trimmed == "" {
-		return "", fmt.Errorf("microservice id is required")
+		return "", errors.New("microservice id is required")
 	}
 
 	if f.fa.FindLatestMicroserviceByUUID(trimmed) != nil {
@@ -895,11 +904,11 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 		}
 		switch len(matches) {
 		case 0:
-			return "", fmt.Errorf("microservice not found")
+			return "", errors.New("microservice not found")
 		case 1:
 			return matches[0], nil
 		default:
-			sort.Strings(matches)
+			slices.Sort(matches)
 			return "", &ErrAmbiguousMicroserviceSelector{Matches: matches}
 		}
 	}
@@ -920,7 +929,7 @@ func (f *Facade) ResolveMicroserviceID(selector string) (string, error) {
 		return "", fmt.Errorf("container %s is not mapped to an iofog microservice", cont.ID)
 	}
 
-	return "", fmt.Errorf("microservice not found")
+	return "", errors.New("microservice not found")
 }
 
 func (f *Facade) StartRuntimeMicroservice(selector string) (string, error) {
@@ -1036,12 +1045,12 @@ func (f *Facade) RemoveRuntimeMicroservice(selector string) (string, error) {
 		return "", err
 	}
 	if local, localErr := f.db.GetLocalWorkload(uuid); localErr == nil && local != nil {
-		now := time.Now().Unix()
+		nowSec := time.Now().Unix()
 		local.DesiredState = "deleted"
 		local.RuntimeState = "deleting"
 		local.State = local.RuntimeState
-		local.LastTransitionAt = now
-		local.DeletedAt = &now
+		local.LastTransitionAt = nowSec
+		local.DeletedAt = &nowSec
 		_ = f.db.UpsertLocalWorkload(local)
 		if strings.TrimSpace(local.ContainerID) != "" {
 			_ = processmanager.GetInstance().RemoveContainerByContainerID(local.ContainerID)
@@ -1057,7 +1066,7 @@ func (f *Facade) RemoveRuntimeMicroservice(selector string) (string, error) {
 	return uuid, nil
 }
 
-func (f *Facade) GetRuntimeMicroserviceLogs(selector string, tailLines int, since, until string) (string, []map[string]interface{}, error) {
+func (f *Facade) GetRuntimeMicroserviceLogs(selector string, tailLines int, since, until string) (string, []map[string]any, error) {
 	uuid, err := f.ResolveMicroserviceID(selector)
 	if err != nil {
 		return "", nil, err
@@ -1252,7 +1261,7 @@ func (f *Facade) ensureRuntimeClassNotInUse(item *models.LocalRuntimeClass) erro
 	for uuid := range blockingSet {
 		blockingUUIDs = append(blockingUUIDs, uuid)
 	}
-	sort.Strings(blockingUUIDs)
+	slices.Sort(blockingUUIDs)
 	return &ErrRuntimeClassInUse{
 		Name:                      item.Name,
 		RuntimeNames:              sortedUniqueNonEmpty(runtimeNames),
@@ -1287,7 +1296,7 @@ func sortedUniqueNonEmpty(items []string) []string {
 	for item := range set {
 		result = append(result, item)
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result
 }
 
@@ -1330,7 +1339,7 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 					matches = append(matches, id)
 				}
 			}
-			sort.Strings(matches)
+			slices.Sort(matches)
 			return "", nil, &ErrAmbiguousMicroserviceSelector{Matches: matches}
 		}
 		if len(existingItems) == 1 {

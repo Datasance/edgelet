@@ -1,0 +1,7 @@
+# Example RuntimeClass manifest (linux + containerEngine: edgelet only)
+# Apply with: edgelet deploy -f runtimeclass.yaml
+apiVersion: edgelet.iofog.org/v1
+kind: RuntimeClass
+metadata:
+  name: spin
+handler: spin

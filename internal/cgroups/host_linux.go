@@ -4,6 +4,7 @@ package cgroups
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -213,7 +214,7 @@ func currentUnifiedCgroupPath(mount string) (string, error) {
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
-	return "", fmt.Errorf("unified cgroup path not found in /proc/self/cgroup")
+	return "", errors.New("unified cgroup path not found in /proc/self/cgroup")
 }
 
 func hasSubtreesEnabled(mount, selfPath, controller string) bool {

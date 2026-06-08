@@ -51,7 +51,7 @@ func TestLoadSnapshotCorruptFailsSafe(t *testing.T) {
 		t.Fatalf("write corrupt snapshot: %v", err)
 	}
 	if _, err := loadSnapshotRecords(path); err == nil {
-		t.Fatalf("expected unmarshal error for corrupt snapshot")
+		t.Fatal("expected unmarshal error for corrupt snapshot")
 	}
 }
 
@@ -102,16 +102,16 @@ func TestApplySnapshotRebuildsIndexDeterministically(t *testing.T) {
 		t.Fatalf("expected restored count=2, got %d", restored)
 	}
 	if _, ok := r.workloads["stale"]; ok {
-		t.Fatalf("stale record should be replaced on restore")
+		t.Fatal("stale record should be replaced on restore")
 	}
 	if _, ok := r.index[ScopeManaged]["ghost.alias"]; ok {
-		t.Fatalf("stale index alias should be removed")
+		t.Fatal("stale index alias should be removed")
 	}
 	if _, ok := r.index[ScopeManaged]["app.svc"]; !ok {
-		t.Fatalf("expected managed alias app.svc")
+		t.Fatal("expected managed alias app.svc")
 	}
 	if _, ok := r.index[ScopeLocal]["edgelet.svc"]; !ok {
-		t.Fatalf("expected local alias edgelet.svc")
+		t.Fatal("expected local alias edgelet.svc")
 	}
 }
 
@@ -145,6 +145,6 @@ func TestPersistSnapshotIfNeededSkipsRedundantWrites(t *testing.T) {
 		t.Fatalf("read second snapshot: %v", err)
 	}
 	if string(first) != string(second) {
-		t.Fatalf("snapshot should not be rewritten when unchanged")
+		t.Fatal("snapshot should not be rewritten when unchanged")
 	}
 }

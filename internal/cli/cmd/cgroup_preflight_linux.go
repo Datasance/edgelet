@@ -27,7 +27,7 @@ func runCgroupPreflight(cmd *cobra.Command, args []string) error {
 		return run.NewCLIError(run.CodeInternal, fmt.Sprintf("cgroup detect failed: %v", err), err)
 	}
 	if policy.HybridWarning != "" {
-		fmt.Fprintf(os.Stderr, "WARN: %s\n", policy.HybridWarning)
+		_, _ = fmt.Fprintf(os.Stderr, "WARN: %s\n", policy.HybridWarning)
 	}
 	if err := cgroups.ValidatePreflight(policy); err != nil {
 		return run.NewCLIError(run.CodeInternal, fmt.Sprintf("cgroup preflight failed: %v", err), err)

@@ -1,9 +1,9 @@
-# Lima VM definition for iofog embedded-containerd integration tests.
+# Lima VM definition for Edgelet embedded-containerd integration tests.
 # Ubuntu 24.04 LTS with Apple Virtualization framework (vmType: vz) —
 # no QEMU required, boots in ~5s on Apple Silicon.
 #
-# Usage (from project root):
-#   limactl start agent-go/test/embedded/lima-ubuntu.yaml --name=iofog-test
+# Usage (from repository root):
+#   limactl start ./test/embedded/lima-ubuntu.yaml --name=iofog-test
 
 vmType: vz
 os: Linux
@@ -50,7 +50,7 @@ provision:
           curl ca-certificates iptables iproute2 jq
 
       # Ensure host/containerd packages (if present in base image) do not
-      # interfere with embedded iofog containerd validation.
+      # interfere with embedded Edgelet containerd validation.
       systemctl disable --now containerd 2>/dev/null || true
 
       echo "Lima VM provisioned OK"
@@ -75,10 +75,10 @@ probes:
     hint: "Waiting for overlayfs to be available..."
 
 message: |
-  ioFog test VM is ready!
+  Edgelet test VM is ready!
 
   Run integration tests from your Mac:
-    cd agent-go && ./test/embedded/run-all.sh --skip-setup --skip-build --skip-start
+    ./test/embedded/run-all.sh --skip-setup --skip-build --skip-start
 
   Open a shell:
     limactl shell iofog-test

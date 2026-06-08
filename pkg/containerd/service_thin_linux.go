@@ -4,7 +4,7 @@
 package edgeletcontainerdd
 
 import (
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -18,7 +18,7 @@ func NewService() *Service { return &Service{} }
 
 // Start always returns an error on thin linux builds.
 func (s *Service) Start() error {
-	return fmt.Errorf("embedded containerd is only available in the fat linux runtime")
+	return errors.New("embedded containerd is only available in the fat linux runtime")
 }
 
 // Stop is a no-op on thin linux builds.
@@ -29,17 +29,17 @@ func (s *Service) SetUnexpectedExitHandler(_ func(error)) {}
 
 // StopGraceful always returns an error on thin linux builds.
 func (s *Service) StopGraceful() error {
-	return fmt.Errorf("embedded containerd is only available in the fat linux runtime")
+	return errors.New("embedded containerd is only available in the fat linux runtime")
 }
 
 // StopForce always returns an error on thin linux builds.
 func (s *Service) StopForce() error {
-	return fmt.Errorf("embedded containerd is only available in the fat linux runtime")
+	return errors.New("embedded containerd is only available in the fat linux runtime")
 }
 
 // Reconfigure always returns an error on thin linux builds.
 func (s *Service) Reconfigure() error {
-	return fmt.Errorf("embedded containerd is only available in the fat linux runtime")
+	return errors.New("embedded containerd is only available in the fat linux runtime")
 }
 
 // Reap is a no-op on thin linux builds.
@@ -47,7 +47,7 @@ func (s *Service) Reap() error { return nil }
 
 // WaitReady always returns an error on thin linux builds.
 func (s *Service) WaitReady(_ time.Duration) error {
-	return fmt.Errorf("embedded containerd is only available in the fat linux runtime")
+	return errors.New("embedded containerd is only available in the fat linux runtime")
 }
 
 // Ready returns a closed channel on thin linux builds.
@@ -71,7 +71,7 @@ func StopOrphanedEmbeddedContainerd() error {
 // MaybeRunChildProcess rejects child mode on thin linux builds.
 func MaybeRunChildProcess(args []string) (bool, error) {
 	if len(args) >= 2 && args[1] == containerdChildArg {
-		return true, fmt.Errorf("embedded containerd child requires the fat linux runtime")
+		return true, errors.New("embedded containerd child requires the fat linux runtime")
 	}
 	return false, nil
 }

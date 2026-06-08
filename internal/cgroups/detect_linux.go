@@ -4,6 +4,7 @@ package cgroups
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -236,7 +237,7 @@ func currentUnifiedCgroupPath(mount string) (string, error) {
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
-	return "", fmt.Errorf("unified cgroup path not found in /proc/self/cgroup")
+	return "", errors.New("unified cgroup path not found in /proc/self/cgroup")
 }
 
 func hasSubtreesEnabled(mount, selfPath, controller string) bool {
@@ -293,7 +294,7 @@ func sortStrings(in []string) {
 // EnsureAgentSubtree creates the agent cgroup and moves the current process into it.
 func EnsureAgentSubtree(policy *CgroupPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("cgroup policy is not initialized")
+		return errors.New("cgroup policy is not initialized")
 	}
 	if cgv3.Mode() != cgv3.Legacy && policy.Nested {
 		if err := prepareNestedContainerRoot(policy); err != nil {
@@ -483,10 +484,10 @@ func buildSubtreeEnableLine(controllers []string) string {
 	var b strings.Builder
 	for i, c := range controllers {
 		if i > 0 {
-			b.WriteByte(' ')
+			_ = b.WriteByte(' ')
 		}
-		b.WriteString("+")
-		b.WriteString(c)
+		_, _ = b.WriteString("+")
+		_, _ = b.WriteString(c)
 	}
 	return b.String()
 }

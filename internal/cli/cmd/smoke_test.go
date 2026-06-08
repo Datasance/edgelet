@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package cmd
 
 import (
@@ -53,7 +54,7 @@ func TestLegacyCommandRejectionSuite(t *testing.T) {
 			_, _, code := runCLI(t, client, tc.args...)
 			if tc.want == 0 {
 				if code == 0 {
-					t.Fatalf("expected non-zero exit for legacy command")
+					t.Fatal("expected non-zero exit for legacy command")
 				}
 				return
 			}
@@ -75,10 +76,10 @@ func TestDaemonDownExitCode10Smoke(t *testing.T) {
 func TestMSListJSONJqFriendly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/ms?source=all": {
-				"items": []interface{}{
-					map[string]interface{}{
+				"items": []any{
+					map[string]any{
 						"uuid":        "abc-123",
 						"application": "local",
 						"name":        "demo",
@@ -116,7 +117,7 @@ func TestMSListJSONJqFriendly(t *testing.T) {
 func TestSystemStatusJSONJqFriendly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/status": {
 				"iofogDaemon":            "running",
 				"connectionToController": "ok",
@@ -128,7 +129,7 @@ func TestSystemStatusJSONJqFriendly(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d", code)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}

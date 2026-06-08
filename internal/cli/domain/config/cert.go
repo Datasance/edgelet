@@ -10,7 +10,7 @@ import (
 // CertResult carries controller cert install outcome.
 type CertResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // ApplyCert decodes and installs a base64-encoded controller certificate.
@@ -22,7 +22,7 @@ func ApplyCert(client run.EdgeletAPIClient, base64Cert string) (*CertResult, err
 	if certValue == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "certificate value cannot be empty", nil)
 	}
-	data, err := client.Request("POST", "/v1/system/controller/cert", map[string]interface{}{
+	data, err := client.Request("POST", "/v1/system/controller/cert", map[string]any{
 		"certificate": certValue,
 	})
 	if err != nil {

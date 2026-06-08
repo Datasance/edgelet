@@ -2,11 +2,12 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,9 @@ const (
 )
 
 // NetworkInterfaceInfo contains information about a network interface
+// NetworkInterfaceInfo describes a network interface on the host.
+//
+//nolint:revive // exported API
 type NetworkInterfaceInfo struct {
 	Interface *net.Interface
 	Address   net.IP
@@ -216,7 +220,7 @@ func (m *Manager) getAnyIPv4Address() (string, error) {
 	}
 
 	logging.LogWarn(moduleName, "No suitable IPv4 address found on any interface")
-	return "", fmt.Errorf("no suitable IPv4 address found")
+	return "", errors.New("no suitable IPv4 address found")
 }
 
 // getNetworkInterface gets the network interface based on controller URL
@@ -259,13 +263,13 @@ func (m *Manager) GetAvailableNetworkInterfaces() []string {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
 func (m *Manager) resolveNetworkInterface(controllerURL, networkInterfaceConfig string) (*NetworkInterfaceInfo, error) {
 	if strings.TrimSpace(controllerURL) == "" {
-		return nil, fmt.Errorf("controller URL not configured")
+		return nil, errors.New("controller URL not configured")
 	}
 	normalizedInterface := strings.TrimSpace(networkInterfaceConfig)
 	if normalizedInterface != "" && !strings.EqualFold(normalizedInterface, "dynamic") {
@@ -383,7 +387,7 @@ func (m *Manager) getOSNetworkInterface(controllerURL string) (*NetworkInterface
 		}
 	}
 
-	return nil, fmt.Errorf("no suitable network interface found")
+	return nil, errors.New("no suitable network interface found")
 }
 
 // getConnectedAddress checks if a network interface can connect to the controller

@@ -47,12 +47,12 @@ func (p *ProfileConfig) SetProperty(key, value string) {
 }
 
 // UnmarshalYAML custom unmarshaling to handle flexible YAML structure
-func (p *ProfileConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (p *ProfileConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if p.Properties == nil {
 		p.Properties = make(map[string]string)
 	}
 
-	var m map[string]interface{}
+	var m map[string]any
 	if err := unmarshal(&m); err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (p *ProfileConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML custom marshaling to output as map
-func (p *ProfileConfig) MarshalYAML() (interface{}, error) {
+func (p *ProfileConfig) MarshalYAML() (any, error) {
 	if p.Properties == nil {
 		return make(map[string]string), nil
 	}

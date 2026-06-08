@@ -1,5 +1,5 @@
 #!/bin/bash
-# Performance profiling script for ioFog Agent
+# Performance profiling script for Edgelet
 
 set -e
 

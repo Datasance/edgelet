@@ -2,20 +2,43 @@
 
 Operator and developer documentation for the Edgelet edge agent.
 
+## Architecture and deployment
+
 | Document | Description |
 |----------|-------------|
 | [architecture.md](architecture.md) | Module layout, data flows, EdgeletAPI vs Controller API |
-| [deployment.md](deployment.md) | Install, systemd, full/lite flavors, provisioning |
+| [modules/README.md](modules/README.md) | Runtime module deep dives (all tiers) |
+| [installation.md](installation.md) | install.sh, OTA, upgrade/rollback, controller readiness |
+| [deployment.md](deployment.md) | Production topology, engines, systemd, provisioning |
 | [persistence.md](persistence.md) | SQLite backup/restore, wipe-only upgrade, secrets threat model |
 | [troubleshooting.md](troubleshooting.md) | Daemon, containerd, auth, CLI connectivity |
 | [logging.md](logging.md) | Structured events, log levels, journald queries |
+
+## Runtime and workloads
+
+| Document | Description |
+|----------|-------------|
 | [container-engine.md](container-engine.md) | `edgelet` / `docker` / `podman` engines, CNI, RuntimeClass |
-| [edgelet-api-v1.md](edgelet-api-v1.md) | EdgeletAPI operator guide (HTTPS `:54321`, `/v1/`) |
+| [dns.md](dns.md) | Bridge DNS, embedded resolver, docker/podman aliases and ExtraHosts |
+| [workload-metadata.md](workload-metadata.md) | Container labels and `EDGELET_*` env contract |
+| [workload-continuity.md](workload-continuity.md) | Reconcile behavior across restarts and engine changes |
+| [edgeguard.md](edgeguard.md) | Hardware attestation (`edgeGuardFrequency`) |
+| [control-plane.md](control-plane.md) | Local Datasance Controller deployment |
+| [manifest-reference.md](manifest-reference.md) | Deploy YAML (`Microservice`, `Registry`, `RuntimeClass`, `ControlPlane`) |
+| [examples/](examples/) | Reference manifest YAML samples |
+
+## EdgeletAPI
+
+| Document | Description |
+|----------|-------------|
+| [edgelet-api-v1.md](edgelet-api-v1.md) | Operator guide — transport, auth, errors, route behavior |
 | [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) | OpenAPI 3.1 contract |
-| [edgelet-api-v1-contract-freeze.md](edgelet-api-v1-contract-freeze.md) | Frozen contract policy |
-| [edgelet-api-v1-error-codes.md](edgelet-api-v1-error-codes.md) | Stable error taxonomy |
-| [edgelet-api-v1-qa-gates.md](edgelet-api-v1-qa-gates.md) | QA gates for API surface |
 | [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md) | RBAC resource/verb mapping |
+
+## Migration
+
+| Document | Description |
+|----------|-------------|
 | [migration-from-iofog-agent-cli.md](migration-from-iofog-agent-cli.md) | Legacy CLI → `edgelet` command mapping |
 
 ## CLI reference
@@ -26,10 +49,10 @@ Operator and developer documentation for the Edgelet edge agent.
 | JSON/YAML output shapes | [../cli/output-schemas.md](../cli/output-schemas.md) |
 | Generated per-command pages | [../cli/generated/](../cli/generated/) |
 
-## Related docs (repo root)
+## Legal
 
-| Document | Description |
-|----------|-------------|
-| [../embedded-dns-runbook.md](../embedded-dns-runbook.md) | Embedded authoritative DNS (full flavor) |
-| [../FEATURE-PARITY.md](../FEATURE-PARITY.md) | Java → Go feature parity checklist |
-| [../metadata-labelspec-envspec.md](../metadata-labelspec-envspec.md) | Container metadata contract |
+| Document | Path |
+|----------|------|
+| License (EPL-2.0) | [../../LICENSE](../../LICENSE) |
+| Copyright notice | [../../NOTICE](../../NOTICE) |
+| Maintainers | [../../MAINTAINERS](../../MAINTAINERS) |

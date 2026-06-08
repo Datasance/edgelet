@@ -6,11 +6,14 @@ import (
 )
 
 // FormatLogEntries renders buffered log entries for human output.
-func FormatLogEntries(result map[string]interface{}, timestamps bool) string {
-	rawEntries, _ := result["entries"].([]interface{})
+func FormatLogEntries(result map[string]any, timestamps bool) string {
+	rawEntries, ok := result["entries"].([]any)
+	if !ok {
+		rawEntries = []any{}
+	}
 	var b strings.Builder
 	for _, raw := range rawEntries {
-		entry, ok := raw.(map[string]interface{})
+		entry, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}

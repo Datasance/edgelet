@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 import (
 	"bytes"
@@ -72,12 +72,12 @@ func (c *HTTPClient) Get(ctx context.Context, path string) (*http.Response, erro
 }
 
 // Post performs a POST request with retry logic
-func (c *HTTPClient) Post(ctx context.Context, path string, body interface{}) (*http.Response, error) {
+func (c *HTTPClient) Post(ctx context.Context, path string, body any) (*http.Response, error) {
 	return c.doRequest(ctx, http.MethodPost, path, body)
 }
 
 // Put performs a PUT request with retry logic
-func (c *HTTPClient) Put(ctx context.Context, path string, body interface{}) (*http.Response, error) {
+func (c *HTTPClient) Put(ctx context.Context, path string, body any) (*http.Response, error) {
 	return c.doRequest(ctx, http.MethodPut, path, body)
 }
 
@@ -87,7 +87,7 @@ func (c *HTTPClient) Delete(ctx context.Context, path string) (*http.Response, e
 }
 
 // doRequest performs an HTTP request with retry logic
-func (c *HTTPClient) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (c *HTTPClient) doRequest(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -123,12 +123,14 @@ func (c *HTTPClient) doRequest(ctx context.Context, method, path string, body in
 }
 
 // GetJSON performs a GET request and unmarshals the JSON response
-func (c *HTTPClient) GetJSON(ctx context.Context, path string, result interface{}) error {
+func (c *HTTPClient) GetJSON(ctx context.Context, path string, result any) error {
 	resp, err := c.Get(ctx, path)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -142,12 +144,14 @@ func (c *HTTPClient) GetJSON(ctx context.Context, path string, result interface{
 }
 
 // PostJSON performs a POST request with JSON body and unmarshals the JSON response
-func (c *HTTPClient) PostJSON(ctx context.Context, path string, body interface{}, result interface{}) error {
+func (c *HTTPClient) PostJSON(ctx context.Context, path string, body any, result any) error {
 	resp, err := c.Post(ctx, path, body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -164,7 +168,7 @@ func (c *HTTPClient) PostJSON(ctx context.Context, path string, body interface{}
 
 // Ping performs a ping request to check connectivity
 func (c *HTTPClient) Ping(ctx context.Context) (bool, error) {
-	var result map[string]interface{}
+	var result map[string]any
 	err := c.GetJSON(ctx, "status", &result)
 	if err != nil {
 		return false, err

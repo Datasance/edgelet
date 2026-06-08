@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ func CopyOfRange(src []byte, from, to int) []byte {
 func LongToBytes(x int64) []byte {
 	b := make([]byte, 8)
 	for i := 0; i < 8; i++ {
-		b[i] = byte(x >> ((8 - i - 1) << 3))
+		b[i] = byte(x >> ((8 - i - 1) << 3)) // #nosec G115 -- wire-format byte extraction from int64
 	}
 	return b
 }
@@ -35,7 +35,7 @@ func BytesToLong(b []byte) int64 {
 func IntegerToBytes(x int32) []byte {
 	b := make([]byte, 4)
 	for i := 0; i < 4; i++ {
-		b[i] = byte(x >> ((4 - i - 1) << 3))
+		b[i] = byte(x >> ((4 - i - 1) << 3)) // #nosec G115 -- wire-format byte extraction from int32
 	}
 	return b
 }
@@ -53,7 +53,7 @@ func BytesToInteger(b []byte) int32 {
 func ShortToBytes(x int16) []byte {
 	b := make([]byte, 2)
 	for i := 0; i < 2; i++ {
-		b[i] = byte(x >> ((2 - i - 1) << 3))
+		b[i] = byte(x >> ((2 - i - 1) << 3)) // #nosec G115 -- wire-format byte extraction from int16
 	}
 	return b
 }
@@ -88,13 +88,13 @@ func ByteArrayToString(b []byte) string {
 	}
 
 	var buf bytes.Buffer
-	buf.WriteString("[")
+	_, _ = buf.WriteString("[")
 	for i, byteVal := range b {
 		if i > 0 {
-			buf.WriteString(", ")
+			_, _ = buf.WriteString(", ")
 		}
-		fmt.Fprintf(&buf, "%d", byteVal)
+		_, _ = fmt.Fprintf(&buf, "%d", byteVal)
 	}
-	buf.WriteString("]")
+	_, _ = buf.WriteString("]")
 	return buf.String()
 }

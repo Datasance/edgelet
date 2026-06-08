@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 )
 
@@ -9,11 +9,11 @@ import (
 func (c *Client) RemoveNamedVolume(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("volume name is required")
+		return errors.New("volume name is required")
 	}
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("docker client is not initialized")
+		return errors.New("docker client is not initialized")
 	}
 	return cli.VolumeRemove(c.GetContext(), name, true)
 }

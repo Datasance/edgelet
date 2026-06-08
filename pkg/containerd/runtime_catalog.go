@@ -1,10 +1,12 @@
+//revive:disable:package-directory-mismatch
 package edgeletcontainerdd
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -93,11 +95,11 @@ var runtimeSpecs = map[string]runtimeSpec{
 		Family:      RuntimeFamilyShim,
 		Candidates:  []string{"containerd-shim-wasmtime-v1", "containerd-shim-wasmtime-v2", "wasmtime"},
 	},
-	"edgelet": {
-		Handler:     "edgelet",
+	"edgelet-wasmtime": {
+		Handler:     "edgelet-wasmtime",
 		RuntimeType: "io.containerd.edgelet.v2",
 		Family:      RuntimeFamilyShim,
-		Candidates:  []string{"containerd-shim-edgelet-v2", "containerd-shim-edgelet", "edgelet-wasm", "edgelet"},
+		Candidates:  []string{"containerd-shim-edgelet-v2", "containerd-shim-edgelet-wasm-v2", "containerd-shim-edgelet", "edgelet-wasm"},
 	},
 }
 
@@ -136,8 +138,8 @@ func BuildRuntimeCatalog() []RuntimeCatalogEntry {
 	entries = findRunCContainerRuntime(entries)
 	entries = findNvidiaContainerRuntimes(entries)
 	entries = findWasiRuntimes(entries)
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Handler < entries[j].Handler
+	slices.SortFunc(entries, func(a, b RuntimeCatalogEntry) int {
+		return cmp.Compare(a.Handler, b.Handler)
 	})
 	return entries
 }
@@ -197,14 +199,14 @@ func findNvidiaContainerRuntimes(entries []RuntimeCatalogEntry) []RuntimeCatalog
 
 func findWasiRuntimes(entries []RuntimeCatalogEntry) []RuntimeCatalogEntry {
 	potential := map[string]runtimeSpec{
-		"edgelet":  runtimeSpecs["edgelet"],
-		"lunatic":  runtimeSpecs["lunatic"],
-		"slight":   runtimeSpecs["slight"],
-		"spin":     runtimeSpecs["spin"],
-		"wasmedge": runtimeSpecs["wasmedge"],
-		"wasmer":   runtimeSpecs["wasmer"],
-		"wasmtime": runtimeSpecs["wasmtime"],
-		"wws":      runtimeSpecs["wws"],
+		"edgelet-wasmtime": runtimeSpecs["edgelet-wasmtime"],
+		"lunatic":          runtimeSpecs["lunatic"],
+		"slight":           runtimeSpecs["slight"],
+		"spin":             runtimeSpecs["spin"],
+		"wasmedge":         runtimeSpecs["wasmedge"],
+		"wasmer":           runtimeSpecs["wasmer"],
+		"wasmtime":         runtimeSpecs["wasmtime"],
+		"wws":              runtimeSpecs["wws"],
 	}
 	return searchForRuntimes(potential, entries)
 }
@@ -214,7 +216,7 @@ func searchForRuntimes(potential map[string]runtimeSpec, entries []RuntimeCatalo
 	for runtimeName := range potential {
 		handlers = append(handlers, runtimeName)
 	}
-	sort.Strings(handlers)
+	slices.Sort(handlers)
 	for _, runtimeName := range handlers {
 		spec := potential[runtimeName]
 		for _, candidate := range spec.Candidates {

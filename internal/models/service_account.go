@@ -1,7 +1,8 @@
 package models
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 )
 
@@ -56,11 +57,8 @@ func (sa *ServiceAccount) CanonicalRBACV1() RBACEnvelopeV1 {
 		}
 	}
 	for group := range envelope.RulesByGroup {
-		sort.Slice(envelope.RulesByGroup[group], func(i, j int) bool {
-			left := envelope.RulesByGroup[group][i]
-			right := envelope.RulesByGroup[group][j]
-			return strings.Join(left.Resources, ",")+"|"+strings.Join(left.Verbs, ",")+"|"+strings.Join(left.ResourceNames, ",") <
-				strings.Join(right.Resources, ",")+"|"+strings.Join(right.Verbs, ",")+"|"+strings.Join(right.ResourceNames, ",")
+		slices.SortFunc(envelope.RulesByGroup[group], func(a, b RBACRuleV1) int {
+			return cmp.Compare(rbacRuleSortKey(a), rbacRuleSortKey(b))
 		})
 	}
 	return envelope
@@ -74,9 +72,9 @@ func (r ServiceAccountRule) ToRBACRuleV1() RBACRuleV1 {
 	if len(r.ResourceNames) > 0 {
 		rule.ResourceNames = append([]string{}, r.ResourceNames...)
 	}
-	sort.Strings(rule.Resources)
-	sort.Strings(rule.Verbs)
-	sort.Strings(rule.ResourceNames)
+	slices.Sort(rule.Resources)
+	slices.Sort(rule.Verbs)
+	slices.Sort(rule.ResourceNames)
 	return rule
 }
 
@@ -102,12 +100,16 @@ func CanonicalizeVerbs(verbs []string) []string {
 		seen[v] = struct{}{}
 		normalized = append(normalized, v)
 	}
-	sort.Strings(normalized)
+	slices.Sort(normalized)
 	return normalized
 }
 
-func (r RBACRuleV1) ToMap() map[string]interface{} {
-	result := map[string]interface{}{
+func rbacRuleSortKey(r RBACRuleV1) string {
+	return strings.Join(r.Resources, ",") + "|" + strings.Join(r.Verbs, ",") + "|" + strings.Join(r.ResourceNames, ",")
+}
+
+func (r RBACRuleV1) ToMap() map[string]any {
+	result := map[string]any{
 		"resources": r.Resources,
 		"verbs":     r.Verbs,
 	}

@@ -29,7 +29,9 @@ var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cli.Close()
+	defer func() {
+		_ = cli.Close()
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -98,6 +98,20 @@ Runtime extensions use EdgeletAPI deploy manifests:
 
 Each `metadata.name` registers one canonical runtime handler. Network scope (`managed` vs `local`) is selected via workload CNI policy, not by synthesizing handler variants.
 
+Built-in catalog handlers include `spin`, `edgelet-wasmtime` (Datasance WASM shim), and upstream `wasmtime` / `wasmedge` when the matching shim binary is on `PATH`. Shim binaries are discovered from `PATH` (for example `containerd-shim-edgelet-v2` for handler `edgelet-wasmtime`).
+
+Example WASM RuntimeClass:
+
+```yaml
+apiVersion: edgelet.iofog.org/v1
+kind: RuntimeClass
+metadata:
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
+```
+
+Pin a microservice: `spec.container.runtime: edgelet-wasmtime` (references `metadata.name`, not `containerEngine`).
+
 Apply via CLI:
 
 ```bash
@@ -131,6 +145,6 @@ In-process containerd service: `pkg/containerd/`.
 
 ## DNS and cross-engine policy
 
-Bridge DNS and remediation policies (embedded engine): [../embedded-dns-runbook.md](../embedded-dns-runbook.md), [../embedded-dns-cross-engine-policy.md](../embedded-dns-cross-engine-policy.md).
+Bridge DNS (all engines): [dns.md](dns.md). Workload labels: [workload-metadata.md](workload-metadata.md).
 
 Engine change lifecycle (cold/warm reload, restart required): [container-engine-lifecycle.md](container-engine-lifecycle.md).

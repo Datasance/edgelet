@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package client
 
 import (
@@ -6,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -150,7 +152,7 @@ func isDaemonProcessPresent() bool {
 }
 
 // Request sends a typed request to EdgeletAPI v1 and returns JSON response map when possible.
-func (c *Client) Request(method, path string, requestBody interface{}) (map[string]interface{}, error) {
+func (c *Client) Request(method, path string, requestBody any) (map[string]any, error) {
 	url := c.baseURL + path
 
 	var bodyBytes []byte
@@ -194,19 +196,21 @@ func (c *Client) Request(method, path string, requestBody interface{}) (map[stri
 					Message:    "Edgelet API is still initializing. Daemon process is running; retry shortly.",
 				}
 			}
-			return nil, fmt.Errorf("Edgelet API is not accessible. The daemon may be starting up or the Edgelet API service is not running. Error: %w", err)
+			return nil, fmt.Errorf("edgelet API is not accessible. The daemon may be starting up or the Edgelet API service is not running. Error: %w", err)
 		}
 		return nil, fmt.Errorf("failed to send Edgelet API request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	var envelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 		Error   struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -223,7 +227,7 @@ func (c *Client) Request(method, path string, requestBody interface{}) (map[stri
 				}
 			}
 			if envelope.Data == nil {
-				return map[string]interface{}{}, nil
+				return map[string]any{}, nil
 			}
 			return envelope.Data, nil
 		}
@@ -238,17 +242,17 @@ func (c *Client) Request(method, path string, requestBody interface{}) (map[stri
 		}
 	}
 	if len(raw) == 0 {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return map[string]interface{}{"raw": string(raw)}, nil
+		return map[string]any{"raw": string(raw)}, nil
 	}
 	return result, nil
 }
 
 // RequestMultipartFile uploads a multipart manifest file with optional fields.
-func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]interface{}, error) {
+func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, fields map[string]string) (map[string]any, error) {
 	url := c.baseURL + path
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -291,15 +295,17 @@ func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to send Edgelet API multipart request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var envelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 		Error   struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -315,7 +321,7 @@ func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, 
 				}
 			}
 			if envelope.Data == nil {
-				return map[string]interface{}{}, nil
+				return map[string]any{}, nil
 			}
 			return envelope.Data, nil
 		}
@@ -324,11 +330,11 @@ func (c *Client) RequestMultipartFile(method, path, fileField, filePath string, 
 		return nil, &EdgeletAPIError{StatusCode: resp.StatusCode, Code: "HTTP_ERROR", Message: string(raw)}
 	}
 	if len(raw) == 0 {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return map[string]interface{}{"raw": string(raw)}, nil
+		return map[string]any{"raw": string(raw)}, nil
 	}
 	return result, nil
 }
@@ -368,7 +374,7 @@ func isMutatingHTTPMethod(method string) bool {
 
 func cloneRequestWithBody(req *http.Request) (*http.Request, error) {
 	if req == nil {
-		return nil, fmt.Errorf("request is nil")
+		return nil, errors.New("request is nil")
 	}
 	clone := req.Clone(req.Context())
 	if req.Body == nil || req.Body == http.NoBody {
@@ -401,7 +407,7 @@ func (c *Client) tlsTransport() *http.Transport {
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
-	if pemData, readErr := os.ReadFile(caPath); readErr == nil {
+	if pemData, readErr := os.ReadFile(caPath); readErr == nil { // #nosec G304 -- path from known config directory constant
 		_ = pool.AppendCertsFromPEM(pemData)
 	}
 	return &http.Transport{
@@ -414,7 +420,7 @@ func (c *Client) tlsTransport() *http.Transport {
 
 func (c *Client) doViaUnixSocket(req *http.Request, socketPath string) (*http.Response, error) {
 	if socketPath == "" {
-		return nil, fmt.Errorf("socket path is empty")
+		return nil, errors.New("socket path is empty")
 	}
 	if _, err := os.Stat(socketPath); err != nil {
 		return nil, err

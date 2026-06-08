@@ -6,7 +6,7 @@ import (
 )
 
 func TestFormatEdgeletAPIHuman_ControlPlaneStatus(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/system/controlplane", map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/system/controlplane", map[string]any{
 		"controllerUuid": "uuid-1",
 		"namespace":      "default",
 		"name":           "pot",
@@ -20,14 +20,14 @@ func TestFormatEdgeletAPIHuman_ControlPlaneStatus(t *testing.T) {
 }
 
 func TestFormatEdgeletAPIHuman_ControlPlaneDelete(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/system/controlplane", map[string]interface{}{"status": "ok"})
+	out := FormatEdgeletAPIHuman("/v1/system/controlplane", map[string]any{"status": "ok"})
 	if out != "control plane deployment removed successfully" {
 		t.Fatalf("unexpected delete output: %q", out)
 	}
 }
 
 func TestFormatEdgeletAPIHuman_ControlPlaneManifest(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/system/controlplane/manifest", map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/system/controlplane/manifest", map[string]any{
 		"manifestYaml": "kind: ControlPlane",
 		"masked":       true,
 	})

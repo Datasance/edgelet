@@ -21,7 +21,7 @@ type PullRequest struct {
 
 // PullResult is the image pull command outcome.
 type PullResult struct {
-	Data  map[string]interface{}
+	Data  map[string]any
 	Human string
 }
 
@@ -35,7 +35,7 @@ func Pull(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req 
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "image is required", nil)
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"image": imageRef,
 		"async": true,
 	}
@@ -68,7 +68,7 @@ func Pull(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req 
 	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{
 		Interval: 500 * time.Millisecond,
 		Timeout:  client.PollTimeoutFor("image-pull"),
-	}, func() (map[string]interface{}, error) {
+	}, func() (map[string]any, error) {
 		return api.Request("GET", "/v1/images:pull/"+operationID, nil)
 	}, progress)
 	if err != nil {
@@ -87,7 +87,7 @@ func Pull(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req 
 	return &PullResult{Data: final, Human: formatPullHuman(final)}, nil
 }
 
-func formatPullHuman(result map[string]interface{}) string {
+func formatPullHuman(result map[string]any) string {
 	return fmt.Sprintf(
 		"image pulled successfully: %s (engine=%s, platform=%s)",
 		output.MapValueAsString(result, "resolvedImage"),

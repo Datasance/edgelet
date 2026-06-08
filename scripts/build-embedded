@@ -125,8 +125,12 @@ esac
 
 if ! command -v crane >/dev/null 2>&1; then
   echo "Installing crane..."
-  go install github.com/google/go-containerregistry/cmd/crane@latest
-  export PATH="$(go env GOPATH)/bin:${PATH}"
+  # Host-arch tool: GOARCH may be set for cross-build (arm/riscv64 on amd64 builder).
+  (
+    unset GOARCH GOARM
+    "${GO}" install github.com/google/go-containerregistry/cmd/crane@latest
+  )
+  export PATH="$("${GO}" env GOPATH)/bin:${PATH}"
 fi
 
 echo "Pulling pause image ${VERSION_PAUSE} for ${OS}/${PAUSE_ARCH}"

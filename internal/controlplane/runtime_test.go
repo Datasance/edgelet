@@ -124,14 +124,7 @@ func TestBuildMicroserviceFromControlPlaneHTTPSPathMount(t *testing.T) {
 	}
 
 	doc := validControlPlaneManifestForRuntimeTest()
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{
+	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{
 		Path: dir,
 	}
 

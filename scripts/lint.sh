@@ -1,5 +1,5 @@
 #!/bin/bash
-# Lint script for ioFog Agent
+# Lint script for Edgelet
 
 set -e
 

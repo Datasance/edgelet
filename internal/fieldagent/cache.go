@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func getCachePath() string {
 }
 
 // SaveFile saves data to a cache file with checksum
-func SaveFile(data interface{}, filename string) error {
+func SaveFile(data any, filename string) error {
 	logging.LogDebug("Field Agent Cache", fmt.Sprintf("Start save file: %s", filename))
 
 	// Marshal data to JSON
@@ -103,7 +104,7 @@ func ReadFile(filename string) (json.RawMessage, int64, error) {
 	computedChecksum := checksum(dataStr)
 	if computedChecksum != cacheFile.Checksum {
 		logging.LogWarn("Field Agent Cache", fmt.Sprintf("Checksum mismatch for file: %s", filename))
-		return nil, 0, fmt.Errorf("checksum mismatch")
+		return nil, 0, errors.New("checksum mismatch")
 	}
 
 	logging.LogDebug("Field Agent Cache", fmt.Sprintf("Finished read file: %s", filename))
@@ -111,13 +112,13 @@ func ReadFile(filename string) (json.RawMessage, int64, error) {
 }
 
 // ReadFileAsArray reads a cached file as a JSON array
-func ReadFileAsArray(filename string) ([]map[string]interface{}, int64, error) {
+func ReadFileAsArray(filename string) ([]map[string]any, int64, error) {
 	data, timestamp, err := ReadFile(filename)
 	if err != nil || data == nil {
 		return nil, timestamp, err
 	}
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, timestamp, fmt.Errorf("failed to unmarshal array: %w", err)
 	}

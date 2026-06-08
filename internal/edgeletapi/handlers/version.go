@@ -30,7 +30,7 @@ func (h *VersionHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	buildInfo := version.GetBuildInfo()
-	versionMap := map[string]interface{}{
+	versionMap := map[string]any{
 		"version":                buildInfo["version"],
 		"buildTime":              buildInfo["buildTime"],
 		"gitCommit":              buildInfo["gitCommit"],

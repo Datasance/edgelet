@@ -1,6 +1,6 @@
-# Legacy Agent-Go containerd cross-build (superseded by scripts/build-embedded + build/Dockerfile.embedded).
+# Legacy Edgelet containerd cross-build (superseded by scripts/build-embedded + build/Dockerfile.embedded).
 # Use: make ci-docker  or  docker build -f build/Dockerfile.embedded .
-FROM golang:1.24-bullseye
+FROM golang:1.26-bullseye
 
 # Install cross-compilation toolchain and dependencies
 RUN dpkg --add-architecture armhf && \

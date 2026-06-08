@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,7 +47,7 @@ func (o *Orchestrator) Update() error {
 func (o *Orchestrator) Ping(ctx context.Context) (bool, error) {
 	logging.LogDebug(orchestratorModuleName, "Inside ping")
 
-	var result map[string]interface{}
+	var result map[string]any
 	err := o.apiClient.GetJSON(ctx, "status", &result)
 	if err != nil {
 		logging.LogError(orchestratorModuleName, "Error pinging", err)
@@ -60,7 +61,7 @@ func (o *Orchestrator) Ping(ctx context.Context) (bool, error) {
 }
 
 // Provision does provisioning with the given key
-func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]interface{}, error) {
+func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]any, error) {
 	logging.LogDebug(orchestratorModuleName, "Inside provision")
 
 	body, err := buildProvisionRequestBody(key)
@@ -80,12 +81,12 @@ func (o *Orchestrator) Provision(ctx context.Context, key string) (map[string]in
 }
 
 // GetJSON performs a GET request and returns JSON
-func (o *Orchestrator) GetJSON(ctx context.Context, command string, result interface{}) error {
+func (o *Orchestrator) GetJSON(ctx context.Context, command string, result any) error {
 	return o.apiClient.GetJSON(ctx, command, result)
 }
 
 // Request performs an HTTP request (wrapper around APIClient.Request)
-func (o *Orchestrator) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
+func (o *Orchestrator) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body any) (map[string]any, error) {
 	return o.apiClient.Request(ctx, command, requestType, queryParams, body)
 }
 
@@ -129,14 +130,16 @@ func (o *Orchestrator) GetControllerCert(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Check response
 	if resp.StatusCode == http.StatusUnauthorized {
 		// Token invalid - trigger deprovision
 		logging.LogWarn(orchestratorModuleName, "Invalid JWT token, switching controller status to Not provisioned")
 		// Note: FieldAgent deprovision would be called here
-		return "", fmt.Errorf("unauthorized: invalid JWT token")
+		return "", errors.New("unauthorized: invalid JWT token")
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -151,7 +154,7 @@ func (o *Orchestrator) GetControllerCert(ctx context.Context) (string, error) {
 	}
 
 	if len(bodyBytes) == 0 {
-		return "", fmt.Errorf("empty response from controller")
+		return "", errors.New("empty response from controller")
 	}
 
 	// Response is base64 encoded certificate string

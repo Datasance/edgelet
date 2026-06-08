@@ -10,7 +10,7 @@ import (
 // Result carries provision outcome.
 type Result struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // Provision registers the agent with a controller using a provisioning key.

@@ -42,14 +42,14 @@ func TestShouldContainerBeUpdated_GuardRails(t *testing.T) {
 	ms.SetIsUpdating(true)
 	status := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
 	if pm.shouldContainerBeUpdated(ms, container, status) {
-		t.Fatalf("expected false when microservice is already updating")
+		t.Fatal("expected false when microservice is already updating")
 	}
 
 	// Invariant: explicit rebuild always requests an update and bypasses state checks.
 	ms.SetIsUpdating(false)
 	ms.Rebuild = true
 	if !pm.shouldContainerBeUpdated(ms, container, status) {
-		t.Fatalf("expected true when rebuild is explicitly requested")
+		t.Fatal("expected true when rebuild is explicitly requested")
 	}
 	ms.Rebuild = false
 
@@ -68,7 +68,6 @@ func TestShouldContainerBeUpdated_GuardRails(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestExecuteTask_CreateExecIsFacadeOnly(t *testing.T) {

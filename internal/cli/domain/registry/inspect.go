@@ -10,7 +10,7 @@ import (
 // InspectResult carries registry inspect outcome.
 type InspectResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // Inspect fetches a registry record and formats inspect output.

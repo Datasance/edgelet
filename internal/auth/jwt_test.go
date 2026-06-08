@@ -35,7 +35,7 @@ func TestJWTManager_GenerateJWT(t *testing.T) {
 
 	// Create JWK format
 	seed := privateKey.Seed()
-	jwk := map[string]interface{}{
+	jwk := map[string]any{
 		"kty": "OKP",
 		"crv": "Ed25519",
 		"d":   base64.RawURLEncoding.EncodeToString(seed),
@@ -69,7 +69,7 @@ func TestJWTManager_GenerateJWT(t *testing.T) {
 	}
 
 	// Validate the token
-	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}
@@ -138,7 +138,7 @@ func TestJWTManager_ValidateJWT(t *testing.T) {
 
 	// Create JWK format
 	seed := privateKey.Seed()
-	jwk := map[string]interface{}{
+	jwk := map[string]any{
 		"kty": "OKP",
 		"crv": "Ed25519",
 		"d":   base64.RawURLEncoding.EncodeToString(seed),
@@ -197,16 +197,72 @@ func TestJWTManager_Reset(t *testing.T) {
 
 func TestShouldRotateByLifetime(t *testing.T) {
 	now := time.Now()
-	iat := now.Unix()
-	exp := now.Add(10 * time.Minute).Unix()
+	iatSec := now.Unix()
+	expSec := now.Add(10 * time.Minute).Unix()
 
-	if ShouldRotateByLifetime(iat, exp, now.Add(7*time.Minute)) {
+	if ShouldRotateByLifetime(iatSec, expSec, now.Add(7*time.Minute)) {
 		t.Fatal("token should not rotate yet when outside lead window")
 	}
-	if !ShouldRotateByLifetime(iat, exp, now.Add(8*time.Minute)) {
+	if !ShouldRotateByLifetime(iatSec, expSec, now.Add(8*time.Minute)) {
 		t.Fatal("token should rotate at <=20% remaining lifetime")
 	}
-	if !ShouldRotateByLifetime(iat, exp, now.Add(10*time.Minute+time.Second)) {
+	if !ShouldRotateByLifetime(iatSec, expSec, now.Add(10*time.Minute+time.Second)) {
 		t.Fatal("expired token must rotate")
+	}
+}
+
+func TestEdgeGuardHashFromJWT_StableAcrossRegeneration(t *testing.T) {
+	openTestSQLite(t)
+
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("generate key pair: %v", err)
+	}
+	seed := privateKey.Seed()
+	jwk := map[string]any{
+		"kty": "OKP",
+		"crv": "Ed25519",
+		"d":   base64.RawURLEncoding.EncodeToString(seed),
+		"x":   base64.RawURLEncoding.EncodeToString(publicKey),
+	}
+	jwkJSON, err := json.Marshal(jwk)
+	if err != nil {
+		t.Fatalf("marshal jwk: %v", err)
+	}
+
+	cfg := config.GetInstance()
+	cfg.PrivateKey = base64.StdEncoding.EncodeToString(jwkJSON)
+	cfg.IOFogUUID = "edgeguard-test-uuid"
+
+	manager := GetJWTManager()
+	manager.Reset()
+
+	wantHash := "dGVzdC1oYXNoLXN0YWJsZQ=="
+	token1, _, _, _, err := manager.GenerateEdgeGuardJWT(wantHash, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("generate edgeguard jwt 1: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	token2, _, _, _, err := manager.GenerateEdgeGuardJWT(wantHash, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("generate edgeguard jwt 2: %v", err)
+	}
+	if token1 == token2 {
+		t.Fatal("expected different JWT strings for successive signings")
+	}
+
+	got1, err := EdgeGuardHashFromJWT(token1)
+	if err != nil {
+		t.Fatalf("extract hash from token1: %v", err)
+	}
+	got2, err := EdgeGuardHashFromJWT(token2)
+	if err != nil {
+		t.Fatalf("extract hash from token2: %v", err)
+	}
+	if got1 != wantHash || got2 != wantHash {
+		t.Fatalf("hash claims: got1=%q got2=%q want=%q", got1, got2, wantHash)
+	}
+	if got1 != got2 {
+		t.Fatalf("expected stable hash across JWTs, got1=%q got2=%q", got1, got2)
 	}
 }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test script for ioFog Agent
+# Test script for Edgelet
 
 set -e
 

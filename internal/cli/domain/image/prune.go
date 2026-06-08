@@ -9,7 +9,7 @@ import (
 // PruneResult carries image prune outcome.
 type PruneResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 const imagePruneUsage = "usage: edgelet image prune [dangling]"

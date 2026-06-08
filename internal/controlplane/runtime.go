@@ -1,7 +1,7 @@
 package controlplane
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/datasance/edgelet/internal/models"
@@ -23,13 +23,13 @@ const (
 // a runtime microservice model for container launch.
 func BuildMicroserviceFromControlPlane(doc *models.ControlPlaneManifest, controllerUUID, image string) (*models.Microservice, error) {
 	if doc == nil {
-		return nil, fmt.Errorf("manifest is nil")
+		return nil, errors.New("manifest is nil")
 	}
 	if strings.TrimSpace(controllerUUID) == "" {
-		return nil, fmt.Errorf("controllerUUID is required")
+		return nil, errors.New("controllerUUID is required")
 	}
 	if strings.TrimSpace(image) == "" {
-		return nil, fmt.Errorf("image is required")
+		return nil, errors.New("image is required")
 	}
 
 	doc.NormalizeDefaults()

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/cgroups"
 	"github.com/datasance/edgelet/internal/constants"
 )
 
@@ -23,16 +22,34 @@ func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {
 	}
 
 	cfg := generateConfig()
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	containerdCfg := criRuntime["containerd"].(map[string]any)
-	runtimes := containerdCfg["runtimes"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	containerdCfg, ok := criRuntime["containerd"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for containerdCfg")
+	}
+	runtimes, ok := containerdCfg["runtimes"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for runtimes")
+	}
 
-	crun := runtimes["crun"].(map[string]any)
+	crun, ok := runtimes["crun"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for crun")
+	}
 	if got := crun["cni_conf_dir"]; got != constants.EdgeletCNIConfDir {
 		t.Fatalf("crun cni_conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
-	crunOpts := crun["options"].(map[string]any)
+	crunOpts, ok := crun["options"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for crunOpts")
+	}
 	if got := crunOpts["BinaryName"]; got != filepath.Join(constants.EdgeletContainerdBinDir, "crun") {
 		t.Fatalf("crun BinaryName mismatch: got=%v want=%s", got, filepath.Join(constants.EdgeletContainerdBinDir, "crun"))
 	}
@@ -53,9 +70,18 @@ func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {
 
 func TestGenerateConfigUsesScopeSelectorCNIConf(t *testing.T) {
 	cfg := generateConfig()
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	cni := criRuntime["cni"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	cni, ok := criRuntime["cni"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for cni")
+	}
 	if got := cni["conf_dir"]; got != constants.EdgeletCNIConfDir {
 		t.Fatalf("cni conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
@@ -80,14 +106,26 @@ func TestGenerateConfigProjectsDiscoveredShimFamilyRuntimes(t *testing.T) {
 	}
 
 	cfg := generateConfig()
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	containerdCfg := criRuntime["containerd"].(map[string]any)
-	runtimes := containerdCfg["runtimes"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	containerdCfg, ok := criRuntime["containerd"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for containerdCfg")
+	}
+	runtimes, ok := containerdCfg["runtimes"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for runtimes")
+	}
 
 	spin, ok := runtimes["spin"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected spin runtime entry")
+		t.Fatal("expected spin runtime entry")
 	}
 	if got := spin["runtime_type"]; got != "io.containerd.spin.v2" {
 		t.Fatalf("spin runtime_type mismatch: got=%v want=io.containerd.spin.v2", got)
@@ -96,27 +134,27 @@ func TestGenerateConfigProjectsDiscoveredShimFamilyRuntimes(t *testing.T) {
 		t.Fatalf("spin runtime_path mismatch: got=%v want=/opt/spin/containerd-shim-spin-v2", got)
 	}
 	if _, ok := spin["options"]; ok {
-		t.Fatalf("spin shim runtime should not include runc options")
+		t.Fatal("spin shim runtime should not include runc options")
 	}
 
-	edgelet, ok := runtimes["edgelet"].(map[string]any)
+	edgeletWasmtime, ok := runtimes["edgelet-wasmtime"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected edgelet runtime entry")
+		t.Fatal("expected edgelet-wasmtime runtime entry")
 	}
-	if got := edgelet["runtime_type"]; got != "io.containerd.edgelet.v2" {
-		t.Fatalf("edgelet runtime_type mismatch: got=%v want=io.containerd.edgelet.v2", got)
+	if got := edgeletWasmtime["runtime_type"]; got != "io.containerd.edgelet.v2" {
+		t.Fatalf("edgelet-wasmtime runtime_type mismatch: got=%v want=io.containerd.edgelet.v2", got)
 	}
-	if got := edgelet["runtime_path"]; got != "/opt/edgelet/containerd-shim-edgelet-v2" {
-		t.Fatalf("edgelet runtime_path mismatch: got=%v", got)
+	if got := edgeletWasmtime["runtime_path"]; got != "/opt/edgelet/containerd-shim-edgelet-v2" {
+		t.Fatalf("edgelet-wasmtime runtime_path mismatch: got=%v", got)
 	}
-	if _, ok := edgelet["options"]; ok {
-		t.Fatalf("edgelet shim runtime should not include runc options")
+	if _, ok := edgeletWasmtime["options"]; ok {
+		t.Fatal("edgelet-wasmtime shim runtime should not include runc options")
 	}
-	if got := edgelet["cni_conf_dir"]; got != constants.EdgeletCNIConfDir {
-		t.Fatalf("edgelet cni_conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
+	if got := edgeletWasmtime["cni_conf_dir"]; got != constants.EdgeletCNIConfDir {
+		t.Fatalf("edgelet-wasmtime cni_conf_dir mismatch: got=%v want=%s", got, constants.EdgeletCNIConfDir)
 	}
-	if _, ok := runtimes["edgelet-local"]; ok {
-		t.Fatalf("edgelet-local runtime entry must not be generated")
+	if _, ok := runtimes["edgelet-wasmtime-local"]; ok {
+		t.Fatal("edgelet-wasmtime-local runtime entry must not be generated")
 	}
 }
 
@@ -133,14 +171,26 @@ func TestGenerateConfigProjectsDiscoveredRuncFamilyRuntimeWithBinaryName(t *test
 	}
 
 	cfg := generateConfig()
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	containerdCfg := criRuntime["containerd"].(map[string]any)
-	runtimes := containerdCfg["runtimes"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	containerdCfg, ok := criRuntime["containerd"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for containerdCfg")
+	}
+	runtimes, ok := containerdCfg["runtimes"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for runtimes")
+	}
 
 	nvidia, ok := runtimes["nvidia"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected nvidia runtime entry")
+		t.Fatal("expected nvidia runtime entry")
 	}
 	if got := nvidia["runtime_type"]; got != "io.containerd.runc.v2" {
 		t.Fatalf("nvidia runtime_type mismatch: got=%v want=io.containerd.runc.v2", got)
@@ -150,7 +200,7 @@ func TestGenerateConfigProjectsDiscoveredRuncFamilyRuntimeWithBinaryName(t *test
 	}
 	opts, ok := nvidia["options"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected nvidia runtime options for runc family")
+		t.Fatal("expected nvidia runtime options for runc family")
 	}
 	if got := opts["BinaryName"]; got != "/usr/bin/nvidia-container-runtime" {
 		t.Fatalf("nvidia BinaryName mismatch: got=%v want=/usr/bin/nvidia-container-runtime", got)
@@ -182,7 +232,7 @@ func TestRenderContainerdConfig_IsDeterministicAcrossRepeatedRuns(t *testing.T) 
 		t.Fatalf("second render failed: %v", err)
 	}
 	if !bytes.Equal(first, second) {
-		t.Fatalf("expected deterministic render output across repeated runs")
+		t.Fatal("expected deterministic render output across repeated runs")
 	}
 }
 

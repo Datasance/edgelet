@@ -12,7 +12,7 @@ import (
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "edgelet panic: %v\n", r)
+			_, _ = fmt.Fprintf(os.Stderr, "edgelet panic: %v\n", r)
 			os.Exit(1)
 		}
 	}()
@@ -22,7 +22,7 @@ func main() {
 	}
 
 	if err := stageAndRunDaemon(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start edgelet daemon: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to start edgelet daemon: %v\n", err)
 		os.Exit(1)
 	}
 }

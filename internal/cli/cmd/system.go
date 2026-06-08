@@ -124,7 +124,7 @@ func runSystemReload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v1/system/reload"
-	var data map[string]interface{}
+	var data map[string]any
 	err := run.WithSpinner(appCtx, "Reloading configuration...", func() error {
 		var reqErr error
 		data, reqErr = appCtx.Client.Request("POST", path, nil)

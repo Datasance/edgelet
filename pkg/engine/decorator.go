@@ -189,7 +189,7 @@ func (l *loggingEngine) GetContainerStartedAt(containerID string) (int64, error)
 	return l.inner.GetContainerStartedAt(containerID)
 }
 
-func (l *loggingEngine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+func (l *loggingEngine) InspectContainerRaw(containerID string) (map[string]any, error) {
 	return l.inner.InspectContainerRaw(containerID)
 }
 

@@ -21,14 +21,14 @@ profiles:
 	if _, err := tmpFile.WriteString(testConfig); err != nil {
 		t.Fatalf("write temp config: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	if err := LoadConfig(tmpFile.Name()); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 
 	cfg := GetInstance()
-	errors := cfg.SetConfig(map[string]interface{}{"egf": 10})
+	errors := cfg.SetConfig(map[string]any{"egf": 10})
 	if len(errors) > 0 {
 		t.Fatalf("expected no setconfig error, got: %+v", errors)
 	}
@@ -52,16 +52,16 @@ profiles:
 	if _, err := tmpFile.WriteString(testConfig); err != nil {
 		t.Fatalf("write temp config: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	if err := LoadConfig(tmpFile.Name()); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	cfg := GetInstance()
 
-	for _, value := range []interface{}{"false", "0", "no"} {
+	for _, value := range []any{"false", "0", "no"} {
 		cfg.WatchdogEnabled = true
-		errors := cfg.SetConfig(map[string]interface{}{"wd": value})
+		errors := cfg.SetConfig(map[string]any{"wd": value})
 		if len(errors) > 0 {
 			t.Fatalf("expected no setconfig error for value=%v, got: %+v", value, errors)
 		}

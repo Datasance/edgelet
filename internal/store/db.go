@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // driver registration
 )
 
 const dbFileName = "edgelet.db"

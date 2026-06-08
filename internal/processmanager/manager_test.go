@@ -47,13 +47,13 @@ func TestLaunchLocalMicroserviceWithProgress_EngineNotInitialized(t *testing.T) 
 		_ = message
 	})
 	if err == nil {
-		t.Fatalf("expected engine initialization error")
+		t.Fatal("expected engine initialization error")
 	}
 	if !strings.Contains(err.Error(), "engine is not initialized") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if called {
-		t.Fatalf("expected no callback events when engine is missing")
+		t.Fatal("expected no callback events when engine is missing")
 	}
 }
 
@@ -61,7 +61,7 @@ func TestStreamMicroserviceLogs_EngineNotInitialized(t *testing.T) {
 	pm := &ProcessManager{}
 	err := pm.StreamMicroserviceLogs("ms-1", &engine.TailConfig{Follow: true, Lines: 10}, nil)
 	if err == nil {
-		t.Fatalf("expected engine initialization error")
+		t.Fatal("expected engine initialization error")
 	}
 	if !strings.Contains(err.Error(), "engine is not initialized") {
 		t.Fatalf("unexpected error: %v", err)
@@ -115,10 +115,10 @@ func TestCleanupDecisionForContainer_RemovesManagedStaleEvenWhenNotCurrentAndWat
 		nil,
 	)
 	if !removeManagedByUUID {
-		t.Fatalf("expected stale managed workload to be removed by uuid when watchdog is disabled")
+		t.Fatal("expected stale managed workload to be removed by uuid when watchdog is disabled")
 	}
 	if removeUnknownByID {
-		t.Fatalf("did not expect unknown-by-id removal path for managed stale workload")
+		t.Fatal("did not expect unknown-by-id removal path for managed stale workload")
 	}
 }
 
@@ -139,7 +139,7 @@ func TestCleanupDecisionForContainer_DoesNotRemoveLocalScopeAsManagedStale(t *te
 		nil,
 	)
 	if removeManagedByUUID || removeUnknownByID {
-		t.Fatalf("expected local scope workload to be preserved by managed stale cleanup")
+		t.Fatal("expected local scope workload to be preserved by managed stale cleanup")
 	}
 }
 

@@ -2,6 +2,7 @@ package fieldagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,7 +76,7 @@ type FieldAgent struct {
 	provisioningMu sync.Mutex
 
 	// test hook: allows status POST override in unit tests.
-	postStatusFn func(ctx context.Context, status map[string]interface{}) error
+	postStatusFn func(ctx context.Context, status map[string]any) error
 }
 
 var (
@@ -156,7 +157,7 @@ func (fa *FieldAgent) Start() error {
 			logging.LogWarn(moduleName, "JWT initialization failed, setting status to NOT_PROVISIONED")
 		} else {
 			if jwt == "" {
-				logging.LogError(moduleName, "JWT generation returned empty token", fmt.Errorf("JWT is empty"))
+				logging.LogError(moduleName, "JWT generation returned empty token", errors.New("JWT is empty"))
 				fa.state.SetControllerStatus(models.ControllerStatusNotProvisioned)
 				fa.state.SetControllerVerified(false)
 				statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
@@ -249,7 +250,6 @@ func (fa *FieldAgent) Start() error {
 				logging.LogInfo(moduleName, "Microservice config processed successfully")
 			}
 			logging.LogDebug(moduleName, "Finished process microservice configuration")
-
 		}
 
 		// Notify ProcessManager to immediately update
@@ -270,7 +270,7 @@ func (fa *FieldAgent) Start() error {
 	logging.LogDebug(moduleName, "Starting background workers")
 	fa.wg.Add(6)
 	go fa.pingControllerWorker()
-	go fa.getChangesWorker()
+	go fa.runChangesWorker()
 	go fa.postStatusWorker()
 	go fa.upgradeScanWorker()
 	go fa.localAPITokenRotationWorker()
@@ -356,7 +356,7 @@ func (fa *FieldAgent) NotProvisioned() bool {
 func (fa *FieldAgent) hydratePrivateKeyFromDB() error {
 	db := store.GetInstance()
 	if db.Conn() == nil {
-		return fmt.Errorf("sqlite not open")
+		return errors.New("sqlite not open")
 	}
 
 	privateKey, found, err := db.GetAgentPrivateKey()
@@ -610,6 +610,7 @@ func (fa *FieldAgent) Provision(key string) error {
 	// Set status to OK since provisioning succeeded
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
 	fa.state.SetControllerVerified(true)
+	clearSupervisorWarningAfterProvision()
 
 	// If daemon is running (ctx is set), update the API client and post config
 	// This ensures the daemon's FieldAgent uses the new credentials
@@ -626,14 +627,25 @@ func (fa *FieldAgent) Provision(key string) error {
 			logging.LogWarn(moduleName, fmt.Sprintf("Failed to post fog config after provisioning (non-critical): %v", err))
 			// Don't fail provisioning for this
 		}
+
+		fa.PostStatusHelper()
 	}
 
 	logging.LogDebug(moduleName, "Finished provisioning")
 	return nil
 }
 
+func clearSupervisorWarningAfterProvision() {
+	statusreporter.GetInstance().UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+		status.SetWarningMessage("")
+		if status.DaemonStatus == models.ModuleStatusWarning {
+			status.SetDaemonStatus(models.ModuleStatusRunning)
+		}
+	})
+}
+
 // getDeprovisionBody builds the deprovision request body with microservice UUIDs
-func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
+func (fa *FieldAgent) getDeprovisionBody() map[string]any {
 	// Get all microservice UUIDs from latest and current (using a set to avoid duplicates)
 	uuidSet := make(map[string]bool)
 
@@ -657,7 +669,7 @@ func (fa *FieldAgent) getDeprovisionBody() map[string]interface{} {
 		uuids = append(uuids, uuid)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"microserviceUuids": uuids,
 	}
 }
@@ -702,7 +714,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 	// Check if already not provisioned
 	if fa.NotProvisioned() {
 		logging.LogInfo(moduleName, "Finished Deprovisioning : Failure - not provisioned")
-		return fmt.Errorf("\nFailure - not provisioned")
+		return errors.New("\nFailure - not provisioned")
 	}
 
 	// Store configuration values before clearing them
@@ -1161,7 +1173,7 @@ func (fa *FieldAgent) SendUSBInfoFromHalToController() {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	err = fa.apiClient.PutJSON(ctx, "hal/usb", map[string]interface{}{
+	err = fa.apiClient.PutJSON(ctx, "hal/usb", map[string]any{
 		"info": usbInfo,
 	})
 	if err != nil {
@@ -1197,7 +1209,7 @@ func (fa *FieldAgent) SendHWInfoFromHalToController() {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	err = fa.apiClient.PutJSON(ctx, "hal/hw", map[string]interface{}{
+	err = fa.apiClient.PutJSON(ctx, "hal/hw", map[string]any{
 		"info": hwInfo,
 	})
 	if err != nil {
@@ -1228,7 +1240,9 @@ func (fa *FieldAgent) getHalResponse(url string) (string, error) {
 		logging.LogDebug(moduleName, "HAL is not enabled for this Iofog Agent at the moment")
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HAL service returned status code: %d", resp.StatusCode)
@@ -1348,8 +1362,8 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 
 	// Check if ProcessManager is available
 	if fa.processManager == nil {
-		logging.LogError(moduleName, "ProcessManager not set, cannot create exec session", fmt.Errorf("processManager is nil"))
-		callback.OnError(fmt.Errorf("processManager is not available"))
+		logging.LogError(moduleName, "ProcessManager not set, cannot create exec session", errors.New("processManager is nil"))
+		callback.OnError(errors.New("processManager is not available"))
 		return
 	}
 

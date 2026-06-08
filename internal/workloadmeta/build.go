@@ -2,7 +2,7 @@ package workloadmeta
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -84,7 +84,7 @@ func BuildEnv(in BuildInput) []string {
 		}
 		userKeys = append(userKeys, key)
 	}
-	sort.Strings(userKeys)
+	slices.Sort(userKeys)
 
 	hasTZ := false
 	for _, key := range userKeys {

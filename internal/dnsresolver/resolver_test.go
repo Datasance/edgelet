@@ -70,13 +70,13 @@ func TestReservedTieBreakNewestThenUUID(t *testing.T) {
 
 	known, answers, denied := r.resolveInternal(ScopeManaged, reservedRouterName, 1)
 	if !known || denied {
-		t.Fatalf("expected known reserved name without policy deny")
+		t.Fatal("expected known reserved name without policy deny")
 	}
 	if len(answers) != 1 {
 		t.Fatalf("expected 1 answer, got %d", len(answers))
 	}
 	if answers[0].String() == "" || answers[0].Header().Name == "" {
-		t.Fatalf("expected valid RR for reserved router name")
+		t.Fatal("expected valid RR for reserved router name")
 	}
 	// Newest startedAt should win (10.1.1.9).
 	if got := answers[0].String(); !strings.Contains(got, "10.1.1.9") {
@@ -97,10 +97,10 @@ func TestKnownInactiveReturnsNoData(t *testing.T) {
 
 	known, answers, denied := r.resolveInternal(ScopeManaged, "app.svc", 1)
 	if !known || denied {
-		t.Fatalf("expected known name in scope")
+		t.Fatal("expected known name in scope")
 	}
 	if len(answers) != 0 {
-		t.Fatalf("expected NODATA style empty answer for inactive target")
+		t.Fatal("expected NODATA style empty answer for inactive target")
 	}
 }
 
@@ -118,10 +118,10 @@ func TestScopeIsolationDeniesOtherScopeNames(t *testing.T) {
 
 	known, _, denied := r.resolveInternal(ScopeManaged, "edgelet.svc", 1)
 	if known {
-		t.Fatalf("managed scope should not treat local scope name as directly known")
+		t.Fatal("managed scope should not treat local scope name as directly known")
 	}
 	if !denied {
-		t.Fatalf("expected policy denied indication for other-scope name")
+		t.Fatal("expected policy denied indication for other-scope name")
 	}
 }
 
@@ -140,22 +140,22 @@ func TestSingleListenerManagedQueryResolvesLocalScopeRecord(t *testing.T) {
 
 	known, answers, denied := r.resolveInternal(ScopeManaged, "edgelet.svc", dns.TypeA)
 	if !known {
-		t.Fatalf("expected managed query to resolve local-scope record in single-listener mode")
+		t.Fatal("expected managed query to resolve local-scope record in single-listener mode")
 	}
 	if denied {
-		t.Fatalf("did not expect policy denied for local record in single-listener mode")
+		t.Fatal("did not expect policy denied for local record in single-listener mode")
 	}
 	if len(answers) == 0 {
-		t.Fatalf("expected at least one answer")
+		t.Fatal("expected at least one answer")
 	}
 }
 
 func TestCompatHostAliasesArePolicyGated(t *testing.T) {
 	if !isHostReservedName(compatDockerHostName, true) {
-		t.Fatalf("compat host alias should be enabled when policy is on")
+		t.Fatal("compat host alias should be enabled when policy is on")
 	}
 	if isHostReservedName(compatDockerHostName, false) {
-		t.Fatalf("compat host alias should be disabled when policy is off")
+		t.Fatal("compat host alias should be disabled when policy is off")
 	}
 }
 
@@ -190,18 +190,18 @@ func TestPerSourceRateLimitDoesNotAffectOtherSources(t *testing.T) {
 	w2 := &testDNSWriter{remote: &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 5301}}
 	r.handleDNSQuery(ScopeManaged, w2, req)
 	if w2.msg == nil || w2.msg.Rcode != dns.RcodeRefused {
-		t.Fatalf("second same-source request should be rate-limited")
+		t.Fatal("second same-source request should be rate-limited")
 	}
 
 	w3 := &testDNSWriter{remote: &net.UDPAddr{IP: net.ParseIP("10.0.0.2"), Port: 5301}}
 	r.handleDNSQuery(ScopeManaged, w3, req)
 	if w3.msg == nil || w3.msg.Rcode != dns.RcodeSuccess {
-		t.Fatalf("different source should not be impacted by other source limit")
+		t.Fatal("different source should not be impacted by other source limit")
 	}
 
 	s := r.Snapshot()
 	if s.RateLimitedTotal == 0 {
-		t.Fatalf("expected rate_limited counter increment")
+		t.Fatal("expected rate_limited counter increment")
 	}
 }
 
@@ -218,7 +218,7 @@ func TestSafetyRejectsOversizeAndUnsupportedType(t *testing.T) {
 	w := &testDNSWriter{}
 	r.handleDNSQuery(ScopeManaged, w, req)
 	if w.msg == nil || w.msg.Rcode != dns.RcodeFormatError {
-		t.Fatalf("oversize request should be format error")
+		t.Fatal("oversize request should be format error")
 	}
 
 	r.maxRequestBytes = defaultMaxRequestBytes
@@ -227,7 +227,7 @@ func TestSafetyRejectsOversizeAndUnsupportedType(t *testing.T) {
 	w2 := &testDNSWriter{}
 	r.handleDNSQuery(ScopeManaged, w2, req2)
 	if w2.msg == nil || w2.msg.Rcode != dns.RcodeNotImplemented {
-		t.Fatalf("unsupported qtype should be rejected with not implemented")
+		t.Fatal("unsupported qtype should be rejected with not implemented")
 	}
 
 	s := r.Snapshot()
@@ -253,10 +253,10 @@ func TestUpdateScopePolicy_ManagedEnabledOnRunningBridgeWorkload(t *testing.T) {
 	})
 
 	if !r.isScopeEnabled(ScopeManaged) {
-		t.Fatalf("expected managed scope enabled")
+		t.Fatal("expected managed scope enabled")
 	}
 	if r.isScopeEnabled(ScopeLocal) {
-		t.Fatalf("expected local scope disabled with no local bridge workloads")
+		t.Fatal("expected local scope disabled with no local bridge workloads")
 	}
 }
 
@@ -277,10 +277,10 @@ func TestUpdateScopePolicy_LocalEligibleWorkloadEnablesManagedListenerInSingleBr
 	})
 
 	if r.isScopeEnabled(ScopeLocal) {
-		t.Fatalf("expected local listener scope disabled in single-bridge mode")
+		t.Fatal("expected local listener scope disabled in single-bridge mode")
 	}
 	if !r.isScopeEnabled(ScopeManaged) {
-		t.Fatalf("expected managed listener scope enabled when eligible local workload exists")
+		t.Fatal("expected managed listener scope enabled when eligible local workload exists")
 	}
 }
 
@@ -301,10 +301,10 @@ func TestUpdateScopePolicy_LocalDisabledWhenWatchdogEnabled(t *testing.T) {
 	})
 
 	if r.isScopeEnabled(ScopeLocal) {
-		t.Fatalf("expected local scope disabled when watchdog is enabled")
+		t.Fatal("expected local scope disabled when watchdog is enabled")
 	}
 	if !r.isScopeEnabled(ScopeManaged) {
-		t.Fatalf("expected managed scope enabled for local workload in single-bridge mode")
+		t.Fatal("expected managed scope enabled for local workload in single-bridge mode")
 	}
 }
 
@@ -325,7 +325,7 @@ func TestUpdateScopePolicy_ManagedUnaffectedByWatchdog(t *testing.T) {
 	})
 
 	if !r.isScopeEnabled(ScopeManaged) {
-		t.Fatalf("expected managed scope enabled regardless of watchdog setting")
+		t.Fatal("expected managed scope enabled regardless of watchdog setting")
 	}
 }
 
@@ -358,6 +358,6 @@ func TestTryBindMissingServers_StopsEnabledScopeWhenPolicyTurnsOff(t *testing.T)
 	r.tryBindMissingServers()
 
 	if _, ok := r.servers[ScopeManaged]; ok {
-		t.Fatalf("expected disabled managed scope listener removed")
+		t.Fatal("expected disabled managed scope listener removed")
 	}
 }

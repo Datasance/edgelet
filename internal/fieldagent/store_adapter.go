@@ -1,7 +1,7 @@
 package fieldagent
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/store"
@@ -11,7 +11,7 @@ import (
 func saveControllerMicroservicesToStore(microservices []*models.Microservice) error {
 	db := store.GetInstance()
 	if db.Conn() == nil {
-		return fmt.Errorf("SQLite not open")
+		return errors.New("SQLite not open")
 	}
 	return db.SaveControllerMicroservices(microservices)
 }
@@ -20,7 +20,7 @@ func saveControllerMicroservicesToStore(microservices []*models.Microservice) er
 func loadControllerMicroservicesFromStore() ([]*models.Microservice, error) {
 	db := store.GetInstance()
 	if db.Conn() == nil {
-		return nil, fmt.Errorf("SQLite not open")
+		return nil, errors.New("SQLite not open")
 	}
 	return db.LoadControllerMicroservices()
 }
@@ -29,7 +29,7 @@ func loadControllerMicroservicesFromStore() ([]*models.Microservice, error) {
 func saveControllerRegistriesToStore(registries []*models.Registry) error {
 	db := store.GetInstance()
 	if db.Conn() == nil {
-		return fmt.Errorf("SQLite not open")
+		return errors.New("SQLite not open")
 	}
 	return db.SaveControllerRegistries(registries)
 }
@@ -38,7 +38,7 @@ func saveControllerRegistriesToStore(registries []*models.Registry) error {
 func loadControllerRegistriesFromStore() ([]*models.Registry, error) {
 	db := store.GetInstance()
 	if db.Conn() == nil {
-		return nil, fmt.Errorf("SQLite not open")
+		return nil, errors.New("SQLite not open")
 	}
 	return db.LoadControllerRegistries()
 }

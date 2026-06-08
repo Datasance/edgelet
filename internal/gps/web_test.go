@@ -13,7 +13,9 @@ func TestWebHandlerUpdateCoordinates_ParsesLatLon(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","lat":41.0151,"lon":28.9795}`))
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	prevURL := ipAPIURL
 	ipAPIURL = server.URL
@@ -36,7 +38,9 @@ func TestWebHandlerUpdateCoordinates_MissingLatLonFails(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success"}`))
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	prevURL := ipAPIURL
 	ipAPIURL = server.URL

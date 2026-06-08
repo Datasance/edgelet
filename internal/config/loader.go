@@ -47,7 +47,7 @@ func LoadConfig(configPath string) error {
 			// Primary exists but is invalid/unreadable; try backup but never generate defaults.
 			yamlConfig, err = loadYAMLFile(backupPath)
 			if err != nil {
-				return fmt.Errorf("failed to load primary config %s (%v) and backup %s (%v)", configPath, primaryErr, backupPath, err)
+				return fmt.Errorf("failed to load primary config %s (%w) and backup %s (%w)", configPath, primaryErr, backupPath, err)
 			}
 			logging.LogWarn(
 				configLoaderModuleName,
@@ -96,7 +96,7 @@ func loadYAMLFile(path string) (*models.YamlConfig, error) {
 
 	var yamlConfig models.YamlConfig
 	if err := yaml.Unmarshal(data, &yamlConfig); err != nil {
-		return nil, fmt.Errorf("%w: %v", errYAMLParse, err)
+		return nil, fmt.Errorf("%w: %w", errYAMLParse, err)
 	}
 
 	if yamlConfig.Profiles == nil {
@@ -339,10 +339,12 @@ func SaveConfigWithYaml(configPath string, yamlConfig *models.YamlConfig) error 
 }
 
 func syncDirectory(path string) error {
-	dirHandle, err := os.Open(path)
+	dirHandle, err := os.Open(path) // #nosec G304 -- config directory from loader constant
 	if err != nil {
 		return err
 	}
-	defer dirHandle.Close()
+	defer func() {
+		_ = dirHandle.Close()
+	}()
 	return dirHandle.Sync()
 }

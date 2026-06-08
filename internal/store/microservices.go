@@ -15,7 +15,7 @@ func (d *DB) SaveControllerMicroservices(microservices []*models.Microservice) e
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec("DELETE FROM controller_microservices"); err != nil {
 		return fmt.Errorf("failed to clear controller_microservices: %w", err)
@@ -46,7 +46,9 @@ func (d *DB) LoadControllerMicroservices() ([]*models.Microservice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query controller_microservices: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.Microservice
 	for rows.Next() {
@@ -155,18 +157,18 @@ func scanMicroservice(rows *sql.Rows) (*models.Microservice, error) {
 		ms.SetIsUpdating(true)
 	}
 
-	json.Unmarshal([]byte(portMappingsJSON), &ms.PortMappings)     // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(volumeMappingsJSON), &ms.VolumeMappings) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(envVarsJSON), &ms.EnvVars)               // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(argsJSON), &ms.Args)                     // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(cdiDevsJSON), &ms.CdiDevs)               // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(capAddJSON), &ms.CapAdd)                 // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(capDropJSON), &ms.CapDrop)               // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(extraHostsJSON), &ms.ExtraHosts)         // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+	_ = json.Unmarshal([]byte(portMappingsJSON), &ms.PortMappings)
+	_ = json.Unmarshal([]byte(volumeMappingsJSON), &ms.VolumeMappings)
+	_ = json.Unmarshal([]byte(envVarsJSON), &ms.EnvVars)
+	_ = json.Unmarshal([]byte(argsJSON), &ms.Args)
+	_ = json.Unmarshal([]byte(cdiDevsJSON), &ms.CdiDevs)
+	_ = json.Unmarshal([]byte(capAddJSON), &ms.CapAdd)
+	_ = json.Unmarshal([]byte(capDropJSON), &ms.CapDrop)
+	_ = json.Unmarshal([]byte(extraHostsJSON), &ms.ExtraHosts)
 
 	if healthcheckJSON != nil {
 		ms.Healthcheck = &models.Healthcheck{}
-		json.Unmarshal([]byte(*healthcheckJSON), ms.Healthcheck) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+		_ = json.Unmarshal([]byte(*healthcheckJSON), ms.Healthcheck)
 	}
 
 	// Ensure nil slices become empty slices (matches NewMicroservice behavior)

@@ -30,7 +30,7 @@ func stageAndRunDaemon(args []string) error {
 
 	if engine == constants.EngineDocker || engine == constants.EnginePodman {
 		if err := edgeletcontainerdd.StopOrphanedEmbeddedContainerd(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: stop orphaned embedded containerd: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: stop orphaned embedded containerd: %v\n", err)
 		}
 	}
 

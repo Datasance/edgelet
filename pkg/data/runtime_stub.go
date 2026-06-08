@@ -2,7 +2,9 @@
 
 package data
 
-import "fmt"
+import (
+	"errors"
+)
 
 // EmbeddedBundleHash is empty on builds without an embedded bundle.
 func EmbeddedBundleHash() string {
@@ -11,5 +13,5 @@ func EmbeddedBundleHash() string {
 
 // RuntimeBinary is unavailable on non-linux builds.
 func RuntimeBinary() (string, error) {
-	return "", fmt.Errorf("embedded runtime not available on this platform")
+	return "", errors.New("embedded runtime not available on this platform")
 }

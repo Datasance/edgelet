@@ -9,7 +9,7 @@ import (
 func TestProvisionHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"POST /v1/system/provision": {"agentUuid": "agent-1"},
 		},
 	}
@@ -31,7 +31,7 @@ func TestProvisionHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 func TestProvisionJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"POST /v1/system/provision": {"agentUuid": "agent-1"},
 		},
 	}
@@ -42,7 +42,7 @@ func TestProvisionJSONStdoutOnly(t *testing.T) {
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected no stderr UX for json output, got %q", stderr)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestProvisionJSONStdoutOnly(t *testing.T) {
 func TestDeprovisionHumanShowsSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"DELETE /v1/system/provision": {"status": "ok"},
 		},
 	}

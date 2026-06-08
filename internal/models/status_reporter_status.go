@@ -10,10 +10,10 @@ type StatusReporterStatus struct {
 
 // NewStatusReporterStatus creates a new StatusReporterStatus with current time
 func NewStatusReporterStatus() *StatusReporterStatus {
-	now := time.Now().UnixMilli()
+	nowMs := time.Now().UnixMilli()
 	return &StatusReporterStatus{
-		SystemTime: now,
-		LastUpdate: now,
+		SystemTime: nowMs,
+		LastUpdate: nowMs,
 	}
 }
 

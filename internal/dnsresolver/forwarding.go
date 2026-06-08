@@ -1,10 +1,12 @@
 package dnsresolver
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"net"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/miekg/dns"
@@ -64,13 +66,13 @@ func (r *Resolver) forwardExternal(req *dns.Msg) (*dns.Msg, error) {
 		return nil, err
 	}
 	if len(addrs) == 0 {
-		return nil, fmt.Errorf("no upstream resolvers configured")
+		return nil, errors.New("no upstream resolvers configured")
 	}
 
 	now := nowFn()
 	candidates := r.rankForwardCandidates(addrs, now)
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no upstream resolver candidates available")
+		return nil, errors.New("no upstream resolver candidates available")
 	}
 
 	client := &dns.Client{Timeout: defaultForwardTimeout}
@@ -90,7 +92,7 @@ func (r *Resolver) forwardExternal(req *dns.Msg) (*dns.Msg, error) {
 		r.recordForwardFailure(cand.addr, nowFn())
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("all upstream resolvers failed")
+		lastErr = errors.New("all upstream resolvers failed")
 	}
 	return nil, lastErr
 }
@@ -99,7 +101,7 @@ func (r *Resolver) rankForwardCandidates(addrs []string, now time.Time) []forwar
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	nowUnix := now.UnixMilli()
+	nowUnixMs := now.UnixMilli()
 	active := make([]forwardCandidate, 0, len(addrs))
 	backoff := make([]forwardCandidate, 0, len(addrs))
 	for _, addr := range addrs {
@@ -109,22 +111,21 @@ func (r *Resolver) rankForwardCandidates(addrs []string, now time.Time) []forwar
 			r.forwardState[addr] = st
 		}
 		c := forwardCandidate{addr: addr, st: st}
-		if st.cooldownUntil > nowUnix {
+		if st.cooldownUntil > nowUnixMs {
 			backoff = append(backoff, c)
 			r.forwardBackoffSkips.Add(1)
 			continue
 		}
 		active = append(active, c)
 	}
-
-	sort.SliceStable(active, func(i, j int) bool {
-		if active[i].st.failureStreak == active[j].st.failureStreak {
-			return active[i].st.lastSuccessUnix > active[j].st.lastSuccessUnix
+	slices.SortStableFunc(active, func(a, b forwardCandidate) int {
+		if a.st.failureStreak != b.st.failureStreak {
+			return cmp.Compare(a.st.failureStreak, b.st.failureStreak)
 		}
-		return active[i].st.failureStreak < active[j].st.failureStreak
+		return cmp.Compare(b.st.lastSuccessUnix, a.st.lastSuccessUnix)
 	})
-	sort.SliceStable(backoff, func(i, j int) bool {
-		return backoff[i].st.cooldownUntil < backoff[j].st.cooldownUntil
+	slices.SortStableFunc(backoff, func(a, b forwardCandidate) int {
+		return cmp.Compare(a.st.cooldownUntil, b.st.cooldownUntil)
 	})
 
 	out := make([]forwardCandidate, 0, len(addrs))
@@ -173,13 +174,13 @@ func (r *Resolver) forwardHealthCountsLocked() (uint64, uint64) {
 	if total == 0 {
 		return 0, 0
 	}
-	nowUnix := time.Now().UnixMilli()
+	nowUnixMs := time.Now().UnixMilli()
 	healthy := uint64(0)
 	for _, st := range r.forwardState {
 		if st == nil {
 			continue
 		}
-		if st.cooldownUntil <= nowUnix {
+		if st.cooldownUntil <= nowUnixMs {
 			healthy++
 		}
 	}

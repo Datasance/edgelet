@@ -31,7 +31,7 @@ func TestControllerConnection(t *testing.T) {
 		t.Logf("FieldAgent start failed (expected if controller not available): %v", err)
 		return
 	}
-	defer agent.Stop()
+	defer func() { _ = agent.Stop() }()
 
 	// Give it time to connect
 	time.Sleep(2 * time.Second)
@@ -62,7 +62,9 @@ func TestControllerAPI(t *testing.T) {
 		t.Logf("Controller not reachable (expected if not running): %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Logf("Controller returned status: %d", resp.StatusCode)

@@ -91,6 +91,6 @@ func normalizeEngine(engine string) string {
 	case constants.EngineDocker, constants.EnginePodman, constants.EngineEdgelet:
 		return engine
 	default:
-		return engine
+		return constants.EngineEdgelet
 	}
 }

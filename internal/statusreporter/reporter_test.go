@@ -61,7 +61,7 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndEmbeddedMode(t *testing.T)
 	}
 	listRuntimeClassesForStatus = func() ([]*models.LocalRuntimeClass, error) {
 		return []*models.LocalRuntimeClass{
-			{Name: "edgelet", RuntimeName: "edgelet"},
+			{Name: "edgelet-wasmtime", RuntimeName: "edgelet-wasmtime"},
 			{Name: "spin", RuntimeName: "spin"},
 		}, nil
 	}
@@ -85,7 +85,7 @@ func TestGetAvailableRuntimes_DeterministicByEngineAndEmbeddedMode(t *testing.T)
 	}
 
 	runtimes = getAvailableRuntimesForEngine("edgelet", true)
-	if strings.Join(runtimes, ",") != "crun,edgelet,runc,spin" {
+	if strings.Join(runtimes, ",") != "crun,edgelet-wasmtime,runc,spin" {
 		t.Fatalf("expected embedded edgelet runtimes with runtime classes and catalog, got: %v", runtimes)
 	}
 }

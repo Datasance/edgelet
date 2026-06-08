@@ -20,6 +20,9 @@ var log = logging.NewModuleLogger(moduleName)
 
 // HealthcheckEngine is implemented by engines that support exec-based healthcheck
 // (e.g. iofog). Docker/Podman use native healthcheck and do not implement this.
+// HealthcheckEngine runs health checks against container engines.
+//
+//nolint:revive // exported API
 type HealthcheckEngine interface {
 	ExecWithExitCode(containerID string, cmd []string, timeout time.Duration) (int, error)
 }

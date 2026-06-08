@@ -1,11 +1,12 @@
 package dnsresolver
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -129,8 +130,8 @@ func (r *Resolver) collectSnapshotWorkloads() []WorkloadRecord {
 		out = append(out, *wl)
 	}
 	r.mu.RUnlock()
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].UUID < out[j].UUID
+	slices.SortFunc(out, func(a, b WorkloadRecord) int {
+		return cmp.Compare(a.UUID, b.UUID)
 	})
 	return out
 }
@@ -151,11 +152,11 @@ func loadSnapshotRecords(path string) ([]WorkloadRecord, error) {
 }
 
 func saveSnapshotAtomic(path string, payload resolverSnapshotV1) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- resolver state dir must be traversable
 		return fmt.Errorf("mkdir snapshot dir: %w", err)
 	}
 	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- internal fixed path or tested temp path
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304,G302 -- internal fixed path; state file group-readable
 	if err != nil {
 		return fmt.Errorf("open temp snapshot: %w", err)
 	}
@@ -180,10 +181,12 @@ func saveSnapshotAtomic(path string, payload resolverSnapshotV1) error {
 }
 
 func syncDirBestEffort(path string) {
-	d, err := os.Open(path)
+	d, err := os.Open(path) // #nosec G304 -- internal fixed snapshot directory
 	if err != nil {
 		return
 	}
-	defer d.Close()
+	defer func() {
+		_ = d.Close()
+	}()
 	_ = d.Sync()
 }

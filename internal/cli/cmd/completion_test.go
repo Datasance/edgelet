@@ -20,7 +20,7 @@ func TestCompletionBashGeneratesValidScript(t *testing.T) {
 		t.Fatalf("expected bash completion script markers, got: %q", truncate(out, 200))
 	}
 	if !strings.Contains(out, "edgelet") {
-		t.Fatalf("expected program name in completion script")
+		t.Fatal("expected program name in completion script")
 	}
 }
 

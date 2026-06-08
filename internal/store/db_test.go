@@ -42,7 +42,10 @@ func TestDB_Open_IntegrityCheckFailsOnCorruptDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("raw open corrupt file: %v", err)
 	}
-	defer raw.Close() //nolint:errcheck
+	defer func() {
+		_ = raw.Close()
+	}( //nolint:errcheck
+	)
 
 	damaged := &DB{db: raw, path: path}
 	icErr := damaged.checkIntegrity()
@@ -91,7 +94,10 @@ func TestDB_Close_WALCheckpointTruncate(t *testing.T) {
 	if err := reopen.Open(dir); err != nil {
 		t.Fatalf("reopen after checkpoint close: %v", err)
 	}
-	defer reopen.Close() //nolint:errcheck
+	defer func() {
+		_ = reopen.Close()
+	}( //nolint:errcheck
+	)
 
 	var busyAfter, logAfter, ckptAfter int
 	if err := reopen.Conn().QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busyAfter, &logAfter, &ckptAfter); err != nil {

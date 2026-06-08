@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,9 +23,9 @@ func (pm *ProcessManager) reconcileControlPlane() {
 		return
 	}
 
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item.NormalizeDefaults()
-	item.LastReconcileAt = now
+	item.LastReconcileAt = nowSec
 
 	desired := strings.ToLower(strings.TrimSpace(item.DesiredState))
 	if desired == "" {
@@ -42,17 +43,17 @@ func (pm *ProcessManager) reconcileControlPlane() {
 
 	switch desired {
 	case "stopped":
-		pm.reconcileControlPlaneDesiredStopped(item, container, now)
+		pm.reconcileControlPlaneDesiredStopped(item, container, nowSec)
 	case "deleted":
-		pm.reconcileControlPlaneDesiredDeleted(item, container, now)
+		pm.reconcileControlPlaneDesiredDeleted(item, container, nowSec)
 	default:
-		pm.reconcileControlPlaneDesiredRunning(item, container, now)
+		pm.reconcileControlPlaneDesiredRunning(item, container, nowSec)
 	}
 }
 
 func (pm *ProcessManager) containerForControlPlane(controllerUUID, containerID string) (*engine.Container, error) {
 	if pm.containerManager == nil {
-		return nil, fmt.Errorf("process manager is not initialized")
+		return nil, errors.New("process manager is not initialized")
 	}
 	if container, err := pm.containerManager.GetContainerForMicroservice(controllerUUID); err == nil && container != nil {
 		return container, nil
@@ -316,7 +317,7 @@ func (pm *ProcessManager) recreateControlPlaneDeploymentWithProgress(item *model
 		return pm.recreateControlPlaneFn(item, pullImage, now)
 	}
 	if pm.containerManager == nil {
-		err := fmt.Errorf("process manager is not initialized")
+		err := errors.New("process manager is not initialized")
 		pm.bumpControlPlaneFailure(item, err, "failed")
 		return err
 	}
@@ -350,7 +351,7 @@ func (pm *ProcessManager) recreateControlPlaneDeploymentWithProgress(item *model
 
 func (pm *ProcessManager) buildControlPlaneLaunchSpec(item *models.ControlPlaneDeployment) (*models.ControlPlaneManifest, *models.Microservice, *models.Registry, error) {
 	if item == nil {
-		return nil, nil, nil, fmt.Errorf("control plane deployment is nil")
+		return nil, nil, nil, errors.New("control plane deployment is nil")
 	}
 	doc, err := models.ParseControlPlaneManifest(item.ManifestYAML)
 	if err != nil {

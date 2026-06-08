@@ -235,27 +235,30 @@ func TestReconcileManagedMicroservices_EmitsCanonicalRBACEnvelope(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to parse projected token: %v", err)
 	}
-	claims := token.Claims.(jwt.MapClaims)
-	iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{})
+	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		t.Fatalf("missing iofog.org claims")
+		t.Fatal("type assertion failed for claims")
 	}
-	rbac, ok := iofog["rbac"].(map[string]interface{})
+	iofog, ok := claims["edgelet.iofog.org"].(map[string]any)
 	if !ok {
-		t.Fatalf("missing canonical rbac envelope")
+		t.Fatal("missing iofog.org claims")
+	}
+	rbac, ok := iofog["rbac"].(map[string]any)
+	if !ok {
+		t.Fatal("missing canonical rbac envelope")
 	}
 	if rbac["version"] != "v1" {
 		t.Fatalf("expected rbac version v1, got %#v", rbac["version"])
 	}
-	rulesByGroup, ok := rbac["rulesByGroup"].(map[string]interface{})
+	rulesByGroup, ok := rbac["rulesByGroup"].(map[string]any)
 	if !ok {
-		t.Fatalf("missing rulesByGroup")
+		t.Fatal("missing rulesByGroup")
 	}
 	if _, ok := rulesByGroup["kuksa.val/v2"]; !ok {
-		t.Fatalf("expected external group inside rulesByGroup")
+		t.Fatal("expected external group inside rulesByGroup")
 	}
 	if _, exists := claims["kuksa.val/v2"]; exists {
-		t.Fatalf("external groups must not be top-level claims in canonical payload")
+		t.Fatal("external groups must not be top-level claims in canonical payload")
 	}
 }
 
@@ -266,7 +269,7 @@ func createEd25519JWKBase64(t *testing.T) string {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
 	seed := priv.Seed()
-	jwk := map[string]interface{}{
+	jwk := map[string]any{
 		"kty": "OKP",
 		"crv": "Ed25519",
 		"d":   base64.RawURLEncoding.EncodeToString(seed),

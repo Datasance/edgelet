@@ -8,7 +8,7 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 )
 
-func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, error) {
+func buildProvisionRequestBody(provisioningKey string) (map[string]any, error) {
 	cfg := config.GetInstance()
 	engine := strings.ToLower(strings.TrimSpace(cfg.ContainerEngine))
 
@@ -16,7 +16,7 @@ func buildProvisionRequestBody(provisioningKey string) (map[string]interface{}, 
 		return nil, err
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"key":    provisioningKey,
 		"type":   getArchitectureCode(cfg.Arch),
 		"engine": engine,

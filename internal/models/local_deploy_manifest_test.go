@@ -119,7 +119,7 @@ func TestLocalDeployManifestValidate_LocalVolumePolicies(t *testing.T) {
 			},
 		}
 		if err := doc.Validate(); err == nil {
-			t.Fatalf("expected relative bind path to fail")
+			t.Fatal("expected relative bind path to fail")
 		}
 	})
 
@@ -139,7 +139,7 @@ func TestLocalDeployManifestValidate_LocalVolumePolicies(t *testing.T) {
 		}
 		err := doc.Validate()
 		if err == nil {
-			t.Fatalf("expected invalid volume name to fail")
+			t.Fatal("expected invalid volume name to fail")
 		}
 		if got := err.Error(); got == "" || !strings.Contains(got, "use type: bind") {
 			t.Fatalf("expected guidance to use type: bind, got %q", got)
@@ -162,7 +162,7 @@ func TestLocalDeployManifestValidate_LocalVolumePolicies(t *testing.T) {
 		}
 		err := doc.Validate()
 		if err == nil {
-			t.Fatalf("expected VOLUME_MOUNT to fail")
+			t.Fatal("expected VOLUME_MOUNT to fail")
 		}
 		if got := err.Error(); got == "" || !strings.Contains(got, "not supported for local manifests") {
 			t.Fatalf("unexpected error: %q", got)

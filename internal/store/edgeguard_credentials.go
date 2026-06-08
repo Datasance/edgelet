@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -10,7 +11,7 @@ const singletonRowID = 1
 // UpsertEdgeGuardSignature stores the current edgeguard hardware signature JWT.
 func (d *DB) UpsertEdgeGuardSignature(jwt string) error {
 	if d.Conn() == nil {
-		return fmt.Errorf("sqlite not open")
+		return errors.New("sqlite not open")
 	}
 
 	_, err := d.Conn().Exec(
@@ -32,7 +33,7 @@ func (d *DB) UpsertEdgeGuardSignature(jwt string) error {
 // Returns found=false when there is no stored signature.
 func (d *DB) GetEdgeGuardSignature() (signature string, found bool, err error) {
 	if d.Conn() == nil {
-		return "", false, fmt.Errorf("sqlite not open")
+		return "", false, errors.New("sqlite not open")
 	}
 
 	err = d.Conn().QueryRow(
@@ -52,7 +53,7 @@ func (d *DB) GetEdgeGuardSignature() (signature string, found bool, err error) {
 // DeleteEdgeGuardSignature removes the stored edgeguard signature JWT.
 func (d *DB) DeleteEdgeGuardSignature() error {
 	if d.Conn() == nil {
-		return fmt.Errorf("sqlite not open")
+		return errors.New("sqlite not open")
 	}
 
 	if _, err := d.Conn().Exec(
@@ -68,7 +69,7 @@ func (d *DB) DeleteEdgeGuardSignature() error {
 // UpsertAgentPrivateKey stores the provisioned private key payload (base64 JWK).
 func (d *DB) UpsertAgentPrivateKey(privateKeyB64 string) error {
 	if d.Conn() == nil {
-		return fmt.Errorf("sqlite not open")
+		return errors.New("sqlite not open")
 	}
 
 	_, err := d.Conn().Exec(
@@ -90,7 +91,7 @@ func (d *DB) UpsertAgentPrivateKey(privateKeyB64 string) error {
 // Returns found=false when there is no stored key.
 func (d *DB) GetAgentPrivateKey() (privateKeyB64 string, found bool, err error) {
 	if d.Conn() == nil {
-		return "", false, fmt.Errorf("sqlite not open")
+		return "", false, errors.New("sqlite not open")
 	}
 
 	err = d.Conn().QueryRow(
@@ -110,7 +111,7 @@ func (d *DB) GetAgentPrivateKey() (privateKeyB64 string, found bool, err error) 
 // DeleteAgentPrivateKey removes the provisioned private key payload.
 func (d *DB) DeleteAgentPrivateKey() error {
 	if d.Conn() == nil {
-		return fmt.Errorf("sqlite not open")
+		return errors.New("sqlite not open")
 	}
 
 	if _, err := d.Conn().Exec(
