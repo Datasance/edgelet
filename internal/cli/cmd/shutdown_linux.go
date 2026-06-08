@@ -3,9 +3,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -85,7 +87,8 @@ func findDaemonPIDs() ([]int, error) {
 	}
 	out, err := exec.Command("pgrep", "-f", "[e]dgelet daemon").Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
 		return nil, err
@@ -106,7 +109,18 @@ func findDaemonPIDs() ([]int, error) {
 }
 
 func readPIDFile(path string) (int, bool) {
-	data, err := os.ReadFile(path)
+	var (
+		data []byte
+		err  error
+	)
+	switch filepath.Clean(path) {
+	case "/run/edgelet.pid":
+		data, err = readFileUnderRoot("/run", "edgelet.pid")
+	case "/run/edgelet/edgelet.pid":
+		data, err = readFileUnderRoot("/run/edgelet", "edgelet.pid")
+	default:
+		return 0, false
+	}
 	if err != nil {
 		return 0, false
 	}
@@ -115,4 +129,16 @@ func readPIDFile(path string) (int, bool) {
 		return 0, false
 	}
 	return pid, true
+}
+
+func readFileUnderRoot(rootDir, name string) ([]byte, error) {
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("invalid relative path %q", name)
+	}
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(name)
 }

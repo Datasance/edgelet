@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -279,6 +280,13 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 	return config, nil
 }
 
+func portToInt32(port int) (int32, bool) {
+	if port < 0 || port > math.MaxInt32 {
+		return 0, false
+	}
+	return int32(port), true
+}
+
 func buildCRIPortMappings(ports []*models.PortMapping) []*runtimeapi.PortMapping {
 	out := make([]*runtimeapi.PortMapping, 0, len(ports))
 	for _, p := range ports {
@@ -286,13 +294,21 @@ func buildCRIPortMappings(ports []*models.PortMapping) []*runtimeapi.PortMapping
 			// Skip dynamic/invalid host ports — CRI and CNI portmap ignore HostPort <= 0.
 			continue
 		}
+		hostPort, ok := portToInt32(p.Outside)
+		if !ok {
+			continue
+		}
+		containerPort, ok := portToInt32(p.Inside)
+		if !ok {
+			continue
+		}
 		proto := runtimeapi.Protocol_TCP
 		if p.UDP {
 			proto = runtimeapi.Protocol_UDP
 		}
 		out = append(out, &runtimeapi.PortMapping{
-			HostPort:      int32(p.Outside),
-			ContainerPort: int32(p.Inside),
+			HostPort:      hostPort,
+			ContainerPort: containerPort,
 			Protocol:      proto,
 		})
 	}

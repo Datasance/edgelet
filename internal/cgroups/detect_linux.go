@@ -346,7 +346,11 @@ func ensureAgentCgroupV2(policy *CgroupPolicy) error {
 	}
 	// Do not enable subtree_control on /edgelet/agent before AddProc: a cgroup with
 	// populated subtree_control is an inner node and cannot hold the daemon process.
-	if err := agentMgr.AddProc(uint64(os.Getpid())); err != nil {
+	pid, err := currentPID()
+	if err != nil {
+		return fmt.Errorf("resolve edgelet pid: %w", err)
+	}
+	if err := agentMgr.AddProc(pid); err != nil {
 		return fmt.Errorf("move edgelet daemon into %s: %w", agentPath, err)
 	}
 	if _, err := cgv2.NewManager(mount, containerdPath, &cgv2.Resources{}); err != nil {
@@ -515,7 +519,11 @@ func ensureAgentCgroupV1(policy *CgroupPolicy) error {
 	if err != nil {
 		return fmt.Errorf("create v1 agent cgroup %s: %w", policy.AgentCgroupPath, err)
 	}
-	if err := cg.AddProc(uint64(os.Getpid())); err != nil {
+	pid, err := currentPID()
+	if err != nil {
+		return fmt.Errorf("resolve edgelet pid: %w", err)
+	}
+	if err := cg.AddProc(pid); err != nil {
 		return fmt.Errorf("move edgelet daemon into v1 agent cgroup: %w", err)
 	}
 	childPath := cgroup1.StaticPath(strings.TrimPrefix(policy.ContainerdCgroupPath, "/"))
@@ -551,4 +559,12 @@ func Bootstrap() (*CgroupPolicy, error) {
 	}
 	SetGlobalPolicy(policy)
 	return policy, nil
+}
+
+func currentPID() (uint64, error) {
+	pid := os.Getpid()
+	if pid < 0 {
+		return 0, fmt.Errorf("invalid pid %d", pid)
+	}
+	return uint64(pid), nil
 }

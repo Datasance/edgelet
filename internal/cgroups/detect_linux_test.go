@@ -177,7 +177,7 @@ func TestValidatePreflightMissingCPU(t *testing.T) {
 func TestMapRuntimeError(t *testing.T) {
 	policy := &CgroupPolicy{Nested: true, Mode: ModeV2}
 	err := MapRuntimeError(os.ErrInvalid, policy)
-	if err != os.ErrInvalid {
+	if !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("expected passthrough, got %v", err)
 	}
 	mapped := MapRuntimeError(errors.New("cri failed: controller cpu is not available"), policy)
@@ -260,11 +260,11 @@ func detectModeString() string {
 }
 
 func asErrDelegation(err error, target **ErrDelegation) bool {
-	del, ok := err.(*ErrDelegation)
-	if !ok {
+	var del *ErrDelegation
+	if !errors.As(err, &del) {
 		return false
 	}
-	if target != nil && *target != nil {
+	if target != nil && *target != nil && del != nil {
 		**target = *del
 	}
 	return true

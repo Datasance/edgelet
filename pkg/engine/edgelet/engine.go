@@ -1,10 +1,10 @@
 //go:build linux
 
-// Package iofog implements the ContainerEngine interface using the embedded
+// Package edgelet implements the ContainerEngine interface using the embedded
 // containerd runtime. It communicates directly with the in-process containerd
 // via the containerd Go client (not the Docker SDK), connecting to the private
 // socket at /run/edgelet/containerd.sock.
-package iofog
+package edgelet
 
 import (
 	"bufio"
@@ -105,7 +105,7 @@ func New(logDir string) *Engine {
 	}
 }
 
-// Init connects to the embedded containerd socket, initialises CNI, and
+// Init connects to the embedded containerd socket, initializes CNI, and
 // recovers per-container state from existing container labels.
 func (e *Engine) Init(cfg engine.EngineConfig) error {
 	initStart := time.Now()
@@ -158,7 +158,10 @@ func (e *Engine) Init(cfg engine.EngineConfig) error {
 // importPauseImage imports the embedded pause (sandbox) image into containerd's
 // content store so the CRI plugin can use it for pod sandboxes.
 func (e *Engine) importPauseImage() error {
-	pausePath := filepath.Join(constants.EdgeletContainerdImagesDir, "pause.tar.gz")
+	pausePath, err := pathUnderBase(constants.EdgeletContainerdImagesDir, "pause.tar.gz")
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(pausePath); err != nil {
 		if os.IsNotExist(err) {
 			log.Debugf("Pause image not found at %s, skipping import", pausePath)
@@ -166,7 +169,14 @@ func (e *Engine) importPauseImage() error {
 		}
 		return fmt.Errorf("stat pause image: %w", err)
 	}
-	f, err := os.Open(pausePath)
+	f, err := func() (*os.File, error) {
+		root, err := os.OpenRoot(constants.EdgeletContainerdImagesDir)
+		if err != nil {
+			return nil, fmt.Errorf("open images root: %w", err)
+		}
+		defer root.Close()
+		return root.Open("pause.tar.gz")
+	}()
 	if err != nil {
 		return fmt.Errorf("open pause image: %w", err)
 	}
@@ -598,7 +608,7 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 		nativeStart := time.Now()
 		if err := e.removeContainerNative(ctx, containerID); err != nil {
 			e.emitEngineWarn(runtimeops.EventEngineContainerRemove, containerID, sandboxIDStr, "", runtimeops.ReasonRemoveFailed, "native fallback remove failed", removeStart, err, map[string]any{"step": "nativeFallback"})
-			return fmt.Errorf("remove container %s (CRI: %v, native fallback: %w)", containerID, removeErr, err)
+			return fmt.Errorf("remove container %s (CRI: %w, native fallback: %w)", containerID, removeErr, err)
 		}
 		e.emitCRITeardownStep("nativeRemoveContainer", containerID, sandboxIDStr, nativeStart, nil, false)
 	} else {
@@ -1213,8 +1223,6 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 		status.Status = models.MicroserviceStateExiting
 	case client.Created:
 		status.Status = models.MicroserviceStateCreated
-	case client.Paused, client.Pausing:
-		status.Status = models.MicroserviceStateUnknown
 	default:
 		status.Status = models.MicroserviceStateUnknown
 	}
@@ -1301,10 +1309,10 @@ func (e *Engine) GetContainerStats(containerID string) (*engine.ContainerStats, 
 			return stats, nil
 		}
 		if m.Memory != nil {
-			stats.MemoryUsage = int64(m.Memory.Usage)
+			stats.MemoryUsage = clampUint64ToInt64(m.Memory.Usage)
 		}
 		if m.CPU != nil {
-			stats.CPUUsage = e.cpuPercent(containerID, int64(m.CPU.UsageUsec), now)
+			stats.CPUUsage = e.cpuPercent(containerID, clampUint64ToInt64(m.CPU.UsageUsec), now)
 		}
 
 	case tuypeurl.Is(metric.Data, (*v1stats.Metrics)(nil)):
@@ -1313,11 +1321,11 @@ func (e *Engine) GetContainerStats(containerID string) (*engine.ContainerStats, 
 			return stats, nil
 		}
 		if m.Memory != nil && m.Memory.Usage != nil {
-			stats.MemoryUsage = int64(m.Memory.Usage.Usage)
+			stats.MemoryUsage = clampUint64ToInt64(m.Memory.Usage.Usage)
 		}
 		if m.CPU != nil && m.CPU.Usage != nil {
 			// v1 CPU total is in nanoseconds; convert to microseconds for a consistent unit.
-			cpuUsec := int64(m.CPU.Usage.Total) / 1000
+			cpuUsec := clampUint64ToInt64(m.CPU.Usage.Total) / 1000
 			stats.CPUUsage = e.cpuPercent(containerID, cpuUsec, now)
 		}
 	}

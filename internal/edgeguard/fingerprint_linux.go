@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package edgeguard
 
@@ -265,7 +264,20 @@ func collectLinuxTPMIdentity() TPMIdentity {
 }
 
 func readSysFile(path string) string {
-	data, err := os.ReadFile(path)
+	clean := filepath.Clean(path)
+	if !strings.HasPrefix(clean, "/sys/") {
+		return ""
+	}
+	rel := strings.TrimPrefix(clean, "/sys/")
+	if rel == "" || strings.Contains(rel, "..") {
+		return ""
+	}
+	root, err := os.OpenRoot("/sys")
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	data, err := root.ReadFile(rel)
 	if err != nil {
 		return ""
 	}
