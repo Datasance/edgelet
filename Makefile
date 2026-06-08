@@ -71,13 +71,20 @@ build-edgelet-local: ## Dev convenience binary at build/edgelet (host GOOS)
 	esac
 	@echo "Built: $(EDGELET_BINARY)"
 
-build-cli: build-edgelet-local ## Build edgelet for CLI doc generation
+build-cli: ## Build edgelet for CLI doc generation (thin CLI, no embed deps)
+	@mkdir -p build
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS_EDGELET) -o $(EDGELET_BINARY) ./cmd/edgelet
 
 cli-docs: build-cli ## Generate CLI markdown docs into docs/cli/generated
 	@mkdir -p docs/cli/generated
 	@$(CLI_BINARY) documentation generate md --output docs/cli/generated
-	@find ./docs/cli/generated -type f | xargs sed -i '' 's/.*Auto generated.*//g'
-	@find ./docs/cli/generated -type f | xargs sed -E -i '' 's/(command within \(default).*/\1 "default")/g'
+	@if [ "$$(uname -s)" = Darwin ]; then \
+		find ./docs/cli/generated -type f -exec sed -i '' 's/.*Auto generated.*//g' {} +; \
+		find ./docs/cli/generated -type f -exec sed -E -i '' 's/(command within \(default).*/\1 "default")/g' {} +; \
+	else \
+		find ./docs/cli/generated -type f -exec sed -i 's/.*Auto generated.*//g' {} +; \
+		find ./docs/cli/generated -type f -exec sed -E -i 's/(command within \(default).*/\1 "default")/g' {} +; \
+	fi
 	@echo "Generated docs/cli/generated/"
 
 cli-docs-check: cli-docs ## Fail if docs/cli/ differs from committed generated output

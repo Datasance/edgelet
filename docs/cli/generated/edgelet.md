@@ -29,6 +29,7 @@ edgelet [flags]
 ### SEE ALSO
 
 * [edgelet auth](edgelet_auth.md)	 - Authentication operations
+* [edgelet cgroup-preflight](edgelet_cgroup-preflight.md)	 - Validate cgroup mounts and delegation before start
 * [edgelet completion](edgelet_completion.md)	 - Generate shell completion scripts
 * [edgelet config](edgelet_config.md)	 - Update agent configuration
 * [edgelet controlplane](edgelet_controlplane.md)	 - Control plane controller operations
@@ -40,6 +41,7 @@ edgelet [flags]
 * [edgelet provision](edgelet_provision.md)	 - Provision the agent
 * [edgelet registry](edgelet_registry.md)	 - Registry operations
 * [edgelet runtimeclass](edgelet_runtimeclass.md)	 - Runtime class operations
+* [edgelet shutdown](edgelet_shutdown.md)	 - Control-plane stop for init systems
 * [edgelet system](edgelet_system.md)	 - System operations
 * [edgelet version](edgelet_version.md)	 - Print edgelet version
 
