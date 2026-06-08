@@ -56,7 +56,7 @@ jobs:
         if: matrix.arch == 'arm' || matrix.arch == 'riscv64'
         run: |
           docker build -f build/Dockerfile.embedded -t edgelet-embed-ci-amd64 .
-          docker run --rm -v "$PWD:/src" -w /src edgelet-embed-ci-amd64 \
+          docker run --rm -e GOFLAGS=-buildvcs=false -v "$PWD:/src" -w /src edgelet-embed-ci-amd64 \
             bash -c 'chmod +x scripts/* 2>/dev/null || true; \
               ARCH=${{ matrix.arch }} ./scripts/download && \
               ARCH=${{ matrix.arch }} ./scripts/build-embedded && \
