@@ -43,11 +43,25 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      # Ubuntu Noble has no armhf/riscv64 apt indexes; embed cross builds use
+      # build/Dockerfile.embedded (Debian Trixie), same as test/release/build-all.sh.
       - name: Install embed build deps
+        if: matrix.arch == 'amd64' || matrix.arch == 'arm64'
         run: |
           chmod +x scripts/install-embed-build-deps
           sudo BUILDARCH=${{ matrix.buildarch }} TARGETARCH=${{ matrix.arch }} \
             ./scripts/install-embed-build-deps
+
+      - name: Embed pipeline (Docker — arm / riscv64)
+        if: matrix.arch == 'arm' || matrix.arch == 'riscv64'
+        run: |
+          docker build -f build/Dockerfile.embedded -t edgelet-embed-ci-amd64 .
+          docker run --rm -v "$PWD:/src" -w /src edgelet-embed-ci-amd64 \
+            bash -c 'chmod +x scripts/* 2>/dev/null || true; \
+              ARCH=${{ matrix.arch }} ./scripts/download && \
+              ARCH=${{ matrix.arch }} ./scripts/build-embedded && \
+              ARCH=${{ matrix.arch }} ./scripts/build-edgelet fat && \
+              ARCH=${{ matrix.arch }} ./scripts/package-data'
 
       - name: Build thin linux edgelet
         env:
@@ -56,10 +70,12 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           chmod +x scripts/*
-          ARCH=${{ matrix.arch }} ./scripts/download
-          ARCH=${{ matrix.arch }} ./scripts/build-embedded
-          ARCH=${{ matrix.arch }} ./scripts/build-edgelet fat
-          ARCH=${{ matrix.arch }} ./scripts/package-data
+          if [ "${{ matrix.arch }}" = amd64 ] || [ "${{ matrix.arch }}" = arm64 ]; then
+            ARCH=${{ matrix.arch }} ./scripts/download
+            ARCH=${{ matrix.arch }} ./scripts/build-embedded
+            ARCH=${{ matrix.arch }} ./scripts/build-edgelet fat
+            ARCH=${{ matrix.arch }} ./scripts/package-data
+          fi
           ARCH=${{ matrix.arch }} ./scripts/build-edgelet
           ARCH=${{ matrix.arch }} ./scripts/binary_size_check.sh
           test -f "build/edgelet-linux-${{ matrix.arch }}"

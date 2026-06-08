@@ -5,7 +5,7 @@
 #
 # Linux amd64/arm64/arm/riscv64: embed pipeline + thin wrapper (Docker edgelet-embed-ci on macOS).
 # Desktop: darwin amd64+arm64 and windows amd64 cross-compile.
-# Size gate: scripts/binary_size_check.sh for linux amd64 and arm64.
+# Size gate: scripts/binary_size_check.sh for all linux arches.
 #
 # Output:
 #   build/edgelet-linux-{amd64,arm64,arm,riscv64}
@@ -23,7 +23,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${REPO_ROOT}/test/embedded/lib/log.sh"
 
 LINUX_ARCHES=(amd64 arm64 arm riscv64)
-SIZE_GATE_ARCHES=(amd64 arm64)
 
 RELEASE_BINARIES=(
     edgelet-linux-amd64
@@ -138,8 +137,8 @@ for _arch in "${LINUX_ARCHES[@]}"; do
     build_linux_arch "${_arch}"
 done
 
-log_step "Binary size gate (linux amd64 + arm64)"
-for _arch in "${SIZE_GATE_ARCHES[@]}"; do
+log_step "Binary size gate (all linux arches)"
+for _arch in "${LINUX_ARCHES[@]}"; do
     ARCH="${_arch}" ./scripts/binary_size_check.sh
 done
 
