@@ -1,0 +1,37 @@
+#!/bin/bash
+set -ex
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+CONTAINERD_DIR=build/src/github.com/containerd/containerd
+CRUN_DIR=build/src/github.com/containers/crun
+
+umask 022
+rm -rf "${CONTAINERD_DIR}" "${CRUN_DIR}"
+mkdir -p build/src/github.com/containerd build/src/github.com/containers
+
+case ${OS} in
+  linux)
+    ;;
+  darwin)
+    # Cross-build linux auxiliaries from macOS hosts.
+    OS=linux
+    ;;
+  *)
+    echo "[ERROR] unsupported OS for embed download: ${OS}" >&2
+    exit 1
+    ;;
+esac
+
+CONTAINERD_REPO="${PKG_CONTAINERD/\/v*/}"
+git clone --single-branch --branch="${VERSION_CONTAINERD}" --depth=1 \
+  "https://${CONTAINERD_REPO}" "${CONTAINERD_DIR}"
+
+git clone --single-branch --branch="${VERSION_CRUN}" --depth=1 \
+  https://github.com/containers/crun "${CRUN_DIR}"
+
+ARCH="${ARCH}" ./scripts/download-root
+
+echo "Download complete: containerd ${VERSION_CONTAINERD}, crun ${VERSION_CRUN}, k3s-root ${VERSION_ROOT}"

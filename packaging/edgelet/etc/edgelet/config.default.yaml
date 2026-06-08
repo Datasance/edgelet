@@ -1,0 +1,15 @@
+# Edgelet release default configuration (sample).
+# Copy to /etc/edgelet/config.yaml on first install, or run: edgelet init-config
+currentProfile: production
+profiles:
+  production:
+    controllerUrl: "http://localhost:54421/api/v3/"
+    controllerCert: "/etc/edgelet/cert.crt"
+    arch: "auto"
+    containerEngine: edgelet
+    containerEngineUrl: unix:///run/edgelet/containerd.sock
+    watchdogEnabled: "off"
+    pruningFrequency: "0"
+    diskDirectory: /var/lib/edgelet/
+    logDiskDirectory: /var/log/edgelet/
+    logLevel: INFO

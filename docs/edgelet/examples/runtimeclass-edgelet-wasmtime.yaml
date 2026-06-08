@@ -1,0 +1,8 @@
+# Datasance WASM shim (wasmtime-based) — not the same as containerEngine: edgelet
+# Requires containerd-shim-edgelet-v2 on PATH (linux embed engine only).
+# Apply with: edgelet deploy -f runtimeclass-edgelet-wasmtime.yaml
+apiVersion: edgelet.iofog.org/v1
+kind: RuntimeClass
+metadata:
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime

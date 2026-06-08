@@ -1,0 +1,87 @@
+#!/sbin/openrc-run
+
+name="edgelet"
+description="Edgelet daemon (control plane)"
+command="/usr/local/bin/edgelet"
+command_args="daemon"
+supervisor="supervise-daemon"
+respawn_delay=2
+respawn_max=0
+respawn_period=3600
+command_user="root"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/edgelet/daemon.log"
+error_log="/var/log/edgelet/daemon.log"
+shutdown="/usr/libexec/edgelet/edgelet-shutdown"
+
+depend() {
+    need net
+    after firewall
+%%EDGELET_ENGINE_NEED%%
+}
+
+wait_containerd_attach_socket() {
+    _timeout="${EDGELET_ATTACH_WAIT_SEC:-120}"
+    _elapsed=0
+    _sock="/run/edgelet/containerd.sock"
+    while [ "${_elapsed}" -lt "${_timeout}" ]; do
+        if [ -S "${_sock}" ] || [ -S /var/run/edgelet/containerd.sock ]; then
+            [ -S "${_sock}" ] || _sock="/var/run/edgelet/containerd.sock"
+            _ctr=""
+            if [ -x /var/lib/edgelet/data/current/bin/ctr ]; then
+                _ctr=/var/lib/edgelet/data/current/bin/ctr
+            elif command -v ctr >/dev/null 2>&1; then
+                _ctr=ctr
+            fi
+            if [ -z "${_ctr}" ] || "${_ctr}" --address "${_sock}" version >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        sleep 2
+        _elapsed=$(( _elapsed + 2 ))
+    done
+    ewarn "data-plane containerd socket not ready after ${_timeout}s"
+    return 1
+}
+
+start_pre() {
+    /usr/local/bin/edgelet cgroup-preflight || return $?
+    if [ -f /etc/init.d/edgelet-containerd ]; then
+        export EDGELET_RUNTIME_SPLIT=1
+        wait_containerd_attach_socket || return $?
+    fi
+}
+
+stop_pre() {
+    if [ -f /etc/init.d/edgelet-containerd ]; then
+        export EDGELET_RUNTIME_SPLIT=1
+    fi
+}
+
+stop() {
+    ebegin "Stopping ${RC_SVCNAME}"
+    if ! "${shutdown}"; then
+        # Fallback when EdgeletAPI is down: single TERM/KILL, no SSD --retry (hangs after graceful stop).
+        if [ -f "${pidfile}" ]; then
+            _pid=$(cat "${pidfile}" 2>/dev/null || true)
+            if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
+                kill -TERM "${_pid}" 2>/dev/null || true
+                sleep 2
+                kill -KILL "${_pid}" 2>/dev/null || true
+            fi
+        fi
+        rm -f "${pidfile}" /run/edgelet/edgelet.pid 2>/dev/null || true
+        eend 1
+        return 1
+    fi
+    rm -f "${pidfile}" /run/edgelet/edgelet.pid 2>/dev/null || true
+    # Plan 11 split: data-plane containerd is edgelet-containerd service — do not reap child here.
+    if [ ! -f /etc/init.d/edgelet-containerd ]; then
+        _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+        for _p in ${_pids}; do kill -TERM "${_p}" 2>/dev/null || true; done
+        sleep 2
+        _pids=$(pgrep -f edgelet-containerd-child 2>/dev/null || true)
+        for _p in ${_pids}; do kill -KILL "${_p}" 2>/dev/null || true; done
+    fi
+    eend 0
+}

@@ -1,0 +1,1 @@
+// Placeholder so go vet succeeds before scripts/package-data generates the zstd bundle.

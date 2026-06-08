@@ -1,0 +1,38 @@
+## edgelet config cert
+
+Install controller CA certificate
+
+### Synopsis
+
+Install the controller CA certificate from a base64-encoded PEM string.
+
+The argument must be the certificate contents encoded as base64 (not a file path).
+Use config --controller-cert for setting a local PEM file path instead.
+
+```
+edgelet config cert <base64-encoded-certificate> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for cert
+```
+
+### Options inherited from parent commands
+
+```
+      --debug            Debug logging
+      --no-color         Disable color and interactive UX
+  -o, --output string    Output format: human, json, yaml (default "human")
+      --quiet            Suppress interactive progress output
+      --socket string    Edgelet API unix socket path
+      --timeout string   Request timeout
+      --verbose          Verbose logging
+```
+
+### SEE ALSO
+
+* [edgelet config](edgelet_config.md)	 - Update agent configuration
+
+

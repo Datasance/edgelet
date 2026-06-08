@@ -1,0 +1,37 @@
+#!/bin/bash
+# Optional pre-build validation (gofmt, vet, go version gate).
+set -e
+
+cd "$(dirname "$0")/.."
+
+if [ -n "${SKIP_VALIDATE}" ]; then
+  echo "Skipping validation (SKIP_VALIDATE set)"
+  exit 0
+fi
+
+. ./scripts/version.sh
+
+echo "Running: go version gate"
+GO_TOOLCHAIN_PREFIX="go$(echo "${VERSION_GOLANG}" | cut -d. -f1-2)"
+if ! go version | grep -q "${GO_TOOLCHAIN_PREFIX}"; then
+  echo "ERROR: expected Go ${VERSION_GOLANG} (toolchain ${GO_TOOLCHAIN_PREFIX}.x), got $(go version)" >&2
+  exit 1
+fi
+
+echo "Running: go mod verify"
+go mod verify
+
+echo "Running: gofmt check"
+unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./... 2>/dev/null | grep -v '/build/src' || true))
+if [ -n "${unformatted}" ]; then
+  echo "ERROR: gofmt required for:" >&2
+  echo "${unformatted}" >&2
+  exit 1
+fi
+
+if [ -z "${SKIP_LINT}" ] && command -v golangci-lint >/dev/null 2>&1; then
+  echo "Running: golangci-lint"
+  golangci-lint run --config .golangci.yaml --timeout=5m
+fi
+
+echo "validate passed"

@@ -1,0 +1,222 @@
+#!/bin/bash
+# Build a fully static crun for linux/${ARCH} (glibc, upstream nix/derivation.nix recipe).
+# Requires Linux and build/src/github.com/containers/crun from scripts/download.
+set -e
+
+cd "$(dirname "$0")/.."
+. ./scripts/version.sh
+
+ARCH=${ARCH:-$("${GO:-go}" env GOARCH)}
+INSTALLBIN="${INSTALLBIN:-$(pwd)/build/bin}"
+CRUN_SRC="$(pwd)/build/src/github.com/containers/crun"
+OUT="${INSTALLBIN}/crun${BINARY_POSTFIX}"
+
+if [ "$(uname -s)" != Linux ]; then
+  echo "ERROR: scripts/build-crun-static requires Linux (use build/Dockerfile.embedded on macOS)." >&2
+  exit 1
+fi
+
+if [ ! -d "${CRUN_SRC}" ]; then
+  echo "ERROR: crun source missing at ${CRUN_SRC}; run scripts/download first." >&2
+  exit 1
+fi
+
+mkdir -p "${INSTALLBIN}"
+
+cc_for_crun_arch() {
+  if [ -n "${CC}" ]; then
+    echo "${CC}"
+    return 0
+  fi
+  if [ "${ARCH}" = "$(host_machine)" ]; then
+    echo "gcc"
+    return 0
+  fi
+  case "${ARCH}" in
+    amd64) echo "x86_64-linux-gnu-gcc" ;;
+    arm64) echo "aarch64-linux-gnu-gcc" ;;
+    arm) echo "arm-linux-gnueabihf-gcc" ;;
+    riscv64) echo "riscv64-linux-gnu-gcc" ;;
+    *)
+      echo "ERROR: unsupported ARCH for static crun: ${ARCH}" >&2
+      return 1
+      ;;
+  esac
+}
+
+host_machine() {
+  case "$(uname -m)" in
+    x86_64) echo amd64 ;;
+    aarch64|armv8l) echo arm64 ;;
+    armv7l|armv6l|arm) echo arm ;;
+    riscv64) echo riscv64 ;;
+    *) echo "$(uname -m)" ;;
+  esac
+}
+
+configure_host_for_arch() {
+  case "$1" in
+    amd64) echo x86_64-linux-gnu ;;
+    arm64) echo aarch64-linux-gnu ;;
+    arm) echo arm-linux-gnueabihf ;;
+    riscv64) echo riscv64-linux-gnu ;;
+    *)
+      echo "ERROR: unsupported ARCH for configure --host: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+pkg_config_env_for_arch() {
+  if [ "${ARCH}" = "$(host_machine)" ]; then
+    unset PKG_CONFIG_LIBDIR PKG_CONFIG_PATH
+    return 0
+  fi
+  case "${ARCH}" in
+    amd64)
+      export PKG_CONFIG_LIBDIR="/usr/lib/x86_64-linux-gnu/pkgconfig"
+      ;;
+    arm64)
+      export PKG_CONFIG_LIBDIR="/usr/lib/aarch64-linux-gnu/pkgconfig"
+      ;;
+    arm)
+      export PKG_CONFIG_LIBDIR="/usr/lib/arm-linux-gnueabihf/pkgconfig"
+      ;;
+    riscv64)
+      export PKG_CONFIG_LIBDIR="/usr/lib/riscv64-linux-gnu/pkgconfig"
+      ;;
+    *)
+      echo "ERROR: unsupported ARCH for pkg-config: ${ARCH}" >&2
+      return 1
+      ;;
+  esac
+  export PKG_CONFIG_PATH="${PKG_CONFIG_LIBDIR}"
+}
+
+require_static_lib() {
+  _path="$1"
+  _name="$2"
+  if [ ! -f "${_path}" ]; then
+    echo "ERROR: static library not found: ${_path} (${_name} for ARCH=${ARCH})" >&2
+    echo "  Install glibc-static, libjson-c-dev, libcap-dev, libseccomp-dev, libsystemd-dev" >&2
+    echo "  and cross dev packages for ${ARCH} when cross-compiling." >&2
+    return 1
+  fi
+  echo "${_path}"
+}
+
+resolve_static_libs() {
+  _cc="$1"
+  _libdir="$("${_cc}" -print-file-name=libc.a 2>/dev/null | xargs dirname 2>/dev/null)"
+  if [ -z "${_libdir}" ] || [ ! -d "${_libdir}" ]; then
+    _triplet="$("${_cc}" -dumpmachine)"
+    _libdir="/usr/lib/${_triplet}"
+  fi
+
+  _libc="$(require_static_lib "$("${_cc}" -print-file-name=libc.a)" libc)"
+  _pthread="$(require_static_lib "${_libdir}/libpthread.a" libpthread)"
+  _rt=""
+  if [ -f "${_libdir}/librt.a" ]; then
+    _rt="${_libdir}/librt.a"
+  fi
+
+  _cap=""
+  _seccomp=""
+  _systemd=""
+  _json_c=""
+  for _cand in \
+    "${_libdir}/libcap.a" \
+    "/usr/lib/$("${_cc}" -dumpmachine)/libcap.a"; do
+    if [ -f "${_cand}" ]; then _cap="${_cand}"; break; fi
+  done
+  for _cand in \
+    "${_libdir}/libseccomp.a" \
+    "/usr/lib/$("${_cc}" -dumpmachine)/libseccomp.a"; do
+    if [ -f "${_cand}" ]; then _seccomp="${_cand}"; break; fi
+  done
+  for _cand in \
+    "${_libdir}/libsystemd.a" \
+    "/usr/lib/$("${_cc}" -dumpmachine)/libsystemd.a"; do
+    if [ -f "${_cand}" ]; then _systemd="${_cand}"; break; fi
+  done
+  for _cand in \
+    "${_libdir}/libjson-c.a" \
+    "/usr/lib/$("${_cc}" -dumpmachine)/libjson-c.a"; do
+    if [ -f "${_cand}" ]; then _json_c="${_cand}"; break; fi
+  done
+
+  require_static_lib "${_cap}" libcap >/dev/null
+  require_static_lib "${_seccomp}" libseccomp >/dev/null
+  require_static_lib "${_json_c}" libjson-c >/dev/null
+
+  _libs="${_libc} ${_pthread} ${_rt} ${_cap} ${_seccomp} ${_json_c}"
+  _libs=$(echo "${_libs}" | tr -s ' ')
+  if [ "${CRUN_DISABLE_SYSTEMD}" != "true" ]; then
+    require_static_lib "${_systemd}" libsystemd >/dev/null
+    _libs="${_libs} ${_systemd}"
+  fi
+  echo "${_libs}"
+}
+
+verify_crun_static() {
+  _bin="$1"
+  if ! file "${_bin}" | grep -q 'statically linked'; then
+    echo "ERROR: ${_bin} is not statically linked:" >&2
+    file "${_bin}" >&2
+    return 1
+  fi
+  if readelf -l "${_bin}" 2>/dev/null | grep -q 'INTERP'; then
+    echo "ERROR: ${_bin} has dynamic interpreter (not fully static):" >&2
+    readelf -l "${_bin}" | grep INTERP >&2
+    return 1
+  fi
+  echo "Verified static crun: ${_bin} ($(file -b "${_bin}"))"
+}
+
+_CRUN_CC="$(cc_for_crun_arch)"
+pkg_config_env_for_arch
+_CRUN_LIBS="$(resolve_static_libs "${_CRUN_CC}")"
+
+_CONFIGURE_FLAGS=(--prefix=/usr --enable-embedded-blake3 --disable-criu)
+if [ "${CRUN_DISABLE_SYSTEMD}" = "true" ]; then
+  _CONFIGURE_FLAGS+=(--disable-systemd)
+fi
+if [ "${ARCH}" != "$(host_machine)" ]; then
+  _CONFIGURE_FLAGS+=(--host="$(configure_host_for_arch "${ARCH}")")
+fi
+
+echo "Building static crun ${VERSION_CRUN} for linux/${ARCH} (CC=${_CRUN_CC})"
+pushd "${CRUN_SRC}" >/dev/null
+if [ ! -f configure ]; then
+  ./autogen.sh
+fi
+make distclean 2>/dev/null || true
+rm -f config.cache config.status
+if [ -d libocispec ]; then
+  make -C libocispec distclean 2>/dev/null || true
+fi
+
+export CC="${_CRUN_CC}"
+export CFLAGS="-static -pthread -DSTATIC ${CFLAGS:-}"
+export LDFLAGS="-s -w -static-libgcc -static ${LDFLAGS:-}"
+export CRUN_LDFLAGS="-all-static"
+export LIBS="${_CRUN_LIBS}"
+
+if [ -f .tarball-git-version.h ]; then
+  cp .tarball-git-version.h git-version.h
+elif [ -d .git ]; then
+  _git_commit=$(git rev-parse HEAD)
+  printf '/* autogenerated. */\n#ifndef GIT_VERSION\n# define GIT_VERSION "%s"\n#endif\n' \
+    "${_git_commit}" > git-version.h
+else
+  printf '/* autogenerated. */\n#ifndef GIT_VERSION\n# define GIT_VERSION "unknown"\n#endif\n' > git-version.h
+fi
+
+./configure "${_CONFIGURE_FLAGS[@]}"
+make -C libocispec libocispec.la
+make -j"$(nproc 2>/dev/null || echo 2)" crun
+popd >/dev/null
+
+cp -f "${CRUN_SRC}/crun" "${OUT}"
+chmod +x "${OUT}"
+verify_crun_static "${OUT}"

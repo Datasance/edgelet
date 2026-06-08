@@ -1,0 +1,3 @@
+#!/bin/sh
+/usr/libexec/edgelet/edgelet-shutdown 2>/dev/null || true
+exit "${1:-0}"
