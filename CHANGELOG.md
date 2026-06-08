@@ -61,7 +61,9 @@ First public pre-release of **Edgelet** — a greenfield edge runtime and ioFog/
 
 ### Binary size (linux thin download gate)
 
-| Arch | Thin binary | ≤ 55 MiB |
-|------|-------------|----------|
-| linux/amd64 | ~31.2 MiB | yes |
-| linux/arm64 | ~28.4 MiB | yes |
+| Arch          | Thin binary | ≤ 55 MiB |
+|---------------|-------------|----------|
+| linux/amd64   | ~34.7 MiB   | yes      |
+| linux/arm64   | ~31.7 MiB   | yes      |
+| linux/riscv64 | ~32.2 MiB   | yes      |
+| linux/arm     | ~31.8 MiB   | yes      |
