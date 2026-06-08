@@ -49,22 +49,22 @@ cross_static_packages() {
     amd64)
       echo "gcc-x86-64-linux-gnu g++-x86-64-linux-gnu"
       echo "libc6-dev-amd64-cross"
-      echo "libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64"
+      echo "libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64 zlib1g-dev:amd64"
       ;;
     arm64)
       echo "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
       echo "libc6-dev-arm64-cross"
-      echo "libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64"
+      echo "libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64 zlib1g-dev:arm64"
       ;;
     arm)
       echo "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
       echo "libc6-dev-armhf-cross"
-      echo "libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf"
+      echo "libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf zlib1g-dev:armhf"
       ;;
     riscv64)
       echo "gcc-riscv64-linux-gnu g++-riscv64-linux-gnu"
       echo "libc6-dev-riscv64-cross"
-      echo "libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64"
+      echo "libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64 zlib1g-dev:riscv64"
       ;;
     *)
       echo "unsupported TARGETARCH: ${_target}" >&2
@@ -139,9 +139,9 @@ install_ci_profile() {
         gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
         gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
         libc6-dev-arm64-cross libc6-dev-armhf-cross libc6-dev-riscv64-cross \
-        libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64 \
-        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf \
-        libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64
+        libjson-c-dev:arm64 libcap-dev:arm64 libseccomp-dev:arm64 libsystemd-dev:arm64 zlib1g-dev:arm64 \
+        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf zlib1g-dev:armhf \
+        libjson-c-dev:riscv64 libcap-dev:riscv64 libseccomp-dev:riscv64 libsystemd-dev:riscv64 zlib1g-dev:riscv64
       ;;
     arm64)
       add_foreign_arch amd64
@@ -151,8 +151,8 @@ install_ci_profile() {
         gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
         gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
         libc6-dev-amd64-cross libc6-dev-armhf-cross \
-        libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64 \
-        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf
+        libjson-c-dev:amd64 libcap-dev:amd64 libseccomp-dev:amd64 libsystemd-dev:amd64 zlib1g-dev:amd64 \
+        libjson-c-dev:armhf libcap-dev:armhf libseccomp-dev:armhf libsystemd-dev:armhf zlib1g-dev:armhf
       ;;
     *)
       echo "ERROR: --ci profile unsupported on host arch ${_host}" >&2

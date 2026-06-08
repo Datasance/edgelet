@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build docker-build-dev install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows desktop-dev test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -8,7 +8,7 @@ endif
 export PATH := $(GOBIN):$(PATH)
 
 # golangci-lint — pinned version; override with GOLANGCI_LINT_VERSION=vX.Y.Z
-GOLANGCI_LINT_VERSION ?= v1.64.4
+GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT         := $(GOBIN)/golangci-lint
 
 # Version and build info
@@ -127,6 +127,10 @@ build-linux-riscv64: ## Build unified linux edgelet for linux/riscv64
 
 build-all-archs: build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 ## Build all linux targets (one binary per arch)
 
+build-release-matrix: ## Build all 7 release binaries (macOS-friendly via test/release/build-all.sh)
+	@chmod +x test/release/build-all.sh
+	@./test/release/build-all.sh
+
 build-desktop-darwin: ## Build monolithic edgelet for darwin amd64+arm64
 	@mkdir -p build
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS_EDGELET) -o build/edgelet-darwin-amd64 ./cmd/edgelet
@@ -218,15 +222,10 @@ clean: ## Clean build artifacts
 	@./scripts/clean
 	@echo "Clean complete"
 
-docker-build: ## Build production Docker image
+docker-build: ## Build production Docker image (ghcr.io/datasance/edgelet)
 	@echo "Building production Docker image..."
-	@docker build -t iofog-agent-go:latest -t iofog-agent-go:$(VERSION) -f Dockerfile .
-	@echo "Docker image built: iofog-agent-go:latest, iofog-agent-go:$(VERSION)"
-
-docker-build-dev: ## Build development Docker image
-	@echo "Building development Docker image..."
-	@docker build -t iofog-agent-go:dev -f Dockerfile.dev .
-	@echo "Docker image built: iofog-agent-go:dev"
+	@docker build -t ghcr.io/datasance/edgelet:latest -t ghcr.io/datasance/edgelet:$(VERSION) -f Dockerfile .
+	@echo "Docker image built: ghcr.io/datasance/edgelet:latest, ghcr.io/datasance/edgelet:$(VERSION)"
 
 install: build ## Install edgelet binary to system
 	@echo "Installing edgelet..."
@@ -447,42 +446,25 @@ build-size: build ## Show binary sizes
 	@echo "Binary sizes:"
 	@ls -lh build/edgelet* 2>/dev/null | awk '{print $$5 "\t" $$9}' || true
 
-security-audit: ## Run dependency security audit
-	@echo "🔐 Running dependency vulnerability scan..."
+# Security tooling — pinned govulncheck; gosec scoped to edgelet module trees only.
+GOVULNCHECK_VERSION ?= v1.1.4
+GOSEC_SCOPE           := ./cmd/... ./internal/... ./pkg/...
 
-	@if ! command -v nancy >/dev/null 2>&1; then \
-		echo "⬇️  Installing Nancy..."; \
-		go install github.com/sonatype-nexus-community/nancy@latest; \
+vulncheck: ## Run dependency vulnerability scan (govulncheck + go mod verify)
+	@echo "🔐 Running govulncheck..."
+	@if ! command -v govulncheck >/dev/null 2>&1; then \
+		echo "⬇️  Installing govulncheck..."; \
+		go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
 	fi
-
-	@go list -json -deps ./... | nancy sleuth
-
+	@chmod +x scripts/vulncheck.sh
+	@scripts/vulncheck.sh
 	@echo "🔍 Verifying module integrity..."
-	@go mod download
 	@go mod verify
 
-
-security-code: ## Run static Go security analysis
+security-code: ## Run static Go security analysis (gosec)
 	@echo "🔍 Running Go static security analysis..."
-
 	@if ! command -v gosec >/dev/null 2>&1; then \
 		echo "⬇️  Installing gosec..."; \
 		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
 	fi
-
-	@gosec ./...
-# --- Desktop App targets --- TODO: Desktop app is not implemented yet
-
-DESKTOP_DIR := ../agent-desktop
-
-desktop-deps: ## Install frontend npm deps for desktop app
-	cd $(DESKTOP_DIR)/frontend && npm install
-
-desktop-dev: desktop-deps ## Run desktop app in development mode (hot-reload)
-	cd $(DESKTOP_DIR) && wails dev
-
-desktop-app-darwin: desktop-deps ## Build macOS .app bundle (Wails desktop app)
-	cd $(DESKTOP_DIR) && wails build -platform darwin/amd64,darwin/arm64 -o build/darwin/iofog-agent-desktop
-
-desktop-app-windows: desktop-deps ## Build Windows .exe installer (Wails desktop app)
-	cd $(DESKTOP_DIR) && wails build -platform windows/amd64 -o build/windows/iofog-agent-desktop.exe
+	@gosec -exclude-dir=build $(GOSEC_SCOPE)

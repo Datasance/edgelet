@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package edgelet binary-only release artifacts (Plan 08A).
+# Package edgelet binary-only release artifacts.
 # Run from repo root: ./scripts/release-binaries.sh [VERSION]
 # Requires build/edgelet-<os>-<arch>[.exe] from make build-all-archs / build-desktop-*.
 
