@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -468,3 +468,13 @@ security-code: ## Run static Go security analysis (gosec)
 		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
 	fi
 	@gosec -exclude-dir=build $(GOSEC_SCOPE)
+
+quality-linux-arm64: ## Run lint, vulncheck, security-code in Linux arm64 Docker
+	@chmod +x scripts/quality-linux.sh
+	@GOARCH=arm64 scripts/quality-linux.sh
+
+quality-linux-amd64: ## Run lint, vulncheck, security-code in Linux amd64 Docker
+	@chmod +x scripts/quality-linux.sh
+	@GOARCH=amd64 scripts/quality-linux.sh
+
+quality-linux: quality-linux-arm64 ## Alias: native-arch Linux quality gate (arm64 on Apple Silicon)

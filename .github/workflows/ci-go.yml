@@ -51,6 +51,9 @@ jobs:
           version: v2.12.2
           args: --timeout=5m0s
 
+      - name: Static security analysis
+        run: make security-code
+
   test:
     name: Test
     runs-on: ubuntu-latest
