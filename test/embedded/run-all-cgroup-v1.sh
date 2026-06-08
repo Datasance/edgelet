@@ -5,7 +5,6 @@
 # Separate from test/embedded/run-all.sh — uses iofog-test-v1 + lima-ubuntu-v1.yaml.
 #
 # Usage:
-#   cd agent-go
 #   ./test/embedded/run-all-cgroup-v1.sh [options]
 #
 # Options:

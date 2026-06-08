@@ -1,13 +1,13 @@
 # Integration Tests
 
-This directory contains integration tests for the ioFog Agent.
+This directory contains integration tests for Edgelet.
 
 ## Running Integration Tests
 
 ### Prerequisites
 
 - Docker daemon running
-- ioFog Controller (optional, for controller tests)
+- PoT controller (optional, for controller tests)
 - Valid configuration file at the expected location
 
 ### Run All Integration Tests
@@ -45,12 +45,12 @@ Tests controller communication:
 - Controller connection
 - HTTP API communication
 
-**Note**: These tests require a running ioFog Controller instance.
+**Note**: These tests require a running PoT controller instance.
 
 ### End-to-End Tests (`e2e_test.go`)
 
-Tests full agent workflows:
-- Agent startup sequence
+Tests full Edgelet workflows:
+- Daemon startup sequence
 - Graceful shutdown
 - Multi-module interaction
 - Offline mode operation

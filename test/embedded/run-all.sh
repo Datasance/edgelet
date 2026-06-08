@@ -5,7 +5,6 @@
 # Runs the full pipeline: setup → build → VM start → install → test → (stop).
 #
 # Usage:
-#   cd agent-go
 #   ./test/embedded/run-all.sh [options]
 #
 # Options:
