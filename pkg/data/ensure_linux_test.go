@@ -87,6 +87,7 @@ func TestBundleHashMatchesInstalled(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "containerd-shim-runc-v2"), []byte("shim"), 0755); err != nil {
 		t.Fatalf("write shim: %v", err)
 	}
+	writeNetAuxStubs(t, binDir)
 	if err := os.Symlink(oldHash, filepath.Join(dataRoot, "current")); err != nil {
 		t.Fatalf("symlink current: %v", err)
 	}
