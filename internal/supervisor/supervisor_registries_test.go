@@ -3,7 +3,7 @@ package supervisor
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 )
 
 func TestEnsureDefaultLocalRegistriesOnStartup_SeedsDefaults(t *testing.T) {

@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 func TestDefaultShutdownPolicy(t *testing.T) {

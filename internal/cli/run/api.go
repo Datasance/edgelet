@@ -1,6 +1,6 @@
 package run
 
-import "github.com/datasance/edgelet/internal/cli/client"
+import "github.com/eclipse-iofog/edgelet/internal/cli/client"
 
 // EdgeletAPIClient is the EdgeletAPI v1 client surface used by CLI commands.
 type EdgeletAPIClient interface {

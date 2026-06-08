@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 	"github.com/golang-jwt/jwt/v5"
 )
 

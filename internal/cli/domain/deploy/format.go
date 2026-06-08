@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
 )
 
 // FormatValidateHuman renders validate endpoint output.

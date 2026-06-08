@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/store"
-	"github.com/datasance/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 )
 

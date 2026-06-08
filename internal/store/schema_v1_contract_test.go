@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // v1Tables is the full application schema after 001_edgelet_schema_v1.sql (fresh DB).

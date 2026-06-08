@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/statusreporter"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

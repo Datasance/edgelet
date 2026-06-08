@@ -3,8 +3,8 @@ package run
 import (
 	"io"
 
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 )
 
 // CLIContext carries shared runtime state for Cobra commands.

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // SaveControllerMicroservices replaces all controller microservice rows in a single transaction.

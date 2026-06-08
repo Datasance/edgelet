@@ -3,9 +3,9 @@ package cmd
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/client"
-	"github.com/datasance/edgelet/internal/cli/domain/microservice"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/client"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/microservice"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 

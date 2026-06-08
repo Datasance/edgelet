@@ -4,9 +4,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/workloadmeta"
-	"github.com/datasance/edgelet/pkg/imageref"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/pkg/imageref"
 )
 
 // IsControllerWorkload reports whether labels, container ID, and image match the

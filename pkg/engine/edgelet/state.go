@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 )
 
 // Operational label keys persisted on containerd workloads (engine state; not workload identity).

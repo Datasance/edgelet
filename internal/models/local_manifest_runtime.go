@@ -3,7 +3,7 @@ package models
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 )
 
 // BuildMicroserviceFromLocalManifest converts a local deploy manifest into

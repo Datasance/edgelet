@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 . ./scripts/embed-static-default.sh
 
 GO=${GO-go}
-PKG="github.com/datasance/edgelet"
+PKG="github.com/eclipse-iofog/edgelet"
 PKG_CONTAINERD="github.com/containerd/containerd/v2"
 PKG_CNI_PLUGINS="github.com/containernetworking/plugins"
 

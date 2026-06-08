@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // localLaunchInFlightStaleTimeout allows reconcile to retry a launch when a prior

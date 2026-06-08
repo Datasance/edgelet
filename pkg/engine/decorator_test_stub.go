@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // noopEngine is a minimal ContainerEngine stub for decorator tests.

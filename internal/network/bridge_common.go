@@ -1,6 +1,6 @@
 package network
 
-import "github.com/datasance/edgelet/internal/constants"
+import "github.com/eclipse-iofog/edgelet/internal/constants"
 
 // getCNIBridgeInterfaceName returns the managed CNI bridge interface name.
 // Full and lite use the same edgelet bridge naming (edgelet0).

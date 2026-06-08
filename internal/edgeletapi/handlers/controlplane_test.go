@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/store"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/processmanager"
+	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 type controlPlaneAPITestEngine struct {

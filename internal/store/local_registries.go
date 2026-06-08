@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // UpsertLocalRegistry inserts or updates one local registry row.

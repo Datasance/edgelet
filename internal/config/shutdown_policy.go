@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 const (

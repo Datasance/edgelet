@@ -8,13 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/cgroups"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/data"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/cgroups"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/data"
 )
 
 func runRuntimeBootstrap() {

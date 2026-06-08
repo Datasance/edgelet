@@ -1,4 +1,4 @@
-module github.com/datasance/edgelet
+module github.com/eclipse-iofog/edgelet
 
 go 1.26.4
 

@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/datasance/edgelet/internal/supervisor"
+	"github.com/eclipse-iofog/edgelet/internal/supervisor"
 )
 
 func registerDaemonSignals(sigChan chan os.Signal) {

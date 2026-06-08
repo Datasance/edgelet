@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
 )
 
 func TestLoadConfigMissingFilesCreatesDefaultConfig(t *testing.T) {

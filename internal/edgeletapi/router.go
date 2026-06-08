@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/edgeletapi/handlers"
-	"github.com/datasance/edgelet/internal/edgeletapi/websocket"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/edgeletapi/handlers"
+	"github.com/eclipse-iofog/edgelet/internal/edgeletapi/websocket"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

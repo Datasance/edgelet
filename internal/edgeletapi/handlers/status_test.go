@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {

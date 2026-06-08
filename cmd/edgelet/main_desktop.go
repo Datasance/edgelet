@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/datasance/edgelet/internal/cli/cmd"
-	"github.com/datasance/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/internal/cli/cmd"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 )
 
 func main() {

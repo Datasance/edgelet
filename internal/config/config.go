@@ -6,8 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
 )
 
 // Config represents the runtime configuration

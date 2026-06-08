@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/store"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/volumemount"
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/volumemount"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 

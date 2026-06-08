@@ -9,17 +9,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/auth"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/gps"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/network"
-	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtimestate"
-	"github.com/datasance/edgelet/internal/serviceaccount"
-	"github.com/datasance/edgelet/internal/statusreporter"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/internal/version"
+	"github.com/eclipse-iofog/edgelet/internal/auth"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/gps"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/network"
+	"github.com/eclipse-iofog/edgelet/internal/processmanager"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
+	"github.com/eclipse-iofog/edgelet/internal/serviceaccount"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/version"
 )
 
 // workerFreq returns a non-zero duration, falling back to the default if the

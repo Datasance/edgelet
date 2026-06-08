@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/config"
 )
 
 func TestGetGPSMode_CaseInsensitive(t *testing.T) {

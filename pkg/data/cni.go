@@ -1,7 +1,7 @@
 package data
 
 import (
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 // generateCNIConfig builds a CNI conflist for one bridge network.

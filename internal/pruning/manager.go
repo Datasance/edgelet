@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/statusreporter"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/internal/workloadmeta"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 const (

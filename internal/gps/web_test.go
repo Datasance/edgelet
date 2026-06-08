@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/config"
 )
 
 func TestWebHandlerUpdateCoordinates_ParsesLatLon(t *testing.T) {

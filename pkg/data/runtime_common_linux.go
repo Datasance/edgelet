@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/datasance/edgelet/pkg/datadir"
-	"github.com/datasance/edgelet/pkg/dataverify"
+	"github.com/eclipse-iofog/edgelet/pkg/datadir"
+	"github.com/eclipse-iofog/edgelet/pkg/dataverify"
 )
 
 const fatRuntimeName = dataverify.FatRuntimeName

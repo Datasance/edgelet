@@ -1,8 +1,8 @@
 package microservice
 
 import (
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 )
 
 // LifecycleResult carries a microservice lifecycle operation outcome.

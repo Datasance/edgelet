@@ -11,8 +11,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 // Engine is a stub on non-Linux platforms.

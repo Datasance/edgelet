@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/version"
+	"github.com/eclipse-iofog/edgelet/internal/version"
 )
 
 func TestHandleVersion_IncludesEmbeddedEngineAndAllowedEngines(t *testing.T) {

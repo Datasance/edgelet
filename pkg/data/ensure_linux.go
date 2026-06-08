@@ -14,12 +14,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/datadir"
-	"github.com/datasance/edgelet/pkg/dataverify"
-	"github.com/datasance/edgelet/pkg/flock"
-	"github.com/datasance/edgelet/pkg/untar"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/datadir"
+	"github.com/eclipse-iofog/edgelet/pkg/dataverify"
+	"github.com/eclipse-iofog/edgelet/pkg/flock"
+	"github.com/eclipse-iofog/edgelet/pkg/untar"
 )
 
 var (

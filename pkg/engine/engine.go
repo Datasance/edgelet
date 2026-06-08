@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // ImageInfo is the engine-agnostic representation of a local container image.

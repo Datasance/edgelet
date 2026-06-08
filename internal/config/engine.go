@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 // ChangeClass describes how a config mutation affects the daemon.

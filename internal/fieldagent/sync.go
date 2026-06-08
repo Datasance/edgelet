@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/serviceaccount"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/internal/volumemount"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/serviceaccount"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/volumemount"
 )
 
 // loadMicroservices loads microservices from SQLite store or from the controller.

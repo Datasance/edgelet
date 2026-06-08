@@ -3,8 +3,8 @@ package processmanager
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/dnsresolver"
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/dnsresolver"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 func (pm *ProcessManager) syncControlPlaneDNS(item *models.ControlPlaneDeployment, active bool) {

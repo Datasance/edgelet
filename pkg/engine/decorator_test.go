@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 )
 
 type stubLoggingEngine struct {

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 )
 
 func TestBuildCanonicalContainerMetadataUsesCanonicalKeys(t *testing.T) {

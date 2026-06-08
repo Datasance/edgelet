@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

@@ -3,8 +3,8 @@ package image
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 )
 
 // RemoveResult carries image remove outcome.

@@ -10,8 +10,8 @@ import (
 	eventtypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/v2/core/events"
 	"github.com/containerd/typeurl/v2"
-	"github.com/datasance/edgelet/internal/runtimeops"
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 )
 
 func (e *Engine) startContainerdRuntimeEventMonitor() {

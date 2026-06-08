@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/edgeletapi/handlers"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/edgeletapi/handlers"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

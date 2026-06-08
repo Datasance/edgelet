@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/v2/client"
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 // ensureNamespace creates the iofog namespace in containerd if it does not

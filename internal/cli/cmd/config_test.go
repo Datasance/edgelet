@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/cli/domain/config"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/config"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 )
 
 func TestConfigLongFlagPatch(t *testing.T) {

@@ -5,7 +5,7 @@ package containerd
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/cgroups"
+	"github.com/eclipse-iofog/edgelet/internal/cgroups"
 )
 
 func TestGenerateConfigSystemdDriverOmitsCgroupPath(t *testing.T) {

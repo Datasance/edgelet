@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/dnsresolver"
-	"github.com/datasance/edgelet/internal/statusreporter"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/dnsresolver"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

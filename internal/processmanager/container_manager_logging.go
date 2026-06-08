@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 )
 
 // emitFromCM logs a structured runtime event, filling module and engine when unset.

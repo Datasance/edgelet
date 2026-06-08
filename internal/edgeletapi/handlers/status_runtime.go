@@ -3,8 +3,8 @@ package handlers
 import (
 	"strconv"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/runtimestate"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
 )
 
 func augmentWithRuntimeStatus(status map[string]string) {

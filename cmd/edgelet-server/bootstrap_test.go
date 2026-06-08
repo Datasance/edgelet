@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 )
 
 type fakeContainerdService struct {

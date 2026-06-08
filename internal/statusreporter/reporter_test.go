@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 func TestGetStatusReport_IncludesAvailableNetworkInterfacesAfterSystemTotalCPU(t *testing.T) {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/domain/image"
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/image"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 

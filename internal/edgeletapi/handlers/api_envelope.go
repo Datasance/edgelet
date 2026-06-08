@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/datasance/edgelet/internal/runtimeapi"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeapi"
 )
 
 const (

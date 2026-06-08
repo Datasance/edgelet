@@ -1,8 +1,8 @@
 package processmanager
 
 import (
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 // ConfigureEngineForTest wires a test engine into the process manager singleton.

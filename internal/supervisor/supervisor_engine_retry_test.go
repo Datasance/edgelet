@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 type retryStubEngine struct {

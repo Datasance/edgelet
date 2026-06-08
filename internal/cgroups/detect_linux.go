@@ -14,7 +14,7 @@ import (
 	cgv3 "github.com/containerd/cgroups/v3"
 	"github.com/containerd/cgroups/v3/cgroup1"
 	cgv2 "github.com/containerd/cgroups/v3/cgroup2"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 

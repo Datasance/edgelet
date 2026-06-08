@@ -3,7 +3,7 @@ package docker
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/dnsresolver"
+	"github.com/eclipse-iofog/edgelet/internal/dnsresolver"
 )
 
 func TestBuildExtraHostsWithIoFog_UsesCanonicalAgentHost(t *testing.T) {

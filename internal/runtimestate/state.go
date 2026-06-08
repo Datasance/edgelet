@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 // State tracks in-process engine lifecycle flags for operators and reload policy.

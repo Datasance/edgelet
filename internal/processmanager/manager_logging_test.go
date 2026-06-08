@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/runtimeops"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 func TestExecuteTask_EmitsTaskCompletedOnSuccess(t *testing.T) {

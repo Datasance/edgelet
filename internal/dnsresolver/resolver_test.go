@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/miekg/dns"
 )
 

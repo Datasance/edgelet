@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 func TestSystemControlPlaneCRUD(t *testing.T) {

@@ -8,14 +8,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/datasance/edgelet/internal/branding"
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/supervisor"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/internal/branding"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/supervisor"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 )
 
 // exitDaemon removes the PID file then exits. defer does not run on os.Exit.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/workloadmeta"
+	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
 )
 
 // LocalDeployedMicroservice represents a microservice deployed by EdgeletAPI/CLI (not controller-managed).

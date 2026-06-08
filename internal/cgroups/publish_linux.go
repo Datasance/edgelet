@@ -5,7 +5,7 @@ package cgroups
 import (
 	"fmt"
 
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 // PublishHostPolicy runs Detect() and stores the result for status reporting

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 )
 
 func captureRuntimeEvents(t *testing.T) *[]runtimeops.RuntimeEvent {

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 )
 
 func stageAndRunDaemon(args []string) error {

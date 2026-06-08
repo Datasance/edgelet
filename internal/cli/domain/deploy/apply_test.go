@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/cli/run"
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 )
 
 type applyFakeAPI struct {

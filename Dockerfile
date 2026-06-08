@@ -3,7 +3,7 @@
 #   docker buildx build -f Dockerfile \
 #     --platform linux/amd64,linux/arm64 \
 #     --build-arg VERSION=v0.0.0-test \
-#     -t ghcr.io/datasance/edgelet:test .
+#     -t ghcr.io/eclipse-iofog/edgelet:test .
 
 FROM golang:1.26.4-trixie AS builder
 
@@ -115,7 +115,7 @@ ARG TARGETARCH
 COPY --from=collect / /
 
 ENV EDGELET_DAEMON=container
-# Set EDGELET_IMAGE to the deployed image ref (e.g. ghcr.io/datasance/edgelet:tag) so the
+# Set EDGELET_IMAGE to the deployed image ref (e.g. ghcr.io/eclipse-iofog/edgelet:tag) so the
 # process-manager watchdog skips removing this container when EDGELET_DAEMON=container.
 # cni + aux first; /usr/local/bin before data/current/bin so `edgelet` resolves to thin CLI (not fat).
 ENV PATH="/var/lib/edgelet/data/cni:/var/lib/edgelet/data/current/bin/aux:/usr/local/bin:/var/lib/edgelet/data/current/bin:/var/lib/edgelet-containerd/bin:/bin"
@@ -124,7 +124,7 @@ VOLUME ["/var/lib/edgelet", "/var/lib/edgelet-containerd", "/etc/edgelet", "/var
 
 LABEL org.opencontainers.image.title="edgelet"
 LABEL org.opencontainers.image.description="Edgelet edge runtime (scratch, pre-extracted data bundle)"
-LABEL org.opencontainers.image.source="https://github.com/datasance/edgelet"
+LABEL org.opencontainers.image.source="https://github.com/eclipse-iofog/edgelet"
 LABEL org.opencontainers.image.vendor="Datasance"
 LABEL edgelet.iofog.org/role=edgelet
 

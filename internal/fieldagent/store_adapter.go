@@ -3,8 +3,8 @@ package fieldagent
 import (
 	"errors"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 )
 
 // saveControllerMicroservicesToStore persists the given slice to SQLite.

@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/datasance/edgelet/internal/cli/domain/system"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/system"
 	"github.com/spf13/cobra"
 )
 

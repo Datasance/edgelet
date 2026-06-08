@@ -3,9 +3,9 @@ package pruning
 import (
 	"context"
 
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/docker"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/docker"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 func (m *Manager) pruneContainersDocker() {

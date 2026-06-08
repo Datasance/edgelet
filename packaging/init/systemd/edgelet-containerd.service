@@ -1,7 +1,7 @@
 # Edgelet embedded containerd (data plane) — Plan 11 workload continuity
 [Unit]
 Description=Edgelet embedded containerd (data plane)
-Documentation=https://github.com/datasance/edgelet
+Documentation=https://github.com/eclipse-iofog/edgelet
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target

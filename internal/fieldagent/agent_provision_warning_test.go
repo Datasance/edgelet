@@ -3,8 +3,8 @@ package fieldagent
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 )
 
 func TestClearSupervisorWarningAfterProvision(t *testing.T) {

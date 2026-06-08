@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/datasance/edgelet/pkg/data"
+import "github.com/eclipse-iofog/edgelet/pkg/data"
 
 func dataEnsureExtracted() error { return data.EnsureExtracted() }
 

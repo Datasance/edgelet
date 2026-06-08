@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/processmanager"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/google/uuid"
 )
 

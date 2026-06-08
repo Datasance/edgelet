@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
 )
 
 func buildProvisionRequestBody(provisioningKey string) (map[string]any, error) {

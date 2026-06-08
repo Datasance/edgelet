@@ -3,8 +3,8 @@ package supervisor
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/runtimestate"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
 )
 
 func TestStartupEngineURL(t *testing.T) {

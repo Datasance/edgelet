@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/client"
-	"github.com/datasance/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/client"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
 )
 
 const daemonUnavailableMessage = "Edgelet daemon is not running. Start it with `edgelet daemon` or `systemctl start edgelet`."

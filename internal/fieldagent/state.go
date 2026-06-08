@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // State represents the current state of the FieldAgent

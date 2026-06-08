@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/docker/docker/client"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 const (

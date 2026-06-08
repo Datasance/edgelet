@@ -3,11 +3,11 @@ package cmd
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/branding"
-	"github.com/datasance/edgelet/internal/cli/client"
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/branding"
+	"github.com/eclipse-iofog/edgelet/internal/cli/client"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/auth"
+	"github.com/eclipse-iofog/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 	gws "github.com/gorilla/websocket"
 )

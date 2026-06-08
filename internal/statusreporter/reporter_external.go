@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/config"
 	"github.com/docker/docker/client"
+	"github.com/eclipse-iofog/edgelet/internal/config"
 )
 
 var listExternalRuntimesForStatus = func(_ string) ([]string, error) {

@@ -17,10 +17,10 @@ import (
 
 	"github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/cmd/containerd/command"
-	"github.com/datasance/edgelet/internal/cgroups"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/data"
+	"github.com/eclipse-iofog/edgelet/internal/cgroups"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/data"
 )
 
 const maxRetries = 30

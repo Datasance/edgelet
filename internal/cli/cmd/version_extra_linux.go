@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/pkg/data"
+	"github.com/eclipse-iofog/edgelet/pkg/data"
 )
 
 func formatVerboseVersionDetails() string {

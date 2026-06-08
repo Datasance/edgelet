@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // UpsertLocalRuntimeClass inserts or updates one RuntimeClass row.

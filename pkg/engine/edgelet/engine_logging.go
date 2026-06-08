@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/datasance/edgelet/internal/runtimeops"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 )
 
 const (

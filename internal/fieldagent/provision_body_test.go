@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 func TestBuildProvisionRequestBody_DockerEngine(t *testing.T) {

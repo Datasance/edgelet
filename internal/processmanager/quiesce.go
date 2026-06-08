@@ -5,10 +5,10 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/statusreporter"
-	"github.com/datasance/edgelet/internal/store"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 var (

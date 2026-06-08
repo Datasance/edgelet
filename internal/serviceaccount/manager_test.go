@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/auth"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/store"
-	"github.com/datasance/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/auth"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 )
 

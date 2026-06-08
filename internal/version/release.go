@@ -18,7 +18,7 @@ const (
 	defaultInstallReceipt  = "/var/backups/edgelet/install-receipt"
 	defaultPreviousRelease = "/var/backups/edgelet/previous-release"
 	defaultCacheDir        = "/var/backups/edgelet/cache"
-	defaultGitHubRepo      = "datasance/edgelet"
+	defaultGitHubRepo      = "eclipse-iofog/edgelet"
 	githubLatestReleaseURL = "https://api.github.com/repos/%s/releases/latest"
 )
 

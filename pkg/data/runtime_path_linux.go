@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/pkg/datadir"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/pkg/datadir"
 )
 
 // prependRuntimePath puts bundled CNI plugins and userland net aux ahead of PATH so

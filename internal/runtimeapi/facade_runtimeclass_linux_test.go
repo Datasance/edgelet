@@ -5,10 +5,10 @@ package runtimeapi
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/pkg/engine/edgelet/cri"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/pkg/engine/edgelet/cri"
 )
 
 func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {

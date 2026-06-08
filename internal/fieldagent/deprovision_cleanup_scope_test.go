@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/buildmeta"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 )
 
 func TestClearSQLiteCacheTablesOnDeprovision_AllClearsLocalRows(t *testing.T) {

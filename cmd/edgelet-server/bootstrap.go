@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/containerd"
-	"github.com/datasance/edgelet/pkg/data"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/pkg/data"
 )
 
 const (

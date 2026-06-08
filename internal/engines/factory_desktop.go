@@ -5,10 +5,10 @@ package engines
 import (
 	"fmt"
 
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/pkg/engine"
-	dockerengine "github.com/datasance/edgelet/pkg/engine/docker"
-	podmanengine "github.com/datasance/edgelet/pkg/engine/podman"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
+	dockerengine "github.com/eclipse-iofog/edgelet/pkg/engine/docker"
+	podmanengine "github.com/eclipse-iofog/edgelet/pkg/engine/podman"
 )
 
 // NewContainerEngine constructs and returns the engine specified by engineType.

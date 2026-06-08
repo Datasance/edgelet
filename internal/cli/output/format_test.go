@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 )
 
 func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {

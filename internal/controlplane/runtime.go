@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 const (

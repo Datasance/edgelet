@@ -21,7 +21,7 @@ VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo de
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
-PKG=github.com/datasance/edgelet
+PKG=github.com/eclipse-iofog/edgelet
 LDFLAGS_BASE="-s -w \
   -X main.version=${VERSION} \
   -X main.buildTime=${BUILD_TIME} \

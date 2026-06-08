@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/fieldagent"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtimestate"
-	"github.com/datasance/edgelet/internal/utils"
-	"github.com/datasance/edgelet/internal/utils/logging"
-	"github.com/datasance/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/processmanager"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 // reloadEngineContext carries per-reload metadata for warm reload revert.

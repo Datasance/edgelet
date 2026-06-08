@@ -3,8 +3,8 @@ package supervisor
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 func TestShouldDrainRuntimeOnControlStop(t *testing.T) {

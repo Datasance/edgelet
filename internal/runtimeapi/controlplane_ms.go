@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // ErrControlPlaneLifecycleBlocked indicates ms rm/stop/kill/start/restart on the controller UUID is forbidden.

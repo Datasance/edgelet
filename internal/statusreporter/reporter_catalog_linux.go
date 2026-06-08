@@ -2,7 +2,7 @@
 
 package statusreporter
 
-import "github.com/datasance/edgelet/pkg/containerd"
+import "github.com/eclipse-iofog/edgelet/pkg/containerd"
 
 var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 	return nil, nil

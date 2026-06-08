@@ -5,7 +5,7 @@ package data
 import (
 	"embed"
 
-	"github.com/datasance/edgelet/pkg/data/bindata"
+	"github.com/eclipse-iofog/edgelet/pkg/data/bindata"
 )
 
 //go:embed embed/*

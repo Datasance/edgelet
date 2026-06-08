@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/datasance/edgelet/internal/cgroups"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cgroups"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 

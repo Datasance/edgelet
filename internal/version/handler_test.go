@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 func TestParseVersionCommand(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/controlplane"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/controlplane"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 )
 
 var ErrControlPlaneNotFound = errors.New("control plane deployment not found")

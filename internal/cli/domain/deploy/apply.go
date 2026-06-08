@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/cli/client"
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
-	"github.com/datasance/edgelet/internal/cli/ui"
+	"github.com/eclipse-iofog/edgelet/internal/cli/client"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/ui"
 )
 
 const runtimeClassApplyPollTimeout = 90 * time.Second

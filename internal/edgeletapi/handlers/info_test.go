@@ -4,7 +4,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/network"
+	"github.com/eclipse-iofog/edgelet/internal/network"
 )
 
 func TestFormatInfoNetworkInterface(t *testing.T) {

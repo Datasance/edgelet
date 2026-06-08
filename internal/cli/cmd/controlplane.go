@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/datasance/edgelet/internal/cli/domain/controlplane"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/controlplane"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 

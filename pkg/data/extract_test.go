@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 func TestGenerateManagedCNIConfigUsesManagedConstants(t *testing.T) {

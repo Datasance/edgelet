@@ -3,7 +3,7 @@ package datadir
 import (
 	"path/filepath"
 
-	"github.com/datasance/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
 // DefaultDataDir is the root for extracted zstd bundle data.

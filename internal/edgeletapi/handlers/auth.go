@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/auth"
+	"github.com/eclipse-iofog/edgelet/internal/auth"
 )
 
 // AuthHandler handles auth-related EdgeletAPI requests.

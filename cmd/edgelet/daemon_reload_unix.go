@@ -3,8 +3,8 @@
 package main
 
 import (
-	"github.com/datasance/edgelet/internal/supervisor"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/supervisor"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 func onConfigFileChanged(_ *supervisor.Supervisor) {

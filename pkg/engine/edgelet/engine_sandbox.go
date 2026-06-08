@@ -6,7 +6,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/datasance/edgelet/pkg/engine/edgelet/cri"
+	"github.com/eclipse-iofog/edgelet/pkg/engine/edgelet/cri"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 

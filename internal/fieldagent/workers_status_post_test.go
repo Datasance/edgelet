@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/models"
-	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtimestate"
-	"github.com/datasance/edgelet/internal/statusreporter"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/processmanager"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 )
 
 func TestPostStatusHelper_SuccessfulPostSendsAndClearsTerminalStates(t *testing.T) {

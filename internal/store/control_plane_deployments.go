@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 const controlPlaneSingletonID = 1

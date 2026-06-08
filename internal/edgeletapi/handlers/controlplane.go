@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/runtimeapi"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/runtimeapi"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/google/uuid"
 )
 

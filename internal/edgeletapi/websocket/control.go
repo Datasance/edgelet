@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datasance/edgelet/internal/auth"
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/auth"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )

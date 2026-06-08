@@ -21,16 +21,16 @@ ARCH ?= amd64
 
 # Build flags — platform capability comes from GOOS (linux embed vs desktop monolithic).
 LDFLAGS_EDGELET := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) \
-	-X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) \
-	-X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) \
-	-X github.com/datasance/edgelet/internal/version.Version=$(VERSION) \
-	-X github.com/datasance/edgelet/internal/version.BuildTime=$(BUILD_TIME) \
-	-X github.com/datasance/edgelet/internal/version.GitCommit=$(GIT_COMMIT) -s -w
+	-X github.com/eclipse-iofog/edgelet/internal/cli/cmd.Version=$(VERSION) \
+	-X github.com/eclipse-iofog/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) \
+	-X github.com/eclipse-iofog/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) \
+	-X github.com/eclipse-iofog/edgelet/internal/version.Version=$(VERSION) \
+	-X github.com/eclipse-iofog/edgelet/internal/version.BuildTime=$(BUILD_TIME) \
+	-X github.com/eclipse-iofog/edgelet/internal/version.GitCommit=$(GIT_COMMIT) -s -w
 BUILD_FLAGS_EDGELET := -trimpath -ldflags "$(LDFLAGS_EDGELET)"
 
 # Legacy aliases (CLI/daemon were separate binaries pre-Plan 3).
-LDFLAGS_CLI := -X github.com/datasance/edgelet/internal/cli/cmd.Version=$(VERSION) -X github.com/datasance/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/datasance/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
+LDFLAGS_CLI := -X github.com/eclipse-iofog/edgelet/internal/cli/cmd.Version=$(VERSION) -X github.com/eclipse-iofog/edgelet/internal/cli/cmd.BuildTime=$(BUILD_TIME) -X github.com/eclipse-iofog/edgelet/internal/cli/cmd.GitCommit=$(GIT_COMMIT) -s -w
 BUILD_FLAGS_CLI := -trimpath -ldflags "$(LDFLAGS_CLI)"
 
 # Binary names
@@ -229,10 +229,10 @@ clean: ## Clean build artifacts
 	@./scripts/clean
 	@echo "Clean complete"
 
-docker-build: ## Build production Docker image (ghcr.io/datasance/edgelet)
+docker-build: ## Build production Docker image (ghcr.io/eclipse-iofog/edgelet)
 	@echo "Building production Docker image..."
-	@docker build -t ghcr.io/datasance/edgelet:latest -t ghcr.io/datasance/edgelet:$(VERSION) -f Dockerfile .
-	@echo "Docker image built: ghcr.io/datasance/edgelet:latest, ghcr.io/datasance/edgelet:$(VERSION)"
+	@docker build -t ghcr.io/eclipse-iofog/edgelet:latest -t ghcr.io/eclipse-iofog/edgelet:$(VERSION) -f Dockerfile .
+	@echo "Docker image built: ghcr.io/eclipse-iofog/edgelet:latest, ghcr.io/eclipse-iofog/edgelet:$(VERSION)"
 
 install: build ## Install edgelet binary to system
 	@echo "Installing edgelet..."

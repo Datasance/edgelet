@@ -4,10 +4,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/client"
-	"github.com/datasance/edgelet/internal/cli/domain/logs"
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/client"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/logs"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 )
 
 const logsHumanOnlyMsg = "logs output supports human format only"

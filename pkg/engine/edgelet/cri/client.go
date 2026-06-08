@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cgroups"
+	"github.com/eclipse-iofog/edgelet/internal/cgroups"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 

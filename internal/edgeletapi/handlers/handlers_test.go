@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/datasance/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/store"
 )
 
 // ensureStoreDBOpen keeps handler tests from failing when another test closed the store singleton.

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/datasance/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 func logFingerprintDiff(previous, current FingerprintPayload) {

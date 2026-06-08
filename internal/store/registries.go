@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datasance/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 // SaveControllerRegistries replaces all controller registry rows in a single transaction.

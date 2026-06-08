@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/datasance/edgelet/internal/cli/run"
-	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/utils"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/spf13/cobra"
 )
 

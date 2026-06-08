@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 )
 
 func TestExitCodeMatrix(t *testing.T) {

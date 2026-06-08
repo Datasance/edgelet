@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/datasance/edgelet/internal/cli/domain/logs"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/logs"
 	"github.com/spf13/cobra"
 )
 

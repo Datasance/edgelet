@@ -3,10 +3,10 @@ package cmd
 import (
 	"strings"
 
-	"github.com/datasance/edgelet/internal/cli/domain/prune"
-	"github.com/datasance/edgelet/internal/cli/domain/system"
-	"github.com/datasance/edgelet/internal/cli/output"
-	"github.com/datasance/edgelet/internal/cli/run"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/prune"
+	"github.com/eclipse-iofog/edgelet/internal/cli/domain/system"
+	"github.com/eclipse-iofog/edgelet/internal/cli/output"
+	"github.com/eclipse-iofog/edgelet/internal/cli/run"
 	"github.com/spf13/cobra"
 )
 

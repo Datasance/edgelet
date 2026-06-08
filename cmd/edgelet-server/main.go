@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/datasance/edgelet/pkg/containerd"
+	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 )
 
 func main() {
