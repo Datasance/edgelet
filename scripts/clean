@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+rm -rf dist bin build/bin build/out build/stage build/src build/gopath build/images build/data-staging build/release
+rm -f build/k3s-root-*.tar
+find pkg/data/embed -mindepth 1 ! -name '.empty' -delete 2>/dev/null || true
+
+echo "Clean complete (preserved pkg/data/embed/.empty)"

@@ -1,0 +1,48 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+. ./scripts/version.sh
+
+case ${OS} in
+  linux) ;;
+  darwin) OS=linux ;;
+  *)
+    echo "[ERROR] unsupported OS for stage-root-aux: ${OS}" >&2
+    exit 1
+    ;;
+esac
+
+STAGE_BIN="build/stage/bin"
+TAR_PATH="build/${K3S_ROOT_TAR}"
+
+if [ ! -d "${STAGE_BIN}" ]; then
+  echo "[ERROR] ${STAGE_BIN} missing (run package-data staging after build/bin copy)" >&2
+  exit 1
+fi
+
+if [ ! -f "${TAR_PATH}" ]; then
+  echo "[ERROR] ${TAR_PATH} missing (run: ARCH=${ARCH} ./scripts/download-root)" >&2
+  exit 1
+fi
+
+K3S_ROOT_SHA256=$(k3s_root_sha256) || exit 1
+echo "${K3S_ROOT_SHA256}  ${K3S_ROOT_TAR}" | (
+  cd build
+  sha256sum -c
+)
+
+rm -rf "${STAGE_BIN}/aux"
+mkdir -p "${STAGE_BIN}/aux"
+
+tar xf "${TAR_PATH}" -C build/stage ./bin/aux ./bin/ip ./bin/busybox
+
+# Legacy iptables for offline embed (skip iptables-detect.sh shell wrapper).
+rm -f "${STAGE_BIN}/aux/iptables"
+ln -sf xtables-legacy-multi "${STAGE_BIN}/aux/iptables"
+
+ln -sf busybox "${STAGE_BIN}/modprobe"
+chmod 755 "${STAGE_BIN}/ip" "${STAGE_BIN}/busybox" 2>/dev/null || true
+
+echo "Staged k3s-root net aux into ${STAGE_BIN} (aux/, ip, busybox, modprobe)"

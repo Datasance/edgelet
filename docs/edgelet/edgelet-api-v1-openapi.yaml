@@ -1,0 +1,2214 @@
+openapi: 3.1.0
+info:
+  title: Edgelet API
+  version: 1.0.0
+  description: >
+    Edgelet API v1 baseline for Edgelet daemon and CLI.
+    Canonical namespace is /v1. Any path/schema/auth deviation must be
+    explicitly approved before implementation.
+servers:
+  - url: https://edgelet.default.svc.bridge.local
+    description: HTTPS/WSS transport for microservices and local clients
+  - url: http+unix://%2Frun%2Fedgelet%2Fedgelet.sock
+    description: Unix socket transport for CLI/admin operations
+security:
+  - BearerAuth: []
+paths:
+  /health/live:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+  /health/ready:
+    get:
+      tags: [System]
+      summary: Readiness probe
+      security: []
+      responses:
+        "200":
+          description: Agent is ready
+        "503":
+          description: Agent is not ready
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        "200":
+          description: Metrics stream
+  /v1/system/status:
+    get:
+      tags: [System]
+      summary: Get daemon status
+      responses:
+        "200":
+          description: Current daemon status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/system/info:
+    get:
+      tags: [System]
+      summary: Get daemon runtime info
+      responses:
+        "200":
+          description: Runtime metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/version:
+    get:
+      tags: [System]
+      summary: Get daemon version
+      responses:
+        "200":
+          description: Build and version metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/provision:
+    post:
+      tags: [System]
+      summary: Provision agent with controller key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provisioningKey]
+              properties:
+                provisioningKey:
+                  type: string
+      responses:
+        "200":
+          description: Provisioned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [System]
+      summary: Deprovision agent
+      description: >
+        Optional scope controls cleanup behavior. Default scope is all.
+        scope=local preserves local microservices while deprovisioning from controller.
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          schema:
+            type: string
+            enum: [all, local]
+      responses:
+        "200":
+          description: Deprovisioned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/system/reload:
+    post:
+      tags: [System]
+      summary: Trigger daemon config/module reload
+      responses:
+        "200":
+          description: Reload triggered
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/prune:
+    post:
+      tags: [System]
+      summary: Trigger prune operation
+      parameters:
+        - in: query
+          name: mode
+          required: false
+          schema:
+            type: string
+            enum: [dangling, containers, volumes, all]
+            default: dangling
+      responses:
+        "200":
+          description: Prune accepted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/logs:
+    get:
+      tags: [Logs]
+      summary: Fetch bounded daemon logs
+      parameters:
+        - in: query
+          name: tailLines
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: until
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Daemon log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/logs:stream:
+    get:
+      tags: [Logs]
+      summary: Stream daemon logs over websocket (follow mode)
+      parameters:
+        - in: query
+          name: tailLines
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: until
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:
+    get:
+      tags: [Images]
+      summary: List local images
+      responses:
+        "200":
+          description: Image list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:pull:
+    post:
+      tags: [Images]
+      summary: Pull image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImagePullRequest"
+      responses:
+        "200":
+          description: Pull result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImagePullResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:pull/{operationId}:
+    get:
+      tags: [Images]
+      summary: Get image pull operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pull operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImagePullOperationStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:load:
+    post:
+      tags: [Images]
+      summary: Load image archive from daemon-local path (async)
+      description: Accepts load work and returns operationId. Poll GET /v1/images:load/{operationId}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageLoadRequest"
+      responses:
+        "202":
+          description: Load accepted
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:load/{operationId}:
+    get:
+      tags: [Images]
+      summary: Image load operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation status
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:prune:
+    post:
+      tags: [Images]
+      summary: Prune dangling images
+      parameters:
+        - in: query
+          name: mode
+          required: false
+          schema:
+            type: string
+            enum: [dangling]
+            default: dangling
+      responses:
+        "200":
+          description: Prune result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImagePruneResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/images:remove:
+    post:
+      tags: [Images]
+      summary: Remove local image by selector
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageRemoveRequest"
+      responses:
+        "200":
+          description: Remove result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageRemoveResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/gps:
+    get:
+      tags: [System]
+      summary: Get current GPS coordinates
+      responses:
+        "200":
+          description: Current coordinates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp, lat, lon]
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: integer
+                  lat:
+                    type: string
+                  lon:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [System]
+      summary: Set GPS coordinates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat:
+                  oneOf:
+                    - type: string
+                    - type: number
+                lon:
+                  oneOf:
+                    - type: string
+                    - type: number
+      responses:
+        "200":
+          description: GPS coordinates updated
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/config:
+    get:
+      tags: [Config]
+      summary: Get active config
+      responses:
+        "200":
+          description: Active config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Config]
+      summary: Patch active config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigPatchRequest"
+      responses:
+        "200":
+          description: Patch result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/system/controller/cert:
+    post:
+      tags: [System]
+      summary: Update controller certificate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificate]
+              properties:
+                certificate:
+                  type: string
+                  description: Base64-encoded PEM certificate string
+      responses:
+        "200":
+          description: Controller certificate updated
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/system/controlplane:
+    get:
+      tags: [System]
+      summary: Get local ControlPlane deployment status
+      description: Admin-only. Returns singleton controller deployment status.
+      responses:
+        "200":
+          description: ControlPlane status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [System]
+      summary: Delete local ControlPlane deployment
+      description: Admin-only. Stops the controller container, removes volumes, and deletes the SQLite row.
+      responses:
+        "200":
+          description: ControlPlane deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/system/controlplane/manifest:
+    get:
+      tags: [System]
+      summary: Get ControlPlane manifest with secrets masked
+      responses:
+        "200":
+          description: Masked manifest YAML
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifestYaml:
+                    type: string
+                  masked:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/system/controller:
+    get:
+      tags: [System]
+      summary: Get local ControlPlane status (alias)
+      description: Alias of GET /v1/system/controlplane. Delete is not supported on this path.
+      responses:
+        "200":
+          description: ControlPlane status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/system/config/switch:
+    post:
+      tags: [Config]
+      summary: Switch active config profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile:
+                  type: string
+                  enum: [dev, prod, def, development, production, default]
+      responses:
+        "200":
+          description: Config profile switched
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/microservices/config:
+    get:
+      tags: [Microservices]
+      summary: Get calling microservice config (self)
+      responses:
+        "200":
+          description: Calling microservice config payload
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/microservices/control:
+    get:
+      tags: [Microservices]
+      summary: WebSocket control channel (self)
+      description: >
+        Upgrades to WSS control channel for the calling microservice identity.
+        Server resolves microservice UUID from JWT claim `iofog.org.microservice.uuid`.
+      responses:
+        "101":
+          description: Switching Protocols
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /v1/ms:
+    get:
+      tags: [Microservices]
+      summary: List microservices
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+            enum: [managed, local, controlplane, all]
+          description: Filter by workload source (default all).
+      responses:
+        "200":
+          description: Microservice list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MicroserviceRef"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}:
+    get:
+      tags: [Microservices]
+      summary: Inspect microservice
+      description: >
+        Selector supports UUID, container ID prefix, or dotted application/name.
+        Local microservices can be resolved as edgelet.<name> (for example edgelet.router).
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Microservice details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MicroserviceDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Microservices]
+      summary: Remove microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Remove result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/start:
+    post:
+      tags: [Microservices]
+      summary: Start microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Start result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/stop:
+    post:
+      tags: [Microservices]
+      summary: Stop microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stop result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/kill:
+    post:
+      tags: [Microservices]
+      summary: Kill microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signal:
+                  type: string
+      responses:
+        "200":
+          description: Kill result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/restart:
+    post:
+      tags: [Microservices]
+      summary: Restart microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restart result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/logs:
+    get:
+      tags: [Logs]
+      summary: Fetch bounded logs
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: tailLines
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: until
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: timestamps
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/logs:stream:
+    get:
+      tags: [Logs]
+      summary: Stream logs over websocket (follow mode)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/exec/sessions:
+    post:
+      tags: [Exec]
+      summary: Create exec session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecSessionCreateRequest"
+      responses:
+        "200":
+          description: Exec session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecSessionCreateResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/ms/{id}/exec/sessions/{sessionId}:
+    get:
+      tags: [Exec]
+      summary: Get exec session status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Exec session status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Exec]
+      summary: Stop exec session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Exec session stopped
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/ms/{id}/exec/sessions/{sessionId}:attach:
+    get:
+      tags: [Exec]
+      summary: Attach interactive terminal over websocket
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/microservices:apply:
+    post:
+      tags: [Deploy]
+      summary: Apply local microservice YAML (asynchronous operation)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "202":
+          description: Apply operation accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployMicroserviceApplyOperationStartResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/microservices:apply/{operationId}:
+    get:
+      tags: [Deploy]
+      summary: Get asynchronous apply operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Apply operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployMicroserviceApplyOperationStatusResponse"
+              examples:
+                running:
+                  value:
+                    success: true
+                    data:
+                      operationId: dep_apply_4f3b2a9f
+                      status: running
+                      startedAt: "2026-05-14T00:10:12Z"
+                      stage: pulling
+                succeeded:
+                  value:
+                    success: true
+                    data:
+                      operationId: dep_apply_4f3b2a9f
+                      status: succeeded
+                      startedAt: "2026-05-14T00:10:12Z"
+                      endedAt: "2026-05-14T00:11:02Z"
+                      deploymentId: "42"
+                      stage: done
+                failed:
+                  value:
+                    success: true
+                    data:
+                      operationId: dep_apply_4f3b2a9f
+                      status: failed
+                      startedAt: "2026-05-14T00:10:12Z"
+                      endedAt: "2026-05-14T00:10:44Z"
+                      stage: creating
+                      error:
+                        code: INTERNAL
+                        message: "failed to create container: image pull timeout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/deploy/microservices:validate:
+    post:
+      tags: [Deploy]
+      summary: Validate local microservice YAML
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/microservices:
+    get:
+      tags: [Deploy]
+      summary: List local deployed microservices
+      responses:
+        "200":
+          description: Local deployed list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/microservices/{id}:
+    get:
+      tags: [Deploy]
+      summary: Get local deployed microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Local deployed item
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Deploy]
+      summary: Remove local deployed microservice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removal result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/registries:apply:
+    post:
+      tags: [Deploy]
+      summary: Apply local registry YAML
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: Apply result
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/registries:validate:
+    post:
+      tags: [Deploy]
+      summary: Validate local registry YAML
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: Validation result
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/registries:
+    get:
+      tags: [Deploy]
+      summary: List local registries
+      responses:
+        "200":
+          description: Registry list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/registries/{id}:
+    get:
+      tags: [Deploy]
+      summary: Get local registry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registry item
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Deploy]
+      summary: Delete local registry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deletion result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/controlplane:apply:
+    post:
+      tags: [Deploy]
+      summary: Apply ControlPlane manifest (async)
+      description: Admin-only. Accepts the manifest and runs apply in the background. Poll GET /v1/deploy/controlplane:apply/{operationId}. At most one apply may be running; a second POST returns 409 APPLY_IN_PROGRESS.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "202":
+          description: Apply accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneApplyOperationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/deploy/controlplane:apply/{operationId}:
+    get:
+      tags: [Deploy]
+      summary: ControlPlane apply operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation status
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/controlplane:validate:
+    post:
+      tags: [Deploy]
+      summary: Validate ControlPlane manifest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: Validation result
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/runtimeclasses:apply:
+    post:
+      tags: [Deploy]
+      summary: Apply RuntimeClass manifest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RuntimeClassApplyMultipartRequest"
+      responses:
+        "200":
+          description: Apply completed synchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassApplyOperationResponse"
+        "202":
+          description: Apply accepted or sync timeout fallback; poll operation endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassApplyOperationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/deploy/runtimeclasses:apply/{operationId}:
+    get:
+      tags: [Deploy]
+      summary: Get RuntimeClass apply operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RuntimeClass apply operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassApplyOperationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/deploy/runtimeclasses:validate:
+    post:
+      tags: [Deploy]
+      summary: Validate RuntimeClass manifest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DeployManifestMultipartRequest"
+      responses:
+        "200":
+          description: RuntimeClass validation succeeded
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/runtimeclasses:
+    get:
+      tags: [Deploy]
+      summary: List RuntimeClasses
+      responses:
+        "200":
+          description: RuntimeClass list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RuntimeClassRef"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/deploy/runtimeclasses/{name}:
+    get:
+      tags: [Deploy]
+      summary: Inspect RuntimeClass
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RuntimeClass inspect response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: "#/components/schemas/RuntimeClassRef"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Deploy]
+      summary: Delete RuntimeClass
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: async
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Delete completed synchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassDeleteOperationResponse"
+        "202":
+          description: Delete accepted or sync timeout fallback; poll operation endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassDeleteOperationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/deploy/runtimeclasses:delete/{operationId}:
+    get:
+      tags: [Deploy]
+      summary: Get RuntimeClass delete operation status
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RuntimeClass delete operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeClassDeleteOperationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/auth/whoami:
+    get:
+      tags: [Auth]
+      summary: Inspect caller token identity
+      responses:
+        "200":
+          description: Caller claims and identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthWhoAmIResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/auth/tokens:
+    get:
+      tags: [Auth]
+      summary: List token metadata
+      responses:
+        "200":
+          description: Token metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/auth/tokens/revoke:
+    post:
+      tags: [Auth]
+      summary: Revoke token(s)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jti:
+                  type: string
+                subject:
+                  type: string
+      responses:
+        "200":
+          description: Revocation result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    InvalidArgument:
+      description: Invalid argument
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    MethodNotAllowed:
+      description: Method not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    ApiError:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            requestId:
+              type: string
+    SystemStatus:
+      type: object
+      required: [daemonStatus, controllerConnection, engine, runningMicroservices]
+      properties:
+        daemonStatus:
+          type: string
+        controllerConnection:
+          type: string
+        engine:
+          type: string
+        runningMicroservices:
+          type: integer
+        cpuUsagePercent:
+          type: number
+        memoryUsageMiB:
+          type: number
+        diskUsageGiB:
+          type: number
+        uptimeSeconds:
+          type: integer
+    ControlPlaneStatus:
+      type: object
+      required: [controllerUuid, namespace, name, runtimeState, source, type]
+      properties:
+        controllerUuid:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        image:
+          type: string
+        containerId:
+          type: string
+        state:
+          type: string
+        desiredState:
+          type: string
+        runtimeState:
+          type: string
+        lastError:
+          type: string
+        restartCount:
+          type: integer
+        generation:
+          type: integer
+        observedGeneration:
+          type: integer
+        lastTransitionAt:
+          type: integer
+          format: int64
+        source:
+          type: string
+          enum: [controlplane]
+        type:
+          type: string
+          enum: [controlplane]
+    VersionInfo:
+      type: object
+      required: [version, buildTime, gitCommit, allowedContainerEngine]
+      properties:
+        version:
+          type: string
+        buildTime:
+          type: string
+        gitCommit:
+          type: string
+        allowedContainerEngine:
+          type: string
+        allowedEngines:
+          type: array
+          items:
+            type: string
+    ConfigView:
+      type: object
+      additionalProperties: false
+      properties:
+        controllerUrl:
+          type: string
+        containerEngine:
+          type: string
+        containerEngineUrl:
+          type: string
+        pruningFrequency:
+          type: integer
+        watchdogEnabled:
+          type: boolean
+        networkInterface:
+          type: string
+        diskLimitGiB:
+          type: number
+        memoryLimitMiB:
+          type: number
+        cpuLimitPercent:
+          type: number
+        logLevel:
+          type: string
+        statusFrequencySeconds:
+          type: integer
+        changeFrequencySeconds:
+          type: integer
+        secureMode:
+          type: boolean
+        devMode:
+          type: boolean
+        timezone:
+          type: string
+    ConfigPatchRequest:
+      type: object
+      properties:
+        set:
+          $ref: "#/components/schemas/ConfigView"
+    ConfigValidateResponse:
+      type: object
+      required: [valid, violations]
+      properties:
+        valid:
+          type: boolean
+        violations:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    ImageRef:
+      type: object
+      properties:
+        id:
+          type: string
+        shortId:
+          type: string
+        repository:
+          type: string
+        tag:
+          type: string
+        digest:
+          type: string
+        createdAt:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        sizeHuman:
+          type: string
+        engine:
+          type: string
+    ImageListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ImageRef"
+            count:
+              type: integer
+    ImagePullRequest:
+      type: object
+      required: [image]
+      additionalProperties: false
+      properties:
+        image:
+          type: string
+        registryId:
+          type: integer
+        platform:
+          type: string
+        async:
+          type: boolean
+          description: When true, starts asynchronous pull operation and returns operationId.
+    ImagePullResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            image:
+              type: string
+            resolvedImage:
+              type: string
+            registryId:
+              type: integer
+            platform:
+              type: string
+            engine:
+              type: string
+            message:
+              type: string
+            operationId:
+              type: string
+            progress:
+              type: integer
+    ImagePullOperationStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [pending, running, succeeded, failed]
+            progress:
+              type: integer
+            image:
+              type: string
+            resolvedImage:
+              type: string
+            registryId:
+              type: integer
+            platform:
+              type: string
+            engine:
+              type: string
+            error:
+              type: string
+            startedAt:
+              type: string
+            endedAt:
+              type: string
+    ImageLoadRequest:
+      type: object
+      required: [path]
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+    ImageLoadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            loaded:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  id:
+                    type: string
+            count:
+              type: integer
+            engine:
+              type: string
+            message:
+              type: string
+    ImagePruneResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            mode:
+              type: string
+              enum: [dangling, containers, volumes, all]
+            deleted:
+              type: array
+              items:
+                type: string
+            deletedCount:
+              type: integer
+            containersDeletedCount:
+              type: integer
+            volumesDeletedCount:
+              type: integer
+            imagesDeletedCount:
+              type: integer
+            spaceReclaimedBytes:
+              type: integer
+              format: int64
+            spaceReclaimedHuman:
+              type: string
+            engine:
+              type: string
+            message:
+              type: string
+    ImageRemoveRequest:
+      type: object
+      required: [selector]
+      additionalProperties: false
+      properties:
+        selector:
+          type: string
+    ImageRemoveResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            selector:
+              type: string
+            removed:
+              type: string
+            engine:
+              type: string
+            message:
+              type: string
+    MicroserviceRef:
+      type: object
+      required: [uuid, name, source, state]
+      properties:
+        uuid:
+          type: string
+        name:
+          type: string
+        application:
+          type: string
+        source:
+          type: string
+        state:
+          type: string
+        image:
+          type: string
+        containerId:
+          type: string
+    MicroserviceDetail:
+      allOf:
+        - $ref: "#/components/schemas/MicroserviceRef"
+        - type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            env:
+              type: object
+              additionalProperties:
+                type: string
+            ports:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            labels:
+              type: object
+              additionalProperties:
+                type: string
+            healthStatus:
+              type: string
+            errorMessage:
+              type: string
+              nullable: true
+    LogsResponse:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required: [ts, stream, line]
+            properties:
+              ts:
+                type: string
+                format: date-time
+              stream:
+                type: string
+                enum: [stdout, stderr]
+              line:
+                type: string
+    ExecSessionCreateRequest:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: array
+          items:
+            type: string
+        tty:
+          type: boolean
+          default: true
+        stdin:
+          type: boolean
+          default: true
+        stdout:
+          type: boolean
+          default: true
+        stderr:
+          type: boolean
+          default: true
+        cols:
+          type: integer
+          minimum: 1
+        rows:
+          type: integer
+          minimum: 1
+    ExecSessionCreateResponse:
+      type: object
+      required: [sessionId, wsUrl]
+      properties:
+        sessionId:
+          type: string
+        wsUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    DeployMicroserviceApplyRequest:
+      type: object
+      required: [manifest]
+      properties:
+        manifest:
+          type: string
+        sourceName:
+          type: string
+        dryRun:
+          type: boolean
+    LocalDeployMicroserviceManifest:
+      type: object
+      required: [apiVersion, kind, metadata, spec]
+      properties:
+        apiVersion:
+          type: string
+          enum: [edgelet.iofog.org/v1]
+        kind:
+          type: string
+          enum: [Microservice]
+        metadata:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+              description: DNS-1123 label (local deploy name)
+            namespace:
+              type: string
+            labels:
+              type: object
+              additionalProperties:
+                type: string
+        spec:
+          type: object
+          required: [image]
+          properties:
+            image:
+              type: string
+              description: Resolved container image reference for this node
+            registry:
+              type: integer
+              description: Optional local registry id from /v1/deploy/registries
+            container:
+              type: object
+              description: Container runtime options (volumes, ports, env, etc.)
+            schedule:
+              type: integer
+            config:
+              type: object
+              additionalProperties: true
+      example:
+        apiVersion: edgelet.iofog.org/v1
+        kind: Microservice
+        metadata:
+          name: router
+        spec:
+          image: quay.io/skupper/skupper-router:latest
+    DeployManifestMultipartRequest:
+      type: object
+      required: [manifest]
+      properties:
+        manifest:
+          type: string
+          format: binary
+          description: YAML document; microservice deploys use LocalDeployMicroserviceManifest (spec.image)
+        sourceName:
+          type: string
+        dryRun:
+          type: boolean
+        async:
+          type: string
+          description: Optional boolean-like field used by deploy handlers that support operation polling.
+    RuntimeClassApplyMultipartRequest:
+      type: object
+      required: [manifest]
+      properties:
+        manifest:
+          type: string
+          format: binary
+        dryRun:
+          type: boolean
+          default: false
+        async:
+          type: boolean
+          default: false
+    RuntimeClassRef:
+      type: object
+      required: [name, handler, runtimeName]
+      properties:
+        name:
+          type: string
+        handler:
+          type: string
+        runtimeName:
+          type: string
+    RuntimeClassOperationError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_ARGUMENT, NOT_FOUND, INTERNAL]
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    RuntimeClassApplyOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [operationId, status, startedAt, kind, name, dryRun]
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [queued, running, succeeded, failed]
+            stage:
+              type: string
+              enum: [write_config, rollback_config, done]
+            kind:
+              type: string
+              enum: [RuntimeClass]
+            name:
+              type: string
+            dryRun:
+              type: boolean
+            startedAt:
+              type: string
+              format: date-time
+            endedAt:
+              type: string
+              format: date-time
+            runtimeClass:
+              $ref: "#/components/schemas/RuntimeClassRef"
+            error:
+              $ref: "#/components/schemas/RuntimeClassOperationError"
+    RuntimeClassDeleteOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [operationId, status, startedAt, kind, name]
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [queued, running, succeeded, failed]
+            stage:
+              type: string
+              enum: [write_config, rollback_config, done]
+            kind:
+              type: string
+              enum: [RuntimeClassDelete]
+            name:
+              type: string
+            startedAt:
+              type: string
+              format: date-time
+            endedAt:
+              type: string
+              format: date-time
+            runtimeClass:
+              $ref: "#/components/schemas/RuntimeClassRef"
+            error:
+              $ref: "#/components/schemas/RuntimeClassOperationError"
+    DeployMicroserviceApplyResponse:
+      type: object
+      required: [accepted, deploymentId]
+      properties:
+        accepted:
+          type: boolean
+        deploymentId:
+          type: string
+        dryRun:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+    DeployMicroserviceApplyOperationStartResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [operationId, status, startedAt]
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [running]
+            startedAt:
+              type: string
+              format: date-time
+            kind:
+              type: string
+            name:
+              type: string
+            image:
+              type: string
+          example:
+            operationId: dep_apply_4f3b2a9f
+            status: running
+            startedAt: "2026-05-14T00:10:12Z"
+            kind: Deployment
+            name: router
+            image: quay.io/skupper/skupper-router:latest
+    DeployApplyError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    DeployMicroserviceApplyOperationStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [operationId, status, startedAt]
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [running, succeeded, failed]
+            startedAt:
+              type: string
+              format: date-time
+            endedAt:
+              type: string
+              format: date-time
+            deploymentId:
+              type: string
+            stage:
+              type: string
+              enum: [parsing, pulling, creating, starting, persisting, done]
+            kind:
+              type: string
+            name:
+              type: string
+            image:
+              type: string
+            error:
+              $ref: "#/components/schemas/DeployApplyError"
+          example:
+            operationId: dep_apply_4f3b2a9f
+            status: running
+            startedAt: "2026-05-14T00:10:12Z"
+            stage: pulling
+    AuthWhoAmIResponse:
+      type: object
+      required: [subject, tokenType, issuer, audience, claims]
+      properties:
+        subject:
+          type: string
+        tokenType:
+          type: string
+        issuer:
+          type: string
+        audience:
+          type: array
+          items:
+            type: string
+        jti:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        claims:
+          $ref: "#/components/schemas/CanonicalTokenClaims"
+    CanonicalTokenClaims:
+      type: object
+      additionalProperties: true
+      example:
+        iofog.org:
+          namespace: datasance
+          node:
+            uuid: c65a473a-c760-4625-968a-41940fd1c949
+            publicKey: NXIMkiTU6lYkyh-U64j2vzZKxiT6q9pI4w4qd-zfpSA
+          microservice:
+            application: nats-test
+            name: box-2
+            uuid: e45331a6-ba0b-48ea-976b-0250aaab1a9a
+          rbac:
+            version: v1
+            rulesByGroup:
+              edgelet.iofog.org/v1:
+                - resources: [config]
+                  verbs: [get, update]
+              kuksa.val/v2:
+                - resources: [Vehicle.Speed]
+                  verbs: [get, update]
+      properties:
+        iofog.org:
+          type: object
+          properties:
+            namespace:
+              type: string
+            node:
+              type: object
+              properties:
+                uuid:
+                  type: string
+                publicKey:
+                  type: string
+            microservice:
+              type: object
+              properties:
+                application:
+                  type: string
+                name:
+                  type: string
+                uuid:
+                  type: string
+            rbac:
+              $ref: "#/components/schemas/RBACEnvelopeV1"
+    RBACEnvelopeV1:
+      type: object
+      required: [version, rulesByGroup]
+      properties:
+        version:
+          type: string
+          enum: [v1]
+        rulesByGroup:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/RBACRuleV1"
+    RBACRuleV1:
+      type: object
+      required: [resources, verbs]
+      properties:
+        resources:
+          type: array
+          items:
+            type: string
+        verbs:
+          type: array
+          items:
+            type: string
+        resourceNames:
+          type: array
+          items:
+            type: string

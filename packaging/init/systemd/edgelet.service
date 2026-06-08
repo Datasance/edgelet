@@ -1,0 +1,37 @@
+[Unit]
+Description=Edgelet daemon (control plane)
+Documentation=https://github.com/eclipse-iofog/edgelet
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
+ExecStart=/usr/local/bin/edgelet daemon
+ExecStop=/usr/libexec/edgelet/edgelet-shutdown
+Restart=always
+RestartSec=2s
+# Default 120s = shutdownGracePeriodSeconds (90) + 30s buffer; edgelet-engine drop-in may override.
+TimeoutStopSec=120s
+KillMode=process
+Delegate=yes
+DelegateSubgroup=supervisor
+KillSignal=SIGTERM
+SendSIGKILL=yes
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=edgelet
+
+# Embedded engine needs host paths under /etc/cni, /run, /var, /opt (monolithic unit).
+# Tighten on edgelet-containerd.service after Plan 11 data-plane split.
+NoNewPrivileges=no
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

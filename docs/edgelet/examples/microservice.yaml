@@ -1,0 +1,82 @@
+# =============================================================================
+# Edgelet Microservice manifest — annotated reference (edgelet.iofog.org/v1)
+#
+# Apply:  edgelet deploy -f microservice.yaml
+# Prose:  docs/edgelet/manifest-reference.md
+# Schema: internal/models/local_deploy_manifest.go
+#
+# Notes:
+#   - Local deploy sets runtime application to "edgelet" (metadata.namespace is
+#     accepted in YAML but not used for application identity today).
+#   - Fields marked "schema only" parse successfully but are not applied yet.
+# =============================================================================
+
+apiVersion: edgelet.iofog.org/v1 # required — must be edgelet.iofog.org/v1
+kind: Microservice               # required — must be Microservice
+
+metadata:
+  name: nodered-demo             # required — DNS-1123 label (lowercase, ≤63 chars)
+  labels:                        # optional — user labels (protected edgelet.iofog.org/* keys stripped)
+    team: demo
+
+spec:
+  image: nodered/node-red:latest # required — container image reference
+  registry: 1                    # optional — local registry row ID (edgelet registry ls)
+  schedule: 50                   # optional — ordering hint for reconcile
+
+  # config:                        # optional — schema only (not applied by local deploy yet)
+  #   myKey: value
+
+  container:
+    hostNetworkMode: false       # optional — true = host network (no bridge DNS)
+    isPrivileged: false          # optional — privileged container
+    runAsUser: "0"               # optional — UID or username
+
+    ipcMode: ""                  # optional — e.g. host, shareable, container:<id>
+    pidMode: ""                  # optional — e.g. host
+    platform: ""                 # optional — platform when pulling (e.g. linux/amd64)
+    runtime: ""                  # optional — RuntimeClass metadata.name (e.g. edgelet-wasmtime), not containerEngine
+
+    # cdiDevices:                  # optional — CDI device IDs (GPU, etc.)
+    #   - docker.com/gpu=webgpu
+
+    capAdd: []                   # optional — Linux capabilities to add
+    capDrop: []                  # optional — Linux capabilities to drop
+
+    annotations: {}              # optional — schema only (not applied yet)
+
+    volumes:
+      # type: bind — hostDestination must be an absolute host path
+      - hostDestination: /var/lib/edgelet/volumes/nodered-data
+        containerDestination: /data
+        accessMode: rw           # optional — rw or ro
+        type: bind
+      # type: volume — hostDestination is a named local volume
+      - hostDestination: nodered_data
+        containerDestination: /backup
+        accessMode: rw
+        type: volume
+
+    extraHosts:                  # optional — /etc/hosts entries (name + IP)
+      - name: custom.local
+        address: 10.0.0.10
+
+    env:                         # optional — user env (EDGELET_* keys are reserved)
+      - key: MY_SETTING
+        value: "1"
+
+    ports:                       # optional — port mappings
+      - internal: 1880           # container port
+        external: 1881         # host port
+        protocol: tcp            # tcp (default) or udp
+
+    commands: []                 # optional — overrides container CMD
+    cpuSetCpus: ""               # optional — cpuset.cpus (e.g. "0,1")
+    memoryLimit: 536870912       # optional — memory limit in bytes (512 MiB)
+
+    healthCheck:                 # optional — schema only (not wired in local deploy yet)
+      test: ["CMD", "curl", "-f", "http://localhost:1880/"]
+      interval: 30
+      timeout: 5
+      startPeriod: 10
+      retries: 3

@@ -1,0 +1,68 @@
+#!/bin/bash
+# Edgelet CI pipeline (linux gate).
+# macOS developers: docker build -f build/Dockerfile.embedded . && docker run --rm edgelet-embed-ci
+set -e
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${ROOT}"
+
+if [ "$(uname -s)" != Linux ]; then
+  echo "ERROR: scripts/ci must run on Linux (native runner, Lima, or Docker)." >&2
+  echo "  docker build -f build/Dockerfile.embedded -t edgelet-embed-ci ." >&2
+  echo "  docker run --rm -v \"\$(pwd)\":/src -w /src edgelet-embed-ci ./scripts/ci" >&2
+  exit 1
+fi
+
+chmod +x scripts/clean scripts/download scripts/download-root scripts/stage-root-aux \
+  scripts/build-crun-static scripts/build-embedded scripts/package-data \
+  scripts/build-edgelet scripts/check-embed-static.sh scripts/check-thin-no-containerd-cgroups.sh scripts/binary_size_check.sh \
+  scripts/check-containerd-fork.sh \
+  2>/dev/null || true
+
+echo "=== containerd fork guard (Plan 6 A1) ==="
+./scripts/check-containerd-fork.sh
+
+echo "=== init packaging guard (Plan 10) ==="
+chmod +x scripts/check-init-packaging.sh 2>/dev/null || true
+./scripts/check-init-packaging.sh
+
+if [ -f scripts/validate ] && [ -n "${RUN_VALIDATE}" ]; then
+  ./scripts/validate
+fi
+
+CI_ARCHES="${EDGELET_CI_ARCHES:-$(go env GOARCH)}"
+IFS=',' read -r -a _arch_list <<< "${CI_ARCHES}"
+
+for _arch in "${_arch_list[@]}"; do
+  _arch=$(echo "${_arch}" | tr -d ' ')
+  [ -n "${_arch}" ] || continue
+  echo "=== Plan 6 pipeline for linux/${_arch}: build-embedded → fat → package-data → thin ==="
+  ARCH="${_arch}" ./scripts/download
+  ARCH="${_arch}" ./scripts/build-embedded
+  ARCH="${_arch}" ./scripts/build-edgelet fat
+  ARCH="${_arch}" ./scripts/package-data
+  ARCH="${_arch}" ./scripts/check-embed-static.sh build/bin/edgelet build/stage/bin
+  _embed_count=$(find pkg/data/embed -name '*.tar.zst' 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_embed_count}" -ne 1 ]; then
+    echo "ERROR: expected 1 embed bundle before thin build, found ${_embed_count}" >&2
+    exit 1
+  fi
+  ARCH="${_arch}" EDGELET_CI_ARCHES="${_arch}" ./scripts/build-edgelet
+  ARCH="${_arch}" ./scripts/check-thin-no-containerd-cgroups.sh
+done
+
+echo "Running unit tests (linux + desktop tag sets)..."
+export GO111MODULE=on
+unset GOPATH
+_TEST_PKGS="./cmd/... ./internal/... ./pkg/... ./test/..."
+go test -tags '!linux' ${_TEST_PKGS}
+CGO_ENABLED=0 go test -tags 'linux,!cgo' ${_TEST_PKGS}
+CGO_ENABLED=1 go test -tags 'linux,cgo' ${_TEST_PKGS}
+
+for _arch in "${_arch_list[@]}"; do
+  _arch=$(echo "${_arch}" | tr -d ' ')
+  [ -n "${_arch}" ] || continue
+  ARCH="${_arch}" ./scripts/binary_size_check.sh
+done
+
+echo "scripts/ci passed"

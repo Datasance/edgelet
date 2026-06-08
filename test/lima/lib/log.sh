@@ -1,0 +1,1 @@
+../../embedded/lib/log.sh

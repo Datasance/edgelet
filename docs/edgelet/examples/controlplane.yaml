@@ -1,0 +1,103 @@
+# =============================================================================
+# Edgelet ControlPlane manifest — annotated reference (edgelet.iofog.org/v1)
+#
+# Apply:  edgelet deploy -f controlplane.yaml
+#         edgelet deploy -f controlplane.yaml --timeout=20m   # async; default 15m poll
+# Prose:  docs/edgelet/manifest-reference.md · docs/edgelet/control-plane.md
+# DNS:    docs/edgelet/dns.md (FQDNs from metadata.namespace + metadata.name)
+# Schema: internal/models/control_plane_manifest.go
+#
+# Rules:
+#   - At most one ControlPlane per Edgelet node.
+#   - metadata.labels are forbidden.
+#   - spec.siteCA / spec.localCA are forbidden (import via Controller REST after deploy).
+#   - spec.https.path and spec.https.base64 are mutually exclusive.
+# =============================================================================
+
+apiVersion: edgelet.iofog.org/v1 # required
+kind: ControlPlane                 # required
+
+metadata:
+  name: pot                        # required — DNS-1123 label (≤63 chars); microservice name
+  namespace: default               # optional — defaults to "default" if omitted; drives DNS FQDNs
+  # labels: {}                     # FORBIDDEN — validation rejects metadata.labels
+
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.7.0 # required — controller container image
+    registry: 1                    # optional — local registry row ID for image pull
+    port: 51121                    # optional — controller API port (host + container); default 51121
+
+  auth:                            # optional — Keycloak / auth configuration
+    url: https://auth.example.com/ # auth server URL
+    realm: example                 # realm name
+    realmKey: "<replace-with-realm-public-key-pem-or-base64>"
+    ssl: external                  # ssl mode (e.g. external)
+    controllerClient: pot-controller
+    controllerSecret: "<replace-me>"
+    viewerClient: ecn-viewer
+
+  # database:                      # optional — external database (multi-controller setups)
+  #   provider: postgres             # postgres or mysql
+  #   user: dbuser
+  #   host: db.example.com
+  #   port: 5432
+  #   password: "<replace-me>"
+  #   databaseName: controller
+  #   ssl: true
+  #   ca: "<base64-encoded-ca>"
+
+  events:                          # optional — controller audit event settings
+    auditEnabled: true
+    retentionDays: 14
+    cleanupInterval: 86400         # seconds between internal cleanup runs
+    captureIpAddress: true
+
+  systemMicroservices:             # optional — router/NATS images per CPU architecture
+    router:
+      amd64: ghcr.io/datasance/router:3.7.0
+      arm64: ghcr.io/datasance/router:3.7.0
+      arm: ghcr.io/datasance/router:3.7.0
+      riscv64: ghcr.io/datasance/router:3.7.0
+    nats:                          # required when spec.nats.enabled is true
+      amd64: ghcr.io/datasance/nats:2.12.4
+      arm64: ghcr.io/datasance/nats:2.12.4
+      arm: ghcr.io/datasance/nats:2.12.4
+      riscv64: ghcr.io/datasance/nats:2.12.4
+
+  nats:                            # optional — deploy NATS system microservice (JetStream)
+    enabled: false                 # set true to deploy NATS using systemMicroservices.nats images
+
+  # ecnViewerPort: 8008            # optional — container viewer port (host maps port 80)
+  # ecnViewerUrl: https://viewer.example.com
+
+  # logLevel: info                 # optional — controller log level
+
+  # https:                           # optional — controller HTTPS (path OR base64, not both)
+  #   path: /etc/edgelet/controller-tls   # absolute host dir with tls.crt + tls.key (+ optional ca.crt)
+  #   base64:
+  #     ca: "<base64>"               # optional
+  #     cert: "<base64>"             # required when base64 block is used
+  #     key: "<base64>"              # required when base64 block is used
+
+  # vault:                           # optional — inject VAULT_* env into controller
+  #   enabled: true
+  #   provider: hashicorp            # hashicorp, openbao, vault, aws, azure, google, ...
+  #   basePath: "pot/$namespace/secrets"  # $namespace → metadata.namespace
+  #   hashicorp:                     # provide ONE provider block matching provider
+  #     address: "http://vault.example.com:8200"
+  #     token: "<replace-me>"
+  #     mount: "kv"
+  #   aws:
+  #     region: us-east-1
+  #     accessKeyId: ""
+  #     accessKey: ""
+  #   azure:
+  #     url: "https://your-vault.vault.azure.net"
+  #     tenantId: ""
+  #     clientId: ""
+  #     clientSecret: ""
+  #   google:
+  #     projectId: ""
+  #     credentials: ""              # service account JSON or path
+

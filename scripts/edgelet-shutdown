@@ -1,0 +1,8 @@
+#!/bin/sh
+# edgelet-shutdown — shared control-plane stop entry for all init systems (Plan 10).
+# Plan 11: v1 default skips MS drain on control stop (shutdownPolicy=leave-running for docker/podman;
+# embedded split uses attach-only). shutdownGracePeriodSeconds applies to optional maintenance drain
+# and data-plane (edgelet-containerd) stop — not control-plane MS drain by default.
+set -e
+EDGELET="${EDGELET_BIN:-/usr/local/bin/edgelet}"
+exec "${EDGELET}" shutdown "$@"

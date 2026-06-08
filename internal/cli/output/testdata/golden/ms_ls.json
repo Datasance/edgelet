@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "application": "local",
+      "containerId": "c1",
+      "image": "demo:latest",
+      "name": "demo",
+      "state": "running",
+      "type": "standard",
+      "uuid": "abc-123"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/eclipse-iofog/edgelet/internal/models"
+)
+
+// SaveControllerRegistries replaces all controller registry rows in a single transaction.
+func (d *DB) SaveControllerRegistries(registries []*models.Registry) error {
+	tx, err := d.Conn().Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec("DELETE FROM controller_registries"); err != nil {
+		return fmt.Errorf("failed to clear controller_registries: %w", err)
+	}
+
+	for _, reg := range registries {
+		if err := insertRegistry(tx, reg); err != nil {
+			return fmt.Errorf("failed to insert registry %d: %w", reg.ID, err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// LoadControllerRegistries retrieves all controller registries ordered by id.
+func (d *DB) LoadControllerRegistries() ([]*models.Registry, error) {
+	rows, err := d.Conn().Query(
+		"SELECT id, url, is_public, user_name, password, user_email FROM controller_registries ORDER BY id",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query controller_registries: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var result []*models.Registry
+	for rows.Next() {
+		reg, err := scanRegistry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan registry: %w", err)
+		}
+		result = append(result, reg)
+	}
+	if result == nil {
+		result = make([]*models.Registry, 0)
+	}
+	return result, rows.Err()
+}
+
+// ClearControllerRegistries removes all controller registry rows (used on deprovision).
+func (d *DB) ClearControllerRegistries() error {
+	_, err := d.Conn().Exec("DELETE FROM controller_registries")
+	return err
+}
+
+func insertRegistry(tx *sql.Tx, reg *models.Registry) error {
+	_, err := tx.Exec(
+		`INSERT OR REPLACE INTO controller_registries (id, url, is_public, user_name, password, user_email, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		reg.ID, reg.URL, boolToInt(reg.IsPublic), reg.UserName, reg.Password, reg.UserEmail,
+		time.Now().Unix(),
+	)
+	return err
+}
+
+func scanRegistry(rows *sql.Rows) (*models.Registry, error) {
+	reg := &models.Registry{}
+	var isPublic int
+	if err := rows.Scan(&reg.ID, &reg.URL, &isPublic, &reg.UserName, &reg.Password, &reg.UserEmail); err != nil {
+		return nil, err
+	}
+	reg.IsPublic = intToBool(isPublic)
+	return reg, nil
+}
+
+// UpsertControllerRegistry inserts or updates one controller registry row.
+func (d *DB) UpsertControllerRegistry(reg *models.Registry) error {
+	if reg == nil {
+		return errors.New("registry is nil")
+	}
+	_, err := d.Conn().Exec(
+		`INSERT OR REPLACE INTO controller_registries (id, url, is_public, user_name, password, user_email, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		reg.ID, reg.URL, boolToInt(reg.IsPublic), reg.UserName, reg.Password, reg.UserEmail,
+		time.Now().Unix(),
+	)
+	return err
+}
+
+// EnsureDefaultControllerRegistries ensures docker.io and from_cache defaults exist.
+func (d *DB) EnsureDefaultControllerRegistries() error {
+	defaults := []*models.Registry{
+		models.NewRegistry(1, "docker.io", true, "", "", ""),
+		models.NewRegistry(2, "from_cache", true, "", "", ""),
+	}
+	for _, reg := range defaults {
+		if err := d.UpsertControllerRegistry(reg); err != nil {
+			return err
+		}
+	}
+	return nil
+}

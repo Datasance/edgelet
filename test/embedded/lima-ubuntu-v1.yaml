@@ -1,0 +1,57 @@
+# Lima VM profile for cgroup v1/hybrid embedded IT.
+# Ubuntu 24.04 + systemd.unified_cgroup_hierarchy=0 → hybrid (v1 controllers + unified/).
+#
+# Create:
+#   limactl start --name=iofog-test-v1 test/embedded/lima-ubuntu-v1.yaml
+#
+# First boot runs GRUB update and reboots once; the readiness probe waits for hybrid layout.
+
+vmType: vz
+os: Linux
+arch: aarch64
+
+cpus: 4
+memory: "8GiB"
+disk: "40GiB"
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+
+mounts:
+  - location: "~"
+    writable: false
+
+networks:
+  - vzNAT: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euxo pipefail
+
+      apt-get update -qq
+      apt-get install -y --no-install-recommends jq
+
+      if [ -f /etc/default/grub ]; then
+        if ! grep -q 'systemd.unified_cgroup_hierarchy=0' /etc/default/grub; then
+          sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=0 /' /etc/default/grub
+          update-grub || true
+          reboot
+        fi
+      fi
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -e
+      grep -q 'systemd.unified_cgroup_hierarchy=0' /proc/cmdline
+      ! stat -fc %T /sys/fs/cgroup/ | grep -qx cgroup2fs
+      test -d /sys/fs/cgroup/cpu
+    hint: "Waiting for hybrid cgroup v1 (kernel cmdline + cpu hierarchy)..."
+
+message: |
+  Lima VM ready for cgroup v1/hybrid embedded tests.
+  Suite:  ./test/embedded/run-all-cgroup-v1.sh
+  Gate:   ./test/embedded/vm-test-cgroup-v1.sh --vm-name=iofog-test-v1

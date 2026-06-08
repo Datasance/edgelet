@@ -1,0 +1,69 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Build directory
+build/iofog-agent*
+build/iofog-agentd*
+build/edgelet*
+internal/embedded/bin/
+
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Air (hot reload) config
+tmp/
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+
+dev/
+
+# Build directory
+build/iofog-agent*
+build/iofog-agentd*
+build/edgelet*
+build/src/
+build/gopath/
+build/pkg/
+build/bin/
+build/out/
+build/stage/
+build/data-staging/
+build/images/
+build/*.tar
+pkg/data/embed/*.tar.zst
+dist/
+
+
+.cursor/
+AGENTS.md

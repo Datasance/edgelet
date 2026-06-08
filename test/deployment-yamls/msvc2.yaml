@@ -1,0 +1,15 @@
+apiVersion: edgelet.iofog.org/v1
+kind: Microservice
+metadata:
+  name: local-test-ms
+spec:
+  image: docker.io/library/alpine:3.19
+  registry: 1
+  container:
+    hostNetworkMode: false
+    isPrivileged: false
+    commands:
+      - /bin/sh
+      - -lc
+      - sleep 14000
+  schedule: 50
