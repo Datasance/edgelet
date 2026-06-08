@@ -260,12 +260,5 @@ func detectModeString() string {
 }
 
 func asErrDelegation(err error, target **ErrDelegation) bool {
-	var del *ErrDelegation
-	if !errors.As(err, &del) {
-		return false
-	}
-	if target != nil && *target != nil && del != nil {
-		**target = *del
-	}
-	return true
+	return errors.As(err, target)
 }
