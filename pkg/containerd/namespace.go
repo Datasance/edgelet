@@ -1,6 +1,6 @@
 //go:build linux && cgo
 
-package edgeletcontainerdd
+package containerd
 
 import (
 	"context"

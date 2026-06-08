@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/datasance/edgelet/internal/constants"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 )
 
 func TestStartupEngineURL(t *testing.T) {
@@ -17,7 +17,7 @@ func TestStartupEngineURL(t *testing.T) {
 }
 
 func TestCaptureReloadEngineContextUsesStartupSnapshot(t *testing.T) {
-	runtime.ResetForTests()
+	runtimestate.ResetForTests()
 	s := NewSupervisor()
 	_ = captureReloadEngineContextViaSupervisor(s)
 }

@@ -4,7 +4,7 @@
 // The real implementation requires Linux (containerd, overlayfs, etc.).
 //
 //revive:disable:package-directory-mismatch
-package iofog
+package edgelet
 
 import (
 	"context"

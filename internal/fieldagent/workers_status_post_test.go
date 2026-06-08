@@ -12,7 +12,7 @@ import (
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 	"github.com/datasance/edgelet/internal/statusreporter"
 )
 
@@ -92,13 +92,13 @@ func TestPostStatusHelper_FailedPostRetainsTerminalStatesForRetry(t *testing.T) 
 }
 
 func TestGetFogStatus_AnnotatesDuringRestart(t *testing.T) {
-	runtime.ResetForTests()
+	runtimestate.ResetForTests()
 	processmanager.SetQuiesced(true)
 	t.Cleanup(func() {
 		processmanager.SetQuiesced(false)
-		runtime.ResetForTests()
+		runtimestate.ResetForTests()
 	})
-	runtime.GetState().SetAgentPhase("restarting")
+	runtimestate.GetState().SetAgentPhase("restarting")
 
 	fa := &FieldAgent{
 		config: config.GetInstance(),

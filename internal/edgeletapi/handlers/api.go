@@ -22,8 +22,8 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
 	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtime"
 	"github.com/datasance/edgelet/internal/runtimeapi"
+	"github.com/datasance/edgelet/internal/runtimestate"
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -849,7 +849,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			"status":   "ok",
 			"errorMap": errorsMap,
 		}
-		if runtime.GetState().PendingRestart() {
+		if runtimestate.GetState().PendingRestart() {
 			resp["pendingRestart"] = true
 			resp["message"] = "containerEngine change persisted; restart edgelet.service to activate the new engine"
 		}

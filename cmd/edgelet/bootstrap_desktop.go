@@ -5,9 +5,9 @@ package main
 import (
 	"errors"
 
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
-func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
+func startEmbeddedContainerdWithRetry() (*containerd.Service, error) {
 	return nil, errors.New("embedded containerd bootstrap is only available on linux")
 }

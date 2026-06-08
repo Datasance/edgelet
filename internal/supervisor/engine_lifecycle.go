@@ -11,7 +11,7 @@ import (
 	"github.com/datasance/edgelet/internal/fieldagent"
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
 	"github.com/datasance/edgelet/pkg/engine"
@@ -24,7 +24,7 @@ type reloadEngineContext struct {
 
 func (s *Supervisor) handleEngineConfigReload(reloadCtx *reloadEngineContext) error {
 	cfg := config.GetInstance()
-	rs := runtime.GetState()
+	rs := runtimestate.GetState()
 	startupEngine := rs.StartupEngine()
 	priorURL := reloadCtx.priorContainerEngineURL
 
@@ -54,7 +54,7 @@ func startupEngineURL(engineName, containerEngineURL string) string {
 }
 
 func (s *Supervisor) handleColdEngineChange() error {
-	if processmanager.IsQuiesced() && runtime.GetState().PendingRestart() {
+	if processmanager.IsQuiesced() && runtimestate.GetState().PendingRestart() {
 		logging.LogDebug(moduleName, "cold engine switch already active; skipping duplicate cleanup")
 		processmanager.SetQuiesced(true)
 		return nil
@@ -63,7 +63,7 @@ func (s *Supervisor) handleColdEngineChange() error {
 	logging.LogWarn(moduleName, "containerEngine change requires service restart; quiescing reconcile and cleaning up runtime state")
 
 	processmanager.SetQuiesced(true)
-	runtime.GetState().SetPendingRestart(true)
+	runtimestate.GetState().SetPendingRestart(true)
 
 	ctx := context.Background()
 	if s.ctx != nil {
@@ -149,7 +149,7 @@ func (s *Supervisor) swapContainerEngine(eng engine.ContainerEngine, engineType 
 	}
 	s.processManager.SetEngine(eng, engineType)
 	s.containerEngine = eng
-	runtime.GetState().SetEngineReady(true)
+	runtimestate.GetState().SetEngineReady(true)
 
 	if s.dockerPruningManager != nil {
 		s.dockerPruningManager.SetEngine(eng)

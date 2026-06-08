@@ -1,6 +1,6 @@
 //go:build linux && cgo
 
-package edgeletcontainerdd
+package containerd
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ var (
 
 // writeConfigFile generates and writes the containerd config.toml to disk.
 func writeConfigFile() error {
-	if err := os.MkdirAll(filepath.Dir(constants.EdgeletContainerdConfigFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(constants.EdgeletContainerdConfigFile), 0o755); err != nil { // #nosec G301 -- containerd config dir under /etc/edgelet
 		return fmt.Errorf("mkdir for config: %w", err)
 	}
 	content, err := renderContainerdConfig()
@@ -125,7 +125,7 @@ func renderContainerdTemplateExtension(data containerdTemplateRenderData) ([]byt
 
 func writeFileAtomically(path string, content []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- parent dir for atomic containerd config writes
 		return fmt.Errorf("mkdir for atomic write: %w", err)
 	}
 

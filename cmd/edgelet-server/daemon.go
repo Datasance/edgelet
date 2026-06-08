@@ -18,24 +18,24 @@ import (
 	"github.com/datasance/edgelet/internal/supervisor"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
 // exitDaemon removes the PID file then exits. defer does not run on os.Exit.
 func exitDaemon(code int) {
 	_ = utils.RemovePIDFile()
-	os.Exit(code)
+	os.Exit(code) //nolint:revive // deep-exit: centralized fat-runtime daemon exit helper
 }
 
 func runDaemon() {
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
-		os.Exit(1)
+		exitDaemon(1)
 	}
 
 	if err := config.ValidateConfig(config.GetInstance()); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
-		os.Exit(1)
+		exitDaemon(1)
 	}
 
 	setupEnvironment()
@@ -43,23 +43,23 @@ func runDaemon() {
 
 	if utils.IsAnotherInstanceRunning() {
 		_, _ = fmt.Println("Edgelet is already running.")
-		os.Exit(0)
+		exitDaemon(0)
 	}
 
 	if err := utils.WritePIDFile(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to write PID file: %v\n", err)
-		os.Exit(1)
+		exitDaemon(1)
 	}
-	defer utils.RemovePIDFile()
+	defer func() { _ = utils.RemovePIDFile() }()
 
 	cfg := config.GetInstance()
 
 	runtimeSplit := os.Getenv("EDGELET_RUNTIME_SPLIT") == "1"
 
-	var prestarted *edgeletcontainerdd.Service
+	var prestarted *containerd.Service
 	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
 		if runtimeSplit {
-			attached := edgeletcontainerdd.NewAttachedService()
+			attached := containerd.NewAttachedService()
 			var attachErr error
 			for attempt := 1; attempt <= 3; attempt++ {
 				attachErr = attached.Start()
@@ -72,7 +72,7 @@ func runDaemon() {
 			}
 			if attachErr != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", attachErr)
-				os.Exit(1)
+				exitDaemon(1)
 			}
 			prestarted = attached
 			logging.LogInfo("MAIN_DAEMON", "Attached to data-plane containerd (runtime split)")
@@ -82,13 +82,13 @@ func runDaemon() {
 		} else {
 			if _, err := cgroups.Bootstrap(); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
-				os.Exit(1)
+				exitDaemon(1)
 			}
 			var err error
 			prestarted, err = startEmbeddedContainerdWithRetry()
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
-				os.Exit(1)
+				exitDaemon(1)
 			}
 			logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor (monolithic)")
 		}
@@ -181,7 +181,7 @@ func setupEnvironment() {
 	mkErr := os.MkdirAll(utils.VarRun, 0755) // #nosec G301
 	if mkErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
-		os.Exit(1)
+		exitDaemon(1)
 	}
 }
 
@@ -198,7 +198,7 @@ func startLoggingService() {
 	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
 	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
-		os.Exit(1)
+		exitDaemon(1)
 	}
 
 	logging.LogInfo("MAIN_DAEMON", "Configuration loaded.")

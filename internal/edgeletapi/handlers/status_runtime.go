@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/datasance/edgelet/internal/config"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 )
 
 func augmentWithRuntimeStatus(status map[string]string) {
@@ -12,7 +12,7 @@ func augmentWithRuntimeStatus(status map[string]string) {
 		return
 	}
 	cfg := config.GetInstance()
-	rs := runtime.GetState()
+	rs := runtimestate.GetState()
 	status["runtime.engine"] = cfg.ContainerEngine
 	status["runtime.containerEngineUrl"] = cfg.ContainerEngineURL
 	status["runtime.pendingRestart"] = strconv.FormatBool(rs.PendingRestart())

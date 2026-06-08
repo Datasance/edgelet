@@ -15,7 +15,7 @@ import (
 	"github.com/datasance/edgelet/internal/supervisor"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
 // exitDaemon removes the PID file then exits. defer does not run on os.Exit.
@@ -51,7 +51,7 @@ func runDaemon() {
 
 	cfg := config.GetInstance()
 
-	var prestarted *edgeletcontainerdd.Service
+	var prestarted *containerd.Service
 	if buildmeta.HasEmbeddedEngine() && cfg.ContainerEngine == constants.EngineEdgelet {
 		var err error
 		prestarted, err = startEmbeddedContainerdWithRetry()

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/datasance/edgelet/internal/cli/cmd"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		}
 	}()
 
-	if handled, err := edgeletcontainerdd.MaybeRunChildProcess(os.Args); handled {
+	if handled, err := containerd.MaybeRunChildProcess(os.Args); handled {
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Embedded containerd child failed: %v\n", err)
 			os.Exit(1)

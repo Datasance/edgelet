@@ -1,6 +1,6 @@
 //go:build linux && cgo
 
-package edgeletcontainerdd
+package containerd
 
 import (
 	"testing"
@@ -44,8 +44,8 @@ func TestGenerateConfigSystemdDriverOmitsCgroupPath(t *testing.T) {
 	if !ok {
 		t.Fatal("type assertion failed for crunOpts")
 	}
-	if got := crunOpts["SystemdCgroup"]; got != false {
-		t.Fatalf("crun SystemdCgroup = %v want false", got)
+	if v, ok := crunOpts["SystemdCgroup"].(bool); ok && v {
+		t.Fatalf("crun SystemdCgroup = %v want false", v)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestGenerateConfigCgroupfsDriverSetsCgroupPath(t *testing.T) {
 	if !ok {
 		t.Fatal("type assertion failed for crunOpts")
 	}
-	if got := crunOpts["SystemdCgroup"]; got != false {
-		t.Fatalf("crun SystemdCgroup = %v want false", got)
+	if v, ok := crunOpts["SystemdCgroup"].(bool); ok && v {
+		t.Fatalf("crun SystemdCgroup = %v want false", v)
 	}
 }

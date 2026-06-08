@@ -1,6 +1,6 @@
 //go:build linux && cgo
 
-package edgeletcontainerdd
+package containerd
 
 import (
 	"bytes"
@@ -182,22 +182,22 @@ func (s *Service) Run() error {
 		constants.EdgeletContainerdSocket, constants.EdgeletContainerdConfigFile)
 
 	if err := s.prepare(); err != nil {
-		return fmt.Errorf("%w: prepare runtime directories: %v", ErrContainerdSpawnFailure, err)
+		return fmt.Errorf("%w: prepare runtime directories: %w", ErrContainerdSpawnFailure, err)
 	}
 
 	if policy := cgroups.GetGlobalPolicy(); policy != nil {
 		if err := cgroups.ValidatePreflight(policy); err != nil {
-			return fmt.Errorf("%w: cgroup preflight: %v", ErrContainerdSpawnFailure, err)
+			return fmt.Errorf("%w: cgroup preflight: %w", ErrContainerdSpawnFailure, err)
 		}
 	}
 
 	if err := writeConfigForService(); err != nil {
-		return fmt.Errorf("%w: write config: %v", ErrContainerdSpawnFailure, err)
+		return fmt.Errorf("%w: write config: %w", ErrContainerdSpawnFailure, err)
 	}
 
 	cmd, err := s.spawnChild()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrContainerdSpawnFailure, err)
+		return fmt.Errorf("%w: %w", ErrContainerdSpawnFailure, err)
 	}
 
 	processExitCh := make(chan error, 1)
@@ -218,7 +218,7 @@ func (s *Service) Run() error {
 		case err := <-startupErrCh:
 			startupErrCh = nil
 			if err != nil {
-				runErr = fmt.Errorf("%w: %v", ErrContainerdReadiness, err)
+				runErr = fmt.Errorf("%w: %w", ErrContainerdReadiness, err)
 				logger.Errorf("Embedded containerd readiness failed: %v", err)
 				s.cancel()
 				_ = s.signalProcess(syscall.SIGTERM)
@@ -235,7 +235,7 @@ func (s *Service) Run() error {
 			}
 			if !ready {
 				if err != nil {
-					return fmt.Errorf("%w: %v", ErrContainerdExitedEarly, err)
+					return fmt.Errorf("%w: %w", ErrContainerdExitedEarly, err)
 				}
 				return ErrContainerdExitedEarly
 			}
@@ -246,8 +246,8 @@ func (s *Service) Run() error {
 				return nil
 			}
 			if err != nil {
-				s.notifyUnexpectedExit(fmt.Errorf("%w: %v", ErrContainerdUnexpectedExit, err))
-				return fmt.Errorf("%w: %v", ErrContainerdUnexpectedExit, err)
+				s.notifyUnexpectedExit(fmt.Errorf("%w: %w", ErrContainerdUnexpectedExit, err))
+				return fmt.Errorf("%w: %w", ErrContainerdUnexpectedExit, err)
 			}
 			s.notifyUnexpectedExit(ErrContainerdUnexpectedExit)
 			return ErrContainerdUnexpectedExit
@@ -299,12 +299,12 @@ func (s *Service) Reconfigure() error {
 
 	var lastErr error
 	for attempt := 1; attempt <= containerdReconfigureMaxAttempts; attempt++ {
-		if err := s.reconfigureAttempt(attempt); err == nil {
+		err := s.reconfigureAttempt(attempt)
+		if err == nil {
 			return nil
-		} else {
-			lastErr = err
-			logger.Warnf("Embedded containerd reconfigure attempt %d/%d failed: %v", attempt, containerdReconfigureMaxAttempts, err)
 		}
+		lastErr = err
+		logger.Warnf("Embedded containerd reconfigure attempt %d/%d failed: %v", attempt, containerdReconfigureMaxAttempts, err)
 		if attempt < containerdReconfigureMaxAttempts {
 			sleepForReconfigure(containerdReconfigureRetryDelay)
 		}
@@ -318,11 +318,11 @@ func (s *Service) Reconfigure() error {
 			wrapReconfigureError(
 				reconfigureStageRollbackConfig,
 				0,
-				fmt.Errorf("reconfigure failed and rollback to last-known-good config succeeded: %v", lastErr),
+				fmt.Errorf("reconfigure failed and rollback to last-known-good config succeeded: %w", lastErr),
 			),
 		)
 	}
-	lastErr = fmt.Errorf("%v; rollback failed: %w", lastErr, rollbackErr)
+	lastErr = fmt.Errorf("%w; rollback failed: %w", lastErr, rollbackErr)
 	if err := s.escalateRestart(lastErr); err != nil {
 		return fmt.Errorf("%w: %w", ErrContainerdReconfigure, err)
 	}
@@ -394,7 +394,7 @@ func (s *Service) WaitReady(timeout time.Duration) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if s.waitErr != nil {
-			return fmt.Errorf("%w: %v", ErrContainerdExitedEarly, s.waitErr)
+			return fmt.Errorf("%w: %w", ErrContainerdExitedEarly, s.waitErr)
 		}
 		return ErrContainerdExitedEarly
 	case <-time.After(timeout):
@@ -409,10 +409,7 @@ func (s *Service) StopGraceful() error {
 	if !waitForDone(s.done, containerdShutdownWaitTimeout) {
 		return fmt.Errorf("%w: graceful stop exceeded %s", ErrContainerdStopTimeout, containerdShutdownWaitTimeout)
 	}
-	if err := s.reapManagedShims(); err != nil {
-		return err
-	}
-	return nil
+	return s.reapManagedShims()
 }
 
 // StopForce force-kills the child process and waits for completion.
@@ -422,10 +419,7 @@ func (s *Service) StopForce() error {
 	if !waitForDone(s.done, containerdShutdownWaitTimeout) {
 		return fmt.Errorf("%w: force stop exceeded %s", ErrContainerdStopTimeout, containerdShutdownWaitTimeout)
 	}
-	if err := s.reapManagedShims(); err != nil {
-		return err
-	}
-	return nil
+	return s.reapManagedShims()
 }
 
 func (s *Service) resetForRestart() {
@@ -455,11 +449,11 @@ func (s *Service) Stop() {
 	if s.attachOnly {
 		return
 	}
-	if err := s.StopGraceful(); err == nil {
+	err := s.StopGraceful()
+	if err == nil {
 		return
-	} else {
-		logger.Warnf("Graceful containerd stop failed: %v", err)
 	}
+	logger.Warnf("Graceful containerd stop failed: %v", err)
 	if err := s.StopForce(); err != nil {
 		logger.Warnf("Forced containerd stop failed: %v", err)
 	}
@@ -561,7 +555,7 @@ func (s *Service) reconfigureAttempt(attempt int) error {
 	if err := s.StopGraceful(); err != nil {
 		logger.Warnf("Graceful stop during reconfigure attempt %d failed: %v", attempt, err)
 		if forceErr := s.StopForce(); forceErr != nil {
-			return wrapReconfigureError(reconfigureStageStopRuntime, attempt, fmt.Errorf("stop for reconfigure failed (graceful: %v, force: %v)", err, forceErr))
+			return wrapReconfigureError(reconfigureStageStopRuntime, attempt, fmt.Errorf("stop for reconfigure failed (graceful: %w, force: %w)", err, forceErr))
 		}
 	}
 	s.resetForRestart()
@@ -613,9 +607,9 @@ func (s *Service) rollbackToLKG(previousLKG []byte, hasLKG bool) error {
 
 func (s *Service) escalateRestart(cause error) error {
 	if err := signalSelfForService(syscall.SIGTERM); err != nil {
-		return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("failed to signal daemon for restart (cause: %v): %w", cause, err))
+		return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("failed to signal daemon for restart (cause: %w): %w", cause, err))
 	}
-	return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("requested daemon restart after persistent reconfigure failure: %v", cause))
+	return wrapReconfigureError(reconfigureStageEscalateRestart, 0, fmt.Errorf("requested daemon restart after persistent reconfigure failure: %w", cause))
 }
 
 // prepare ensures required directories exist and removes any stale socket
@@ -628,7 +622,7 @@ func (s *Service) prepare() error {
 		constants.EdgeletContainerdStateDir,
 		constants.EdgeletRunDir,
 	} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- runtime dirs under /run/edgelet require containerd socket access
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
@@ -667,11 +661,11 @@ func (s *Service) postSetup() error {
 func (s *Service) healthCheck(ctx context.Context, c *client.Client) error {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
-		if _, err := c.Version(ctx); err == nil {
+		_, err := c.Version(ctx)
+		if err == nil {
 			return nil
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("health check timed out: %w", lastErr)
@@ -820,7 +814,7 @@ func CleanupRuntimeArtifacts() error {
 	}
 
 	for _, dir := range []string{constants.EdgeletRunDir, constants.EdgeletContainerdStateDir} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- runtime dirs under /run/edgelet require containerd socket access
 			errs = append(errs, fmt.Sprintf("mkdir %s: %v", dir, err))
 		}
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/constants"
 	"github.com/datasance/edgelet/internal/utils"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
 func stageAndRunDaemon(args []string) error {
@@ -29,7 +29,7 @@ func stageAndRunDaemon(args []string) error {
 	}
 
 	if engine == constants.EngineDocker || engine == constants.EnginePodman {
-		if err := edgeletcontainerdd.StopOrphanedEmbeddedContainerd(); err != nil {
+		if err := containerd.StopOrphanedEmbeddedContainerd(); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: stop orphaned embedded containerd: %v\n", err)
 		}
 	}

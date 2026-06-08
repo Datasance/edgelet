@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 )
 
 type fakeContainerdService struct {
@@ -137,7 +137,7 @@ func TestWrapBootstrapContainerdStartErr_NilSafe(t *testing.T) {
 }
 
 func TestWrapBootstrapContainerdStartErr_ClassifiesSpawnFailure(t *testing.T) {
-	startErr := fmt.Errorf("%w: missing fat runtime", edgeletcontainerdd.ErrContainerdSpawnFailure)
+	startErr := fmt.Errorf("%w: missing fat runtime", containerd.ErrContainerdSpawnFailure)
 	err := wrapBootstrapContainerdStartErr(startErr)
 	if err == nil {
 		t.Fatal("expected wrapped error")
@@ -145,7 +145,7 @@ func TestWrapBootstrapContainerdStartErr_ClassifiesSpawnFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "child spawn failed") {
 		t.Fatalf("expected spawn classification, got: %v", err)
 	}
-	if !errors.Is(err, edgeletcontainerdd.ErrContainerdSpawnFailure) {
+	if !errors.Is(err, containerd.ErrContainerdSpawnFailure) {
 		t.Fatalf("expected spawn error in chain, got: %v", err)
 	}
 }

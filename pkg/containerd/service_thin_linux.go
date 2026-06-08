@@ -1,7 +1,7 @@
 //go:build linux && !cgo
 
-// Package edgeletcontainerdd provides thin-linux stubs without embedded containerd in-process.
-package edgeletcontainerdd
+// Package containerd provides thin-linux stubs without embedded containerd in-process.
+package containerd
 
 import (
 	"errors"

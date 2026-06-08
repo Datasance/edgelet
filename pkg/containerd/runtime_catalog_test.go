@@ -1,5 +1,5 @@
 //revive:disable:package-directory-mismatch
-package edgeletcontainerdd
+package containerd
 
 import (
 	"errors"

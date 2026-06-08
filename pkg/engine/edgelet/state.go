@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofog
+package edgelet
 
 import (
 	"strconv"

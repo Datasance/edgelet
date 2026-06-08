@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/datasance/edgelet/internal/utils/logging"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 	"github.com/datasance/edgelet/pkg/data"
 )
 
@@ -30,13 +30,13 @@ type bootstrapDeps struct {
 	sleep              func(time.Duration)
 }
 
-func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
+func startEmbeddedContainerdWithRetry() (*containerd.Service, error) {
 	deps := bootstrapDeps{
 		ensureDependencies: data.EnsureExtracted,
 		newService: func() containerdStarter {
-			return edgeletcontainerdd.NewService()
+			return containerd.NewService()
 		},
-		cleanupRuntime: edgeletcontainerdd.CleanupRuntimeArtifacts,
+		cleanupRuntime: containerd.CleanupRuntimeArtifacts,
 		sleep:          time.Sleep,
 	}
 
@@ -45,7 +45,7 @@ func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
 		return nil, err
 	}
 
-	typed, ok := svc.(*edgeletcontainerdd.Service)
+	typed, ok := svc.(*containerd.Service)
 	if !ok {
 		return nil, fmt.Errorf("unexpected embedded containerd service type %T", svc)
 	}
@@ -97,7 +97,7 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 	if lastErr == nil {
 		lastErr = errors.New("embedded containerd startup failed with no recorded error")
 	}
-	return nil, fmt.Errorf("embedded containerd did not become ready after %d attempts: %v", containerdBootstrapMaxAttempts, lastErr)
+	return nil, fmt.Errorf("embedded containerd did not become ready after %d attempts: %w", containerdBootstrapMaxAttempts, lastErr)
 }
 
 func wrapBootstrapErr(stage string, err error) error {
@@ -112,11 +112,11 @@ func wrapBootstrapContainerdStartErr(err error) error {
 		return errors.New("embedded containerd Start returned no error detail")
 	}
 	switch {
-	case errors.Is(err, edgeletcontainerdd.ErrContainerdSpawnFailure):
+	case errors.Is(err, containerd.ErrContainerdSpawnFailure):
 		return fmt.Errorf("embedded containerd child spawn failed: %w", err)
-	case errors.Is(err, edgeletcontainerdd.ErrContainerdReadiness):
+	case errors.Is(err, containerd.ErrContainerdReadiness):
 		return fmt.Errorf("embedded containerd readiness check failed: %w", err)
-	case errors.Is(err, edgeletcontainerdd.ErrContainerdExitedEarly):
+	case errors.Is(err, containerd.ErrContainerdExitedEarly):
 		return fmt.Errorf("embedded containerd exited before ready: %w", err)
 	default:
 		return fmt.Errorf("embedded containerd startup failed: %w", err)

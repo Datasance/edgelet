@@ -15,7 +15,7 @@ import (
 	"github.com/datasance/edgelet/internal/models"
 	"github.com/datasance/edgelet/internal/network"
 	"github.com/datasance/edgelet/internal/processmanager"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 	"github.com/datasance/edgelet/internal/serviceaccount"
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/utils/logging"
@@ -322,7 +322,7 @@ func (fa *FieldAgent) getFogStatus() map[string]any {
 		"availableRuntimes":         controllerRuntimes,
 	}
 
-	if phase := runtime.GetState().AgentPhase(); phase != "" {
+	if phase := runtimestate.GetState().AgentPhase(); phase != "" {
 		status["runtimeAgentPhase"] = phase
 	}
 	if processmanager.IsQuiesced() {
@@ -333,7 +333,7 @@ func (fa *FieldAgent) getFogStatus() map[string]any {
 }
 
 func annotateMicroserviceStatusForControlRestart(rawJSON string) string {
-	phase := runtime.GetState().AgentPhase()
+	phase := runtimestate.GetState().AgentPhase()
 	if phase != "restarting" && !processmanager.IsQuiesced() {
 		return rawJSON
 	}

@@ -22,12 +22,12 @@ import (
 	"github.com/datasance/edgelet/internal/pruning"
 	"github.com/datasance/edgelet/internal/resourceconsumption"
 	"github.com/datasance/edgelet/internal/resourcemanager"
-	"github.com/datasance/edgelet/internal/runtime"
+	"github.com/datasance/edgelet/internal/runtimestate"
 	"github.com/datasance/edgelet/internal/statusreporter"
 	"github.com/datasance/edgelet/internal/store"
 	"github.com/datasance/edgelet/internal/utils"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+	"github.com/datasance/edgelet/pkg/containerd"
 	"github.com/datasance/edgelet/pkg/engine"
 )
 
@@ -42,7 +42,7 @@ var requestDaemonRestart = func(reason string, cause error) {
 	}
 }
 
-var setContainerdUnexpectedExitHandler = func(svc *edgeletcontainerdd.Service, handler func(error)) {
+var setContainerdUnexpectedExitHandler = func(svc *containerd.Service, handler func(error)) {
 	svc.SetUnexpectedExitHandler(handler)
 }
 
@@ -63,7 +63,7 @@ type Supervisor struct {
 	engineWireMu    sync.Mutex
 
 	// Embedded containerd service (non-nil only when containerEngine=iofog)
-	containerdSvc *edgeletcontainerdd.Service
+	containerdSvc *containerd.Service
 
 	// containerdAttachOnly: control plane attaches to data-plane containerd; do not stop on control shutdown.
 	containerdAttachOnly bool
@@ -100,7 +100,7 @@ func NewSupervisor() *Supervisor {
 // SetPrestartedContainerd injects an embedded containerd service already started in main
 // (embedded engine). Supervisor will not start containerd again; it only runs
 // the watchdog and stops containerd on shutdown unless attach-only (runtime split).
-func (s *Supervisor) SetPrestartedContainerd(svc *edgeletcontainerdd.Service) {
+func (s *Supervisor) SetPrestartedContainerd(svc *containerd.Service) {
 	s.containerdSvc = svc
 }
 
@@ -164,10 +164,10 @@ func (s *Supervisor) Start() error {
 	s.processManager = processmanager.GetInstance()
 	// Instantiate the container engine based on configuration.
 	cfg := config.GetInstance()
-	runtime.GetState().RecordStartupEngine(cfg.ContainerEngine)
+	runtimestate.GetState().RecordStartupEngine(cfg.ContainerEngine)
 	processmanager.SetQuiesced(false)
-	runtime.GetState().SetPendingRestart(false)
-	runtime.GetState().SetAgentPhase("running")
+	runtimestate.GetState().SetPendingRestart(false)
+	runtimestate.GetState().SetAgentPhase("running")
 
 	// If the embedded iofog engine is selected, ensure containerd is running before the engine.
 	// Startup ownership is in cmd/edgelet bootstrap; Supervisor only consumes prestarted runtime.
@@ -414,7 +414,7 @@ func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
 		return err
 	}
 	s.containerEngine = eng
-	runtime.GetState().SetEngineReady(true)
+	runtimestate.GetState().SetEngineReady(true)
 	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
 		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
 	})
@@ -472,7 +472,7 @@ func (s *Supervisor) runExternalEngineRecovery(engineType string, _ engine.Engin
 func (s *Supervisor) Stop() error {
 	logging.LogDebug(moduleName, "Stopping Supervisor")
 
-	runtime.GetState().SetAgentPhase("restarting")
+	runtimestate.GetState().SetAgentPhase("restarting")
 
 	// Cancel context to signal all workers to stop
 	if s.cancel != nil {

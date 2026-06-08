@@ -1,6 +1,6 @@
 //go:build linux
 
-package iofog
+package edgelet
 
 import (
 	"errors"
@@ -88,7 +88,7 @@ func TestEmitCRITeardownStep_ToleratedStopWarn(t *testing.T) {
 	if got.ReasonCode != runtimeops.ReasonRemoveFailed {
 		t.Fatalf("reasonCode=%q", got.ReasonCode)
 	}
-	if got.Fields["tolerated"] != true {
+	if v, ok := got.Fields["tolerated"].(bool); !ok || !v {
 		t.Fatalf("tolerated=%v", got.Fields["tolerated"])
 	}
 }

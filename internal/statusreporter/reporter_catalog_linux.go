@@ -2,14 +2,14 @@
 
 package statusreporter
 
-import edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
+import "github.com/datasance/edgelet/pkg/containerd"
 
 var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 	return nil, nil
 }
 
 var listCatalogRuntimesForStatus = func() []string {
-	catalog := edgeletcontainerdd.BuildRuntimeCatalog()
+	catalog := containerd.BuildRuntimeCatalog()
 	if len(catalog) == 0 {
 		return nil
 	}

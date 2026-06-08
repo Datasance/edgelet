@@ -1,6 +1,6 @@
 //go:build linux
 
-package edgeletcontainerdd
+package containerd
 
 import (
 	"fmt"
