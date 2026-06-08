@@ -574,4 +574,5 @@ if [ "$OS" = "linux" ]; then
 fi
 info ""
 info "Check status: edgelet system status"
+info "Configure Controller: edgelet config --a <controller-api-endpoint>"
 info "Provision:    edgelet provision <key>"

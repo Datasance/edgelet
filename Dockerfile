@@ -5,7 +5,7 @@
 #     --build-arg VERSION=v0.0.0-test \
 #     -t ghcr.io/datasance/edgelet:test .
 
-FROM golang:1.26.2-trixie AS builder
+FROM golang:1.26.4-trixie AS builder
 
 ARG BUILDARCH
 ARG TARGETARCH
