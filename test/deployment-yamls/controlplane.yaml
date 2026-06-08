@@ -9,13 +9,13 @@ spec:
     registry: 1
     port: 51121
   auth:
-    url: https://auth-dt.datasance.com/
-    realm: datasance
-    realmKey: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjQuSwvTMSk/WP5MYi3kyx7t0RQmdaQuM22XvLC8lYtE1qf/ZYfQt+hVsgyEbpNOo2N7/EjuNbPa3GmKKW9P0TvgSz4U6uOE47i1uUPUe16eMw0TipG+cQ0rh+FRx4OXp3xMUrrYgAoO0zg4gmg8JJ3Y4wA/1Zx9l9HbNw3iUUkf9Q5QTo5rwGKWOOZPo7I9XKMnvbxOrLIDCNjoU5mGmNdcA6LMB/qs5W3Pn1mCJZs6B9FisIjmr484rs20ozp9ZbQnRopS7dNEqc66HrvtQe3X/pChu4ZXumQ6mu2xzPKyIUewcEQcj73WCzs43510zrwD9/b8THc00Wjz3L2UnhQIDAQAB
+    url: <auth-server-url>
+    realm: <realm-name>
+    realmKey: <realm-public-key-pem-or-base64>
     ssl: external
-    controllerClient: pot-controller
-    controllerSecret: vLGWKJlXIf8GQTe2GfdubPxXedodtCU8
-    viewerClient: ecn-viewer
+    controllerClient: <controller-client-name>
+    controllerSecret: <replace-me>
+    viewerClient: <viewer-client-name>
   # database: # an external database or have multiple controllers for the ControlPlane, you can set the database here
   #     provider: postgres/mysql  
   #     user: 
