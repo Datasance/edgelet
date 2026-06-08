@@ -65,7 +65,7 @@ func TestBanner_SubcommandHelpNone(t *testing.T) {
 func TestBanner_CommandNoBanner(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/status": {"iofogDaemon": "running"},
 		},
 	}

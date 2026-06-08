@@ -2,7 +2,7 @@ package processmanager
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 
 	"github.com/datasance/edgelet/internal/models"
@@ -43,7 +43,7 @@ func (pm *ProcessManager) SetEngine(eng engine.ContainerEngine, engineName strin
 // CleanupForEngineSwitch stops/removes all managed workload containers and clears ephemeral DB state.
 func (pm *ProcessManager) CleanupForEngineSwitch(ctx context.Context) error {
 	if pm == nil {
-		return fmt.Errorf("process manager is nil")
+		return errors.New("process manager is nil")
 	}
 
 	pm.logger.Info("Cleaning up microservice runtime state for container engine change")

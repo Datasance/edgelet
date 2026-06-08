@@ -1,11 +1,12 @@
 package dnsresolver
 
 import (
+	"cmp"
 	"fmt"
 	"net"
 	"net/netip"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -648,11 +649,11 @@ func pickReservedTarget(active []*WorkloadRecord) *WorkloadRecord {
 	if len(active) == 0 {
 		return nil
 	}
-	sort.SliceStable(active, func(i, j int) bool {
-		if active[i].StartedAt == active[j].StartedAt {
-			return active[i].UUID < active[j].UUID
+	slices.SortStableFunc(active, func(a, b *WorkloadRecord) int {
+		if a.StartedAt != b.StartedAt {
+			return cmp.Compare(b.StartedAt, a.StartedAt)
 		}
-		return active[i].StartedAt > active[j].StartedAt
+		return cmp.Compare(a.UUID, b.UUID)
 	})
 	return active[0]
 }

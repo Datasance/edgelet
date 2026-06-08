@@ -2,8 +2,9 @@ package fieldagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,10 +53,10 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 		}
 
 		// Parse the controller response
-		if msArray, ok := result["microservices"].([]interface{}); ok {
+		if msArray, ok := result["microservices"].([]any); ok {
 			logging.LogDebug(moduleName, fmt.Sprintf("Received %d microservices from controller", len(msArray)))
 			for i, ms := range msArray {
-				msMap, ok := ms.(map[string]interface{})
+				msMap, ok := ms.(map[string]any)
 				if !ok {
 					continue
 				}
@@ -76,7 +77,7 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 				logging.LogError(moduleName, "Failed to save microservices to store", err)
 			}
 		} else {
-			return nil, fmt.Errorf("error loading microservices from IOFog controller: invalid response format")
+			return nil, errors.New("error loading microservices from IOFog controller: invalid response format")
 		}
 	}
 
@@ -101,17 +102,26 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 }
 
 // parseMicroservice parses a microservice from JSON data
-func parseMicroservice(data map[string]interface{}) (*models.Microservice, error) {
-	uuid, _ := data["uuid"].(string)
-	imageID, _ := data["imageId"].(string)
+func parseMicroservice(data map[string]any) (*models.Microservice, error) {
+	uuid, ok := data["uuid"].(string)
+	if !ok {
+		uuid = ""
+	}
+	imageID, ok := data["imageId"].(string)
+	if !ok {
+		imageID = ""
+	}
 
 	// Fallback to imageName for backward compatibility
 	if imageID == "" {
-		imageID, _ = data["imageName"].(string)
+		imageID, ok = data["imageName"].(string)
+		if !ok {
+			imageID = ""
+		}
 	}
 
 	if uuid == "" || imageID == "" {
-		return nil, fmt.Errorf("missing required fields: uuid or imageId")
+		return nil, errors.New("missing required fields: uuid or imageId")
 	}
 
 	// The imageID from JSON is stored as imageName in the Microservice object
@@ -148,8 +158,8 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	if logSize, ok := data["logSize"].(float64); ok {
 		microservice.LogSize = int64(logSize)
 	}
-	if delete, ok := data["delete"].(bool); ok {
-		microservice.Delete = delete
+	if shouldDelete, ok := data["delete"].(bool); ok {
+		microservice.Delete = shouldDelete
 	}
 	if deleteWithCleanup, ok := data["deleteWithCleanup"].(bool); ok {
 		microservice.DeleteWithCleanup = deleteWithCleanup
@@ -176,10 +186,10 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse port mappings
-	if portMappings, ok := data["portMappings"].([]interface{}); ok {
+	if portMappings, ok := data["portMappings"].([]any); ok {
 		microservice.PortMappings = make([]*models.PortMapping, 0, len(portMappings))
 		for _, pm := range portMappings {
-			if pmMap, ok := pm.(map[string]interface{}); ok {
+			if pmMap, ok := pm.(map[string]any); ok {
 				var outside, inside int
 				var udp bool
 				if portExternal, ok := pmMap["portExternal"].(float64); ok {
@@ -198,10 +208,10 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse volume mappings
-	if volumeMappings, ok := data["volumeMappings"].([]interface{}); ok {
+	if volumeMappings, ok := data["volumeMappings"].([]any); ok {
 		microservice.VolumeMappings = make([]*models.VolumeMapping, 0, len(volumeMappings))
 		for _, vm := range volumeMappings {
-			if vmMap, ok := vm.(map[string]interface{}); ok {
+			if vmMap, ok := vm.(map[string]any); ok {
 				volumeMapping := &models.VolumeMapping{}
 				if hostDestination, ok := vmMap["hostDestination"].(string); ok {
 					volumeMapping.HostDestination = hostDestination
@@ -228,10 +238,10 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse env vars
-	if envVars, ok := data["env"].([]interface{}); ok {
+	if envVars, ok := data["env"].([]any); ok {
 		microservice.EnvVars = make([]*models.EnvVar, 0, len(envVars))
 		for _, env := range envVars {
-			if envMap, ok := env.(map[string]interface{}); ok {
+			if envMap, ok := env.(map[string]any); ok {
 				envVar := &models.EnvVar{}
 				if key, ok := envMap["key"].(string); ok {
 					envVar.Key = key
@@ -248,7 +258,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse args
-	if args, ok := data["cmd"].([]interface{}); ok {
+	if args, ok := data["cmd"].([]any); ok {
 		microservice.Args = make([]string, 0, len(args))
 		for _, arg := range args {
 			if argStr, ok := arg.(string); ok {
@@ -264,7 +274,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse cdiDevices
-	if cdiDevices, ok := data["cdiDevices"].([]interface{}); ok {
+	if cdiDevices, ok := data["cdiDevices"].([]any); ok {
 		microservice.CdiDevs = make([]string, 0, len(cdiDevices))
 		for _, device := range cdiDevices {
 			if deviceStr, ok := device.(string); ok {
@@ -279,7 +289,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse capAdd
-	if capAdd, ok := data["capAdd"].([]interface{}); ok {
+	if capAdd, ok := data["capAdd"].([]any); ok {
 		microservice.CapAdd = make([]string, 0, len(capAdd))
 		for _, cap := range capAdd {
 			if capStr, ok := cap.(string); ok {
@@ -289,7 +299,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse capDrop
-	if capDrop, ok := data["capDrop"].([]interface{}); ok {
+	if capDrop, ok := data["capDrop"].([]any); ok {
 		microservice.CapDrop = make([]string, 0, len(capDrop))
 		for _, cap := range capDrop {
 			if capStr, ok := cap.(string); ok {
@@ -299,7 +309,7 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse extraHosts
-	if extraHosts, ok := data["extraHosts"].([]interface{}); ok {
+	if extraHosts, ok := data["extraHosts"].([]any); ok {
 		microservice.ExtraHosts = make([]string, 0, len(extraHosts))
 		for _, host := range extraHosts {
 			if hostStr, ok := host.(string); ok {
@@ -324,11 +334,11 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse healthCheck
-	if healthCheck, ok := data["healthCheck"].(map[string]interface{}); ok {
+	if healthCheck, ok := data["healthCheck"].(map[string]any); ok {
 		healthcheck := &models.Healthcheck{}
 
 		// Parse test (array of strings)
-		if test, ok := healthCheck["test"].([]interface{}); ok {
+		if test, ok := healthCheck["test"].([]any); ok {
 			healthcheck.Test = make([]string, 0, len(test))
 			for _, t := range test {
 				if testStr, ok := t.(string); ok {
@@ -363,12 +373,12 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	}
 
 	// Parse serviceAccount (name/roleRef/rules) for token claim normalization.
-	if saData, ok := data["serviceAccount"].(map[string]interface{}); ok {
+	if saData, ok := data["serviceAccount"].(map[string]any); ok {
 		sa := &models.ServiceAccount{}
 		if name, ok := saData["name"].(string); ok {
 			sa.Name = name
 		}
-		if roleRef, ok := saData["roleRef"].(map[string]interface{}); ok {
+		if roleRef, ok := saData["roleRef"].(map[string]any); ok {
 			if kind, ok := roleRef["kind"].(string); ok {
 				sa.RoleRef.Kind = kind
 			}
@@ -376,10 +386,10 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 				sa.RoleRef.Name = roleName
 			}
 		}
-		if rules, ok := saData["rules"].([]interface{}); ok {
+		if rules, ok := saData["rules"].([]any); ok {
 			sa.Rules = make([]models.ServiceAccountRule, 0, len(rules))
 			for _, rawRule := range rules {
-				ruleMap, ok := rawRule.(map[string]interface{})
+				ruleMap, ok := rawRule.(map[string]any)
 				if !ok {
 					continue
 				}
@@ -389,9 +399,9 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 					Verbs:         parseStringArray(ruleMap["verbs"]),
 					ResourceNames: parseStringArray(ruleMap["resourceNames"]),
 				}
-				sort.Strings(rule.APIGroups)
-				sort.Strings(rule.Resources)
-				sort.Strings(rule.ResourceNames)
+				slices.Sort(rule.APIGroups)
+				slices.Sort(rule.Resources)
+				slices.Sort(rule.ResourceNames)
 				rule.Verbs = models.CanonicalizeVerbs(rule.Verbs)
 				sa.Rules = append(sa.Rules, rule)
 			}
@@ -403,8 +413,8 @@ func parseMicroservice(data map[string]interface{}) (*models.Microservice, error
 	return microservice, nil
 }
 
-func parseStringArray(raw interface{}) []string {
-	items, ok := raw.([]interface{})
+func parseStringArray(raw any) []string {
+	items, ok := raw.([]any)
 	if !ok {
 		return nil
 	}
@@ -451,14 +461,14 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 		}
 
 		registries = make([]*models.Registry, 0)
-		if regArray, ok := result["registries"].([]interface{}); ok {
+		if regArray, ok := result["registries"].([]any); ok {
 			for _, reg := range regArray {
-				if regMap, ok := reg.(map[string]interface{}); ok {
+				if regMap, ok := reg.(map[string]any); ok {
 					registries = append(registries, parseRegistry(regMap))
 				}
 			}
 		} else {
-			return fmt.Errorf("error loading registries from IOFog controller: invalid response format")
+			return errors.New("error loading registries from IOFog controller: invalid response format")
 		}
 
 		// Persist to SQLite store
@@ -486,7 +496,7 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 }
 
 // parseRegistry parses a registry from JSON data
-func parseRegistry(data map[string]interface{}) *models.Registry {
+func parseRegistry(data map[string]any) *models.Registry {
 	builder := models.NewRegistryBuilder()
 
 	var id int
@@ -568,7 +578,7 @@ func (fa *FieldAgent) loadVolumeMounts() error {
 		return nil // Return nil to continue execution
 	}
 
-	if volumeMounts, ok := result["volumeMounts"].([]interface{}); ok {
+	if volumeMounts, ok := result["volumeMounts"].([]any); ok {
 		// Process volume mount changes via VolumeMountManager
 		// Wrap in recover to catch any panics
 		func() {

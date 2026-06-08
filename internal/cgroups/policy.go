@@ -1,7 +1,7 @@
 package cgroups
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -94,6 +94,6 @@ func joinControllers(controllers []string) string {
 		return ""
 	}
 	out := append([]string(nil), controllers...)
-	sort.Strings(out)
+	slices.Sort(out)
 	return strings.Join(out, ",")
 }

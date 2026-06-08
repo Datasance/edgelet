@@ -14,7 +14,7 @@ func snakeToCamel(s string) string {
 
 	parts := strings.Split(s, "_")
 	result := strings.Builder{}
-	result.WriteString(strings.ToLower(parts[0]))
+	_, _ = result.WriteString(strings.ToLower(parts[0]))
 
 	for i := 1; i < len(parts); i++ {
 		if len(parts[i]) > 0 {
@@ -22,7 +22,7 @@ func snakeToCamel(s string) string {
 			runes := []rune(parts[i])
 			if len(runes) > 0 {
 				runes[0] = unicode.ToUpper(runes[0])
-				result.WriteString(string(runes))
+				_, _ = result.WriteString(string(runes))
 			}
 		}
 	}

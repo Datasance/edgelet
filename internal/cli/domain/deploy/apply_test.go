@@ -14,12 +14,12 @@ import (
 
 type applyFakeAPI struct {
 	multipartPath string
-	startResult   map[string]interface{}
-	statusCalls   []map[string]interface{}
+	startResult   map[string]any
+	statusCalls   []map[string]any
 	statusIndex   int
 }
 
-func (f *applyFakeAPI) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *applyFakeAPI) Request(method, path string, _ any) (map[string]any, error) {
 	if strings.Contains(path, ":apply/") {
 		if f.statusIndex >= len(f.statusCalls) {
 			return f.statusCalls[len(f.statusCalls)-1], nil
@@ -28,13 +28,13 @@ func (f *applyFakeAPI) Request(method, path string, _ interface{}) (map[string]i
 		f.statusIndex++
 		return resp, nil
 	}
-	return map[string]interface{}{}, nil
+	return map[string]any{}, nil
 }
 
-func (f *applyFakeAPI) RequestMultipartFile(method, path, _, filePath string, fields map[string]string) (map[string]interface{}, error) {
+func (f *applyFakeAPI) RequestMultipartFile(method, path, _, filePath string, fields map[string]string) (map[string]any, error) {
 	f.multipartPath = path
 	if fields["dryRun"] == "true" {
-		return map[string]interface{}{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil
+		return map[string]any{"valid": true, "kind": "Microservice", "name": "demo", "apiVersion": "v3"}, nil
 	}
 	return f.startResult, nil
 }
@@ -62,8 +62,8 @@ func TestExecute_DryRunDoesNotPoll(t *testing.T) {
 func TestExecute_MicroserviceApplyCollectsStages(t *testing.T) {
 	manifest := writeManifest(t, "kind: Microservice\napiVersion: v3\nname: demo\n")
 	api := &applyFakeAPI{
-		startResult: map[string]interface{}{"status": "running", "operationId": "op-1"},
-		statusCalls: []map[string]interface{}{
+		startResult: map[string]any{"status": "running", "operationId": "op-1"},
+		statusCalls: []map[string]any{
 			{"status": "running", "stage": "persisting"},
 			{"status": "running", "stage": "pulling"},
 			{"status": "succeeded", "deploymentId": "dep-99"},
@@ -80,7 +80,7 @@ func TestExecute_MicroserviceApplyCollectsStages(t *testing.T) {
 	if len(result.Stages) != 2 {
 		t.Fatalf("expected stages, got %#v", result.Stages)
 	}
-	stages, ok := result.Data["stages"].([]interface{})
+	stages, ok := result.Data["stages"].([]any)
 	if !ok || len(stages) != 2 {
 		t.Fatalf("expected stages array in data, got %#v", result.Data["stages"])
 	}
@@ -99,25 +99,25 @@ func TestExecute_RuntimeClassApplyPollSucceeded(t *testing.T) {
 	runtimeClassApplyPollInterval = time.Millisecond
 
 	polls := 0
-	startMultipartApply = func(api run.EdgeletAPIClient, target Target, _ string, _ map[string]string) (map[string]interface{}, error) {
+	startMultipartApply = func(api run.EdgeletAPIClient, target Target, _ string, _ map[string]string) (map[string]any, error) {
 		if target != TargetRuntimeClasses {
 			t.Fatalf("expected runtimeclasses target, got %s", target)
 		}
-		return map[string]interface{}{"status": "running", "operationId": "op-rc"}, nil
+		return map[string]any{"status": "running", "operationId": "op-rc"}, nil
 	}
-	fetchApplyStatus = func(_ run.EdgeletAPIClient, target Target, operationID string) (map[string]interface{}, error) {
+	fetchApplyStatus = func(_ run.EdgeletAPIClient, target Target, operationID string) (map[string]any, error) {
 		if target != TargetRuntimeClasses || operationID != "op-rc" {
 			t.Fatalf("unexpected status fetch: %s %s", target, operationID)
 		}
 		polls++
 		if polls < 2 {
-			return map[string]interface{}{"status": "running", "stage": "reconfiguring"}, nil
+			return map[string]any{"status": "running", "stage": "reconfiguring"}, nil
 		}
-		return map[string]interface{}{
+		return map[string]any{
 			"status": "succeeded",
-			"runtimeClass": map[string]interface{}{
-				"name":    "edgelet",
-				"handler": "edgelet-wasm",
+			"runtimeClass": map[string]any{
+				"name":    "edgelet-wasmtime",
+				"handler": "edgelet-wasmtime",
 			},
 		}, nil
 	}

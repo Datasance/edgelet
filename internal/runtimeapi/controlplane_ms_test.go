@@ -127,7 +127,7 @@ func TestFacadeGetRuntimeMicroservice_ControlPlane(t *testing.T) {
 	if item["type"] != "controlplane" || item["application"] != "default" || item["name"] != "pot" {
 		t.Fatalf("unexpected item: %#v", item)
 	}
-	raw, ok := item["raw"].(map[string]interface{})
+	raw, ok := item["raw"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected raw map, got %#v", item["raw"])
 	}

@@ -3,6 +3,8 @@ package provision
 import "strings"
 
 // ProvisionLong returns the provision command introduction.
+//
+//nolint:revive // exported API
 func ProvisionLong() string {
 	return strings.TrimSpace(`Register this agent with an ioFog Controller using a provisioning key.
 
@@ -10,6 +12,8 @@ The key is issued by the Controller when creating or enrolling an agent.`)
 }
 
 // ProvisionExamples returns provision command examples for Cobra.
+//
+//nolint:revive // exported API
 func ProvisionExamples() string {
 	return strings.TrimSpace(`edgelet provision <provisioning-key>
   edgelet -o json provision <provisioning-key>`)

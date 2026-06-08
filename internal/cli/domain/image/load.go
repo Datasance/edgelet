@@ -14,7 +14,7 @@ import (
 // LoadResult carries image load outcome.
 type LoadResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // LoadRequest carries image load options.
@@ -32,7 +32,7 @@ func Load(ctx context.Context, clientAPI run.EdgeletAPIClient, uiProgress *ui.UI
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "path is required", nil)
 	}
 
-	startResult, err := clientAPI.Request("POST", "/v1/images:load", map[string]interface{}{"path": path})
+	startResult, err := clientAPI.Request("POST", "/v1/images:load", map[string]any{"path": path})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}
@@ -51,7 +51,7 @@ func Load(ctx context.Context, clientAPI run.EdgeletAPIClient, uiProgress *ui.UI
 	final, _, err := client.PollAsyncOperation(ctx, client.PollConfig{
 		Interval: 500 * time.Millisecond,
 		Timeout:  client.PollTimeoutFor("image-load"),
-	}, func() (map[string]interface{}, error) {
+	}, func() (map[string]any, error) {
 		return clientAPI.Request("GET", "/v1/images:load/"+operationID, nil)
 	}, progress)
 	if err != nil {

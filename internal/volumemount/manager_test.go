@@ -42,7 +42,7 @@ func TestVolumeMountManager_ProcessVolumeMountChanges(t *testing.T) {
 	vmm := GetInstance()
 
 	// Test with empty changes (simple case that shouldn't hang)
-	changes := []interface{}{}
+	changes := []any{}
 	// Use a channel with timeout to detect hanging
 	done := make(chan bool, 1)
 	go func() {
@@ -87,7 +87,7 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 		Kind:          "SECRET",
 		Checksum:      "s",
 		Microservices: []string{"ms-1"},
-		Data:          map[string]interface{}{"k": "v"},
+		Data:          map[string]any{"k": "v"},
 	}); err != nil {
 		t.Fatalf("failed inserting secret volume_mount row: %v", err)
 	}
@@ -98,16 +98,16 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 		Kind:          "CONFIGMAP",
 		Checksum:      "c",
 		Microservices: []string{"ms-1"},
-		Data:          map[string]interface{}{"k": "v"},
+		Data:          map[string]any{"k": "v"},
 	}); err != nil {
 		t.Fatalf("failed inserting configMap volume_mount row: %v", err)
 	}
 
 	vmm := &VolumeMountManager{
 		baseDirectory: baseDir,
-		mountIndex: map[string]interface{}{
-			"vm-secret": map[string]interface{}{"name": "secret-a", "type": "secret"},
-			"vm-config": map[string]interface{}{"name": "config-a", "type": "configMap"},
+		mountIndex: map[string]any{
+			"vm-secret": map[string]any{"name": "secret-a", "type": "secret"},
+			"vm-config": map[string]any{"name": "config-a", "type": "configMap"},
 		},
 		typeCache: map[string]VolumeMountType{
 			"secret-a": VolumeMountTypeSecret,

@@ -28,13 +28,13 @@ func TestRuntimeClassApplyDeleteMetadataOnlyAndResolveHandler(t *testing.T) {
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `, false); err != nil {
 		t.Fatalf("runtimeclass apply failed: %v", err)
 	}
 
-	runtime := "edgelet"
+	runtime := "edgelet-wasmtime"
 	ms := models.NewMicroservice("u1", "img")
 	ms.ApplicationName = "edgelet"
 	ms.Runtime = &runtime
@@ -42,11 +42,11 @@ handler: edgelet
 	if err != nil {
 		t.Fatalf("runtime handler resolution failed after apply: %v", err)
 	}
-	if handler != "edgelet" {
-		t.Fatalf("expected edgelet handler, got %q", handler)
+	if handler != "edgelet-wasmtime" {
+		t.Fatalf("expected edgelet-wasmtime handler, got %q", handler)
 	}
 
-	if err := f.DeleteRuntimeClass("edgelet"); err != nil {
+	if err := f.DeleteRuntimeClass("edgelet-wasmtime"); err != nil {
 		t.Fatalf("runtimeclass delete failed: %v", err)
 	}
 	if _, err := cri.GetRuntimeHandler(ms); err == nil {

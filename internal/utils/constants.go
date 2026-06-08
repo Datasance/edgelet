@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 import (
 	"os"
@@ -58,8 +58,6 @@ func ParseConfigSwitcherState(s string) (ConfigSwitcherState, error) {
 // FullValue returns the full value string for the state
 func (s ConfigSwitcherState) FullValue() string {
 	switch s {
-	case ConfigSwitcherStateDefault:
-		return "default"
 	case ConfigSwitcherStateDevelopment:
 		return "development"
 	case ConfigSwitcherStateProduction:

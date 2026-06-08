@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -125,7 +126,7 @@ const (
 )
 
 // Request performs an HTTP request to the controller with retry logic
-func (c *APIClient) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
+func (c *APIClient) Request(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body any) (map[string]any, error) {
 	var lastErr error
 	backoff := initialBackoff
 
@@ -160,7 +161,7 @@ func (c *APIClient) Request(ctx context.Context, command string, requestType Req
 }
 
 // doRequest performs a single HTTP request to the controller
-func (c *APIClient) doRequest(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body interface{}) (map[string]interface{}, error) {
+func (c *APIClient) doRequest(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body any) (map[string]any, error) {
 	url := c.baseURL + "/agent/" + command
 
 	// Use configurable timeout (edge-friendly defaults: 30s)
@@ -213,7 +214,6 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 
 		token, err := c.jwtManager.GenerateJWT()
 		if err != nil {
-
 			// If JWT generation fails and we're not provisioned, that's expected
 			// Only fail if we should have a private key (i.e., we're provisioned)
 			if cfg.IOFogUUID != "" && cfg.PrivateKey != "" {
@@ -231,29 +231,31 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Handle status codes
 	switch resp.StatusCode {
 	case http.StatusOK:
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 		return result, nil
 	case http.StatusNoContent: // 204 - No Content (success with empty body)
-		return make(map[string]interface{}), nil
+		return make(map[string]any), nil
 	case http.StatusUnauthorized:
 		// Token invalid - trigger deprovision
-		return nil, fmt.Errorf("unauthorized: invalid JWT token")
+		return nil, errors.New("unauthorized: invalid JWT token")
 	case http.StatusNotFound:
-		return nil, fmt.Errorf("not found: controller endpoint not found")
+		return nil, errors.New("not found: controller endpoint not found")
 	case http.StatusBadRequest:
-		return nil, fmt.Errorf("bad request: invalid request")
+		return nil, errors.New("bad request: invalid request")
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("forbidden: access forbidden")
+		return nil, errors.New("forbidden: access forbidden")
 	case http.StatusInternalServerError:
-		return nil, fmt.Errorf("internal server error")
+		return nil, errors.New("internal server error")
 	default:
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			return nil, fmt.Errorf("client error: status %d", resp.StatusCode)
@@ -317,18 +319,20 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("ping request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Check status code
 	if resp.StatusCode == http.StatusNotFound {
-		return false, fmt.Errorf("not found: controller endpoint not found")
+		return false, errors.New("not found: controller endpoint not found")
 	}
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("ping failed with status %d", resp.StatusCode)
 	}
 
 	// Parse response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return false, fmt.Errorf("failed to decode ping response: %w", err)
 	}
@@ -338,7 +342,7 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 }
 
 // GetJSON performs a GET request and unmarshals JSON response
-func (c *APIClient) GetJSON(ctx context.Context, command string, result interface{}) error {
+func (c *APIClient) GetJSON(ctx context.Context, command string, result any) error {
 	resp, err := c.Request(ctx, command, GET, nil, nil)
 	if err != nil {
 		return err
@@ -358,7 +362,7 @@ func (c *APIClient) GetJSON(ctx context.Context, command string, result interfac
 }
 
 // PostJSON performs a POST request with JSON body
-func (c *APIClient) PostJSON(ctx context.Context, command string, body interface{}, result interface{}) error {
+func (c *APIClient) PostJSON(ctx context.Context, command string, body any, result any) error {
 	resp, err := c.Request(ctx, command, POST, nil, body)
 	if err != nil {
 		return err
@@ -379,13 +383,13 @@ func (c *APIClient) PostJSON(ctx context.Context, command string, body interface
 }
 
 // PutJSON performs a PUT request with JSON body
-func (c *APIClient) PutJSON(ctx context.Context, command string, body interface{}) error {
+func (c *APIClient) PutJSON(ctx context.Context, command string, body any) error {
 	_, err := c.Request(ctx, command, PUT, nil, body)
 	return err
 }
 
 // PatchJSON performs a PATCH request with JSON body
-func (c *APIClient) PatchJSON(ctx context.Context, command string, body interface{}) error {
+func (c *APIClient) PatchJSON(ctx context.Context, command string, body any) error {
 	_, err := c.Request(ctx, command, PATCH, nil, body)
 	return err
 }

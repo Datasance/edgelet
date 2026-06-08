@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 // UpsertLocalRegistry inserts or updates one local registry row.
 func (d *DB) UpsertLocalRegistry(reg *models.Registry) error {
 	if reg == nil {
-		return fmt.Errorf("registry is nil")
+		return errors.New("registry is nil")
 	}
 	_, err := d.Conn().Exec(
 		`INSERT OR REPLACE INTO local_registries (id, url, is_public, user_name, password, user_email, updated_at)
@@ -29,7 +30,9 @@ func (d *DB) LoadLocalRegistries() ([]*models.Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query local_registries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.Registry
 	for rows.Next() {

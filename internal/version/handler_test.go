@@ -13,7 +13,7 @@ import (
 )
 
 func TestParseVersionCommand(t *testing.T) {
-	cmd, err := ParseVersionCommand(map[string]interface{}{"command": "upgrade"})
+	cmd, err := ParseVersionCommand(map[string]any{"command": "upgrade"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -21,8 +21,8 @@ func TestParseVersionCommand(t *testing.T) {
 		t.Fatalf("expected UPGRADE, got %q", cmd)
 	}
 
-	if _, err := ParseVersionCommand(map[string]interface{}{"command": "invalid"}); err == nil {
-		t.Fatalf("expected error for unknown command")
+	if _, err := ParseVersionCommand(map[string]any{"command": "invalid"}); err == nil {
+		t.Fatal("expected error for unknown command")
 	}
 }
 
@@ -46,22 +46,22 @@ func TestIsReadyToUpgrade_RequiresInstallScriptAndHealthyDaemon(t *testing.T) {
 	h.isContainer = func() bool { return false }
 	h.isDaemonHealthy = func() bool { return false }
 
-	if h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "2.0.0"}) {
-		t.Fatalf("expected not ready when daemon unhealthy")
+	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
+		t.Fatal("expected not ready when daemon unhealthy")
 	}
 
 	h.isDaemonHealthy = func() bool { return true }
-	if !h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "2.0.0"}) {
-		t.Fatalf("expected ready when installed != target and daemon healthy")
+	if !h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
+		t.Fatal("expected ready when installed != target and daemon healthy")
 	}
 
-	if h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "1.0.0"}) {
-		t.Fatalf("expected not ready when versions match")
+	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "1.0.0"}) {
+		t.Fatal("expected not ready when versions match")
 	}
 
 	_ = os.Remove(script)
-	if h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "2.0.0"}) {
-		t.Fatalf("expected not ready when install.sh missing")
+	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
+		t.Fatal("expected not ready when install.sh missing")
 	}
 }
 
@@ -80,8 +80,8 @@ func TestIsReadyToUpgrade_BlocksDuringOTA(t *testing.T) {
 	h.isDaemonHealthy = func() bool { return true }
 	h.markOTAInProgress()
 
-	if h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "2.0.0"}) {
-		t.Fatalf("expected not ready during OTA")
+	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
+		t.Fatal("expected not ready during OTA")
 	}
 }
 
@@ -105,13 +105,13 @@ func TestIsReadyToRollback_RequiresCacheOrReachableURL(t *testing.T) {
 	h.isContainer = func() bool { return false }
 
 	if h.IsReadyToRollback() {
-		t.Fatalf("expected not ready without cache or reachable url")
+		t.Fatal("expected not ready without cache or reachable url")
 	}
 
 	cached := filepath.Join(cacheDir, "edgelet-1.0.0-linux-amd64")
 	writeFile(t, cached, "binary")
 	if !h.IsReadyToRollback() {
-		t.Fatalf("expected ready when cached binary exists")
+		t.Fatal("expected ready when cached binary exists")
 	}
 
 	_ = os.Remove(cached)
@@ -134,7 +134,7 @@ func TestIsReadyToRollback_RequiresCacheOrReachableURL(t *testing.T) {
 	h.isContainer = func() bool { return false }
 
 	if !h.IsReadyToRollback() {
-		t.Fatalf("expected ready when previous_download_url is reachable")
+		t.Fatal("expected ready when previous_download_url is reachable")
 	}
 }
 
@@ -144,11 +144,11 @@ func TestIsReadyToUpgrade_ContainerComparesImageTag(t *testing.T) {
 	))
 	h.isContainer = func() bool { return true }
 
-	if !h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "2.0.0"}) {
-		t.Fatalf("expected container ready when running != target")
+	if !h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
+		t.Fatal("expected container ready when running != target")
 	}
-	if h.IsReadyToUpgradeWithAction(map[string]interface{}{"version": "1.2.3"}) {
-		t.Fatalf("expected container not ready when versions match")
+	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "1.2.3"}) {
+		t.Fatal("expected container not ready when versions match")
 	}
 }
 
@@ -174,7 +174,7 @@ func TestExecuteChangeVersionScript_LaunchesDetachedInstallSh(t *testing.T) {
 	writeKV(t, filepath.Join(dir, "receipt"), map[string]string{"installed_version": "1.0.0"})
 	err := h.executeChangeVersionScript(
 		VersionCommandUpgrade,
-		map[string]interface{}{"version": "v2.0.0", "provisionKey": "audit-key"},
+		map[string]any{"version": "v2.0.0", "provisionKey": "audit-key"},
 		"audit-key",
 	)
 	if err != nil {
@@ -200,17 +200,17 @@ func TestChangeVersion_ContainerSkipsInstallScript(t *testing.T) {
 		return nil
 	}
 
-	if err := h.ChangeVersion(map[string]interface{}{"command": "UPGRADE", "version": "2.0.0"}); err != nil {
+	if err := h.ChangeVersion(map[string]any{"command": "UPGRADE", "version": "2.0.0"}); err != nil {
 		t.Fatalf("ChangeVersion failed: %v", err)
 	}
 	if launched {
-		t.Fatalf("expected container mode to skip install.sh")
+		t.Fatal("expected container mode to skip install.sh")
 	}
 }
 
 func TestNormalizeVersion(t *testing.T) {
 	if normalizeVersion("v1.2.3") != "1.2.3" {
-		t.Fatalf("unexpected normalize result")
+		t.Fatal("unexpected normalize result")
 	}
 }
 
@@ -231,10 +231,10 @@ func writeKV(t *testing.T, path string, kv map[string]string) {
 	t.Helper()
 	var b strings.Builder
 	for k, v := range kv {
-		b.WriteString(k)
-		b.WriteString("=")
-		b.WriteString(v)
-		b.WriteString("\n")
+		_, _ = b.WriteString(k)
+		_, _ = b.WriteString("=")
+		_, _ = b.WriteString(v)
+		_, _ = b.WriteString("\n")
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatalf("writeKV(%s): %v", path, err)

@@ -122,7 +122,7 @@ type imageLoadOperation struct {
 	OperationID string
 	Status      string
 	Path        string
-	Loaded      []map[string]interface{}
+	Loaded      []map[string]any
 	Count       int
 	Engine      string
 	Error       string
@@ -156,7 +156,7 @@ type runtimeClassApplyOperation struct {
 	RuntimeClass *models.LocalRuntimeClass
 	ErrorCode    string
 	ErrorMessage string
-	ErrorDetails map[string]interface{}
+	ErrorDetails map[string]any
 }
 
 type runtimeClassDeleteOperation struct {
@@ -170,7 +170,7 @@ type runtimeClassDeleteOperation struct {
 	RuntimeClass *models.LocalRuntimeClass
 	ErrorCode    string
 	ErrorMessage string
-	ErrorDetails map[string]interface{}
+	ErrorDetails map[string]any
 }
 
 var runtimeClassApplySyncWaitTimeout = 8 * time.Second
@@ -245,7 +245,7 @@ func (h *EdgeletAPIHandler) HandleSystemProvision(w http.ResponseWriter, r *http
 			return
 		}
 		cfg := config.GetInstance()
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":    "ok",
 			"agentUuid": strings.TrimSpace(cfg.IOFogUUID),
 		})
@@ -259,7 +259,7 @@ func (h *EdgeletAPIHandler) HandleSystemProvision(w http.ResponseWriter, r *http
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+		writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}
@@ -274,7 +274,7 @@ func (h *EdgeletAPIHandler) HandleSystemReload(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (h *EdgeletAPIHandler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +354,7 @@ func (h *EdgeletAPIHandler) HandleSystemLogs(w http.ResponseWriter, r *http.Requ
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, readerHandler.err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"iofogUuid": iofogUUID,
 		"entries":   readerHandler.entries,
 	})
@@ -374,7 +374,7 @@ func (h *EdgeletAPIHandler) HandleImages(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"items": items,
 		"count": len(items),
 	})
@@ -456,7 +456,7 @@ func (h *EdgeletAPIHandler) HandleImagePull(w http.ResponseWriter, r *http.Reque
 			logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull succeeded operationId=%s image=%s resolvedImage=%s", operationID, strings.TrimSpace(req.Image), current.ResolvedImage))
 		}(op.OperationID)
 
-		writeSuccess(w, http.StatusAccepted, map[string]interface{}{
+		writeSuccess(w, http.StatusAccepted, map[string]any{
 			"operationId": op.OperationID,
 			"status":      op.Status,
 			"progress":    op.Progress,
@@ -479,7 +479,7 @@ func (h *EdgeletAPIHandler) HandleImagePull(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull succeeded image=%s resolvedImage=%s", strings.TrimSpace(req.Image), strings.TrimSpace(resolvedImage)))
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"status":        "ok",
 		"image":         strings.TrimSpace(req.Image),
 		"resolvedImage": strings.TrimSpace(resolvedImage),
@@ -510,7 +510,7 @@ func (h *EdgeletAPIHandler) HandleImagePullStatus(w http.ResponseWriter, r *http
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "pull operation not found", nil)
 		return
 	}
-	response := map[string]interface{}{
+	response := map[string]any{
 		"operationId":   op.OperationID,
 		"status":        op.Status,
 		"progress":      op.Progress,
@@ -580,9 +580,9 @@ func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Reque
 			logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("image load failed operationId=%s path=%s err=%v", operationID, loadPath, err))
 			return
 		}
-		items := make([]map[string]interface{}, 0, len(loaded))
+		items := make([]map[string]any, 0, len(loaded))
 		for _, item := range loaded {
-			items = append(items, map[string]interface{}{
+			items = append(items, map[string]any{
 				"name": item.Name,
 				"id":   item.ID,
 			})
@@ -593,7 +593,7 @@ func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Reque
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("image load succeeded operationId=%s path=%s count=%d", operationID, loadPath, current.Count))
 	}(op.OperationID, path)
 
-	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
+	writeSuccess(w, http.StatusAccepted, map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"path":        op.Path,
@@ -619,7 +619,7 @@ func (h *EdgeletAPIHandler) HandleImageLoadStatus(w http.ResponseWriter, r *http
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "image load operation not found", nil)
 		return
 	}
-	response := map[string]interface{}{
+	response := map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"path":        op.Path,
@@ -692,7 +692,7 @@ func (h *EdgeletAPIHandler) HandleImageRemove(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"selector": strings.TrimSpace(req.Selector),
 		"removed":  removed,
@@ -714,7 +714,7 @@ func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Reque
 				lon = strings.TrimSpace(parts[1])
 			}
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":    "okay",
 			"timestamp": time.Now().UnixMilli(),
 			"lat":       lat,
@@ -722,8 +722,8 @@ func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Reque
 		})
 	case http.MethodPost:
 		var req struct {
-			Lat interface{} `json:"lat"`
-			Lon interface{} `json:"lon"`
+			Lat any `json:"lat"`
+			Lon any `json:"lon"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid JSON body", nil)
@@ -747,12 +747,12 @@ func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Reque
 		config.SuppressReloadForInProcessMutation()
 		defer config.RestoreReloadAfterInProcessMutation()
 
-		errorsMap := cfg.SetConfig(map[string]interface{}{
+		errorsMap := cfg.SetConfig(map[string]any{
 			"gps":  "manual",
 			"gpsc": normalizedCoordinates,
 		})
 		if len(errorsMap) > 0 {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid GPS configuration update", map[string]interface{}{"errorMap": errorsMap})
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid GPS configuration update", map[string]any{"errorMap": errorsMap})
 			return
 		}
 		if err := cfg.TriggerReloadCallback(); err != nil {
@@ -763,7 +763,7 @@ func (h *EdgeletAPIHandler) HandleSystemGPS(w http.ResponseWriter, r *http.Reque
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "okay"})
+		writeSuccess(w, http.StatusOK, map[string]any{"status": "okay"})
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}
@@ -773,7 +773,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 	switch r.Method {
 	case http.MethodGet:
 		cfg := config.GetInstance()
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"controllerUrl":          cfg.ControllerURL,
 			"controllerCert":         cfg.ControllerCert,
 			"containerEngine":        cfg.ContainerEngine,
@@ -806,7 +806,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 		})
 	case http.MethodPatch:
 		var req struct {
-			Set map[string]interface{} `json:"set"`
+			Set map[string]any `json:"set"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid JSON body", nil)
@@ -817,7 +817,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		configMap := make(map[string]interface{})
+		configMap := make(map[string]any)
 		for key, value := range req.Set {
 			if short, ok := configKeyToShortCode(key); ok {
 				configMap[short] = fmt.Sprintf("%v", value)
@@ -829,7 +829,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 		}
 		cfg := config.GetInstance()
 		if err := validateNetworkInterfaceUpdate(cfg, configMap); err != nil {
-			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), map[string]interface{}{
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), map[string]any{
 				"field": "networkInterface",
 			})
 			return
@@ -845,7 +845,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"status":   "ok",
 			"errorMap": errorsMap,
 		}
@@ -859,7 +859,7 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func validateNetworkInterfaceUpdate(cfg *config.Config, configMap map[string]interface{}) error {
+func validateNetworkInterfaceUpdate(cfg *config.Config, configMap map[string]any) error {
 	rawNetworkInterface, hasNetworkInterface := configMap["n"]
 	if !hasNetworkInterface {
 		return nil
@@ -910,7 +910,7 @@ func (h *EdgeletAPIHandler) HandleSystemControllerCert(w http.ResponseWriter, r 
 	}
 	certDir := filepath.Dir(certPath)
 	if certDir != "" && certDir != "." {
-		if err := os.MkdirAll(certDir, 0o755); err != nil {
+		if err := os.MkdirAll(certDir, 0o755); err != nil { // #nosec G301 -- cert dir must be traversable for daemon user
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, fmt.Sprintf("failed to prepare certificate directory: %v", err), nil)
 			return
 		}
@@ -923,16 +923,16 @@ func (h *EdgeletAPIHandler) HandleSystemControllerCert(w http.ResponseWriter, r 
 	config.SuppressReloadForInProcessMutation()
 	defer config.RestoreReloadAfterInProcessMutation()
 
-	errorsMap := cfg.SetConfig(map[string]interface{}{"sec": "on"})
+	errorsMap := cfg.SetConfig(map[string]any{"sec": "on"})
 	if len(errorsMap) > 0 {
-		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "failed to enable secure mode", map[string]interface{}{"errorMap": errorsMap})
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "failed to enable secure mode", map[string]any{"errorMap": errorsMap})
 		return
 	}
 	if err := cfg.TriggerReloadCallback(); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"status":               "ok",
 		"updatedKey":           "controllerCert",
 		"certificatePath":      certPath,
@@ -977,7 +977,7 @@ func (h *EdgeletAPIHandler) HandleSystemConfigSwitch(w http.ResponseWriter, r *h
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"oldProfile": oldProfile,
 		"profile":    profile.FullValue(),
@@ -1012,12 +1012,12 @@ func (h *EdgeletAPIHandler) HandleMicroserviceConfigSelf(w http.ResponseWriter, 
 		return
 	}
 
-	var payload interface{}
+	var payload any
 	if err := json.Unmarshal([]byte(configString), &payload); err != nil {
 		// Keep v2-aligned arbitrary payload behavior even when payload is not strict JSON.
 		payload = configString
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"microserviceUuid": microserviceUUID,
 		"config":           payload,
 	})
@@ -1038,7 +1038,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			return
 		}
 		items := h.facade.ListRuntimeMicroservices()
-		filtered := make([]map[string]interface{}, 0, len(items))
+		filtered := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			itemType := strings.ToLower(fmt.Sprintf("%v", item["type"]))
 			itemSource := strings.ToLower(fmt.Sprintf("%v", item["source"]))
@@ -1046,7 +1046,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 				filtered = append(filtered, item)
 			}
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"items": filtered,
 		})
 		return
@@ -1074,7 +1074,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 				return
 			}
 			if summary := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("summary")), "true"); summary {
-				writeSuccess(w, http.StatusOK, map[string]interface{}{
+				writeSuccess(w, http.StatusOK, map[string]any{
 					"uuid":         item["uuid"],
 					"name":         item["name"],
 					"application":  item["application"],
@@ -1094,7 +1094,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 				writeMicroserviceLifecycleError(w, err)
 				return
 			}
-			writeSuccess(w, http.StatusOK, map[string]interface{}{
+			writeSuccess(w, http.StatusOK, map[string]any{
 				"status":           "ok",
 				"microserviceUuid": uuid,
 				"warning":          "if microservice is controller-managed, reconcile may recreate it",
@@ -1117,7 +1117,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			writeMicroserviceLifecycleError(w, err)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":           "ok",
 			"microserviceUuid": uuid,
 			"warning":          "if microservice is controller-managed, reconcile may recreate or restart it",
@@ -1132,7 +1132,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			writeMicroserviceLifecycleError(w, err)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":           "ok",
 			"microserviceUuid": uuid,
 			"warning":          "if microservice is controller-managed, reconcile may recreate or restart it",
@@ -1147,7 +1147,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			writeMicroserviceLifecycleError(w, err)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":           "ok",
 			"microserviceUuid": uuid,
 			"warning":          "if microservice is controller-managed, reconcile may recreate or restart it",
@@ -1162,7 +1162,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			writeMicroserviceLifecycleError(w, err)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"status":           "ok",
 			"microserviceUuid": uuid,
 			"warning":          "if microservice is controller-managed, reconcile may recreate or restart it",
@@ -1190,7 +1190,7 @@ func (h *EdgeletAPIHandler) HandleMicroservices(w http.ResponseWriter, r *http.R
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{
+		writeSuccess(w, http.StatusOK, map[string]any{
 			"microserviceUuid": uuid,
 			"entries":          entries,
 		})
@@ -1311,7 +1311,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApply(w http.ResponseWriter
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local deploy apply succeeded operationId=%s deploymentId=%s stage=%s", operationID, current.DeploymentID, current.Stage))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
-	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
+	writeSuccess(w, http.StatusAccepted, map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"kind":        op.Kind,
@@ -1338,7 +1338,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApplyStatus(w http.Response
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "deploy apply operation not found", nil)
 		return
 	}
-	response := map[string]interface{}{
+	response := map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
@@ -1366,7 +1366,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApplyStatus(w http.Response
 		if code == "" {
 			code = ErrCodeInternal
 		}
-		response["error"] = map[string]interface{}{
+		response["error"] = map[string]any{
 			"code":    code,
 			"message": op.ErrorMessage,
 		}
@@ -1389,7 +1389,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesValidate(w http.ResponseWri
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"valid":      true,
 		"kind":       doc.Kind,
 		"name":       doc.Metadata.Name,
@@ -1409,7 +1409,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservices(w http.ResponseWriter, r *
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"items": list})
+		writeSuccess(w, http.StatusOK, map[string]any{"items": list})
 		return
 	}
 
@@ -1422,7 +1422,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservices(w http.ResponseWriter, r *
 	case http.MethodGet:
 		item, err := h.facade.GetLocalDeployment(id)
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
 				return
 			}
@@ -1435,7 +1435,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservices(w http.ResponseWriter, r *
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+		writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}
@@ -1459,7 +1459,7 @@ func (h *EdgeletAPIHandler) HandleDeployRegistriesApply(w http.ResponseWriter, r
 		return
 	}
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), dryRun))
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"accepted": true,
 		"dryRun":   dryRun,
 		"registry": reg,
@@ -1481,7 +1481,7 @@ func (h *EdgeletAPIHandler) HandleDeployRegistriesValidate(w http.ResponseWriter
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"valid":      true,
 		"apiVersion": doc.APIVersion,
 		"kind":       doc.Kind,
@@ -1501,7 +1501,7 @@ func (h *EdgeletAPIHandler) HandleDeployRegistries(w http.ResponseWriter, r *htt
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"items": items})
+		writeSuccess(w, http.StatusOK, map[string]any{"items": items})
 		return
 	}
 
@@ -1516,7 +1516,7 @@ func (h *EdgeletAPIHandler) HandleDeployRegistries(w http.ResponseWriter, r *htt
 	case http.MethodGet:
 		item, err := h.facade.GetRegistry(id)
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
 				return
 			}
@@ -1529,7 +1529,7 @@ func (h *EdgeletAPIHandler) HandleDeployRegistries(w http.ResponseWriter, r *htt
 			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok", "id": id})
+		writeSuccess(w, http.StatusOK, map[string]any{"status": "ok", "id": id})
 	default:
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 	}
@@ -1634,16 +1634,16 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 			}
 			details := current.ErrorDetails
 			if details == nil {
-				details = map[string]interface{}{}
+				details = map[string]any{}
 			}
 			if _, hasStage := details["stage"]; !hasStage {
 				details["stage"] = current.Stage
 			}
 			details["operationId"] = current.OperationID
-			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, map[string]interface{}{
+			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, map[string]any{
 				"operationId": current.OperationID,
 				"stage":       current.Stage,
-				"error": map[string]interface{}{
+				"error": map[string]any{
 					"code":    current.ErrorCode,
 					"message": current.ErrorMessage,
 					"details": details,
@@ -1696,7 +1696,7 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesValidate(w http.ResponseWr
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"valid":       true,
 		"apiVersion":  doc.APIVersion,
 		"kind":        doc.Kind,
@@ -1721,7 +1721,7 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClasses(w http.ResponseWriter, r 
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 			return
 		}
-		writeSuccess(w, http.StatusOK, map[string]interface{}{"items": items})
+		writeSuccess(w, http.StatusOK, map[string]any{"items": items})
 		return
 	}
 
@@ -1739,7 +1739,7 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClasses(w http.ResponseWriter, r 
 				writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 				return
 			}
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "not found", nil)
 				return
 			}
@@ -1852,14 +1852,15 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 		}
 		if strings.TrimSpace(current.ErrorMessage) != "" {
 			statusCode := http.StatusInternalServerError
-			if current.ErrorCode == ErrCodeInvalidArgument {
+			switch current.ErrorCode {
+			case ErrCodeInvalidArgument:
 				statusCode = http.StatusBadRequest
-			} else if current.ErrorCode == ErrCodeNotFound {
+			case ErrCodeNotFound:
 				statusCode = http.StatusNotFound
 			}
 			details := current.ErrorDetails
 			if details == nil {
-				details = map[string]interface{}{}
+				details = map[string]any{}
 			}
 			if _, hasStage := details["stage"]; !hasStage {
 				details["stage"] = current.Stage
@@ -1893,9 +1894,9 @@ func runtimeClassDeleteStatusAndCode(err error) (int, string) {
 	}
 }
 
-func runtimeClassErrorDetails(err error) map[string]interface{} {
+func runtimeClassErrorDetails(err error) map[string]any {
 	type detailsProvider interface {
-		Details() map[string]interface{}
+		Details() map[string]any
 	}
 	var provider detailsProvider
 	if errors.As(err, &provider) {
@@ -1925,21 +1926,21 @@ func runtimeClassErrorStage(err error, fallback string) string {
 }
 
 func parseManifestMultipartRequest(r *http.Request) (manifest, sourceName string, dryRun bool, err error) {
-	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		return "", "", false, fmt.Errorf("invalid multipart form body")
+	if err := r.ParseMultipartForm(16 << 20); err != nil { // #nosec G120 -- multipart capped at 16 MiB
+		return "", "", false, errors.New("invalid multipart form body")
 	}
 	file, _, ferr := r.FormFile("manifest")
 	if ferr != nil {
-		return "", "", false, fmt.Errorf("manifest file part is required")
+		return "", "", false, errors.New("manifest file part is required")
 	}
 	defer file.Close()
 	raw, rerr := io.ReadAll(file)
 	if rerr != nil {
-		return "", "", false, fmt.Errorf("failed to read manifest")
+		return "", "", false, errors.New("failed to read manifest")
 	}
 	manifest = strings.TrimSpace(string(raw))
 	if manifest == "" {
-		return "", "", false, fmt.Errorf("manifest file is empty")
+		return "", "", false, errors.New("manifest file is empty")
 	}
 	sourceName = strings.TrimSpace(r.FormValue("sourceName"))
 	dryRaw := strings.TrimSpace(strings.ToLower(r.FormValue("dryRun")))
@@ -1949,7 +1950,7 @@ func parseManifestMultipartRequest(r *http.Request) (manifest, sourceName string
 	case "true", "1", "yes":
 		dryRun = true
 	default:
-		return "", "", false, fmt.Errorf("dryRun must be a boolean")
+		return "", "", false, errors.New("dryRun must be a boolean")
 	}
 	return manifest, sourceName, dryRun, nil
 }
@@ -1965,8 +1966,8 @@ func parseBooleanFormValue(raw string, fieldName string) (bool, error) {
 	}
 }
 
-func runtimeClassApplyOperationResponse(op *runtimeClassApplyOperation) map[string]interface{} {
-	response := map[string]interface{}{
+func runtimeClassApplyOperationResponse(op *runtimeClassApplyOperation) map[string]any {
+	response := map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
@@ -1988,7 +1989,7 @@ func runtimeClassApplyOperationResponse(op *runtimeClassApplyOperation) map[stri
 		if code == "" {
 			code = ErrCodeInternal
 		}
-		errorPayload := map[string]interface{}{
+		errorPayload := map[string]any{
 			"code":    code,
 			"message": op.ErrorMessage,
 		}
@@ -2000,8 +2001,8 @@ func runtimeClassApplyOperationResponse(op *runtimeClassApplyOperation) map[stri
 	return response
 }
 
-func runtimeClassDeleteOperationResponse(op *runtimeClassDeleteOperation) map[string]interface{} {
-	response := map[string]interface{}{
+func runtimeClassDeleteOperationResponse(op *runtimeClassDeleteOperation) map[string]any {
+	response := map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
@@ -2022,7 +2023,7 @@ func runtimeClassDeleteOperationResponse(op *runtimeClassDeleteOperation) map[st
 		if code == "" {
 			code = ErrCodeInternal
 		}
-		errorPayload := map[string]interface{}{
+		errorPayload := map[string]any{
 			"code":    code,
 			"message": op.ErrorMessage,
 		}
@@ -2044,7 +2045,7 @@ func (h *EdgeletAPIHandler) HandleAuthTokens(w http.ResponseWriter, r *http.Requ
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{"items": items})
+	writeSuccess(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *EdgeletAPIHandler) HandleAuthTokensRevoke(w http.ResponseWriter, r *http.Request) {
@@ -2068,7 +2069,7 @@ func (h *EdgeletAPIHandler) HandleAuthTokensRevoke(w http.ResponseWriter, r *htt
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *http.Request, selector string) {
@@ -2110,7 +2111,7 @@ func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *ht
 		createdAt:        time.Now().UTC(),
 	}
 	h.execMu.Unlock()
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"sessionId": execID,
 		"wsUrl":     fmt.Sprintf("/v1/ms/%s/exec/sessions/%s:attach", selector, execID),
 	})
@@ -2134,11 +2135,11 @@ func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, se
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"sessionId":        sessionID,
 		"microserviceUuid": uuid,
 		"running":          running,
-		"exitCode": func() interface{} {
+		"exitCode": func() any {
 			code, codeErr := processmanager.GetInstance().GetExecSessionExitCode(sessionID)
 			if codeErr != nil {
 				return nil
@@ -2161,7 +2162,7 @@ func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selecto
 	h.execMu.Lock()
 	delete(h.execSessions, sessionID)
 	h.execMu.Unlock()
-	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok", "sessionId": sessionID})
+	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok", "sessionId": sessionID})
 }
 
 func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Request, selector, sessionID string) {
@@ -2192,7 +2193,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 			n, readErr := session.callback.stdoutR.Read(buf)
 			if n > 0 {
 				writeMu.Lock()
-				writeErr := conn.WriteJSON(map[string]interface{}{"stream": "stdout", "line": string(buf[:n])})
+				writeErr := conn.WriteJSON(map[string]any{"stream": "stdout", "line": string(buf[:n])})
 				writeMu.Unlock()
 				if writeErr != nil {
 					return
@@ -2210,7 +2211,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 			n, readErr := session.callback.stderrR.Read(buf)
 			if n > 0 {
 				writeMu.Lock()
-				writeErr := conn.WriteJSON(map[string]interface{}{"stream": "stderr", "line": string(buf[:n])})
+				writeErr := conn.WriteJSON(map[string]any{"stream": "stderr", "line": string(buf[:n])})
 				writeMu.Unlock()
 				if writeErr != nil {
 					return
@@ -2251,7 +2252,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 	delete(h.execSessions, sessionID)
 	h.execMu.Unlock()
 	writeMu.Lock()
-	_ = conn.WriteJSON(map[string]interface{}{
+	_ = conn.WriteJSON(map[string]any{
 		"stream":   "control",
 		"line":     "session closed",
 		"exitCode": exitCode,
@@ -2270,7 +2271,7 @@ func (h *EdgeletAPIHandler) handleLogsStreamWS(w http.ResponseWriter, r *http.Re
 
 	uuid, err := h.resolveMicroservice(selector)
 	if err != nil {
-		_ = conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		_ = conn.WriteJSON(map[string]any{"error": err.Error()})
 		return
 	}
 
@@ -2278,7 +2279,7 @@ func (h *EdgeletAPIHandler) handleLogsStreamWS(w http.ResponseWriter, r *http.Re
 	if raw := strings.TrimSpace(r.URL.Query().Get("tail")); raw != "" {
 		n, parseErr := strconv.Atoi(raw)
 		if parseErr != nil || n <= 0 {
-			_ = conn.WriteJSON(map[string]interface{}{"error": "invalid tail parameter"})
+			_ = conn.WriteJSON(map[string]any{"error": "invalid tail parameter"})
 			return
 		}
 		tailLines = n
@@ -2294,7 +2295,7 @@ func (h *EdgeletAPIHandler) handleLogsStreamWS(w http.ResponseWriter, r *http.Re
 		Until:  until,
 	}
 	if err := h.streamMicroservicLog(uuid, cfg, tailHandler); err != nil {
-		_ = conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		_ = conn.WriteJSON(map[string]any{"error": err.Error()})
 		return
 	}
 
@@ -2322,7 +2323,7 @@ func (h *EdgeletAPIHandler) handleSystemLogsStreamWS(w http.ResponseWriter, r *h
 	if raw := strings.TrimSpace(r.URL.Query().Get("tailLines")); raw != "" {
 		n, parseErr := strconv.Atoi(raw)
 		if parseErr != nil || n <= 0 {
-			_ = conn.WriteJSON(map[string]interface{}{"error": "invalid tailLines parameter"})
+			_ = conn.WriteJSON(map[string]any{"error": "invalid tailLines parameter"})
 			return
 		}
 		tailLines = n
@@ -2381,7 +2382,7 @@ func (h *wsLogTailHandler) OnLogLine(_, _ string, line []byte, st engine.StreamT
 	if st == engine.Stderr {
 		stream = "stderr"
 	}
-	event := map[string]interface{}{
+	event := map[string]any{
 		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
 		"stream": stream,
 		"line":   string(line),
@@ -2401,7 +2402,7 @@ func (h *wsLogTailHandler) OnComplete(_ string) {
 func (h *wsLogTailHandler) OnError(_ string, err error) {
 	if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 		h.writeMu.Lock()
-		_ = h.conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		_ = h.conn.WriteJSON(map[string]any{"error": err.Error()})
 		h.writeMu.Unlock()
 	}
 	h.once.Do(func() { close(h.done) })
@@ -2409,7 +2410,7 @@ func (h *wsLogTailHandler) OnError(_ string, err error) {
 
 type systemLogsCollectHandler struct {
 	mu      sync.Mutex
-	entries []map[string]interface{}
+	entries []map[string]any
 	err     error
 	done    chan struct{}
 	once    sync.Once
@@ -2417,14 +2418,14 @@ type systemLogsCollectHandler struct {
 
 func newSystemLogsCollectHandler() *systemLogsCollectHandler {
 	return &systemLogsCollectHandler{
-		entries: make([]map[string]interface{}, 0),
+		entries: make([]map[string]any, 0),
 		done:    make(chan struct{}),
 	}
 }
 
 func (h *systemLogsCollectHandler) OnLogLine(_, _ string, line string) {
 	h.mu.Lock()
-	h.entries = append(h.entries, map[string]interface{}{
+	h.entries = append(h.entries, map[string]any{
 		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
 		"stream": "stdout",
 		"line":   line,
@@ -2458,7 +2459,7 @@ func newWSSystemLogTailHandler(conn *websocket.Conn) *wsSystemLogTailHandler {
 }
 
 func (h *wsSystemLogTailHandler) OnLogLine(_, _ string, line string) {
-	event := map[string]interface{}{
+	event := map[string]any{
 		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
 		"stream": "stdout",
 		"line":   line,
@@ -2478,7 +2479,7 @@ func (h *wsSystemLogTailHandler) OnComplete(_ string) {
 func (h *wsSystemLogTailHandler) OnError(_ string, err error) {
 	if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 		h.writeMu.Lock()
-		_ = h.conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+		_ = h.conn.WriteJSON(map[string]any{"error": err.Error()})
 		h.writeMu.Unlock()
 	}
 	h.once.Do(func() { close(h.done) })
@@ -2553,12 +2554,12 @@ func configKeyToShortCode(key string) (string, bool) {
 	}
 }
 
-func gpsValueToString(value interface{}) (string, error) {
+func gpsValueToString(value any) (string, error) {
 	switch v := value.(type) {
 	case string:
 		s := strings.TrimSpace(v)
 		if s == "" {
-			return "", fmt.Errorf("empty")
+			return "", errors.New("empty")
 		}
 		return s, nil
 	case float64:
@@ -2566,38 +2567,41 @@ func gpsValueToString(value interface{}) (string, error) {
 	case int:
 		return strconv.Itoa(v), nil
 	default:
-		return "", fmt.Errorf("unsupported")
+		return "", errors.New("unsupported")
 	}
 }
 
 func normalizeGPSLatLon(lat, lon string) (string, error) {
 	latValue, err := strconv.ParseFloat(strings.TrimSpace(lat), 64)
 	if err != nil {
-		return "", fmt.Errorf("lat must be a valid number")
+		return "", errors.New("lat must be a valid number")
 	}
 	lonValue, err := strconv.ParseFloat(strings.TrimSpace(lon), 64)
 	if err != nil {
-		return "", fmt.Errorf("lon must be a valid number")
+		return "", errors.New("lon must be a valid number")
 	}
 	if latValue < -90 || latValue > 90 {
-		return "", fmt.Errorf("lat must be between -90 and 90")
+		return "", errors.New("lat must be between -90 and 90")
 	}
 	if lonValue < -180 || lonValue > 180 {
-		return "", fmt.Errorf("lon must be between -180 and 180")
+		return "", errors.New("lon must be between -180 and 180")
 	}
 	return fmt.Sprintf("%.5f,%.5f", latValue, lonValue), nil
 }
 
-func claimMicroserviceUUID(claims map[string]interface{}) (string, bool) {
-	iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{})
+func claimMicroserviceUUID(claims map[string]any) (string, bool) {
+	iofog, ok := claims["edgelet.iofog.org"].(map[string]any)
 	if !ok {
 		return "", false
 	}
-	ms, ok := iofog["microservice"].(map[string]interface{})
+	ms, ok := iofog["microservice"].(map[string]any)
 	if !ok {
 		return "", false
 	}
-	uuid, _ := ms["uuid"].(string)
+	uuid, ok := ms["uuid"].(string)
+	if !ok {
+		uuid = ""
+	}
 	uuid = strings.TrimSpace(uuid)
 	return uuid, uuid != ""
 }

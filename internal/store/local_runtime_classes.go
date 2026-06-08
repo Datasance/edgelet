@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,14 +12,14 @@ import (
 // UpsertLocalRuntimeClass inserts or updates one RuntimeClass row.
 func (d *DB) UpsertLocalRuntimeClass(rc *models.LocalRuntimeClass) error {
 	if rc == nil {
-		return fmt.Errorf("runtime class is nil")
+		return errors.New("runtime class is nil")
 	}
 	rc.Normalize()
 	if rc.Name == "" {
-		return fmt.Errorf("runtime class name is required")
+		return errors.New("runtime class name is required")
 	}
 	if rc.Handler == "" {
-		return fmt.Errorf("runtime class handler is required")
+		return errors.New("runtime class handler is required")
 	}
 
 	_, err := d.Conn().Exec(
@@ -44,7 +45,9 @@ func (d *DB) ListLocalRuntimeClasses() ([]*models.LocalRuntimeClass, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query local_runtime_classes: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	items := make([]*models.LocalRuntimeClass, 0)
 	for rows.Next() {

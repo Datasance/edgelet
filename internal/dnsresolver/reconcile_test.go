@@ -58,14 +58,14 @@ func TestReconcileAgainstRecordsRepairsLossDriftAndStaleIndex(t *testing.T) {
 		t.Fatalf("expected exactly 2 workloads after reconcile, got %d", len(r.workloads))
 	}
 	if _, ok := r.workloads["stale-1"]; ok {
-		t.Fatalf("stale workload should be removed")
+		t.Fatal("stale workload should be removed")
 	}
 	ms1 := r.workloads["ms-1"]
 	if ms1 == nil || ms1.Name != "new" || ms1.IP != "10.0.0.3" || !ms1.Active || ms1.StartedAt != 123 {
 		t.Fatalf("ms-1 drift not corrected: %+v", ms1)
 	}
 	if _, ok := r.index[ScopeManaged]["ghost.alias"]; ok {
-		t.Fatalf("stale index alias should be removed during reconcile rebuild")
+		t.Fatal("stale index alias should be removed during reconcile rebuild")
 	}
 
 	for scope, byName := range r.index {
@@ -168,7 +168,7 @@ func TestRunReconcileOnce_SkipsWhenNoRunningBridgeWorkloads(t *testing.T) {
 	r.runReconcileOnce(context.Background())
 
 	if _, ok := r.workloads["existing"]; !ok {
-		t.Fatalf("expected existing workload to remain when reconcile has no eligible scope records")
+		t.Fatal("expected existing workload to remain when reconcile has no eligible scope records")
 	}
 	s := r.Snapshot()
 	if s.ReconcileRunsTotal != 1 {
@@ -200,10 +200,10 @@ func TestRunReconcileOnce_DisablesLocalScopeWhenWatchdogEnabled(t *testing.T) {
 	r.runReconcileOnce(context.Background())
 
 	if r.isScopeEnabled(ScopeLocal) {
-		t.Fatalf("expected local scope disabled with watchdog enabled")
+		t.Fatal("expected local scope disabled with watchdog enabled")
 	}
 	if _, ok := r.workloads["local-1"]; ok {
-		t.Fatalf("expected local workload not reconciled when local scope disabled by watchdog")
+		t.Fatal("expected local workload not reconciled when local scope disabled by watchdog")
 	}
 }
 

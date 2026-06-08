@@ -8,7 +8,7 @@ import (
 )
 
 func TestGoldenSystemStatusJSON(t *testing.T) {
-	input := map[string]interface{}{
+	input := map[string]any{
 		"iofogDaemon":            "running",
 		"connectionToController": "ok",
 		"cpuUsage":               float64(12),
@@ -17,9 +17,9 @@ func TestGoldenSystemStatusJSON(t *testing.T) {
 }
 
 func TestGoldenMSListJSON(t *testing.T) {
-	input := map[string]interface{}{
-		"items": []interface{}{
-			map[string]interface{}{
+	input := map[string]any{
+		"items": []any{
+			map[string]any{
 				"uuid":        "abc-123",
 				"application": "local",
 				"name":        "demo",
@@ -33,7 +33,7 @@ func TestGoldenMSListJSON(t *testing.T) {
 	assertGoldenJSON(t, "ms_ls.json", input)
 }
 
-func assertGoldenJSON(t *testing.T, name string, input map[string]interface{}) {
+func assertGoldenJSON(t *testing.T, name string, input map[string]any) {
 	t.Helper()
 	formatter := JSONFormatter{Indent: "  "}
 	raw, err := formatter.Format(input)
@@ -59,7 +59,7 @@ func assertGoldenJSON(t *testing.T, name string, input map[string]interface{}) {
 		t.Fatalf("golden mismatch for %s\n got: %s\nwant: %s", name, string(raw), string(expected))
 	}
 
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("golden is not valid json: %v", err)
 	}

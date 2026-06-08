@@ -60,12 +60,12 @@ func (f *Facade) GetControlPlaneDeployment() (*models.ControlPlaneDeployment, er
 }
 
 // ControlPlaneStatusMap builds the GET /v1/system/controlplane response body.
-func ControlPlaneStatusMap(item *models.ControlPlaneDeployment) map[string]interface{} {
+func ControlPlaneStatusMap(item *models.ControlPlaneDeployment) map[string]any {
 	if item == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	item.NormalizeDefaults()
-	return map[string]interface{}{
+	return map[string]any{
 		"controllerUuid":     item.ControllerUUID,
 		"namespace":          item.Namespace,
 		"name":               item.Name,
@@ -134,7 +134,7 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 		mode = "patch"
 		controllerUUID = strings.TrimSpace(existing.ControllerUUID)
 		if controllerUUID == "" {
-			return nil, fmt.Errorf("existing control plane deployment is missing controller_uuid")
+			return nil, errors.New("existing control plane deployment is missing controller_uuid")
 		}
 		existing.NormalizeDefaults()
 		if existing.Namespace != doc.Metadata.Namespace || existing.Name != doc.Metadata.Name {
@@ -166,7 +166,7 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 		return result, nil
 	}
 
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item := &models.ControlPlaneDeployment{
 		ControllerUUID:     controllerUUID,
 		Namespace:          doc.Metadata.Namespace,
@@ -177,8 +177,8 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 		DesiredState:       "running",
 		RuntimeState:       "starting",
 		RestartCount:       restartCount,
-		LastTransitionAt:   now,
-		LastStartAttemptAt: now,
+		LastTransitionAt:   nowSec,
+		LastStartAttemptAt: nowSec,
 		Generation:         nextGeneration,
 		ObservedGeneration: 0,
 	}

@@ -2,8 +2,8 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"syscall"
 	"time"
@@ -44,10 +44,6 @@ var requestDaemonRestart = func(reason string, cause error) {
 
 var setContainerdUnexpectedExitHandler = func(svc *edgeletcontainerdd.Service, handler func(error)) {
 	svc.SetUnexpectedExitHandler(handler)
-}
-
-var signalSelfForSupervisor = func(sig syscall.Signal) error {
-	return syscall.Kill(os.Getpid(), sig)
 }
 
 var (
@@ -670,7 +666,7 @@ func (s *Supervisor) containerdWatchdog() {
 				if consecutiveFailures >= failureThreshold {
 					requestDaemonRestart(
 						"Embedded containerd is persistently unhealthy; requesting daemon restart via SIGTERM",
-						fmt.Errorf("containerd watchdog reached failure threshold"),
+						errors.New("containerd watchdog reached failure threshold"),
 					)
 					return
 				}

@@ -124,28 +124,34 @@ func microserviceResourceName(path string) (string, bool) {
 }
 
 func isAuthorized(claims jwt.MapClaims, p rbacPermission) bool {
-	tokenUse, _ := claims["tokenUse"].(string)
-	sub, _ := claims["sub"].(string)
+	tokenUse, ok := claims["tokenUse"].(string)
+	if !ok {
+		tokenUse = ""
+	}
+	sub, ok := claims["sub"].(string)
+	if !ok {
+		sub = ""
+	}
 	if strings.TrimSpace(tokenUse) == "edgeletapi" && (strings.HasPrefix(sub, "system:edgeletadmin:") || sub == "system:edgeletadmin:bootstrap") {
 		return true
 	}
 
-	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]interface{})
+	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]any)
 	if !ok {
 		return false
 	}
-	rbacRaw, ok := iofogRaw["rbac"].(map[string]interface{})
+	rbacRaw, ok := iofogRaw["rbac"].(map[string]any)
 	if !ok {
 		return false
 	}
-	rulesRaw, ok := rbacRaw["rulesByGroup"].(map[string]interface{})
+	rulesRaw, ok := rbacRaw["rulesByGroup"].(map[string]any)
 	if !ok {
 		return false
 	}
 	return rulesMatchAnyGroup(rulesRaw, p.APIGroups, p.Resource, p.Verb, p.ResourceName)
 }
 
-func rulesMatchAnyGroup(groups map[string]interface{}, apiGroups []string, resource, verb, resourceName string) bool {
+func rulesMatchAnyGroup(groups map[string]any, apiGroups []string, resource, verb, resourceName string) bool {
 	for _, group := range apiGroups {
 		if rulesMatch(groups, group, resource, verb, resourceName) {
 			return true
@@ -154,7 +160,7 @@ func rulesMatchAnyGroup(groups map[string]interface{}, apiGroups []string, resou
 	return false
 }
 
-func rulesMatch(groups map[string]interface{}, group, resource, verb, resourceName string) bool {
+func rulesMatch(groups map[string]any, group, resource, verb, resourceName string) bool {
 	rulesRaw, exists := groups[group]
 	if !exists {
 		rulesRaw, exists = groups["*"]
@@ -162,12 +168,12 @@ func rulesMatch(groups map[string]interface{}, group, resource, verb, resourceNa
 			return false
 		}
 	}
-	rulesSlice, ok := rulesRaw.([]interface{})
+	rulesSlice, ok := rulesRaw.([]any)
 	if !ok {
 		return false
 	}
 	for _, ruleRaw := range rulesSlice {
-		rule, ok := ruleRaw.(map[string]interface{})
+		rule, ok := ruleRaw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -187,8 +193,8 @@ func rulesMatch(groups map[string]interface{}, group, resource, verb, resourceNa
 	return false
 }
 
-func ruleVerbMatch(raw interface{}, expected string) bool {
-	values, ok := raw.([]interface{})
+func ruleVerbMatch(raw any, expected string) bool {
+	values, ok := raw.([]any)
 	if !ok {
 		return false
 	}
@@ -205,11 +211,11 @@ func ruleVerbMatch(raw interface{}, expected string) bool {
 	return false
 }
 
-func ruleListMatch(raw interface{}, expected string) bool {
+func ruleListMatch(raw any, expected string) bool {
 	if expected == "" {
 		return true
 	}
-	values, ok := raw.([]interface{})
+	values, ok := raw.([]any)
 	if !ok {
 		return false
 	}

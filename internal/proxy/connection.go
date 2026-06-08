@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -58,7 +59,7 @@ func (c *SSHConnection) SetKnownHost() error {
 	defer c.mu.Unlock()
 
 	if c.rsaKey == "" {
-		return fmt.Errorf("RSA key is empty")
+		return errors.New("RSA key is empty")
 	}
 
 	// Parse known hosts from RSA key string
@@ -102,7 +103,9 @@ func (c *SSHConnection) OpenSSHTunnel() error {
 
 	// Start accepting connections and forwarding them
 	go func() {
-		defer listener.Close()
+		defer func() {
+			_ = listener.Close()
+		}()
 		for {
 			remoteConn, err := listener.Accept()
 			if err != nil {
@@ -112,12 +115,16 @@ func (c *SSHConnection) OpenSSHTunnel() error {
 
 			// Forward connection to local port
 			go func(conn net.Conn) {
-				defer conn.Close()
-				localConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", localHost, c.localPort))
+				defer func() {
+					_ = conn.Close()
+				}()
+				localConn, err := net.Dial("tcp", net.JoinHostPort(localHost, fmt.Sprintf("%d", c.localPort)))
 				if err != nil {
 					return
 				}
-				defer localConn.Close()
+				defer func() {
+					_ = localConn.Close()
+				}()
 
 				// Copy data bidirectionally
 				done := make(chan struct{}, 2)

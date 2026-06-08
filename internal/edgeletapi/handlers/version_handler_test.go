@@ -22,7 +22,7 @@ func TestHandleVersion_IncludesEmbeddedEngineAndAllowedEngines(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode version response: %v", err)
 	}

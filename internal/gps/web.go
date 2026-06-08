@@ -3,6 +3,7 @@ package gps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,7 +66,9 @@ func (w *WebHandler) UpdateCoordinates() error {
 	if err != nil {
 		return fmt.Errorf("failed to get location: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -90,7 +93,7 @@ func (w *WebHandler) UpdateCoordinates() error {
 		return fmt.Errorf("location provider returned failure: %s", strings.TrimSpace(locationData.Message))
 	}
 	if locationData.Latitude == nil || locationData.Longitude == nil {
-		return fmt.Errorf("location provider missing lat/lon fields")
+		return errors.New("location provider missing lat/lon fields")
 	}
 
 	// Format coordinates as "lat,lon"

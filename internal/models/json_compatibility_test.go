@@ -17,7 +17,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to marshal: %v", err)
 		}
 
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(jsonData, &result); err != nil {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
@@ -47,7 +47,7 @@ func TestJSONCompatibility(t *testing.T) {
 		}
 
 		// When field is nil pointer, it should be omitted (omitempty)
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(jsonData, &result); err != nil {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
@@ -61,8 +61,8 @@ func TestJSONCompatibility(t *testing.T) {
 		empty := ""
 		ms.Config = &empty
 		jsonData2, _ := json.Marshal(ms)
-		var result2 map[string]interface{}
-		json.Unmarshal(jsonData2, &result2)
+		var result2 map[string]any
+		_ = json.Unmarshal(jsonData2, &result2)
 
 		// Now it should be present
 		if val, ok := result2["config"].(string); !ok || val != "" {
@@ -79,7 +79,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to marshal: %v", err)
 		}
 
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(jsonData, &result); err != nil {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
@@ -101,7 +101,7 @@ func TestJSONCompatibility(t *testing.T) {
 			t.Fatalf("Failed to marshal: %v", err)
 		}
 
-		var result map[string]interface{}
+		var result map[string]any
 		if err := json.Unmarshal(jsonData, &result); err != nil {
 			t.Fatalf("Failed to unmarshal: %v", err)
 		}
@@ -110,10 +110,10 @@ func TestJSONCompatibility(t *testing.T) {
 		// When we add a port mapping, it should appear
 		ms.PortMappings = append(ms.PortMappings, NewPortMapping(8080, 80, false))
 		jsonData2, _ := json.Marshal(ms)
-		var result2 map[string]interface{}
-		json.Unmarshal(jsonData2, &result2)
+		var result2 map[string]any
+		_ = json.Unmarshal(jsonData2, &result2)
 
-		if ports, ok := result2["portMappings"].([]interface{}); !ok || len(ports) != 1 {
+		if ports, ok := result2["portMappings"].([]any); !ok || len(ports) != 1 {
 			t.Error("PortMappings should be present when not empty")
 		}
 	})

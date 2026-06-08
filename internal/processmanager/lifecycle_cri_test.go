@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package processmanager
 
 import (

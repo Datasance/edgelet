@@ -1,7 +1,7 @@
 package fieldagent
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/datasance/edgelet/internal/buildmeta"
@@ -90,7 +90,7 @@ func TestClearSQLiteCacheTablesOnDeprovision_LocalScopePreservesLocalRows(t *tes
 		t.Fatalf("failed reading local container state: %v", err)
 	}
 	if state == nil {
-		t.Fatalf("expected local container state preserved")
+		t.Fatal("expected local container state preserved")
 	}
 }
 
@@ -105,10 +105,10 @@ func TestClearVolumeMountsOnDeprovision_LocalScopeSkipsClear(t *testing.T) {
 		return nil
 	})
 	if allCalled {
-		t.Fatalf("expected all-scope clear function not to be called for preserveLocal=true")
+		t.Fatal("expected all-scope clear function not to be called for preserveLocal=true")
 	}
 	if !localCalled {
-		t.Fatalf("expected local-scope clear function to be called for preserveLocal=true")
+		t.Fatal("expected local-scope clear function to be called for preserveLocal=true")
 	}
 }
 
@@ -123,10 +123,10 @@ func TestClearVolumeMountsOnDeprovision_AllScopeInvokesClear(t *testing.T) {
 		return nil
 	})
 	if !allCalled {
-		t.Fatalf("expected all-scope clear function to be called for preserveLocal=false")
+		t.Fatal("expected all-scope clear function to be called for preserveLocal=false")
 	}
 	if localCalled {
-		t.Fatalf("expected local-scope clear function not to be called for preserveLocal=false")
+		t.Fatal("expected local-scope clear function not to be called for preserveLocal=false")
 	}
 }
 
@@ -142,12 +142,12 @@ func TestClearVolumeMountsOnDeprovision_AllScopeHandlesError(t *testing.T) {
 	called := false
 	GetInstance().clearVolumeMountsOnDeprovision(false, func() error {
 		called = true
-		return fmt.Errorf("clear failed")
+		return errors.New("clear failed")
 	}, func() error {
 		return nil
 	})
 	if !called {
-		t.Fatalf("expected clear function to be called")
+		t.Fatal("expected clear function to be called")
 	}
 }
 
@@ -167,7 +167,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_LocalScopeSkipsPrune(t *testing.
 		return nil
 	})
 	if containersCalled || volumesCalled {
-		t.Fatalf("expected prune steps to be skipped for preserveLocal=true")
+		t.Fatal("expected prune steps to be skipped for preserveLocal=true")
 	}
 }
 
@@ -187,7 +187,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_EmbeddedEdgeletEngineSkipsPrune(
 		return nil
 	})
 	if containersCalled || volumesCalled {
-		t.Fatalf("expected prune steps to be skipped for embedded edgelet engine")
+		t.Fatal("expected prune steps to be skipped for embedded edgelet engine")
 	}
 }
 
@@ -203,7 +203,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_ExternalEngineOnLinuxStillPrunes
 		return nil
 	}, nil)
 	if !containersCalled {
-		t.Fatalf("expected container prune for docker engine on embedded-capable platform")
+		t.Fatal("expected container prune for docker engine on embedded-capable platform")
 	}
 }
 
@@ -219,7 +219,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_OnlyDockerPodmanEngines(t *testi
 		return nil
 	}, nil)
 	if called {
-		t.Fatalf("expected prune steps skipped for non-docker/podman engine")
+		t.Fatal("expected prune steps skipped for non-docker/podman engine")
 	}
 }
 
@@ -232,7 +232,7 @@ func TestClearLiteRuntimeArtifactsOnDeprovision_OrderAndResilience(t *testing.T)
 	order := make([]string, 0, 2)
 	GetInstance().clearLiteRuntimeArtifactsOnDeprovision(false, func() error {
 		order = append(order, "containers")
-		return fmt.Errorf("container prune failed")
+		return errors.New("container prune failed")
 	}, func() error {
 		order = append(order, "volumes")
 		return nil

@@ -23,7 +23,7 @@ func TestSetGetGlobalPolicy(t *testing.T) {
 	SetGlobalPolicy(p)
 	got := GetGlobalPolicy()
 	if got != p {
-		t.Fatalf("GetGlobalPolicy returned unexpected pointer")
+		t.Fatal("GetGlobalPolicy returned unexpected pointer")
 	}
 }
 
@@ -44,7 +44,7 @@ func TestErrDelegationNestedMessage(t *testing.T) {
 
 func TestMapRuntimeErrorPassthrough(t *testing.T) {
 	base := errors.New("unrelated failure")
-	if got := MapRuntimeError(base, nil); got != base {
-		t.Fatalf("expected passthrough")
+	if got := MapRuntimeError(base, nil); !errors.Is(got, base) {
+		t.Fatal("expected passthrough")
 	}
 }

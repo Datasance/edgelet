@@ -17,13 +17,13 @@ func NewAuthHandler() *AuthHandler {
 
 // AuthWhoAmIResponse returns caller identity details.
 type AuthWhoAmIResponse struct {
-	Subject   string                 `json:"subject"`
-	TokenType string                 `json:"tokenType"`
-	Issuer    string                 `json:"issuer"`
-	Audience  []string               `json:"audience"`
-	JTI       string                 `json:"jti,omitempty"`
-	ExpiresAt int64                  `json:"expiresAt,omitempty"`
-	Claims    map[string]interface{} `json:"claims"`
+	Subject   string         `json:"subject"`
+	TokenType string         `json:"tokenType"`
+	Issuer    string         `json:"issuer"`
+	Audience  []string       `json:"audience"`
+	JTI       string         `json:"jti,omitempty"`
+	ExpiresAt int64          `json:"expiresAt,omitempty"`
+	Claims    map[string]any `json:"claims"`
 }
 
 // HandleWhoAmI handles GET /v1/auth/whoami.
@@ -42,19 +42,19 @@ func (h *AuthHandler) HandleWhoAmI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := AuthWhoAmIResponse{
-		TokenType: claimAsString(map[string]interface{}(result.Claims), "tokenUse"),
+		TokenType: claimAsString(map[string]any(result.Claims), "tokenUse"),
 		Issuer:    claimAsString(result.Claims, "iss"),
 		Audience:  claimAsStringSlice(result.Claims, "aud"),
 		JTI:       claimAsString(result.Claims, "jti"),
 		ExpiresAt: claimAsInt64(result.Claims, "exp"),
-		Claims:    map[string]interface{}(result.Claims),
+		Claims:    map[string]any(result.Claims),
 	}
 	resp.Subject = claimAsString(result.Claims, "sub")
 
 	writeSuccess(w, http.StatusOK, resp)
 }
 
-func claimAsString(claims map[string]interface{}, key string) string {
+func claimAsString(claims map[string]any, key string) string {
 	value, exists := claims[key]
 	if !exists || value == nil {
 		return ""
@@ -65,7 +65,7 @@ func claimAsString(claims map[string]interface{}, key string) string {
 	return ""
 }
 
-func claimAsStringSlice(claims map[string]interface{}, key string) []string {
+func claimAsStringSlice(claims map[string]any, key string) []string {
 	value, exists := claims[key]
 	if !exists || value == nil {
 		return nil
@@ -73,7 +73,7 @@ func claimAsStringSlice(claims map[string]interface{}, key string) []string {
 	switch v := value.(type) {
 	case string:
 		return []string{v}
-	case []interface{}:
+	case []any:
 		result := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {
@@ -86,7 +86,7 @@ func claimAsStringSlice(claims map[string]interface{}, key string) []string {
 	}
 }
 
-func claimAsInt64(claims map[string]interface{}, key string) int64 {
+func claimAsInt64(claims map[string]any, key string) int64 {
 	value, exists := claims[key]
 	if !exists || value == nil {
 		return 0

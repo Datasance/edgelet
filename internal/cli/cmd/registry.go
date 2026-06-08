@@ -74,7 +74,7 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v1/deploy/registries/" + args[0]
-	var data map[string]interface{}
+	var data map[string]any
 	err := run.WithSpinner(appCtx, "Removing registry "+args[0]+"...", func() error {
 		var reqErr error
 		data, reqErr = appCtx.Client.Request("DELETE", path, nil)

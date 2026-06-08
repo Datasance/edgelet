@@ -1,10 +1,12 @@
 package processmanager
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -234,7 +236,7 @@ func (pm *ProcessManager) runtimeWorkloadContainerIDs() ([]string, error) {
 	for id := range idsSet {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids, nil
 }
 
@@ -582,9 +584,9 @@ func (pm *ProcessManager) pruneStaleProcessManagerStatuses() {
 }
 
 func (pm *ProcessManager) reconcileOneLocalDeployment(item *models.LocalDeployedMicroservice) {
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item.NormalizeDefaults()
-	item.LastReconcileAt = now
+	item.LastReconcileAt = nowSec
 
 	desired := strings.ToLower(strings.TrimSpace(item.DesiredState))
 	if desired == "" {
@@ -601,11 +603,11 @@ func (pm *ProcessManager) reconcileOneLocalDeployment(item *models.LocalDeployed
 
 	switch desired {
 	case "stopped":
-		pm.reconcileLocalDesiredStopped(item, container, now)
+		pm.reconcileLocalDesiredStopped(item, container, nowSec)
 	case "deleted":
-		pm.reconcileLocalDesiredDeleted(item, container, now)
+		pm.reconcileLocalDesiredDeleted(item, container, nowSec)
 	default:
-		pm.reconcileLocalDesiredRunning(item, container, now)
+		pm.reconcileLocalDesiredRunning(item, container, nowSec)
 	}
 }
 
@@ -850,7 +852,7 @@ func (pm *ProcessManager) getLocalContainerStatus(containerID, microserviceUUID 
 		return pm.getContainerStatusFn(containerID, microserviceUUID)
 	}
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.GetContainerStatus(containerID, microserviceUUID)
 }
@@ -1064,8 +1066,8 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 
 	latestMicroservices := pm.microserviceManager.GetLatestMicroservices()
 	// Sort by schedule ascending
-	sort.Slice(latestMicroservices, func(i, j int) bool {
-		return latestMicroservices[i].Schedule < latestMicroservices[j].Schedule
+	slices.SortFunc(latestMicroservices, func(a, b *models.Microservice) int {
+		return cmp.Compare(a.Schedule, b.Schedule)
 	})
 
 	for _, ms := range latestMicroservices {
@@ -1225,14 +1227,15 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 
 		// Detect containers stuck in exit/creation loops and mark them accordingly.
 		// Prefer existing error message from engine (e.g. Docker) when available; use static fallback otherwise
-		if status.Status == models.MicroserviceStateExiting {
+		switch status.Status {
+		case models.MicroserviceStateExiting:
 			if checker.IsStuck(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
 				ms.IsStuckInRestart = true
 				stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, "Container repeatedly exiting")
 				status.ErrorMessage = &stuckMsg
 			}
-		} else if status.Status == models.MicroserviceStateCreated {
+		case models.MicroserviceStateCreated:
 			if checker.IsStuckInContainerCreation(ms.MicroserviceUUID) {
 				status.Status = models.MicroserviceStateStuckInRestart
 				ms.IsStuckInRestart = true
@@ -1557,7 +1560,7 @@ func (pm *ProcessManager) updateCurrentMicroservices() {
 // GetContainerForMicroservice resolves runtime container by microservice UUID.
 func (pm *ProcessManager) GetContainerForMicroservice(microserviceUUID string) (*engine.Container, error) {
 	if pm.containerManager == nil {
-		return nil, fmt.Errorf("process manager is not initialized")
+		return nil, errors.New("process manager is not initialized")
 	}
 	return pm.containerManager.GetContainerForMicroservice(microserviceUUID)
 }
@@ -1566,11 +1569,11 @@ func (pm *ProcessManager) GetContainerForMicroservice(microserviceUUID string) (
 // Returns the matched container and a list of matching IDs for ambiguity reporting.
 func (pm *ProcessManager) GetContainerByIDPrefix(prefix string) (*engine.Container, []string, error) {
 	if pm.engine == nil {
-		return nil, nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, nil, errors.New("process manager engine is not initialized")
 	}
 	trimmed := strings.TrimSpace(prefix)
 	if trimmed == "" {
-		return nil, nil, fmt.Errorf("container id prefix is required")
+		return nil, nil, errors.New("container id prefix is required")
 	}
 	all, err := pm.engine.GetAllContainers()
 	if err != nil {
@@ -1591,7 +1594,7 @@ func (pm *ProcessManager) GetContainerByIDPrefix(prefix string) (*engine.Contain
 		c := matches[0]
 		return &c, ids, nil
 	default:
-		sort.Strings(ids)
+		slices.Sort(ids)
 		return nil, ids, nil
 	}
 }
@@ -1599,7 +1602,7 @@ func (pm *ProcessManager) GetContainerByIDPrefix(prefix string) (*engine.Contain
 // GetContainerByID resolves one container by concrete container id.
 func (pm *ProcessManager) GetContainerByID(containerID string) (*engine.Container, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.GetContainerByID(containerID)
 }
@@ -1625,7 +1628,7 @@ func (pm *ProcessManager) resolveMicroserviceForLifecycle(microserviceUUID strin
 	}
 	item, err := store.GetInstance().GetLocalWorkload(microserviceUUID)
 	if err != nil || item == nil {
-		return nil, fmt.Errorf("microservice spec not found")
+		return nil, errors.New("microservice spec not found")
 	}
 	doc, err := decodeLocalDeployManifest(item.ManifestYAML)
 	if err != nil {
@@ -1650,7 +1653,7 @@ func (pm *ProcessManager) shouldRecreateForStatus(status *models.MicroserviceSta
 
 func (pm *ProcessManager) recreateMicroservice(microserviceUUID string, pullImage bool) (string, error) {
 	if pm.containerManager == nil {
-		return "", fmt.Errorf("process manager is not initialized")
+		return "", errors.New("process manager is not initialized")
 	}
 	ms, err := pm.resolveMicroserviceForLifecycle(microserviceUUID)
 	if err != nil {
@@ -1680,7 +1683,7 @@ func (pm *ProcessManager) recreateLocalDeployment(item *models.LocalDeployedMicr
 		return pm.recreateLocalDeploymentFn(item, pullImage, now)
 	}
 	if pm.containerManager == nil {
-		err := fmt.Errorf("process manager is not initialized")
+		err := errors.New("process manager is not initialized")
 		pm.bumpLocalFailure(item, err, "failed")
 		return err
 	}
@@ -1730,7 +1733,7 @@ func (pm *ProcessManager) updateLocalContainerAfterRecreate(microserviceUUID, co
 // StartMicroservice starts a runtime microservice container.
 func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 	ctx := pm.operationContext(microserviceUUID)
 
@@ -1743,7 +1746,7 @@ func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
 		return err
 	}
 	if pm.engine == nil {
-		return fmt.Errorf("process manager engine is not initialized")
+		return errors.New("process manager engine is not initialized")
 	}
 
 	status, err := pm.engine.GetContainerStatus(container.ID, microserviceUUID)
@@ -1775,7 +1778,7 @@ func (pm *ProcessManager) StartMicroservice(microserviceUUID string) error {
 // StopMicroservice stops a runtime microservice container.
 func (pm *ProcessManager) StopMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 	return pm.containerManager.StopContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
 }
@@ -1783,7 +1786,7 @@ func (pm *ProcessManager) StopMicroservice(microserviceUUID string) error {
 // KillMicroservice sends a forceful kill signal to a runtime microservice container.
 func (pm *ProcessManager) KillMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 	return pm.containerManager.KillContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID)
 }
@@ -1803,7 +1806,7 @@ func (pm *ProcessManager) RestartMicroservice(microserviceUUID string) error {
 // RemoveMicroservice removes a runtime microservice container.
 func (pm *ProcessManager) RemoveMicroservice(microserviceUUID string) error {
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 	return pm.containerManager.RemoveContainerByMicroserviceUUID(pm.operationContext(microserviceUUID), microserviceUUID, false, false)
 }
@@ -1811,7 +1814,7 @@ func (pm *ProcessManager) RemoveMicroservice(microserviceUUID string) error {
 // RemoveContainerByContainerID removes a runtime container by concrete container id.
 func (pm *ProcessManager) RemoveContainerByContainerID(containerID string) error {
 	if pm.containerManager == nil {
-		return fmt.Errorf("process manager is not initialized")
+		return errors.New("process manager is not initialized")
 	}
 	return pm.containerManager.RemoveContainerByID(pm.operationContext(containerID), containerID, false, false)
 }
@@ -1827,7 +1830,7 @@ func (pm *ProcessManager) GetMicroserviceUUIDForContainer(container engine.Conta
 // ListImages returns local runtime images from the active engine.
 func (pm *ProcessManager) ListImages() ([]engine.ImageInfo, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.ListImages(context.Background())
 }
@@ -1835,7 +1838,7 @@ func (pm *ProcessManager) ListImages() ([]engine.ImageInfo, error) {
 // PullImage pulls an image using optional registry credentials and platform selector.
 func (pm *ProcessManager) PullImage(imageRef string, registry *models.Registry, platform string) error {
 	if pm.engine == nil {
-		return fmt.Errorf("process manager engine is not initialized")
+		return errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.PullImage(imageRef, registry, &engine.PullImageOptions{Platform: platform})
 }
@@ -1843,7 +1846,7 @@ func (pm *ProcessManager) PullImage(imageRef string, registry *models.Registry, 
 // PullImageWithProgress pulls an image and reports progress percent when available.
 func (pm *ProcessManager) PullImageWithProgress(imageRef string, registry *models.Registry, platform string, onProgress func(float32)) error {
 	if pm.engine == nil {
-		return fmt.Errorf("process manager engine is not initialized")
+		return errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.PullImage(imageRef, registry, &engine.PullImageOptions{
 		Platform:         platform,
@@ -1854,7 +1857,7 @@ func (pm *ProcessManager) PullImageWithProgress(imageRef string, registry *model
 // LoadImageFromPath imports an image archive from daemon-local path.
 func (pm *ProcessManager) LoadImageFromPath(path string) ([]engine.LoadedImage, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.LoadImageFromPath(context.Background(), path)
 }
@@ -1862,7 +1865,7 @@ func (pm *ProcessManager) LoadImageFromPath(path string) ([]engine.LoadedImage, 
 // RemoveImage removes an image by ID or name reference.
 func (pm *ProcessManager) RemoveImage(selector string) error {
 	if pm.engine == nil {
-		return fmt.Errorf("process manager engine is not initialized")
+		return errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.DeleteImage(context.Background(), selector)
 }
@@ -1870,7 +1873,7 @@ func (pm *ProcessManager) RemoveImage(selector string) error {
 // PruneDanglingImages prunes dangling images.
 func (pm *ProcessManager) PruneDanglingImages() (*engine.ImagePruneReport, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.PruneDangling(context.Background())
 }
@@ -1878,7 +1881,7 @@ func (pm *ProcessManager) PruneDanglingImages() (*engine.ImagePruneReport, error
 // PruneContainers prunes stopped/orphaned containers.
 func (pm *ProcessManager) PruneContainers() (*engine.ContainerPruneReport, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.PruneContainers(context.Background())
 }
@@ -1886,15 +1889,15 @@ func (pm *ProcessManager) PruneContainers() (*engine.ContainerPruneReport, error
 // PruneVolumes prunes unused/orphaned volume artifacts.
 func (pm *ProcessManager) PruneVolumes() (*engine.VolumePruneReport, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.PruneVolumes(context.Background())
 }
 
 // InspectContainerRaw returns full engine-native inspect payload for a container.
-func (pm *ProcessManager) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+func (pm *ProcessManager) InspectContainerRaw(containerID string) (map[string]any, error) {
 	if pm.engine == nil {
-		return nil, fmt.Errorf("process manager engine is not initialized")
+		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.InspectContainerRaw(containerID)
 }
@@ -1908,10 +1911,10 @@ func (pm *ProcessManager) LaunchLocalMicroservice(ms *models.Microservice, regis
 // while reporting stage transitions.
 func (pm *ProcessManager) LaunchLocalMicroserviceWithProgress(ms *models.Microservice, registry *models.Registry, hostIP string, progress LocalDeployProgressCallback) (string, error) {
 	if pm.engine == nil {
-		return "", fmt.Errorf("process manager engine is not initialized")
+		return "", errors.New("process manager engine is not initialized")
 	}
 	if ms == nil {
-		return "", fmt.Errorf("microservice is nil")
+		return "", errors.New("microservice is nil")
 	}
 	return pm.withLocalLaunchLock(ms.MicroserviceUUID, func() (string, error) {
 		return pm.launchLocalMicroserviceWithProgressLocked(ms, registry, hostIP, progress)
@@ -1973,7 +1976,7 @@ func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.M
 }
 
 // TailMicroserviceLogs returns bounded logs for one runtime microservice.
-func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *engine.TailConfig) ([]map[string]interface{}, error) {
+func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *engine.TailConfig) ([]map[string]any, error) {
 	container, err := pm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
 		return nil, err
@@ -1998,9 +2001,9 @@ func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *eng
 	if handler.err != nil {
 		return nil, handler.err
 	}
-	result := make([]map[string]interface{}, 0, len(handler.entries))
+	result := make([]map[string]any, 0, len(handler.entries))
 	for _, item := range handler.entries {
-		result = append(result, map[string]interface{}{
+		result = append(result, map[string]any{
 			"ts":     item.ts,
 			"stream": item.stream,
 			"line":   item.line,
@@ -2012,10 +2015,10 @@ func (pm *ProcessManager) TailMicroserviceLogs(microserviceUUID string, cfg *eng
 // StreamMicroserviceLogs streams logs for one runtime microservice using the provided tail handler.
 func (pm *ProcessManager) StreamMicroserviceLogs(microserviceUUID string, cfg *engine.TailConfig, handler engine.LogTailHandler) error {
 	if pm.engine == nil {
-		return fmt.Errorf("process manager engine is not initialized")
+		return errors.New("process manager engine is not initialized")
 	}
 	if handler == nil {
-		return fmt.Errorf("log tail handler is nil")
+		return errors.New("log tail handler is nil")
 	}
 	container, err := pm.GetContainerForMicroservice(microserviceUUID)
 	if err != nil {
@@ -2128,7 +2131,7 @@ func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []s
 }
 
 // GetExecSessionStatus reports whether the exec process identified by execID is running.
-func (pm *ProcessManager) GetExecSessionStatus(execID string) (interface{}, error) {
+func (pm *ProcessManager) GetExecSessionStatus(execID string) (any, error) {
 	running, err := pm.engine.GetExecSessionStatus(execID)
 	if err != nil {
 		return nil, err

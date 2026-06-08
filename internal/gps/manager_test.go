@@ -108,7 +108,9 @@ func TestUpdateCoordinates_AutoModeTriggersGPSCallbackOnSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success","lat":41.0151,"lon":28.9795}`))
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	originalURL := ipAPIURL
 	ipAPIURL = server.URL
@@ -140,7 +142,9 @@ func TestUpdateCoordinates_AutoModeDoesNotTriggerGPSCallbackOnFailure(t *testing
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	originalURL := ipAPIURL
 	ipAPIURL = server.URL

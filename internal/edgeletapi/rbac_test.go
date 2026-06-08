@@ -12,14 +12,14 @@ func TestIsAuthorized_ReadsCanonicalRulesByGroup(t *testing.T) {
 	claims := jwt.MapClaims{
 		"tokenUse": "serviceaccount",
 		"sub":      "system:serviceaccount:app:svc",
-		"edgelet.iofog.org": map[string]interface{}{
-			"rbac": map[string]interface{}{
+		"edgelet.iofog.org": map[string]any{
+			"rbac": map[string]any{
 				"version": "v1",
-				"rulesByGroup": map[string]interface{}{
-					"edgelet.iofog.org/v1": []interface{}{
-						map[string]interface{}{
-							"resources": []interface{}{"system/config"},
-							"verbs":     []interface{}{"get"},
+				"rulesByGroup": map[string]any{
+					"edgelet.iofog.org/v1": []any{
+						map[string]any{
+							"resources": []any{"system/config"},
+							"verbs":     []any{"get"},
 						},
 					},
 				},
@@ -32,7 +32,7 @@ func TestIsAuthorized_ReadsCanonicalRulesByGroup(t *testing.T) {
 		Verb:      "get",
 	}
 	if !isAuthorized(claims, perm) {
-		t.Fatalf("expected canonical rulesByGroup authorization to pass")
+		t.Fatal("expected canonical rulesByGroup authorization to pass")
 	}
 }
 
@@ -40,14 +40,14 @@ func TestIsAuthorized_AcceptsVerbAliases(t *testing.T) {
 	claims := jwt.MapClaims{
 		"tokenUse": "serviceaccount",
 		"sub":      "system:serviceaccount:app:svc",
-		"edgelet.iofog.org": map[string]interface{}{
-			"rbac": map[string]interface{}{
+		"edgelet.iofog.org": map[string]any{
+			"rbac": map[string]any{
 				"version": "v1",
-				"rulesByGroup": map[string]interface{}{
-					"edgelet.iofog.org/v1": []interface{}{
-						map[string]interface{}{
-							"resources": []interface{}{"system/config"},
-							"verbs":     []interface{}{"patch"},
+				"rulesByGroup": map[string]any{
+					"edgelet.iofog.org/v1": []any{
+						map[string]any{
+							"resources": []any{"system/config"},
+							"verbs":     []any{"patch"},
 						},
 					},
 				},
@@ -60,7 +60,7 @@ func TestIsAuthorized_AcceptsVerbAliases(t *testing.T) {
 		Verb:      "update",
 	}
 	if !isAuthorized(claims, perm) {
-		t.Fatalf("expected patch->update alias to authorize")
+		t.Fatal("expected patch->update alias to authorize")
 	}
 }
 
@@ -113,8 +113,8 @@ func TestMapRequestToPermission_SystemSwitchAndCert(t *testing.T) {
 		{method: http.MethodPost, path: "/v1/deploy/runtimeclasses:apply", resource: "deploy/runtimeclasses", verb: "create"},
 		{method: http.MethodPost, path: "/v1/deploy/runtimeclasses:validate", resource: "deploy/runtimeclasses", verb: "create"},
 		{method: http.MethodGet, path: "/v1/deploy/runtimeclasses", resource: "deploy/runtimeclasses", verb: "get"},
-		{method: http.MethodGet, path: "/v1/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "get"},
-		{method: http.MethodDelete, path: "/v1/deploy/runtimeclasses/edgelet", resource: "deploy/runtimeclasses", verb: "delete"},
+		{method: http.MethodGet, path: "/v1/deploy/runtimeclasses/edgelet-wasmtime", resource: "deploy/runtimeclasses", verb: "get"},
+		{method: http.MethodDelete, path: "/v1/deploy/runtimeclasses/edgelet-wasmtime", resource: "deploy/runtimeclasses", verb: "delete"},
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(tt.method, tt.path, nil)

@@ -36,25 +36,25 @@ func TestShouldRunImmediateFrequencyPrune(t *testing.T) {
 	m := &Manager{}
 
 	if m.shouldRunImmediateFrequencyPrune(0) {
-		t.Fatalf("expected no immediate run for disabled frequency")
+		t.Fatal("expected no immediate run for disabled frequency")
 	}
 
 	if !m.shouldRunImmediateFrequencyPrune(1) {
-		t.Fatalf("expected immediate run when enabling frequency from 0 to 1")
+		t.Fatal("expected immediate run when enabling frequency from 0 to 1")
 	}
 	m.setLastAppliedPruningFrequency(1)
 
 	if m.shouldRunImmediateFrequencyPrune(1) {
-		t.Fatalf("expected no immediate run when frequency does not change")
+		t.Fatal("expected no immediate run when frequency does not change")
 	}
 
 	if !m.shouldRunImmediateFrequencyPrune(2) {
-		t.Fatalf("expected immediate run when frequency changes from 1 to 2")
+		t.Fatal("expected immediate run when frequency changes from 1 to 2")
 	}
 
 	m.setLastAppliedPruningFrequency(2)
 	if !m.shouldRunImmediateFrequencyPrune(1) {
-		t.Fatalf("expected immediate run when frequency changes from 2 to 1")
+		t.Fatal("expected immediate run when frequency changes from 2 to 1")
 	}
 }
 
@@ -89,7 +89,7 @@ func TestTriggerPruneOnFrequency_SkipsWhenAlreadyPruning(t *testing.T) {
 
 	m.triggerPruneOnFrequency()
 	if called {
-		t.Fatalf("expected no prune steps when prune is already running")
+		t.Fatal("expected no prune steps when prune is already running")
 	}
 }
 

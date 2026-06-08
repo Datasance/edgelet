@@ -9,7 +9,7 @@ import (
 func TestControlPlaneGetJSON(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/controlplane": {
 				"controllerUuid": "cp-uuid-1",
 				"namespace":      "default",
@@ -26,7 +26,7 @@ func TestControlPlaneGetJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestControlPlaneGetJSON(t *testing.T) {
 func TestControlPlaneGetManifestHuman(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/controlplane/manifest": {
 				"manifestYaml": "kind: ControlPlane\nmetadata:\n  name: pot\n",
 				"masked":       true,
@@ -60,7 +60,7 @@ func TestControlPlaneGetManifestHuman(t *testing.T) {
 func TestControlPlaneGetHumanShowsNamespaceAndName(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/controlplane": {
 				"controllerUuid": "cp-uuid-1",
 				"namespace":      "bar",
@@ -81,7 +81,7 @@ func TestControlPlaneGetHumanShowsNamespaceAndName(t *testing.T) {
 func TestControlPlaneDeleteHuman(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"DELETE /v1/system/controlplane": {"status": "ok"},
 		},
 	}

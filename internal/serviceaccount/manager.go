@@ -2,6 +2,7 @@ package serviceaccount
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,10 +66,10 @@ func (m *Manager) WriteProjection(microserviceUUID, token string, caPEM []byte) 
 	defer m.mu.Unlock()
 
 	if microserviceUUID == "" {
-		return fmt.Errorf("microservice UUID is required")
+		return errors.New("microservice UUID is required")
 	}
 	if token == "" {
-		return fmt.Errorf("serviceaccount token is required")
+		return errors.New("serviceaccount token is required")
 	}
 
 	return m.writeProjectionAtomic(m.ProjectionDir(microserviceUUID), token, caPEM)
@@ -193,19 +194,19 @@ func (m *Manager) rotateForMicroservice(cfg *config.Config, ms *models.Microserv
 	}
 	subject := fmt.Sprintf("system:serviceaccount:%s:%s", app, name)
 	rbac := normalizeServiceAccountRules(ms)
-	extraClaims := map[string]interface{}{
-		"edgelet.iofog.org": map[string]interface{}{
+	extraClaims := map[string]any{
+		"edgelet.iofog.org": map[string]any{
 			"namespace": cfg.Namespace,
-			"node": map[string]interface{}{
+			"node": map[string]any{
 				"uuid":      cfg.IOFogUUID,
 				"publicKey": auth.GetProvisionedPublicKey(),
 			},
-			"microservice": map[string]interface{}{
+			"microservice": map[string]any{
 				"application": app,
 				"name":        name,
 				"uuid":        ms.MicroserviceUUID,
 			},
-			"rbac": map[string]interface{}{
+			"rbac": map[string]any{
 				"version":      rbac.Version,
 				"rulesByGroup": rbac.RulesByGroup,
 			},

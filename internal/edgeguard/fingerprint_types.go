@@ -1,8 +1,9 @@
 package edgeguard
 
 import (
+	"cmp"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -147,9 +148,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.PCIDevices[i].SubsystemVendor = normalizeString(payload.PCIDevices[i].SubsystemVendor)
 		payload.PCIDevices[i].SubsystemDevice = normalizeString(payload.PCIDevices[i].SubsystemDevice)
 	}
-	sort.Slice(payload.PCIDevices, func(i, j int) bool {
-		return payload.PCIDevices[i].Slot+payload.PCIDevices[i].VendorID+payload.PCIDevices[i].DeviceID <
-			payload.PCIDevices[j].Slot+payload.PCIDevices[j].VendorID+payload.PCIDevices[j].DeviceID
+	slices.SortFunc(payload.PCIDevices, func(a, b PCIDeviceIdentity) int {
+		return cmp.Compare(a.Slot+a.VendorID+a.DeviceID, b.Slot+b.VendorID+b.DeviceID)
 	})
 	payload.PCIDevices = dedupePCIDevices(payload.PCIDevices)
 
@@ -159,9 +159,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.GPUDevices[i].DeviceID = normalizeString(payload.GPUDevices[i].DeviceID)
 		payload.GPUDevices[i].Class = normalizeString(payload.GPUDevices[i].Class)
 	}
-	sort.Slice(payload.GPUDevices, func(i, j int) bool {
-		return payload.GPUDevices[i].Slot+payload.GPUDevices[i].VendorID+payload.GPUDevices[i].DeviceID <
-			payload.GPUDevices[j].Slot+payload.GPUDevices[j].VendorID+payload.GPUDevices[j].DeviceID
+	slices.SortFunc(payload.GPUDevices, func(a, b GPUDeviceIdentity) int {
+		return cmp.Compare(a.Slot+a.VendorID+a.DeviceID, b.Slot+b.VendorID+b.DeviceID)
 	})
 
 	for i := range payload.PlatformDevices {
@@ -169,9 +168,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.PlatformDevices[i].Name = normalizeString(payload.PlatformDevices[i].Name)
 		payload.PlatformDevices[i].Value = normalizeString(payload.PlatformDevices[i].Value)
 	}
-	sort.Slice(payload.PlatformDevices, func(i, j int) bool {
-		return payload.PlatformDevices[i].Type+payload.PlatformDevices[i].Name+payload.PlatformDevices[i].Value <
-			payload.PlatformDevices[j].Type+payload.PlatformDevices[j].Name+payload.PlatformDevices[j].Value
+	slices.SortFunc(payload.PlatformDevices, func(a, b PlatformDeviceIdentity) int {
+		return cmp.Compare(a.Type+a.Name+a.Value, b.Type+b.Name+b.Value)
 	})
 
 	payload.RootDisk.DeviceID = normalizeString(payload.RootDisk.DeviceID)
@@ -184,8 +182,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.PrimaryNICs[i].MAC = normalizeString(payload.PrimaryNICs[i].MAC)
 		payload.PrimaryNICs[i].LinkState = normalizeString(payload.PrimaryNICs[i].LinkState)
 	}
-	sort.Slice(payload.PrimaryNICs, func(i, j int) bool {
-		return payload.PrimaryNICs[i].MAC+payload.PrimaryNICs[i].Name < payload.PrimaryNICs[j].MAC+payload.PrimaryNICs[j].Name
+	slices.SortFunc(payload.PrimaryNICs, func(a, b NICIdentity) int {
+		return cmp.Compare(a.MAC+a.Name, b.MAC+b.Name)
 	})
 	payload.PrimaryNICs = dedupeNICs(payload.PrimaryNICs)
 
@@ -197,9 +195,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.USBDevices[i].Product = normalizeString(payload.USBDevices[i].Product)
 		payload.USBDevices[i].Serial = normalizeString(payload.USBDevices[i].Serial)
 	}
-	sort.Slice(payload.USBDevices, func(i, j int) bool {
-		return payload.USBDevices[i].BusPath+payload.USBDevices[i].VendorID+payload.USBDevices[i].ProductID <
-			payload.USBDevices[j].BusPath+payload.USBDevices[j].VendorID+payload.USBDevices[j].ProductID
+	slices.SortFunc(payload.USBDevices, func(a, b USBDeviceIdentity) int {
+		return cmp.Compare(a.BusPath+a.VendorID+a.ProductID, b.BusPath+b.VendorID+b.ProductID)
 	})
 	payload.USBDevices = dedupeUSBDevices(payload.USBDevices)
 
@@ -214,9 +211,8 @@ func normalizeFingerprintPayload(payload FingerprintPayload) FingerprintPayload 
 		payload.Optional.MemoryModules[i].Serial = normalizeString(payload.Optional.MemoryModules[i].Serial)
 		payload.Optional.MemoryModules[i].PartNumber = normalizeString(payload.Optional.MemoryModules[i].PartNumber)
 	}
-	sort.Slice(payload.Optional.MemoryModules, func(i, j int) bool {
-		return payload.Optional.MemoryModules[i].Locator+payload.Optional.MemoryModules[i].Serial+payload.Optional.MemoryModules[i].PartNumber <
-			payload.Optional.MemoryModules[j].Locator+payload.Optional.MemoryModules[j].Serial+payload.Optional.MemoryModules[j].PartNumber
+	slices.SortFunc(payload.Optional.MemoryModules, func(a, b MemoryModuleIdentity) int {
+		return cmp.Compare(a.Locator+a.Serial+a.PartNumber, b.Locator+b.Serial+b.PartNumber)
 	})
 	payload.Optional.MemoryModules = dedupeMemoryModules(payload.Optional.MemoryModules)
 

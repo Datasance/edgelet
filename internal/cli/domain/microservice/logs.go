@@ -45,22 +45,25 @@ func StreamLogs(ctx *run.CLIContext, c *client.Client, id string, opts logs.Opti
 	return nil
 }
 
-func formatMSLogEntries(result map[string]interface{}, timestamps bool) string {
-	rawEntries, _ := result["entries"].([]interface{})
+func formatMSLogEntries(result map[string]any, timestamps bool) string {
+	rawEntries, ok := result["entries"].([]any)
+	if !ok {
+		rawEntries = []any{}
+	}
 	var b strings.Builder
 	for _, raw := range rawEntries {
-		entry, ok := raw.(map[string]interface{})
+		entry, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		line := output.MapValueAsRawString(entry, "line")
 		if timestamps {
 			ts := output.MapValueAsString(entry, "ts")
-			b.WriteString(ts + " ")
+			_, _ = b.WriteString(ts + " ")
 		}
-		b.WriteString(line)
+		_, _ = b.WriteString(line)
 		if !strings.HasSuffix(line, "\n") {
-			b.WriteString("\n")
+			_, _ = b.WriteString("\n")
 		}
 	}
 	return b.String()

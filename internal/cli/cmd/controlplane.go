@@ -62,7 +62,7 @@ func runControlPlaneDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	path := "/v1/system/controlplane"
-	var data map[string]interface{}
+	var data map[string]any
 	err := run.WithSpinner(appCtx, "Removing control plane deployment...", func() error {
 		var reqErr error
 		data, reqErr = appCtx.Client.Request("DELETE", path, nil)

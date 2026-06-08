@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,7 +38,9 @@ func (d *DB) LoadControllerRegistries() ([]*models.Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query controller_registries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.Registry
 	for rows.Next() {
@@ -82,7 +85,7 @@ func scanRegistry(rows *sql.Rows) (*models.Registry, error) {
 // UpsertControllerRegistry inserts or updates one controller registry row.
 func (d *DB) UpsertControllerRegistry(reg *models.Registry) error {
 	if reg == nil {
-		return fmt.Errorf("registry is nil")
+		return errors.New("registry is nil")
 	}
 	_, err := d.Conn().Exec(
 		`INSERT OR REPLACE INTO controller_registries (id, url, is_public, user_name, password, user_email, updated_at)

@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 import (
 	"bufio"
@@ -251,7 +251,9 @@ func (llr *LocalLogReader) readTailLines(filePath string, lines int) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Read file line by line into a slice
 	var allLines []string
@@ -283,7 +285,9 @@ func (llr *LocalLogReader) watchForNewLines(filePath, since, until string) {
 		}
 		return
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Seek to end of file
 	stat, err := file.Stat()

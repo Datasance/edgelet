@@ -154,7 +154,7 @@ func (m *Manager) checkHardwareSignature() error {
 		return nil
 	}
 
-	newSignature, err := m.collectAndSignHardwareSignature()
+	newHash, newSignature, err := m.collectAndSignHardwareSignature()
 	if err != nil {
 		return fmt.Errorf("failed to collect hardware signature: %w", err)
 	}
@@ -168,26 +168,41 @@ func (m *Manager) checkHardwareSignature() error {
 		return nil
 	}
 
-	// Compare signatures
-	if newSignature != storedSignature {
+	storedHash, err := auth.EdgeGuardHashFromJWT(storedSignature)
+	if err != nil || storedHash == "" {
+		logging.LogWarn(moduleName, fmt.Sprintf("Invalid stored Edge Guard JWT; re-baselining: %v", err))
+		if err := m.saveSignatureToDB(newSignature); err != nil {
+			return fmt.Errorf("failed to re-baseline hardware signature: %w", err)
+		}
+		return nil
+	}
+
+	// Compare stable hardware hash claims — JWT strings differ every attestation (iat/exp/jti).
+	if newHash != storedHash {
 		logging.LogWarn(moduleName, "Hardware signature mismatch detected")
-		logging.LogDebug(moduleName, fmt.Sprintf("Stored signature (first 50 chars): %s...", storedSignature[:min(50, len(storedSignature))]))
-		logging.LogDebug(moduleName, fmt.Sprintf("New signature (first 50 chars): %s...", newSignature[:min(50, len(newSignature))]))
+		logging.LogDebug(moduleName, fmt.Sprintf("Stored hash (prefix): %s...", storedHash[:minInt(16, len(storedHash))]))
+		logging.LogDebug(moduleName, fmt.Sprintf("New hash (prefix): %s...", newHash[:minInt(16, len(newHash))]))
 		if previousPayload, ok := m.getPayloadCache(); ok {
 			currentPayload := m.collectStableFingerprintPayload()
 			logFingerprintDiff(previousPayload, currentPayload)
 		}
 		m.handleHardwareChange()
-	} else {
-		logging.LogDebug(moduleName, "Hardware signature verification successful - signatures match")
-		logging.LogDebug(moduleName, "Hardware signature baseline preserved in memory")
+		return nil
+	}
+
+	logging.LogDebug(moduleName, "Hardware signature verification successful - fingerprint hash matches")
+	if newSignature != storedSignature {
+		if err := m.saveSignatureToDB(newSignature); err != nil {
+			return fmt.Errorf("failed to refresh edgeguard attestation JWT: %w", err)
+		}
+		logging.LogDebug(moduleName, "Refreshed Edge Guard attestation JWT (hardware unchanged)")
 	}
 
 	return nil
 }
 
 // min returns the minimum of two integers
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -289,25 +304,25 @@ func (m *Manager) handleHardwareChange() {
 	}
 }
 
-// collectAndSignHardwareSignature collects hardware info and signs it
-func (m *Manager) collectAndSignHardwareSignature() (string, error) {
+// collectAndSignHardwareSignature collects hardware info, hashes it, and signs the hash.
+func (m *Manager) collectAndSignHardwareSignature() (hash string, jwt string, err error) {
 	logging.LogDebug(moduleName, "Starting hardware signature collection")
 	payload := m.collectStableFingerprintPayload()
 	canonicalPayload, err := canonicalizeFingerprintPayload(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to canonicalize fingerprint payload: %w", err)
+		return "", "", fmt.Errorf("failed to canonicalize fingerprint payload: %w", err)
 	}
 	logging.LogDebug(moduleName, fmt.Sprintf("Collected canonical fingerprint payload length: %d", len(canonicalPayload)))
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Canonical fingerprint payload: %s", canonicalPayload))
-	hash := m.hashData(canonicalPayload)
+	hash = m.hashData(canonicalPayload)
 	signature, err := m.signWithPrivateKey(hash)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign: %w", err)
+		return "", "", fmt.Errorf("failed to sign: %w", err)
 	}
 
 	m.setPayloadCache(payload)
-	return signature, nil
+	return hash, signature, nil
 }
 
 func (m *Manager) collectStableFingerprintPayload() FingerprintPayload {

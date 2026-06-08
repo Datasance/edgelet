@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -76,9 +77,9 @@ func (c *Config) ApplyEngineDefaults(engine string) error {
 // SnapshotYAML returns a copy of the on-disk YAML bytes for revert on failed warm reload.
 func SnapshotYAML(path string) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("config path is empty")
+		return nil, errors.New("config path is empty")
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- config path from loader, not arbitrary user input
 	if err != nil {
 		return nil, fmt.Errorf("read config snapshot: %w", err)
 	}
@@ -99,7 +100,7 @@ func (c *Config) RevertContainerEngineURL(containerEngineURL string) error {
 }
 
 // PatchKeysFromMap converts a SetConfig map to short-code keys for classification.
-func PatchKeysFromMap(configMap map[string]interface{}) map[string]struct{} {
+func PatchKeysFromMap(configMap map[string]any) map[string]struct{} {
 	keys := make(map[string]struct{}, len(configMap))
 	for k := range configMap {
 		keys[k] = struct{}{}

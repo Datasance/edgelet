@@ -1,7 +1,8 @@
+//revive:disable:nested-structs
 package models
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 )
 
@@ -20,31 +21,31 @@ type LocalRegistryManifest struct {
 
 func (m *LocalRegistryManifest) Validate() error {
 	if m == nil {
-		return fmt.Errorf("manifest is nil")
+		return errors.New("manifest is nil")
 	}
 	if strings.TrimSpace(m.APIVersion) == "" {
-		return fmt.Errorf("apiVersion is required")
+		return errors.New("apiVersion is required")
 	}
 	if strings.TrimSpace(m.Kind) == "" {
-		return fmt.Errorf("kind is required")
+		return errors.New("kind is required")
 	}
 	if strings.TrimSpace(m.Kind) != "Registry" {
-		return fmt.Errorf("kind must be Registry")
+		return errors.New("kind must be Registry")
 	}
 	switch strings.TrimSpace(m.APIVersion) {
 	case "edgelet.iofog.org/v1":
 	default:
-		return fmt.Errorf("apiVersion must be edgelet.iofog.org/v1")
+		return errors.New("apiVersion must be edgelet.iofog.org/v1")
 	}
 	if strings.TrimSpace(m.Spec.URL) == "" {
-		return fmt.Errorf("spec.url is required")
+		return errors.New("spec.url is required")
 	}
 	if m.Spec.Private {
 		if strings.TrimSpace(m.Spec.UserName) == "" {
-			return fmt.Errorf("spec.username is required when spec.private=true")
+			return errors.New("spec.username is required when spec.private=true")
 		}
 		if strings.TrimSpace(m.Spec.Password) == "" {
-			return fmt.Errorf("spec.password is required when spec.private=true")
+			return errors.New("spec.password is required when spec.private=true")
 		}
 	}
 	return nil

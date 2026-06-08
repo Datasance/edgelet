@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package handlers
 
 import (
@@ -32,21 +33,21 @@ import (
 
 type runtimeClassDetailedTestError struct {
 	msg     string
-	details map[string]interface{}
+	details map[string]any
 }
 
 func (e *runtimeClassDetailedTestError) Error() string {
 	return e.msg
 }
 
-func (e *runtimeClassDetailedTestError) Details() map[string]interface{} {
+func (e *runtimeClassDetailedTestError) Details() map[string]any {
 	return e.details
 }
 
 func TestHandleSystemControllerCert_DecodesBase64WritesPathEnablesSecureMode(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	certPath := filepath.Join(t.TempDir(), "controller-ca.crt")
-	errorsMap := cfg.SetConfig(map[string]interface{}{"ac": certPath})
+	errorsMap := cfg.SetConfig(map[string]any{"ac": certPath})
 	if len(errorsMap) > 0 {
 		t.Fatalf("failed to set certificate path: %v", errorsMap)
 	}
@@ -75,7 +76,7 @@ func TestHandleSystemControllerCert_DecodesBase64WritesPathEnablesSecureMode(t *
 		t.Fatalf("expected certificate file to be written: %v", err)
 	}
 	if strings.TrimSpace(string(fileData)) != strings.TrimSpace(pemCert) {
-		t.Fatalf("certificate file does not match decoded PEM content")
+		t.Fatal("certificate file does not match decoded PEM content")
 	}
 	if !cfg.SecureMode {
 		t.Fatal("expected secure mode to be enabled")
@@ -85,7 +86,7 @@ func TestHandleSystemControllerCert_DecodesBase64WritesPathEnablesSecureMode(t *
 func TestHandleSystemControllerCert_RejectsNonBase64Input(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
 	certPath := filepath.Join(t.TempDir(), "controller-ca.crt")
-	errorsMap := cfg.SetConfig(map[string]interface{}{"ac": certPath})
+	errorsMap := cfg.SetConfig(map[string]any{"ac": certPath})
 	if len(errorsMap) > 0 {
 		t.Fatalf("failed to set certificate path: %v", errorsMap)
 	}
@@ -215,7 +216,7 @@ func TestHandleSystemLogs_BoundedReturnsEntries(t *testing.T) {
 	var envelope struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Entries []map[string]interface{} `json:"entries"`
+			Entries []map[string]any `json:"entries"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
@@ -284,8 +285,8 @@ func TestHandleDeployRuntimeClassesValidate_RejectsUnsupportedEngineOrFlavor(t *
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `, nil)
 	rec := httptest.NewRecorder()
 
@@ -334,8 +335,8 @@ func TestHandleDeployRuntimeClassesCRUD_SucceedsWhenFullAndIofog(t *testing.T) {
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `
 
 	handler := NewEdgeletAPIHandler()
@@ -363,7 +364,7 @@ handler: edgelet
 	var listEnvelope struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Items []map[string]interface{} `json:"items"`
+			Items []map[string]any `json:"items"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(listRec.Body.Bytes(), &listEnvelope); err != nil {
@@ -376,22 +377,22 @@ handler: edgelet
 		t.Fatalf("expected exactly one runtimeclass item, got=%d body=%s", len(listEnvelope.Data.Items), listRec.Body.String())
 	}
 	item := listEnvelope.Data.Items[0]
-	if got := strings.TrimSpace(fmt.Sprintf("%v", item["name"])); got != "edgelet" {
-		t.Fatalf("expected runtimeclass list camelCase key name=edgelet, got=%q body=%s", got, listRec.Body.String())
+	if got := strings.TrimSpace(fmt.Sprintf("%v", item["name"])); got != "edgelet-wasmtime" {
+		t.Fatalf("expected runtimeclass list camelCase key name=edgelet-wasmtime, got=%q body=%s", got, listRec.Body.String())
 	}
-	if got := strings.TrimSpace(fmt.Sprintf("%v", item["runtimeName"])); got != "edgelet" {
-		t.Fatalf("expected runtimeclass list camelCase key runtimeName=edgelet, got=%q body=%s", got, listRec.Body.String())
+	if got := strings.TrimSpace(fmt.Sprintf("%v", item["runtimeName"])); got != "edgelet-wasmtime" {
+		t.Fatalf("expected runtimeclass list camelCase key runtimeName=edgelet-wasmtime, got=%q body=%s", got, listRec.Body.String())
 	}
 
-	getReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses/edgelet", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/deploy/runtimeclasses/edgelet-wasmtime", nil)
 	getRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(getRec, getReq)
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("expected get 200, got %d body=%s", getRec.Code, getRec.Body.String())
 	}
 	var getEnvelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(getRec.Body.Bytes(), &getEnvelope); err != nil {
 		t.Fatalf("failed to decode runtimeclass get response: %v body=%s", err, getRec.Body.String())
@@ -399,14 +400,14 @@ handler: edgelet
 	if !getEnvelope.Success {
 		t.Fatalf("expected get success=true body=%s", getRec.Body.String())
 	}
-	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["name"])); got != "edgelet" {
-		t.Fatalf("expected runtimeclass inspect camelCase key name=edgelet, got=%q body=%s", got, getRec.Body.String())
+	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["name"])); got != "edgelet-wasmtime" {
+		t.Fatalf("expected runtimeclass inspect camelCase key name=edgelet-wasmtime, got=%q body=%s", got, getRec.Body.String())
 	}
-	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["runtimeName"])); got != "edgelet" {
-		t.Fatalf("expected runtimeclass inspect camelCase key runtimeName=edgelet, got=%q body=%s", got, getRec.Body.String())
+	if got := strings.TrimSpace(fmt.Sprintf("%v", getEnvelope.Data["runtimeName"])); got != "edgelet-wasmtime" {
+		t.Fatalf("expected runtimeclass inspect camelCase key runtimeName=edgelet-wasmtime, got=%q body=%s", got, getRec.Body.String())
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/edgelet", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/deploy/runtimeclasses/edgelet-wasmtime", nil)
 	deleteRec := httptest.NewRecorder()
 	handler.HandleDeployRuntimeClasses(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusOK {
@@ -550,7 +551,7 @@ handler: spin
 	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
 		return nil, &runtimeClassDetailedTestError{
 			msg: "failed to apply runtimeclass change through controlled containerd restart: runtime drain before containerd reconfigure failed: timed out draining runtime containers after 45s; remaining container IDs: c1,c2",
-			details: map[string]interface{}{
+			details: map[string]any{
 				"stage":                 runtimeapi.RuntimeClassStageStopRuntime,
 				"remainingContainerIds": []string{"c1", "c2"},
 			},
@@ -589,9 +590,9 @@ handler: spin
 				Status string `json:"status"`
 				Stage  string `json:"stage"`
 				Error  struct {
-					Code    string                 `json:"code"`
-					Message string                 `json:"message"`
-					Details map[string]interface{} `json:"details"`
+					Code    string         `json:"code"`
+					Message string         `json:"message"`
+					Details map[string]any `json:"details"`
 				} `json:"error"`
 			} `json:"data"`
 		}
@@ -645,7 +646,7 @@ handler: spin
 	runtimeClassApplyRunner = func(_ *runtimeapi.Facade, _ string, _ bool) (*models.LocalRuntimeClass, error) {
 		return nil, &runtimeClassDetailedTestError{
 			msg: "forced reconfigure failure",
-			details: map[string]interface{}{
+			details: map[string]any{
 				"stage": runtimeapi.RuntimeClassStageStopRuntime,
 			},
 		}
@@ -663,9 +664,9 @@ handler: spin
 	var envelope struct {
 		Success bool `json:"success"`
 		Error   struct {
-			Code    string                 `json:"code"`
-			Message string                 `json:"message"`
-			Details map[string]interface{} `json:"details"`
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(applyRec.Body.Bytes(), &envelope); err != nil {
@@ -859,8 +860,8 @@ func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *
 	var envelope struct {
 		Success bool `json:"success"`
 		Error   struct {
-			Code    string                 `json:"code"`
-			Details map[string]interface{} `json:"details"`
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
@@ -872,7 +873,7 @@ func TestHandleDeployRuntimeClassesDelete_RejectsInUseRuntimeWithUUIDDetails(t *
 	if envelope.Error.Code != ErrCodeInvalidArgument {
 		t.Fatalf("expected invalid argument, got=%s body=%s", envelope.Error.Code, rec.Body.String())
 	}
-	rawUUIDs, ok := envelope.Error.Details["blockingMicroserviceUuids"].([]interface{})
+	rawUUIDs, ok := envelope.Error.Details["blockingMicroserviceUuids"].([]any)
 	if !ok || len(rawUUIDs) == 0 {
 		t.Fatalf("expected blockingMicroserviceUuids details, got=%v", envelope.Error.Details)
 	}

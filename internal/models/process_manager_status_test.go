@@ -12,10 +12,10 @@ func TestProcessManagerStatusPruneMicroserviceStatus(t *testing.T) {
 	})
 
 	if st := pm.GetMicroserviceStatus("ms-a"); st == nil || st.Status != MicroserviceStateUnknown {
-		t.Fatalf("expected ms-a to be pruned from map")
+		t.Fatal("expected ms-a to be pruned from map")
 	}
 	if st := pm.GetMicroserviceStatus("ms-b"); st == nil || st.Status != MicroserviceStateRunning {
-		t.Fatalf("expected ms-b to remain running after prune")
+		t.Fatal("expected ms-b to remain running after prune")
 	}
 }
 
@@ -56,12 +56,12 @@ func TestProcessManagerStatusPruneMicroserviceStatus_RemovesInvalidEntries(t *te
 	})
 
 	if _, ok := pm.MicroservicesStatus[""]; ok {
-		t.Fatalf("expected empty uuid entry to be pruned")
+		t.Fatal("expected empty uuid entry to be pruned")
 	}
 	if _, ok := pm.MicroservicesStatus["nil-ms"]; ok {
-		t.Fatalf("expected nil status entry to be pruned")
+		t.Fatal("expected nil status entry to be pruned")
 	}
 	if st, ok := pm.MicroservicesStatus["valid-ms"]; !ok || st == nil || st.Status != MicroserviceStateRunning {
-		t.Fatalf("expected valid status entry to remain")
+		t.Fatal("expected valid status entry to remain")
 	}
 }

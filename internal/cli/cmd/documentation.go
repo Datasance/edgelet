@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -39,10 +40,10 @@ func newDocGenerateCommand(root *cobra.Command, format string, gen docGenerator)
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if root == nil {
-				return fmt.Errorf("root command is nil")
+				return errors.New("root command is nil")
 			}
 			if outputDir == "" {
-				return fmt.Errorf("--output is required")
+				return errors.New("--output is required")
 			}
 			return gen(root, outputDir)
 		},
@@ -52,14 +53,14 @@ func newDocGenerateCommand(root *cobra.Command, format string, gen docGenerator)
 }
 
 func generateMarkdown(root *cobra.Command, outputDir string) error {
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil { // #nosec G301 -- generated docs output must be world-readable
 		return err
 	}
 	return doc.GenMarkdownTree(root, outputDir)
 }
 
 func generateManPages(root *cobra.Command, outputDir string) error {
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil { // #nosec G301 -- generated docs output must be world-readable
 		return err
 	}
 	header := &doc.GenManHeader{

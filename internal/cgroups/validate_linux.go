@@ -2,12 +2,14 @@
 
 package cgroups
 
-import "fmt"
+import (
+	"errors"
+)
 
 // ValidatePreflight checks delegation requirements before CRI starts.
 func ValidatePreflight(policy *CgroupPolicy) error {
 	if policy == nil {
-		return fmt.Errorf("cgroup policy is not initialized")
+		return errors.New("cgroup policy is not initialized")
 	}
 	if policy.Mode == ModeV1 {
 		return nil

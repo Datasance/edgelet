@@ -1,6 +1,7 @@
 package processmanager
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +41,10 @@ func (pm *ProcessManager) withLocalLaunchLock(microserviceUUID string, fn func()
 		return fn()
 	}
 	v, _ := pm.localLaunchLocks.LoadOrStore(uuid, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
+	mu, ok := v.(*sync.Mutex)
+	if !ok {
+		return "", errors.New("local launch lock has unexpected type")
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	return fn()

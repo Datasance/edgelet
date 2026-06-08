@@ -19,11 +19,7 @@ func TestStartupEngineURL(t *testing.T) {
 func TestCaptureReloadEngineContextUsesStartupSnapshot(t *testing.T) {
 	runtime.ResetForTests()
 	s := NewSupervisor()
-	cfg := captureReloadEngineContextViaSupervisor(s)
-	if cfg.priorContainerEngineURL != "" {
-		// empty config defaults are fine
-	}
-	_ = cfg
+	_ = captureReloadEngineContextViaSupervisor(s)
 }
 
 func captureReloadEngineContextViaSupervisor(s *Supervisor) *reloadEngineContext {

@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package controlplane
 
 import (
@@ -132,19 +133,8 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	}
 	cert := base64.StdEncoding.EncodeToString([]byte("cert"))
 	key := base64.StdEncoding.EncodeToString([]byte("key"))
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{
-		Base64: &struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		}{Cert: cert, Key: key},
+	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{
+		Base64: &models.ControlPlaneHTTPSBase64{Cert: cert, Key: key},
 	}
 
 	env, err := BuildControllerEnv(doc, "uuid-full")
@@ -193,14 +183,7 @@ func TestBuildControllerEnv_HTTPSPathFilenames(t *testing.T) {
 	doc.Kind = "ControlPlane"
 	doc.Metadata.Name = "pot"
 	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{Path: dir}
+	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{Path: dir}
 
 	env, err := BuildControllerEnv(doc, "uuid-tls")
 	if err != nil {

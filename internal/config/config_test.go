@@ -28,7 +28,7 @@ profiles:
 	if _, err := tmpFile.WriteString(testConfig); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Load config
 	if err := LoadConfig(tmpFile.Name()); err != nil {

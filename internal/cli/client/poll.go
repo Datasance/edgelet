@@ -29,7 +29,7 @@ type PollProgress struct {
 // PollAsyncOperation polls fetch until the operation reaches a terminal status.
 // When StageFormatter is set, stage transitions are rendered on stderr.
 // When PercentLabel is set, percent progress is rendered instead.
-func PollAsyncOperation(ctx context.Context, cfg PollConfig, fetch func() (map[string]interface{}, error), progress PollProgress) (map[string]interface{}, []string, error) {
+func PollAsyncOperation(ctx context.Context, cfg PollConfig, fetch func() (map[string]any, error), progress PollProgress) (map[string]any, []string, error) {
 	if cfg.Interval <= 0 {
 		cfg.Interval = defaultPollInterval
 	}
@@ -161,7 +161,7 @@ func normalizeStage(raw string) string {
 	return stage
 }
 
-func parsePercent(data map[string]interface{}) (int, bool) {
+func parsePercent(data map[string]any) (int, bool) {
 	if data == nil {
 		return 0, false
 	}
@@ -192,6 +192,6 @@ func clampPercent(value int) int {
 }
 
 // OperationIDFromStart extracts an async operation id from a start response.
-func OperationIDFromStart(data map[string]interface{}) string {
+func OperationIDFromStart(data map[string]any) string {
 	return strings.TrimSpace(output.MapValueAsString(data, "operationId"))
 }

@@ -53,19 +53,20 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 		return err
 	}
 
-	// Calculate max file size per file
-	maxFileSize := (maxFileSizeMB * 1024 * 1024) / logFileCount
+	// Calculate max file size per file (int64 — arm32 int overflows at 2GiB).
+	maxFileSize := int64(maxFileSizeMB) * 1024 * 1024 / int64(logFileCount)
 	if maxFileSize < 1024*1024 {
 		maxFileSize = 1024 * 1024 // Minimum 1MB
 	}
-	if maxFileSize > 2*1024*1024*1024 {
-		maxFileSize = 2 * 1024 * 1024 * 1024 // Maximum 2GB
+	const maxFileSizeCap = 2 * 1024 * 1024 * 1024 // Maximum 2GB
+	if maxFileSize > maxFileSizeCap {
+		maxFileSize = maxFileSizeCap
 	}
 
 	// Setup file rotation
 	// Only rotate on existing file if this is the first initialization (edgelet restart)
 	rotateOnExisting := !logger.isInitialized
-	logFile, err := NewRotatingWriter(logDir, "edgelet", int64(maxFileSize), logFileCount, rotateOnExisting)
+	logFile, err := NewRotatingWriter(logDir, "edgelet", maxFileSize, logFileCount, rotateOnExisting)
 	if err != nil {
 		return err
 	}

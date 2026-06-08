@@ -11,7 +11,7 @@ Subcommands: status, info, version, reload, stop, logs, prune.`)
 
 // StopCommandLong returns help for system stop.
 func StopCommandLong() string {
-	return strings.TrimSpace(`Gracefully stop the ioFog Agent daemon (edgelet).
+	return strings.TrimSpace(`Gracefully stop the edgelet daemon.
 
 WARNING: Stopping the daemon disables EdgeletAPI until the daemon is started again
 (edgelet or systemctl start edgelet).`)

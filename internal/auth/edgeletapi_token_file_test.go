@@ -34,7 +34,7 @@ func TestLocalTokenManager_SaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
 	// Override the token path for testing
@@ -77,7 +77,7 @@ func TestLocalTokenManager_ValidateToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
 	// Override the token path for testing
@@ -118,8 +118,8 @@ func TestLocalTokenManager_LoadToken_FileNotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpFile.Close()
-	os.Remove(tmpFile.Name()) // Remove it so it doesn't exist
+	_ = tmpFile.Close()
+	_ = os.Remove(tmpFile.Name()) // Remove it so it doesn't exist
 
 	// Override the token path for testing
 	originalPath := utils.EdgeletAPITokenPath

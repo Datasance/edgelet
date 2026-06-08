@@ -1,6 +1,8 @@
+//revive:disable:nested-structs
 package models
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -20,17 +22,17 @@ type LocalDeployManifest struct {
 		Image     string `yaml:"image" json:"image"`
 		Registry  *int   `yaml:"registry,omitempty" json:"registry,omitempty"`
 		Container struct {
-			Annotations     map[string]interface{} `yaml:"annotations,omitempty" json:"annotations,omitempty"`
-			HostNetworkMode bool                   `yaml:"hostNetworkMode" json:"hostNetworkMode"`
-			IsPrivileged    bool                   `yaml:"isPrivileged" json:"isPrivileged"`
-			CapAdd          []string               `yaml:"capAdd,omitempty" json:"capAdd,omitempty"`
-			CapDrop         []string               `yaml:"capDrop,omitempty" json:"capDrop,omitempty"`
-			IpcMode         string                 `yaml:"ipcMode,omitempty" json:"ipcMode,omitempty"`
-			PidMode         string                 `yaml:"pidMode,omitempty" json:"pidMode,omitempty"`
-			RunAsUser       string                 `yaml:"runAsUser,omitempty" json:"runAsUser,omitempty"`
-			Platform        string                 `yaml:"platform,omitempty" json:"platform,omitempty"`
-			Runtime         string                 `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-			CDIDevices      []string               `yaml:"cdiDevices,omitempty" json:"cdiDevices,omitempty"`
+			Annotations     map[string]any `yaml:"annotations,omitempty" json:"annotations,omitempty"`
+			HostNetworkMode bool           `yaml:"hostNetworkMode" json:"hostNetworkMode"`
+			IsPrivileged    bool           `yaml:"isPrivileged" json:"isPrivileged"`
+			CapAdd          []string       `yaml:"capAdd,omitempty" json:"capAdd,omitempty"`
+			CapDrop         []string       `yaml:"capDrop,omitempty" json:"capDrop,omitempty"`
+			IpcMode         string         `yaml:"ipcMode,omitempty" json:"ipcMode,omitempty"`
+			PidMode         string         `yaml:"pidMode,omitempty" json:"pidMode,omitempty"`
+			RunAsUser       string         `yaml:"runAsUser,omitempty" json:"runAsUser,omitempty"`
+			Platform        string         `yaml:"platform,omitempty" json:"platform,omitempty"`
+			Runtime         string         `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+			CDIDevices      []string       `yaml:"cdiDevices,omitempty" json:"cdiDevices,omitempty"`
 			Volumes         []struct {
 				HostDestination      string `yaml:"hostDestination" json:"hostDestination"`
 				ContainerDestination string `yaml:"containerDestination" json:"containerDestination"`
@@ -61,8 +63,8 @@ type LocalDeployManifest struct {
 				Retries     int      `yaml:"retries,omitempty" json:"retries,omitempty"`
 			} `yaml:"healthCheck,omitempty" json:"healthCheck,omitempty"`
 		} `yaml:"container,omitempty" json:"container,omitempty"`
-		Schedule int                    `yaml:"schedule,omitempty" json:"schedule,omitempty"`
-		Config   map[string]interface{} `yaml:"config,omitempty" json:"config,omitempty"`
+		Schedule int            `yaml:"schedule,omitempty" json:"schedule,omitempty"`
+		Config   map[string]any `yaml:"config,omitempty" json:"config,omitempty"`
 	} `yaml:"spec" json:"spec"`
 }
 
@@ -72,34 +74,34 @@ var windowsAbsPathPattern = regexp.MustCompile(`^[a-zA-Z]:[\\/].+`)
 
 func (m *LocalDeployManifest) Validate() error {
 	if m == nil {
-		return fmt.Errorf("manifest is nil")
+		return errors.New("manifest is nil")
 	}
 	if strings.TrimSpace(m.APIVersion) == "" {
-		return fmt.Errorf("apiVersion is required")
+		return errors.New("apiVersion is required")
 	}
 	if strings.TrimSpace(m.Kind) == "" {
-		return fmt.Errorf("kind is required")
+		return errors.New("kind is required")
 	}
 	if strings.TrimSpace(m.Kind) != "Microservice" {
-		return fmt.Errorf("kind must be Microservice")
+		return errors.New("kind must be Microservice")
 	}
 	switch strings.TrimSpace(m.APIVersion) {
 	case "edgelet.iofog.org/v1":
 	default:
-		return fmt.Errorf("apiVersion must be edgelet.iofog.org/v1")
+		return errors.New("apiVersion must be edgelet.iofog.org/v1")
 	}
 	if strings.TrimSpace(m.Metadata.Name) == "" {
-		return fmt.Errorf("metadata.name is required")
+		return errors.New("metadata.name is required")
 	}
 	name := strings.TrimSpace(m.Metadata.Name)
 	if len(name) > 63 {
-		return fmt.Errorf("metadata.name must be <= 63 characters and follow DNS-1123 label format")
+		return errors.New("metadata.name must be <= 63 characters and follow DNS-1123 label format")
 	}
 	if !localDeployNamePattern.MatchString(name) {
-		return fmt.Errorf("metadata.name must match DNS-1123 label format: lowercase alphanumeric or '-', start/end alphanumeric")
+		return errors.New("metadata.name must match DNS-1123 label format: lowercase alphanumeric or '-', start/end alphanumeric")
 	}
 	if strings.TrimSpace(m.Spec.Image) == "" {
-		return fmt.Errorf("spec.image is required")
+		return errors.New("spec.image is required")
 	}
 	for i := range m.Spec.Container.Volumes {
 		volume := &m.Spec.Container.Volumes[i]

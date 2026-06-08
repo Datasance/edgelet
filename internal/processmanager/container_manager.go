@@ -512,7 +512,7 @@ type RecreateOptions struct {
 // creates and starts a new one from the microservice spec.
 func (cm *ContainerManager) RecreateContainer(ctx context.Context, ms *models.Microservice, opts RecreateOptions) (string, error) {
 	if ms == nil {
-		return "", fmt.Errorf("microservice is nil")
+		return "", errors.New("microservice is nil")
 	}
 
 	cm.emitFromCM(ctx, runtimeops.RuntimeEvent{

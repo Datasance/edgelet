@@ -13,7 +13,7 @@ func Exec(c *client.Client, id string, command []string) error {
 	if c == nil {
 		return run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"command": command,
 		"tty":     true,
 		"stdin":   true,

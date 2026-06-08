@@ -8,12 +8,12 @@ import (
 )
 
 type inspectFakeClient struct {
-	gets map[string]map[string]interface{}
+	gets map[string]map[string]any
 }
 
 func (f *inspectFakeClient) IsDaemonRunning() bool { return true }
 
-func (f *inspectFakeClient) Request(method, path string, _ interface{}) (map[string]interface{}, error) {
+func (f *inspectFakeClient) Request(method, path string, _ any) (map[string]any, error) {
 	key := method + " " + path
 	if data, ok := f.gets[key]; ok {
 		return data, nil
@@ -21,13 +21,13 @@ func (f *inspectFakeClient) Request(method, path string, _ interface{}) (map[str
 	return nil, run.NewCLIError(run.CodeNotFound, "not found", nil)
 }
 
-func (f *inspectFakeClient) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]interface{}, error) {
+func (f *inspectFakeClient) RequestMultipartFile(string, string, string, string, map[string]string) (map[string]any, error) {
 	return nil, run.NewCLIError(run.CodeInternal, "unexpected multipart request", nil)
 }
 
 func TestInspect_PasswordPlain(t *testing.T) {
 	client := &inspectFakeClient{
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/deploy/registries/7": {
 				"id":        7,
 				"url":       "https://registry.example/v2/",

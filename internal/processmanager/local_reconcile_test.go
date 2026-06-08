@@ -2,7 +2,6 @@ package processmanager
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,35 +14,35 @@ import (
 )
 
 func TestLocalDeploymentLaunchInFlight(t *testing.T) {
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	inFlight := &models.LocalDeployedMicroservice{
 		LocalUUID:          "local-apply",
 		RuntimeState:       "starting",
 		State:              "starting",
 		Generation:         2,
 		ObservedGeneration: 0,
-		LastTransitionAt:   now,
+		LastTransitionAt:   nowSec,
 	}
-	if !localDeploymentLaunchInFlight(inFlight, now) {
+	if !localDeploymentLaunchInFlight(inFlight, nowSec) {
 		t.Fatal("expected apply-owned starting deployment to be in-flight")
 	}
 
 	observed := *inFlight
 	observed.ObservedGeneration = 2
-	if localDeploymentLaunchInFlight(&observed, now) {
+	if localDeploymentLaunchInFlight(&observed, nowSec) {
 		t.Fatal("expected observed generation to clear in-flight state")
 	}
 
 	stale := *inFlight
-	stale.LastStartAttemptAt = now - int64(localLaunchInFlightStaleTimeout.Seconds()) - 1
-	if localDeploymentLaunchInFlight(&stale, now) {
+	stale.LastStartAttemptAt = nowSec - int64(localLaunchInFlightStaleTimeout.Seconds()) - 1
+	if localDeploymentLaunchInFlight(&stale, nowSec) {
 		t.Fatal("expected stale starting deployment to allow reconcile retry")
 	}
 }
 
 func TestReconcileLocalDesiredRunning_SkipsLaunchWhenApplyInFlight(t *testing.T) {
 	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:          "local-apply",
 		RuntimeState:       "starting",
@@ -51,14 +50,14 @@ func TestReconcileLocalDesiredRunning_SkipsLaunchWhenApplyInFlight(t *testing.T)
 		DesiredState:       "running",
 		Generation:         1,
 		ObservedGeneration: 0,
-		LastTransitionAt:   now,
+		LastTransitionAt:   nowSec,
 	}
 	launchCalled := false
 	pm.launchLocalDeploymentFn = func(*models.LocalDeployedMicroservice, int64) {
 		launchCalled = true
 	}
 
-	pm.reconcileLocalDesiredRunning(item, nil, now)
+	pm.reconcileLocalDesiredRunning(item, nil, nowSec)
 
 	if launchCalled {
 		t.Fatal("expected reconcile to skip launch while CLI apply is in-flight")
@@ -67,7 +66,7 @@ func TestReconcileLocalDesiredRunning_SkipsLaunchWhenApplyInFlight(t *testing.T)
 
 func TestReconcileLocalDesiredRunning_LaunchesWhenNotInFlight(t *testing.T) {
 	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:    "local-retry",
 		RuntimeState: "failed",
@@ -80,7 +79,7 @@ func TestReconcileLocalDesiredRunning_LaunchesWhenNotInFlight(t *testing.T) {
 		launchCalled = true
 	}
 
-	pm.reconcileLocalDesiredRunning(item, nil, now)
+	pm.reconcileLocalDesiredRunning(item, nil, nowSec)
 
 	if !launchCalled {
 		t.Fatal("expected reconcile to launch when deployment is not in-flight")
@@ -194,7 +193,7 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreates(t *testing.
 	pm.recreateLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, pullImage bool, _ int64) error {
 		recreateCalled = true
 		if pullImage {
-			t.Fatalf("expected pullImage=false for created non-restartable recreate")
+			t.Fatal("expected pullImage=false for created non-restartable recreate")
 		}
 		target.ContainerID = "new-container"
 		target.RuntimeState = "running"
@@ -210,7 +209,7 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreates(t *testing.
 	pm.reconcileLocalDesiredRunning(item, container, 123)
 
 	if !recreateCalled {
-		t.Fatalf("expected recreate to be called for non-restartable created container")
+		t.Fatal("expected recreate to be called for non-restartable created container")
 	}
 	if item.RuntimeState != "running" || item.State != "running" {
 		t.Fatalf("expected running state after recreate, got runtime=%q state=%q", item.RuntimeState, item.State)
@@ -282,7 +281,7 @@ func TestReconcileLocalDesiredRunning_CreatedNonRestartableRecreateLaunchFailure
 		t.Fatalf("expected failure count incremented after recreate launch failure, got %d", item.FailureCount)
 	}
 	if item.LastError == "" {
-		t.Fatalf("expected last error set on recreate launch failure")
+		t.Fatal("expected last error set on recreate launch failure")
 	}
 }
 
@@ -345,7 +344,7 @@ func TestReconcileLocalDesiredRunning_ExitingDockerStartFailureBumpsFailure(t *t
 	}
 	container := &engine.Container{ID: "old-container"}
 	pm.startMicroserviceFn = func(_ string) error {
-		return fmt.Errorf("docker start failed")
+		return errors.New("docker start failed")
 	}
 	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
 		return &models.MicroserviceStatus{Status: models.MicroserviceStateExiting}, nil
@@ -412,7 +411,7 @@ func TestReconcileLocalDesiredRunning_ExitingNonRestartableRecreates(t *testing.
 	pm.recreateLocalDeploymentFn = func(target *models.LocalDeployedMicroservice, pullImage bool, _ int64) error {
 		recreateCalled = true
 		if pullImage {
-			t.Fatalf("expected pullImage=false for exiting non-restartable recreate")
+			t.Fatal("expected pullImage=false for exiting non-restartable recreate")
 		}
 		target.ContainerID = "new-container"
 		target.RuntimeState = "running"

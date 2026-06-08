@@ -17,7 +17,7 @@ func TestPublishHostPolicy_setsGlobalPolicy(t *testing.T) {
 		t.Fatal("expected non-nil policy")
 	}
 	if policy.Mode == ModeUnknown {
-		t.Fatalf("expected detectable mode, got unknown")
+		t.Fatal("expected detectable mode, got unknown")
 	}
 	got := GetGlobalPolicy()
 	if got != policy {

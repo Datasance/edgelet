@@ -49,7 +49,7 @@ func (f *Facade) guardControlPlaneMicroserviceMutation(uuid, operation string) e
 	return &ErrControlPlaneLifecycleBlocked{Operation: operation}
 }
 
-func controlPlaneRuntimeListEntry(item *models.ControlPlaneDeployment) map[string]interface{} {
+func controlPlaneRuntimeListEntry(item *models.ControlPlaneDeployment) map[string]any {
 	if item == nil {
 		return nil
 	}
@@ -58,7 +58,7 @@ func controlPlaneRuntimeListEntry(item *models.ControlPlaneDeployment) map[strin
 	if state == "" {
 		state = strings.ToLower(strings.TrimSpace(item.State))
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"uuid":        item.ControllerUUID,
 		"name":        item.Name,
 		"application": item.Namespace,

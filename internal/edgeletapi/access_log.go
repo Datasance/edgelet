@@ -20,7 +20,7 @@ const (
 	reasonEmptyToken          = "empty_token"
 	reasonInvalidToken        = "invalid_token"
 	reasonTokenValidation     = "token_validation_error"
-	reasonTokenUseMismatch    = "token_use_mismatch"
+	reasonTokenUseMismatch    = "token_use_mismatch" // #nosec G101 -- log reason label, not a credential
 	reasonAudienceMismatch    = "audience_mismatch"
 	reasonIssuerMismatch      = "issuer_mismatch"
 	reasonSignatureRequired   = "signature_required"
@@ -87,7 +87,7 @@ func (w *responseCaptureWriter) StatusCode() int {
 type structuredEvent struct {
 	Level  string
 	Module string
-	Fields map[string]interface{}
+	Fields map[string]any
 }
 
 var localAPILogSink = func(event structuredEvent) {
@@ -117,7 +117,7 @@ func accessLoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func emitRejectEvent(r *http.Request, route, reasonCode string, statusCode int, tokenMeta map[string]interface{}) {
+func emitRejectEvent(r *http.Request, route, reasonCode string, statusCode int, tokenMeta map[string]any) {
 	fields := baseLogFields(r, route, statusCode, 0, time.Now())
 	fields["event"] = "edgeletapi.reject"
 	fields["reasonCode"] = reasonCode
@@ -142,13 +142,13 @@ func emitErrorEvent(r *http.Request, route, summary string) {
 	})
 }
 
-func baseLogFields(r *http.Request, route string, status, bytesOut int, start time.Time) map[string]interface{} {
+func baseLogFields(r *http.Request, route string, status, bytesOut int, start time.Time) map[string]any {
 	transport, scheme := detectTransport(r)
 	bytesIn := r.ContentLength
 	if bytesIn < 0 {
 		bytesIn = 0
 	}
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"requestId":  requestIDFromContext(r.Context()),
 		"transport":  transport,
 		"scheme":     scheme,

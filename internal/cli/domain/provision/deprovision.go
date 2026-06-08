@@ -9,7 +9,7 @@ import (
 // DeprovisionResult carries deprovision outcome.
 type DeprovisionResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // DeprovisionRequest carries deprovision options.

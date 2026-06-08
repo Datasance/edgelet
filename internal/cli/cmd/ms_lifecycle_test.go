@@ -9,7 +9,7 @@ import (
 func TestMSStartHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
@@ -34,7 +34,7 @@ func TestMSStartHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
 func TestMSStartHumanWritesDetailToStdout(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
@@ -60,7 +60,7 @@ func TestMSStartHumanWritesDetailToStdout(t *testing.T) {
 func TestMSStartJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"POST /v1/ms/ms-1/start": {
 				"status":           "ok",
 				"microserviceUuid": "ms-1",
@@ -74,7 +74,7 @@ func TestMSStartJSONStdoutOnly(t *testing.T) {
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected no stderr UX for json output, got %q", stderr)
 	}
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}

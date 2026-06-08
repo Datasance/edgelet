@@ -1,6 +1,7 @@
 package volumemount
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -8,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,9 @@ const (
 )
 
 // VolumeMountType represents the type of volume mount
+// VolumeMountType identifies the kind of volume mount.
+//
+//nolint:revive // exported API
 type VolumeMountType string
 
 const (
@@ -46,9 +50,12 @@ const (
 )
 
 // VolumeMountManager manages volume mounts for microservices
+// VolumeMountManager manages volume mount lifecycle.
+//
+//nolint:revive // exported API
 type VolumeMountManager struct {
 	baseDirectory string
-	mountIndex    map[string]interface{}
+	mountIndex    map[string]any
 	indexLock     sync.RWMutex
 	typeCache     map[string]VolumeMountType
 	typeCacheLock sync.RWMutex
@@ -66,7 +73,7 @@ func GetInstance() *VolumeMountManager {
 		baseDir := filepath.Join(cfg.DiskDirectory, volumesDir)
 		instance = &VolumeMountManager{
 			baseDirectory: baseDir,
-			mountIndex:     make(map[string]interface{}),
+			mountIndex:    make(map[string]any),
 			typeCache:     make(map[string]VolumeMountType),
 		}
 		instance.init()
@@ -102,21 +109,21 @@ func (vmm *VolumeMountManager) loadFromStore() {
 	db := store.GetInstance()
 	if db.Conn() == nil {
 		logging.LogWarn(moduleName, "SQLite not open during loadFromStore — starting with empty mount index")
-		vmm.mountIndex = make(map[string]interface{})
+		vmm.mountIndex = make(map[string]any)
 		return
 	}
 
 	records, err := db.LoadAllControllerVolumeMounts()
 	if err != nil {
 		logging.LogError(moduleName, "Error loading volume mounts from SQLite", err)
-		vmm.mountIndex = make(map[string]interface{})
+		vmm.mountIndex = make(map[string]any)
 		return
 	}
 
-	vmm.mountIndex = make(map[string]interface{}, len(records))
+	vmm.mountIndex = make(map[string]any, len(records))
 	for _, rec := range records {
 		typeStr := kindToTypeString(rec.Kind)
-		entry := map[string]interface{}{
+		entry := map[string]any{
 			"name":          rec.Name,
 			"type":          typeStr,
 			"version":       rec.Version,
@@ -171,17 +178,29 @@ func (vmm *VolumeMountManager) persistToStore() {
 
 	records := make([]store.VolumeMountRecord, 0, len(vmm.mountIndex))
 	for uuid, mountDataValue := range vmm.mountIndex {
-		mountData, ok := mountDataValue.(map[string]interface{})
+		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
 			continue
 		}
-		name, _ := mountData["name"].(string)
-		typeStr, _ := mountData["type"].(string)
-		version, _ := mountData["version"].(float64)
-		checksum, _ := mountData["checksum"].(string)
+		name, ok := mountData["name"].(string)
+		if !ok {
+			name = ""
+		}
+		typeStr, ok := mountData["type"].(string)
+		if !ok {
+			typeStr = ""
+		}
+		version, ok := mountData["version"].(float64)
+		if !ok {
+			version = 0
+		}
+		checksum, ok := mountData["checksum"].(string)
+		if !ok {
+			checksum = ""
+		}
 
 		var msSlice []string
-		if msRaw, ok := mountData["microservices"].([]interface{}); ok {
+		if msRaw, ok := mountData["microservices"].([]any); ok {
 			for _, v := range msRaw {
 				if s, ok := v.(string); ok {
 					msSlice = append(msSlice, s)
@@ -192,12 +211,12 @@ func (vmm *VolumeMountManager) persistToStore() {
 			msSlice = []string{}
 		}
 
-		var dataMap map[string]interface{}
-		if d, ok := mountData["data"].(map[string]interface{}); ok {
+		var dataMap map[string]any
+		if d, ok := mountData["data"].(map[string]any); ok {
 			dataMap = d
 		}
 		if dataMap == nil {
-			dataMap = map[string]interface{}{}
+			dataMap = map[string]any{}
 		}
 
 		records = append(records, store.VolumeMountRecord{
@@ -222,7 +241,7 @@ func (vmm *VolumeMountManager) persistToStore() {
 // checksum computes SHA256 checksum of a string
 func (vmm *VolumeMountManager) checksum(data string) string {
 	h := sha256.New()
-	h.Write([]byte(data))
+	_, _ = h.Write([]byte(data))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
@@ -243,13 +262,19 @@ func (vmm *VolumeMountManager) rebuildTypeCacheUnsafe() {
 	vmm.typeCache = make(map[string]VolumeMountType)
 
 	for _, mountDataValue := range vmm.mountIndex {
-		mountData, ok := mountDataValue.(map[string]interface{})
+		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		name, _ := mountData["name"].(string)
-		typeStr, _ := mountData["type"].(string)
+		name, ok := mountData["name"].(string)
+		if !ok {
+			name = ""
+		}
+		typeStr, ok := mountData["type"].(string)
+		if !ok {
+			typeStr = ""
+		}
 
 		if name != "" {
 			if typeStr == "secret" {
@@ -270,7 +295,7 @@ func (vmm *VolumeMountManager) GetVolumeMountType(volumeName string) VolumeMount
 
 // ProcessVolumeMountChanges processes volume mount changes from controller
 // handles errors gracefully
-func (vmm *VolumeMountManager) ProcessVolumeMountChanges(volumeMounts []interface{}) {
+func (vmm *VolumeMountManager) ProcessVolumeMountChanges(volumeMounts []any) {
 	// Use defer/recover to catch any panics
 	defer func() {
 		if r := recover(); r != nil {
@@ -291,13 +316,16 @@ func (vmm *VolumeMountManager) ProcessVolumeMountChanges(volumeMounts []interfac
 
 	// Get new volume mount UUIDs
 	newUuids := make(map[string]bool)
-	volumeMountMap := make(map[string]interface{})
+	volumeMountMap := make(map[string]any)
 	for _, vm := range volumeMounts {
-		vmMap, ok := vm.(map[string]interface{})
+		vmMap, ok := vm.(map[string]any)
 		if !ok {
 			continue
 		}
-		uuid, _ := vmMap["uuid"].(string)
+		uuid, ok := vmMap["uuid"].(string)
+		if !ok {
+			uuid = ""
+		}
 		if uuid != "" {
 			newUuids[uuid] = true
 			volumeMountMap[uuid] = vmMap
@@ -320,7 +348,7 @@ func (vmm *VolumeMountManager) ProcessVolumeMountChanges(volumeMounts []interfac
 
 	// Handle new and updated volume mounts
 	for uuid, vmValue := range volumeMountMap {
-		vmMap, ok := vmValue.(map[string]interface{})
+		vmMap, ok := vmValue.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -385,9 +413,9 @@ func typeStringToKind(typeStr string) string {
 	return "SECRET"
 }
 
-// stringsToInterfaceSlice converts []string to []interface{} for mountIndex compatibility.
-func stringsToInterfaceSlice(ss []string) []interface{} {
-	result := make([]interface{}, len(ss))
+// stringsToInterfaceSlice converts []string to []any for mountIndex compatibility.
+func stringsToInterfaceSlice(ss []string) []any {
+	result := make([]any, len(ss))
 	for i, s := range ss {
 		result[i] = s
 	}
@@ -421,8 +449,11 @@ func getTypeDirectory(vmType VolumeMountType) string {
 }
 
 // parseVolumeMountType parses volume mount type from map
-func parseVolumeMountType(vmMap map[string]interface{}) VolumeMountType {
-	typeStr, _ := vmMap["type"].(string)
+func parseVolumeMountType(vmMap map[string]any) VolumeMountType {
+	typeStr, ok := vmMap["type"].(string)
+	if !ok {
+		typeStr = ""
+	}
 	if typeStr == "secret" {
 		return VolumeMountTypeSecret
 	}
@@ -495,7 +526,7 @@ func copyVersionedDirRecursively(src, dst string, fileMode os.FileMode) error {
 			return os.MkdirAll(targetPath, bindMountDirMode)
 		}
 
-		data, err := os.ReadFile(path) // #nosec G304 -- path is from filepath.Walk over a known system directory
+		data, err := os.ReadFile(path) // #nosec G304,G122 -- path is from filepath.Walk over a known system directory
 		if err != nil {
 			return err
 		}
@@ -504,7 +535,7 @@ func copyVersionedDirRecursively(src, dst string, fileMode os.FileMode) error {
 			return err
 		}
 
-		if err := os.WriteFile(targetPath, data, fileMode); err != nil { // #nosec G306 -- bind-mount files 0644
+		if err := os.WriteFile(targetPath, data, fileMode); err != nil { // #nosec G306,G703 -- bind-mount files 0644; targetPath under controlled dst from Walk
 			return err
 		}
 
@@ -542,7 +573,7 @@ func createKeySymlinksRecursively(mountPath, versionedDir string) error {
 		// Remove any existing symlink/file at this path
 		_ = os.Remove(symlinkPath)
 
-		if err := os.Symlink(linkTarget, symlinkPath); err != nil {
+		if err := os.Symlink(linkTarget, symlinkPath); err != nil { // #nosec G122 -- paths under controlled versionedDir/mountPath
 			return err
 		}
 
@@ -589,7 +620,7 @@ func removeObsoleteSymlinksRecursively(mountPath, targetVersionedDir string) err
 		}
 
 		targetFile := filepath.Join(targetVersionedDir, relPath)
-		if _, serr := os.Stat(targetFile); os.IsNotExist(serr) {
+		if _, serr := os.Stat(targetFile); os.IsNotExist(serr) { // #nosec G122 -- paths under controlled mountPath/versionedDir
 			_ = os.Remove(path)
 		}
 
@@ -601,7 +632,9 @@ func removeObsoleteSymlinksRecursively(mountPath, targetVersionedDir string) err
 	}
 
 	// Remove empty directories bottom-up (longest path first)
-	sort.Sort(sort.Reverse(sort.StringSlice(dirsToCheck)))
+	slices.SortFunc(dirsToCheck, func(a, b string) int {
+		return cmp.Compare(b, a)
+	})
 	for _, dir := range dirsToCheck {
 		if dir == mountPath {
 			continue
@@ -618,7 +651,7 @@ func removeObsoleteSymlinksRecursively(mountPath, targetVersionedDir string) err
 // createMainStructureFromData creates the main directory structure (versioned dir, files, ..data symlink, key symlinks)
 // from the given data map (key->base64). Used by createVolumeMount, updateVolumeMount, and rehydration.
 // If atomicSymlink is true, creates the ..data symlink atomically (write to .tmp then rename).
-func (vmm *VolumeMountManager) createMainStructureFromData(mountPath string, dataObj map[string]interface{}, vmType VolumeMountType, atomicSymlink bool) (versionDirName string, err error) {
+func (vmm *VolumeMountManager) createMainStructureFromData(mountPath string, dataObj map[string]any, vmType VolumeMountType, atomicSymlink bool) (versionDirName string, err error) {
 	if err := os.MkdirAll(mountPath, dirMode(vmType)); err != nil {
 		return "", fmt.Errorf("create mount directory: %w", err)
 	}
@@ -687,11 +720,23 @@ func (vmm *VolumeMountManager) createMainStructureFromData(mountPath string, dat
 }
 
 // createVolumeMount creates a new volume mount
-func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]interface{}) {
-	uuid, _ := vmMap["uuid"].(string)
-	name, _ := vmMap["name"].(string)
-	version, _ := vmMap["version"].(float64)
-	dataObj, _ := vmMap["data"].(map[string]interface{})
+func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]any) {
+	uuid, ok := vmMap["uuid"].(string)
+	if !ok {
+		uuid = ""
+	}
+	name, ok := vmMap["name"].(string)
+	if !ok {
+		name = ""
+	}
+	version, ok := vmMap["version"].(float64)
+	if !ok {
+		version = 0
+	}
+	dataObj, ok := vmMap["data"].(map[string]any)
+	if !ok {
+		dataObj = map[string]any{}
+	}
 	vmType := parseVolumeMountType(vmMap)
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Creating volume mount - UUID: %s, Name: %s, Version: %.0f, Type: %s",
@@ -709,13 +754,13 @@ func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]interface{}) {
 	dataChecksum := vmm.checksum(string(dataChecksumJSON))
 
 	// Update index with new schema; store raw content (key->base64) for rehydration
-	mountData := map[string]interface{}{
+	mountData := map[string]any{
 		"name":          name,
 		"type":          map[string]string{string(VolumeMountTypeSecret): "secret", string(VolumeMountTypeConfigMap): "configMap"}[string(vmType)],
 		"version":       version,
 		"checksum":      dataChecksum,
 		"data":          dataObj,
-		"microservices": []interface{}{},
+		"microservices": []any{},
 	}
 
 	vmm.mountIndex[uuid] = mountData
@@ -725,20 +770,35 @@ func (vmm *VolumeMountManager) createVolumeMount(vmMap map[string]interface{}) {
 }
 
 // updateVolumeMount updates an existing volume mount
-func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
-	uuid, _ := vmMap["uuid"].(string)
-	name, _ := vmMap["name"].(string)
-	version, _ := vmMap["version"].(float64)
-	dataObj, _ := vmMap["data"].(map[string]interface{})
+func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]any) {
+	uuid, ok := vmMap["uuid"].(string)
+	if !ok {
+		uuid = ""
+	}
+	name, ok := vmMap["name"].(string)
+	if !ok {
+		name = ""
+	}
+	version, ok := vmMap["version"].(float64)
+	if !ok {
+		version = 0
+	}
+	dataObj, ok := vmMap["data"].(map[string]any)
+	if !ok {
+		dataObj = map[string]any{}
+	}
 	vmType := parseVolumeMountType(vmMap)
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Updating volume mount - UUID: %s, Name: %s, Version: %.0f, Type: %s",
 		uuid, name, version, vmType))
 
 	// Get current version from index
-	currentMount, ok := vmm.mountIndex[uuid].(map[string]interface{})
+	currentMount, ok := vmm.mountIndex[uuid].(map[string]any)
 	if ok {
-		currentVersion, _ := currentMount["version"].(float64)
+		currentVersion, ok := currentMount["version"].(float64)
+		if !ok {
+			currentVersion = 0
+		}
 		if version <= currentVersion {
 			logging.LogWarn(moduleName, fmt.Sprintf("Skipping update - new version %.0f not greater than current version %.0f",
 				version, currentVersion))
@@ -749,7 +809,7 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
 	// Get old keys for deletion
 	oldKeys := make(map[string]bool)
 	if currentMount != nil {
-		if oldData, ok := currentMount["data"].(map[string]interface{}); ok {
+		if oldData, ok := currentMount["data"].(map[string]any); ok {
 			for key := range oldData {
 				oldKeys[key] = true
 			}
@@ -787,9 +847,9 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
 	vmm.cleanupOldVersions(mountPath)
 
 	// Get existing microservices list
-	microservicesArray := []interface{}{}
+	microservicesArray := []any{}
 	if currentMount != nil {
-		if ms, ok := currentMount["microservices"].([]interface{}); ok {
+		if ms, ok := currentMount["microservices"].([]any); ok {
 			microservicesArray = ms
 		}
 	}
@@ -799,7 +859,7 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]interface{}) {
 	dataChecksum := vmm.checksum(string(dataChecksumJSON))
 
 	// Update index with new schema; store raw content (key->base64) for rehydration
-	mountData := map[string]interface{}{
+	mountData := map[string]any{
 		"name":          name,
 		"type":          map[string]string{string(VolumeMountTypeSecret): "secret", string(VolumeMountTypeConfigMap): "configMap"}[string(vmType)],
 		"version":       version,
@@ -822,15 +882,21 @@ func (vmm *VolumeMountManager) deleteVolumeMount(uuid string) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Deleting volume mount: %s", uuid))
 
 	// Get mount info from index
-	mountData, ok := vmm.mountIndex[uuid].(map[string]interface{})
+	mountData, ok := vmm.mountIndex[uuid].(map[string]any)
 	if !ok {
 		logging.LogWarn(moduleName, fmt.Sprintf("Volume mount not found: %s", uuid))
 		return
 	}
 
 	// Delete mount directory and files
-	name, _ := mountData["name"].(string)
-	typeStr, _ := mountData["type"].(string)
+	name, ok := mountData["name"].(string)
+	if !ok {
+		name = ""
+	}
+	typeStr, ok := mountData["type"].(string)
+	if !ok {
+		typeStr = ""
+	}
 	typeDir := secretsDir
 	if typeStr == "configMap" {
 		typeDir = configMapsDir
@@ -878,15 +944,20 @@ func (vmm *VolumeMountManager) cleanupOldVersions(mountPath string) {
 	if len(versionDirs) <= maxVersionHistory {
 		return
 	}
-
 	// Sort by modification time (oldest first)
-	sort.Slice(versionDirs, func(i, j int) bool {
-		infoI, errI := versionDirs[i].Info()
-		infoJ, errJ := versionDirs[j].Info()
-		if errI != nil || errJ != nil {
-			return false
+	slices.SortStableFunc(versionDirs, func(a, b os.DirEntry) int {
+		infoA, errA := a.Info()
+		infoB, errB := b.Info()
+		if errA != nil || errB != nil {
+			return 0
 		}
-		return infoI.ModTime().Before(infoJ.ModTime())
+		if infoA.ModTime().Before(infoB.ModTime()) {
+			return -1
+		}
+		if infoA.ModTime().After(infoB.ModTime()) {
+			return 1
+		}
+		return 0
 	})
 
 	// Delete old versions, keeping last MAX_VERSION_HISTORY
@@ -1011,19 +1082,22 @@ func (vmm *VolumeMountManager) trackMicroserviceUsage(volumeName, microserviceUU
 // Caller must already hold indexLock (read or write).
 func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microserviceUUID string, add bool) {
 	for uuid, mountDataValue := range vmm.mountIndex {
-		mountData, ok := mountDataValue.(map[string]interface{})
+		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		name, _ := mountData["name"].(string)
+		name, ok := mountData["name"].(string)
+		if !ok {
+			name = ""
+		}
 		if name != volumeName {
 			continue
 		}
 
 		// Get existing microservices array
-		microservicesArray := []interface{}{}
-		if ms, ok := mountData["microservices"].([]interface{}); ok {
+		microservicesArray := []any{}
+		if ms, ok := mountData["microservices"].([]any); ok {
 			microservicesArray = ms
 		}
 
@@ -1040,7 +1114,7 @@ func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microser
 			microservicesArray = append(microservicesArray, microserviceUUID)
 		} else if !add && found {
 			// Remove microservice from list
-			newArray := []interface{}{}
+			newArray := []any{}
 			for _, ms := range microservicesArray {
 				if msStr, ok := ms.(string); ok && msStr != microserviceUUID {
 					newArray = append(newArray, ms)
@@ -1050,7 +1124,7 @@ func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microser
 		}
 
 		// Update mount data with new microservices list
-		newMountData := make(map[string]interface{})
+		newMountData := make(map[string]any)
 		for k, v := range mountData {
 			newMountData[k] = v
 		}
@@ -1063,17 +1137,20 @@ func (vmm *VolumeMountManager) trackMicroserviceUsageUnsafe(volumeName, microser
 }
 
 // GetVolumeMountByName gets volume mount info by name
-func (vmm *VolumeMountManager) GetVolumeMountByName(volumeName string) map[string]interface{} {
+func (vmm *VolumeMountManager) GetVolumeMountByName(volumeName string) map[string]any {
 	vmm.indexLock.RLock()
 	defer vmm.indexLock.RUnlock()
 
 	for _, mountDataValue := range vmm.mountIndex {
-		mountData, ok := mountDataValue.(map[string]interface{})
+		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		name, _ := mountData["name"].(string)
+		name, ok := mountData["name"].(string)
+		if !ok {
+			name = ""
+		}
 		if name == volumeName {
 			return mountData
 		}
@@ -1091,7 +1168,7 @@ func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmTyp
 		return
 	}
 
-	microservicesArray, ok := volumeMountData["microservices"].([]interface{})
+	microservicesArray, ok := volumeMountData["microservices"].([]any)
 	if !ok || len(microservicesArray) == 0 {
 		return
 	}
@@ -1182,19 +1259,22 @@ func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID strin
 	// holds indexLock, and trackMicroserviceUsage (the locking wrapper) would deadlock.
 	vmm.indexLock.Lock()
 	for _, mountDataValue := range vmm.mountIndex {
-		mountData, ok := mountDataValue.(map[string]interface{})
+		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		microservicesArray, ok := mountData["microservices"].([]interface{})
+		microservicesArray, ok := mountData["microservices"].([]any)
 		if !ok {
 			continue
 		}
 
 		for _, msValue := range microservicesArray {
 			if msStr, ok := msValue.(string); ok && msStr == microserviceUUID {
-				volumeName, _ := mountData["name"].(string)
+				volumeName, ok := mountData["name"].(string)
+				if !ok {
+					volumeName = ""
+				}
 				vmm.trackMicroserviceUsageUnsafe(volumeName, microserviceUUID, false)
 				break
 			}
@@ -1335,7 +1415,7 @@ func (vmm *VolumeMountManager) clearWalk(baseDir string) {
 		if path == baseDir {
 			return nil
 		}
-		if err := os.RemoveAll(path); err != nil {
+		if err := os.RemoveAll(path); err != nil { // #nosec G122 -- path from Walk under controlled baseDir
 			logging.LogWarn(moduleName, fmt.Sprintf("Error deleting: %s: %v", path, err))
 		}
 		return nil
@@ -1365,7 +1445,7 @@ func (vmm *VolumeMountManager) Clear() error {
 	}
 
 	// Clear index data and cache
-	vmm.mountIndex = make(map[string]interface{})
+	vmm.mountIndex = make(map[string]any)
 	vmm.typeCacheLock.Lock()
 	vmm.typeCache = make(map[string]VolumeMountType)
 	vmm.typeCacheLock.Unlock()
@@ -1401,7 +1481,7 @@ func (vmm *VolumeMountManager) ClearControllerArtifacts() error {
 	}
 
 	// Reset in-memory index/cache to match persisted state.
-	vmm.mountIndex = make(map[string]interface{})
+	vmm.mountIndex = make(map[string]any)
 	vmm.typeCacheLock.Lock()
 	vmm.typeCache = make(map[string]VolumeMountType)
 	vmm.typeCacheLock.Unlock()

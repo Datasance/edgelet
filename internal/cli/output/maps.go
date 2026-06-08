@@ -6,7 +6,7 @@ import (
 )
 
 // MapValueAsString extracts a display string from an API map value.
-func MapValueAsString(input map[string]interface{}, key string) string {
+func MapValueAsString(input map[string]any, key string) string {
 	value, ok := input[key]
 	if !ok || value == nil {
 		return "<unknown>"
@@ -22,7 +22,7 @@ func MapValueAsString(input map[string]interface{}, key string) string {
 			return "<unknown>"
 		}
 		return strings.Join(typed, ",")
-	case []interface{}:
+	case []any:
 		if len(typed) == 0 {
 			return "<unknown>"
 		}
@@ -37,7 +37,7 @@ func MapValueAsString(input map[string]interface{}, key string) string {
 }
 
 // MapValueAsRawString extracts a raw string without unknown placeholders.
-func MapValueAsRawString(input map[string]interface{}, key string) string {
+func MapValueAsRawString(input map[string]any, key string) string {
 	if input == nil {
 		return ""
 	}

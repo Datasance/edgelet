@@ -40,7 +40,9 @@ func TestPostGPSConfig_SendsConfigGPSPayload(t *testing.T) {
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	fa := &FieldAgent{
 		config: cfg,
@@ -76,7 +78,9 @@ func TestPostGPSConfig_SkipsInvalidCoordinates(t *testing.T) {
 		atomic.AddInt32(&requestCount, 1)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	fa := &FieldAgent{
 		config: cfg,
@@ -110,7 +114,9 @@ func TestInstanceGPSConfigUpdated_InvokesPostGPSConfig(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	fa := &FieldAgent{
 		config: cfg,

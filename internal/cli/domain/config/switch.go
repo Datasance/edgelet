@@ -10,7 +10,7 @@ import (
 // SwitchResult carries profile switch outcome.
 type SwitchResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // SwitchProfile validates and switches the active configuration profile.
@@ -27,7 +27,7 @@ func SwitchProfile(client run.EdgeletAPIClient, profile string) (*SwitchResult, 
 	default:
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "profile must be one of dev|prod|def", nil)
 	}
-	data, err := client.Request("POST", "/v1/system/config/switch", map[string]interface{}{
+	data, err := client.Request("POST", "/v1/system/config/switch", map[string]any{
 		"profile": profile,
 	})
 	if err != nil {

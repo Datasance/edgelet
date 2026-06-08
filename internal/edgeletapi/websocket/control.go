@@ -126,7 +126,7 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	// Register connection
 	connection := h.manager.AddConnection(ControlWebSocket, id, conn)
 	logging.LogDebug(controlHandlerModuleName, "Websocket for the real-time control signals is open")
-	emitWSEvent("info", map[string]interface{}{
+	emitWSEvent("info", map[string]any{
 		"event":            "edgeletapi.access",
 		"requestId":        requestID,
 		"path":             r.URL.Path,
@@ -147,7 +147,7 @@ func (h *ControlHandler) Handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func emitWSReject(r *http.Request, requestID, reasonCode string, status int, tokenMeta map[string]string) {
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"event":      "edgeletapi.reject",
 		"requestId":  requestID,
 		"reasonCode": reasonCode,
@@ -171,11 +171,11 @@ func emitWSReject(r *http.Request, requestID, reasonCode string, status int, tok
 	emitWSEvent("warn", fields)
 }
 
-func emitWSEvent(level string, fields map[string]interface{}) {
+func emitWSEvent(level string, fields map[string]any) {
 	wsLogSink(level, fields)
 }
 
-var wsLogSink = func(level string, fields map[string]interface{}) {
+var wsLogSink = func(level string, fields map[string]any) {
 	payload, _ := json.Marshal(fields)
 	switch strings.ToLower(level) {
 	case "warn":
@@ -204,19 +204,19 @@ func parseTokenMeta(token string) map[string]string {
 	if !ok {
 		return meta
 	}
-	if sub, _ := claims["sub"].(string); strings.TrimSpace(sub) != "" {
+	if sub, ok := claims["sub"].(string); ok && strings.TrimSpace(sub) != "" {
 		meta["sub"] = sub
 	}
-	if tokenUse, _ := claims["tokenUse"].(string); strings.TrimSpace(tokenUse) != "" {
+	if tokenUse, ok := claims["tokenUse"].(string); ok && strings.TrimSpace(tokenUse) != "" {
 		meta["tokenUse"] = tokenUse
 	}
-	if jti, _ := claims["jti"].(string); strings.TrimSpace(jti) != "" {
+	if jti, ok := claims["jti"].(string); ok && strings.TrimSpace(jti) != "" {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(jti)))
 		meta["jtiHash"] = hex.EncodeToString(sum[:])
 	}
-	if iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{}); ok {
-		if microservice, ok := iofog["microservice"].(map[string]interface{}); ok {
-			if uuid, _ := microservice["uuid"].(string); strings.TrimSpace(uuid) != "" {
+	if iofog, ok := claims["edgelet.iofog.org"].(map[string]any); ok {
+		if microservice, ok := iofog["microservice"].(map[string]any); ok {
+			if uuid, ok := microservice["uuid"].(string); ok && strings.TrimSpace(uuid) != "" {
 				meta["microserviceUUID"] = strings.TrimSpace(uuid)
 			}
 		}
@@ -226,19 +226,19 @@ func parseTokenMeta(token string) map[string]string {
 
 func tokenMetaFromClaims(claims jwt.MapClaims) map[string]string {
 	meta := map[string]string{}
-	if sub, _ := claims["sub"].(string); strings.TrimSpace(sub) != "" {
+	if sub, ok := claims["sub"].(string); ok && strings.TrimSpace(sub) != "" {
 		meta["sub"] = sub
 	}
-	if tokenUse, _ := claims["tokenUse"].(string); strings.TrimSpace(tokenUse) != "" {
+	if tokenUse, ok := claims["tokenUse"].(string); ok && strings.TrimSpace(tokenUse) != "" {
 		meta["tokenUse"] = tokenUse
 	}
-	if jti, _ := claims["jti"].(string); strings.TrimSpace(jti) != "" {
+	if jti, ok := claims["jti"].(string); ok && strings.TrimSpace(jti) != "" {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(jti)))
 		meta["jtiHash"] = hex.EncodeToString(sum[:])
 	}
-	if iofog, ok := claims["edgelet.iofog.org"].(map[string]interface{}); ok {
-		if microservice, ok := iofog["microservice"].(map[string]interface{}); ok {
-			if uuid, _ := microservice["uuid"].(string); strings.TrimSpace(uuid) != "" {
+	if iofog, ok := claims["edgelet.iofog.org"].(map[string]any); ok {
+		if microservice, ok := iofog["microservice"].(map[string]any); ok {
+			if uuid, ok := microservice["uuid"].(string); ok && strings.TrimSpace(uuid) != "" {
 				meta["microserviceUUID"] = strings.TrimSpace(uuid)
 			}
 		}
@@ -262,21 +262,27 @@ func mergeTokenMeta(a, b map[string]string) map[string]string {
 }
 
 func authorizeV3WebsocketClaims(claims jwt.MapClaims) bool {
-	tokenUse, _ := claims["tokenUse"].(string)
-	sub, _ := claims["sub"].(string)
+	tokenUse, ok := claims["tokenUse"].(string)
+	if !ok {
+		tokenUse = ""
+	}
+	sub, ok := claims["sub"].(string)
+	if !ok {
+		sub = ""
+	}
 	if strings.TrimSpace(tokenUse) == "edgeletapi" && (strings.HasPrefix(sub, "system:edgeletadmin:") || sub == "system:edgeletadmin:bootstrap") {
 		return true
 	}
 
-	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]interface{})
+	iofogRaw, ok := claims["edgelet.iofog.org"].(map[string]any)
 	if !ok {
 		return false
 	}
-	rbacRaw, ok := iofogRaw["rbac"].(map[string]interface{})
+	rbacRaw, ok := iofogRaw["rbac"].(map[string]any)
 	if !ok {
 		return false
 	}
-	rulesRaw, ok := rbacRaw["rulesByGroup"].(map[string]interface{})
+	rulesRaw, ok := rbacRaw["rulesByGroup"].(map[string]any)
 	if !ok {
 		return false
 	}
@@ -290,7 +296,7 @@ func authorizeV3WebsocketClaims(claims jwt.MapClaims) bool {
 	return false
 }
 
-func groupRulesMatch(groups map[string]interface{}, group, resource, verb string) bool {
+func groupRulesMatch(groups map[string]any, group, resource, verb string) bool {
 	rulesRaw, exists := groups[group]
 	if !exists {
 		rulesRaw, exists = groups["*"]
@@ -299,12 +305,12 @@ func groupRulesMatch(groups map[string]interface{}, group, resource, verb string
 		}
 	}
 
-	rulesSlice, ok := rulesRaw.([]interface{})
+	rulesSlice, ok := rulesRaw.([]any)
 	if !ok {
 		return false
 	}
 	for _, ruleRaw := range rulesSlice {
-		rule, ok := ruleRaw.(map[string]interface{})
+		rule, ok := ruleRaw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -319,13 +325,13 @@ func groupRulesMatch(groups map[string]interface{}, group, resource, verb string
 	return false
 }
 
-func stringListMatch(raw interface{}, target string) bool {
+func stringListMatch(raw any, target string) bool {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return false
 	}
 	switch v := raw.(type) {
-	case []interface{}:
+	case []any:
 		values := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {

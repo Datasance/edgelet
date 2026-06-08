@@ -15,8 +15,8 @@ type VolumeMountRecord struct {
 	Version       float64
 	Kind          string // "SECRET" or "CONFIGMAP"
 	Checksum      string
-	Microservices []string               // stored as JSON TEXT array
-	Data          map[string]interface{} // stored as JSON TEXT (key->base64 pairs)
+	Microservices []string       // stored as JSON TEXT array
+	Data          map[string]any // stored as JSON TEXT (key->base64 pairs)
 	UpdatedAt     int64
 }
 
@@ -56,7 +56,9 @@ func (d *DB) LoadAllControllerVolumeMounts() ([]VolumeMountRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query volume mounts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []VolumeMountRecord
 	for rows.Next() {
@@ -68,13 +70,13 @@ func (d *DB) LoadAllControllerVolumeMounts() ([]VolumeMountRecord, error) {
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan volume mount: %w", err)
 		}
-		json.Unmarshal([]byte(microservicesJSON), &rec.Microservices) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-		json.Unmarshal([]byte(dataJSON), &rec.Data)                   // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+		_ = json.Unmarshal([]byte(microservicesJSON), &rec.Microservices) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+		_ = json.Unmarshal([]byte(dataJSON), &rec.Data)                   // #nosec G104 -- data written by this process; parse failure yields empty/zero value
 		if rec.Microservices == nil {
 			rec.Microservices = make([]string, 0)
 		}
 		if rec.Data == nil {
-			rec.Data = make(map[string]interface{})
+			rec.Data = make(map[string]any)
 		}
 		result = append(result, rec)
 	}
@@ -98,13 +100,13 @@ func (d *DB) GetControllerVolumeMountByUUID(uuid string) (*VolumeMountRecord, er
 	); err != nil {
 		return nil, err
 	}
-	json.Unmarshal([]byte(microservicesJSON), &rec.Microservices) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
-	json.Unmarshal([]byte(dataJSON), &rec.Data)                   // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+	_ = json.Unmarshal([]byte(microservicesJSON), &rec.Microservices) // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+	_ = json.Unmarshal([]byte(dataJSON), &rec.Data)                   // #nosec G104 -- data written by this process; parse failure yields empty/zero value
 	if rec.Microservices == nil {
 		rec.Microservices = make([]string, 0)
 	}
 	if rec.Data == nil {
-		rec.Data = make(map[string]interface{})
+		rec.Data = make(map[string]any)
 	}
 	return &rec, nil
 }
@@ -122,13 +124,13 @@ func (d *DB) ReplaceAllControllerVolumeMounts(records []VolumeMountRecord) error
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() // #nosec G104 -- data written by this process; parse failure yields empty/zero value
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec("DELETE FROM controller_volume_mounts"); err != nil {
 		return fmt.Errorf("failed to clear controller_volume_mounts: %w", err)
 	}
 
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 	for _, rec := range records {
 		msJSON, _ := json.Marshal(rec.Microservices)
 		dataJSON, _ := json.Marshal(rec.Data)
@@ -136,7 +138,7 @@ func (d *DB) ReplaceAllControllerVolumeMounts(records []VolumeMountRecord) error
 			`INSERT INTO controller_volume_mounts (uuid, name, version, kind, checksum, microservices, data, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			rec.UUID, rec.Name, rec.Version, rec.Kind, rec.Checksum,
-			string(msJSON), string(dataJSON), now,
+			string(msJSON), string(dataJSON), nowSec,
 		); err != nil {
 			return fmt.Errorf("failed to insert volume mount %s: %w", rec.UUID, err)
 		}

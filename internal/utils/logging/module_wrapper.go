@@ -20,7 +20,7 @@ func (ml *ModuleLogger) Debug(msg string) {
 }
 
 // Debugf logs a formatted debug message
-func (ml *ModuleLogger) Debugf(format string, args ...interface{}) {
+func (ml *ModuleLogger) Debugf(format string, args ...any) {
 	LogDebug(ml.moduleName, fmt.Sprintf(format, args...))
 }
 
@@ -30,7 +30,7 @@ func (ml *ModuleLogger) Info(msg string) {
 }
 
 // Infof logs a formatted info message
-func (ml *ModuleLogger) Infof(format string, args ...interface{}) {
+func (ml *ModuleLogger) Infof(format string, args ...any) {
 	LogInfo(ml.moduleName, fmt.Sprintf(format, args...))
 }
 
@@ -40,7 +40,7 @@ func (ml *ModuleLogger) Warn(msg string) {
 }
 
 // Warnf logs a formatted warning message
-func (ml *ModuleLogger) Warnf(format string, args ...interface{}) {
+func (ml *ModuleLogger) Warnf(format string, args ...any) {
 	LogWarn(ml.moduleName, fmt.Sprintf(format, args...))
 }
 
@@ -50,6 +50,6 @@ func (ml *ModuleLogger) Error(msg string) {
 }
 
 // Errorf logs a formatted error message
-func (ml *ModuleLogger) Errorf(format string, args ...interface{}) {
+func (ml *ModuleLogger) Errorf(format string, args ...any) {
 	LogError(ml.moduleName, fmt.Sprintf(format, args...), nil)
 }

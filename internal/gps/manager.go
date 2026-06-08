@@ -219,8 +219,6 @@ func (m *Manager) initializeGps() error {
 func (m *Manager) getGpsMode() Mode {
 	modeStr := strings.ToUpper(strings.TrimSpace(m.config.GPSMode))
 	switch modeStr {
-	case string(ModeAuto):
-		return ModeAuto
 	case string(ModeDynamic):
 		return ModeDynamic
 	case string(ModeManual):
@@ -368,10 +366,9 @@ func (m *Manager) updateAutoCoordinates() bool {
 			logging.LogError(moduleName, "Error updating AUTO coordinates", err)
 			m.status.SetHealthStatus(HealthStatusIPError)
 			return false
-		} else {
-			m.status.SetHealthStatus(HealthStatusHealthy)
-			return true
 		}
+		m.status.SetHealthStatus(HealthStatusHealthy)
+		return true
 	}
 	return false
 }

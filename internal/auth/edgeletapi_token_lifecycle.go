@@ -43,10 +43,10 @@ func EnsureEdgeletAPITokenForCurrentState() error {
 		return nil
 	}
 
-	extraClaims := map[string]interface{}{
-		"edgelet.iofog.org": map[string]interface{}{
-			"rules": map[string]interface{}{
-				"*": []interface{}{"*"},
+	extraClaims := map[string]any{
+		"edgelet.iofog.org": map[string]any{
+			"rules": map[string]any{
+				"*": []any{"*"},
 			},
 		},
 	}
@@ -74,9 +74,9 @@ func GenerateBootstrapEdgeletAPIJWT(ttl time.Duration) (string, error) {
 		"iat":      now.Unix(),
 		"nbf":      now.Unix(),
 		"tokenUse": tokenUseEdgeletAPI,
-		"edgelet.iofog.org": map[string]interface{}{
-			"rules": map[string]interface{}{
-				"*": []interface{}{"*"},
+		"edgelet.iofog.org": map[string]any{
+			"rules": map[string]any{
+				"*": []any{"*"},
 			},
 		},
 	}

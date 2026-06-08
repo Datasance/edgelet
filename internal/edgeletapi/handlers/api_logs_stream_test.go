@@ -37,26 +37,30 @@ func TestHandleLogsStreamWS_UsesFollowStreamAndForwardsEntries(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
-	defer srv.Close()
+	defer func() {
+		srv.Close()
+	}()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?tail=25&since=2026-01-01T00:00:00Z&until=2026-01-01T01:00:00Z"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	var ev1 map[string]interface{}
+	var ev1 map[string]any
 	if err := conn.ReadJSON(&ev1); err != nil {
 		t.Fatalf("failed to read first event: %v", err)
 	}
-	var ev2 map[string]interface{}
+	var ev2 map[string]any
 	if err := conn.ReadJSON(&ev2); err != nil {
 		t.Fatalf("failed to read second event: %v", err)
 	}
 	if gotCfg == nil {
-		t.Fatalf("expected tail config to be passed")
+		t.Fatal("expected tail config to be passed")
 	}
 	if !gotCfg.Follow || gotCfg.Lines != 25 || gotCfg.Since != "2026-01-01T00:00:00Z" || gotCfg.Until != "2026-01-01T01:00:00Z" {
 		t.Fatalf("unexpected tail config: %+v", gotCfg)
@@ -78,17 +82,21 @@ func TestHandleLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
-	defer srv.Close()
+	defer func() {
+		srv.Close()
+	}()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?tail=bad"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	var ev map[string]interface{}
+	var ev map[string]any
 	if err := conn.ReadJSON(&ev); err != nil {
 		t.Fatalf("failed to read error event: %v", err)
 	}
@@ -96,7 +104,7 @@ func TestHandleLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 		t.Fatalf("expected invalid tail error, got: %v", ev)
 	}
 	if streamCalled {
-		t.Fatalf("expected stream function not to be called on invalid tail")
+		t.Fatal("expected stream function not to be called on invalid tail")
 	}
 }
 
@@ -110,17 +118,21 @@ func TestHandleLogsStreamWS_StreamingErrorReturnsErrorEvent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleLogsStreamWS(w, r, "edgelet.demo")
 	}))
-	defer srv.Close()
+	defer func() {
+		srv.Close()
+	}()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	var ev map[string]interface{}
+	var ev map[string]any
 	if err := conn.ReadJSON(&ev); err != nil {
 		t.Fatalf("failed to read error event: %v", err)
 	}
@@ -141,17 +153,21 @@ func TestHandleSystemLogsStreamWS_StreamsDaemonLogs(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleSystemLogsStreamWS(w, r)
 	}))
-	defer srv.Close()
+	defer func() {
+		srv.Close()
+	}()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?tailLines=1"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	var ev map[string]interface{}
+	var ev map[string]any
 	if err := conn.ReadJSON(&ev); err != nil {
 		t.Fatalf("failed to read log event: %v", err)
 	}
@@ -165,17 +181,21 @@ func TestHandleSystemLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.handleSystemLogsStreamWS(w, r)
 	}))
-	defer srv.Close()
+	defer func() {
+		srv.Close()
+	}()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?tailLines=bad"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	var ev map[string]interface{}
+	var ev map[string]any
 	if err := conn.ReadJSON(&ev); err != nil {
 		t.Fatalf("failed to read error event: %v", err)
 	}
@@ -184,7 +204,7 @@ func TestHandleSystemLogsStreamWS_InvalidTailReturnsErrorEvent(t *testing.T) {
 	}
 }
 
-func stringValue(v interface{}) string {
+func stringValue(v any) string {
 	if v == nil {
 		return ""
 	}

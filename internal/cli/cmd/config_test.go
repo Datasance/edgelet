@@ -11,7 +11,7 @@ import (
 func TestConfigLongFlagPatch(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},
@@ -38,7 +38,7 @@ func TestConfigLongFlagPatch(t *testing.T) {
 func TestConfigShortAliasFlags(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/config": {
 				"controllerUrl":          "http://old/api/v3",
 				"changeFrequencySeconds": 20,
@@ -69,13 +69,13 @@ func TestConfigShortAliasFlags(t *testing.T) {
 func TestConfigPartialRejectionExit2(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},
 			"PATCH /v1/system/config": {
 				"status": "ok",
-				"errorMap": map[string]interface{}{
+				"errorMap": map[string]any{
 					"changeFrequencySeconds": "value out of range",
 				},
 			},
@@ -96,7 +96,7 @@ func TestConfigPartialRejectionExit2(t *testing.T) {
 func TestConfigJSONStdoutOnly(t *testing.T) {
 	client := &fakeClient{
 		running: true,
-		gets: map[string]map[string]interface{}{
+		gets: map[string]map[string]any{
 			"GET /v1/system/config": {
 				"changeFrequencySeconds": 20,
 			},

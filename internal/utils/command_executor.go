@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 import (
 	"bytes"
@@ -21,10 +21,10 @@ func ExecuteCommand(command string) (string, string, error) {
 	var cmd *exec.Cmd
 
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("powershell", "-Command", command)
+		cmd = exec.Command("powershell", "-Command", command) // #nosec G204 -- intentional shell utility; callers supply trusted commands
 	} else {
 		// Use /bin/sh for Unix-like systems
-		cmd = exec.Command("/bin/sh", "-c", command)
+		cmd = exec.Command("/bin/sh", "-c", command) // #nosec G204 -- intentional shell utility; callers supply trusted commands
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -56,9 +56,9 @@ func ExecuteCommandSafe(command string, timeoutSeconds int) (string, error) {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "powershell", "-Command", command)
+		cmd = exec.CommandContext(ctx, "powershell", "-Command", command) // #nosec G204 -- intentional shell utility; callers supply trusted commands
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command) // #nosec G204 -- intentional shell utility; callers supply trusted commands
 	}
 
 	var stdout, stderr bytes.Buffer

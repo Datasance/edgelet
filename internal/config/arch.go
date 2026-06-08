@@ -27,8 +27,6 @@ func ResolveArch(value string) string {
 		return v
 	}
 	switch runtime.GOARCH {
-	case "amd64", "386":
-		return "amd64"
 	case "arm64":
 		return "arm64"
 	case "riscv64":

@@ -10,7 +10,10 @@ func TestEdgeGuardSignatureCRUD(t *testing.T) {
 	if err := db.Open(tempDir); err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer func() {
+		_ = db.Close()
+	}( //nolint:errcheck
+	)
 
 	if err := db.UpsertEdgeGuardSignature("sig-1"); err != nil {
 		t.Fatalf("upsert signature: %v", err)
@@ -55,7 +58,10 @@ func TestAgentPrivateKeyCRUD(t *testing.T) {
 	if err := db.Open(tempDir); err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer func() {
+		_ = db.Close()
+	}( //nolint:errcheck
+	)
 
 	if err := db.UpsertAgentPrivateKey("key-a"); err != nil {
 		t.Fatalf("upsert private key: %v", err)

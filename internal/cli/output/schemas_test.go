@@ -24,7 +24,7 @@ func TestGoldenFilesMatchDocumentedSchemas(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read golden: %v", err)
 			}
-			var decoded map[string]interface{}
+			var decoded map[string]any
 			if err := json.Unmarshal(raw, &decoded); err != nil {
 				t.Fatalf("golden is not valid json: %v", err)
 			}
@@ -34,11 +34,11 @@ func TestGoldenFilesMatchDocumentedSchemas(t *testing.T) {
 				}
 			}
 			if name == "ms_ls.json" {
-				items, ok := decoded["items"].([]interface{})
+				items, ok := decoded["items"].([]any)
 				if !ok || len(items) == 0 {
 					t.Fatal("expected non-empty items array")
 				}
-				first, ok := items[0].(map[string]interface{})
+				first, ok := items[0].(map[string]any)
 				if !ok {
 					t.Fatal("expected object items")
 				}

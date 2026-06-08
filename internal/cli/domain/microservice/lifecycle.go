@@ -8,7 +8,7 @@ import (
 // LifecycleResult carries a microservice lifecycle operation outcome.
 type LifecycleResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 	Path  string
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,19 +15,19 @@ const controlPlaneSingletonID = 1
 // UpsertSystemControlPlane stores the singleton system control plane row.
 func (d *DB) UpsertSystemControlPlane(dep *models.ControlPlaneDeployment) error {
 	if dep == nil {
-		return fmt.Errorf("control plane deployment is nil")
+		return errors.New("control plane deployment is nil")
 	}
 	if strings.TrimSpace(dep.ControllerUUID) == "" {
-		return fmt.Errorf("controller_uuid is required")
+		return errors.New("controller_uuid is required")
 	}
 	if strings.TrimSpace(dep.ManifestYAML) == "" {
-		return fmt.Errorf("manifest_yaml is required")
+		return errors.New("manifest_yaml is required")
 	}
 	if strings.TrimSpace(dep.Name) == "" {
-		return fmt.Errorf("name is required")
+		return errors.New("name is required")
 	}
 	if d.Conn() == nil {
-		return fmt.Errorf("database is closed")
+		return errors.New("database is closed")
 	}
 
 	dep.NormalizeDefaults()
@@ -75,7 +76,7 @@ func (d *DB) UpsertSystemControlPlane(dep *models.ControlPlaneDeployment) error 
 // Returns found=false when no deployment is stored.
 func (d *DB) GetSystemControlPlane() (*models.ControlPlaneDeployment, bool, error) {
 	if d.Conn() == nil {
-		return nil, false, fmt.Errorf("database is closed")
+		return nil, false, errors.New("database is closed")
 	}
 
 	item := &models.ControlPlaneDeployment{}
@@ -103,7 +104,7 @@ func (d *DB) GetSystemControlPlane() (*models.ControlPlaneDeployment, bool, erro
 // DeleteSystemControlPlane removes the singleton system control plane row.
 func (d *DB) DeleteSystemControlPlane() error {
 	if d.Conn() == nil {
-		return fmt.Errorf("database is closed")
+		return errors.New("database is closed")
 	}
 	if _, err := d.Conn().Exec(`DELETE FROM system_control_plane WHERE id = ?`, controlPlaneSingletonID); err != nil {
 		return fmt.Errorf("failed to delete system control plane: %w", err)

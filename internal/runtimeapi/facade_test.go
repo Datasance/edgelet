@@ -121,7 +121,7 @@ func TestFacadePullImage_ResolvesRegistryHostWithRegistryID(t *testing.T) {
 	resolved, err := f.PullImage("skupper/skupper-router", &registryID, "")
 	// In unit tests processmanager may not be initialized; resolved value should still be returned.
 	if err == nil {
-		t.Fatalf("expected process manager init error in unit test")
+		t.Fatal("expected process manager init error in unit test")
 	}
 	if !strings.HasPrefix(resolved, "quay.io/") {
 		t.Fatalf("expected resolved image ref with quay.io host, got: %q (err=%v)", resolved, err)
@@ -165,7 +165,7 @@ func TestFacadeApplyLocalManifest_ProgressStages_DryRun(t *testing.T) {
 		t.Fatalf("expected dry-run success, got: %v", err)
 	}
 	if strings.TrimSpace(id) == "" {
-		t.Fatalf("expected non-empty deployment id")
+		t.Fatal("expected non-empty deployment id")
 	}
 	if len(stages) < 2 {
 		t.Fatalf("expected at least parsing and done stages, got: %v", stages)
@@ -189,10 +189,10 @@ func TestFacadeApplyLocalManifest_ProgressIncludesPersisting_OnFailure(t *testin
 		stages = append(stages, strings.TrimSpace(stage))
 	})
 	if err == nil {
-		t.Fatalf("expected runtime failure when DB/engine are not fully initialized")
+		t.Fatal("expected runtime failure when DB/engine are not fully initialized")
 	}
 	if len(stages) == 0 {
-		t.Fatalf("expected progress stages before failure")
+		t.Fatal("expected progress stages before failure")
 	}
 	if stages[0] != DeployStageParsing {
 		t.Fatalf("expected first stage %q, got %q (all=%v)", DeployStageParsing, stages[0], stages)
@@ -218,7 +218,7 @@ func TestFacadeApplyLocalManifest_RejectsVolumeMountType(t *testing.T) {
 
 	_, _, err := f.ApplyLocalManifest(testLocalManifestWithVolumeMountYAML(), "cli", false, nil)
 	if err == nil {
-		t.Fatalf("expected validation error for VOLUME_MOUNT")
+		t.Fatal("expected validation error for VOLUME_MOUNT")
 	}
 	if !strings.Contains(err.Error(), "not supported for local manifests") {
 		t.Fatalf("unexpected error: %v", err)
@@ -363,7 +363,7 @@ func TestFacadeApplyLocalManifest_NormalizesLocalLifecycleFields(t *testing.T) {
 
 	deploymentID, _, err := f.ApplyLocalManifest(testLocalManifestYAML(), "cli", false, nil)
 	if err == nil {
-		t.Fatalf("expected runtime failure in unit test")
+		t.Fatal("expected runtime failure in unit test")
 	}
 	if strings.TrimSpace(deploymentID) != "" {
 		t.Fatalf("expected empty deployment id on failure, got %q", deploymentID)
@@ -452,7 +452,7 @@ func TestResolveMicroserviceID_LocalDottedSelectorDuplicateRejected(t *testing.T
 		t.Fatalf("failed to upsert local deployment %s: %v", items[0].LocalUUID, err)
 	}
 	if err := f.db.UpsertLocalWorkload(items[1]); err == nil {
-		t.Fatalf("expected duplicate local dotted selector insert to fail")
+		t.Fatal("expected duplicate local dotted selector insert to fail")
 	}
 
 	id, err := f.ResolveMicroserviceID("edgelet.router")
@@ -473,7 +473,7 @@ func TestFacadeApplyLocalManifest_IdempotentPatchReusesUUID(t *testing.T) {
 
 	_, _, firstErr := f.ApplyLocalManifest(testLocalManifestYAML(), "cli", false, nil)
 	if firstErr == nil {
-		t.Fatalf("expected runtime failure in unit test")
+		t.Fatal("expected runtime failure in unit test")
 	}
 	itemsAfterFirst, err := f.ListLocalDeployments()
 	if err != nil {
@@ -486,7 +486,7 @@ func TestFacadeApplyLocalManifest_IdempotentPatchReusesUUID(t *testing.T) {
 
 	_, _, secondErr := f.ApplyLocalManifest(testLocalManifestWithNameYAML("router"), "cli", false, nil)
 	if secondErr == nil {
-		t.Fatalf("expected runtime failure in unit test")
+		t.Fatal("expected runtime failure in unit test")
 	}
 	itemsAfterSecond, err := f.ListLocalDeployments()
 	if err != nil {
@@ -588,7 +588,7 @@ func TestFacadeDeprovision_RejectsInvalidScope(t *testing.T) {
 	f := NewFacade()
 	err := f.Deprovision("bad")
 	if err == nil {
-		t.Fatalf("expected invalid scope error")
+		t.Fatal("expected invalid scope error")
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "invalid deprovision scope") {
 		t.Fatalf("unexpected error: %v", err)
@@ -599,7 +599,7 @@ func TestFacadePrune_RejectsInvalidMode(t *testing.T) {
 	f := NewFacade()
 	_, err := f.Prune("bad")
 	if err == nil {
-		t.Fatalf("expected invalid mode error")
+		t.Fatal("expected invalid mode error")
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "invalid prune mode") {
 		t.Fatalf("unexpected error: %v", err)
@@ -612,13 +612,16 @@ func TestFacadePrune_AllModeReturnsPartialOnStepFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no hard error for all mode best-effort prune, got: %v", err)
 	}
-	status, _ := result["status"].(string)
+	status, ok := result["status"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for status")
+	}
 	if status != "partial" {
 		t.Fatalf("expected partial status, got: %v", result)
 	}
 	rawErrors, ok := result["errors"].(map[string]string)
 	if !ok {
-		if generic, genericOK := result["errors"].(map[string]interface{}); genericOK {
+		if generic, genericOK := result["errors"].(map[string]any); genericOK {
 			rawErrors = make(map[string]string, len(generic))
 			for k, v := range generic {
 				rawErrors[k] = fmt.Sprintf("%v", v)
@@ -630,7 +633,7 @@ func TestFacadePrune_AllModeReturnsPartialOnStepFailures(t *testing.T) {
 		t.Fatalf("expected step error map, got: %#v", result["errors"])
 	}
 	if len(rawErrors) == 0 {
-		t.Fatalf("expected partial error details, got none")
+		t.Fatal("expected partial error details, got none")
 	}
 }
 
@@ -651,16 +654,16 @@ func TestApplyRuntimeClassManifest_MetadataOnlyPathDoesNotDependOnRuntimeCallbac
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `, false)
 	if err != nil {
 		t.Fatalf("expected apply success for metadata-only runtimeclass path, got: %v", err)
 	}
-	if item == nil || strings.TrimSpace(item.Name) != "edgelet" {
-		t.Fatalf("expected applied runtimeclass edgelet, got: %#v", item)
+	if item == nil || strings.TrimSpace(item.Name) != "edgelet-wasmtime" {
+		t.Fatalf("expected applied runtimeclass edgelet-wasmtime, got: %#v", item)
 	}
-	if _, getErr := f.db.GetLocalRuntimeClass("edgelet"); getErr != nil {
+	if _, getErr := f.db.GetLocalRuntimeClass("edgelet-wasmtime"); getErr != nil {
 		t.Fatalf("expected runtimeclass persisted, got: %v", getErr)
 	}
 }
@@ -682,17 +685,17 @@ func TestDeleteRuntimeClass_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *te
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `, false); err != nil {
 		t.Fatalf("failed to seed runtimeclass: %v", err)
 	}
 
-	err := f.DeleteRuntimeClass("edgelet")
+	err := f.DeleteRuntimeClass("edgelet-wasmtime")
 	if err != nil {
 		t.Fatalf("expected delete success for metadata-only runtimeclass path, got: %v", err)
 	}
-	if _, getErr := f.db.GetLocalRuntimeClass("edgelet"); !errors.Is(getErr, sql.ErrNoRows) {
+	if _, getErr := f.db.GetLocalRuntimeClass("edgelet-wasmtime"); !errors.Is(getErr, sql.ErrNoRows) {
 		t.Fatalf("expected runtimeclass deleted, got: %v", getErr)
 	}
 }
@@ -737,8 +740,8 @@ func TestDeleteRuntimeClass_RejectsWhenRuntimeInUse(t *testing.T) {
 apiVersion: edgelet.iofog.org/v1
 kind: RuntimeClass
 metadata:
-  name: edgelet
-handler: edgelet
+  name: edgelet-wasmtime
+handler: edgelet-wasmtime
 `, false); err != nil {
 		t.Fatalf("failed to seed runtimeclass: %v", err)
 	}
@@ -754,7 +757,7 @@ metadata:
   name: runtime-edgelet-ms
 spec:
   container:
-    runtime: edgelet
+    runtime: edgelet-wasmtime
 `,
 		ImageName:    "ghcr.io/containerd/runwasi/wasi-demo-app:latest",
 		State:        "running",
@@ -765,7 +768,7 @@ spec:
 		t.Fatalf("failed to seed local deployed microservice: %v", err)
 	}
 
-	err := f.DeleteRuntimeClass("edgelet")
+	err := f.DeleteRuntimeClass("edgelet-wasmtime")
 	if err == nil {
 		t.Fatal("expected runtime-in-use delete rejection")
 	}

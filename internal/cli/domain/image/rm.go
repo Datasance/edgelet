@@ -10,7 +10,7 @@ import (
 // RemoveResult carries image remove outcome.
 type RemoveResult struct {
 	Human string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 // Remove deletes an image by selector.
@@ -22,7 +22,7 @@ func Remove(client run.EdgeletAPIClient, selector string) (*RemoveResult, error)
 	if selector == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "selector is required", nil)
 	}
-	data, err := client.Request("POST", "/v1/images:remove", map[string]interface{}{"selector": selector})
+	data, err := client.Request("POST", "/v1/images:remove", map[string]any{"selector": selector})
 	if err != nil {
 		return nil, run.MapAPIError(err)
 	}

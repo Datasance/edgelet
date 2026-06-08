@@ -79,7 +79,7 @@ func TestProgress_NonInteractiveOneLinePerStage(t *testing.T) {
 		t.Fatalf("expected two stage lines, got %d: %q", len(lines), stderr.String())
 	}
 	if strings.Contains(stderr.String(), "\x1b[K") {
-		t.Fatalf("did not expect ANSI clear in non-interactive output")
+		t.Fatal("did not expect ANSI clear in non-interactive output")
 	}
 }
 

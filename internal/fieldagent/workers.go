@@ -3,8 +3,9 @@ package fieldagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,9 +92,9 @@ func (fa *FieldAgent) pingControllerWorker() {
 	}
 }
 
-// getChangesWorker periodically gets changes from the controller.
+// runChangesWorker periodically gets changes from the controller.
 // Uses a self-resetting timer so the interval is re-read from config on every tick.
-func (fa *FieldAgent) getChangesWorker() {
+func (fa *FieldAgent) runChangesWorker() {
 	defer fa.wg.Done()
 
 	timer := time.NewTimer(workerFreq(config.GetInstance().ChangeFrequency, 20))
@@ -132,7 +133,10 @@ func (fa *FieldAgent) getChangesWorker() {
 			fa.state.SetLastCommandTime(fa.state.GetLastGetChangesList())
 
 			// Process changes
-			lastUpdated, _ := result["lastUpdated"].(string)
+			lastUpdated, ok := result["lastUpdated"].(string)
+			if !ok {
+				lastUpdated = ""
+			}
 			logging.LogDebug(moduleName, fmt.Sprintf("Processing changes with lastUpdated: %s", lastUpdated))
 
 			resetChanges := fa.processChanges(result)
@@ -141,7 +145,7 @@ func (fa *FieldAgent) getChangesWorker() {
 			if lastUpdated != "" && resetChanges {
 				logging.LogDebug(moduleName, fmt.Sprintf("Resetting config changes flags with lastUpdated: %s", lastUpdated))
 				ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
-				err := fa.apiClient.PatchJSON(ctx2, "config/changes", map[string]interface{}{
+				err := fa.apiClient.PatchJSON(ctx2, "config/changes", map[string]any{
 					"lastUpdated": lastUpdated,
 				})
 				cancel2()
@@ -225,18 +229,18 @@ func (fa *FieldAgent) PostStatusHelper() {
 	logging.LogDebug(moduleName, "Finished posting ioFog status")
 }
 
-func (fa *FieldAgent) putStatus(ctx context.Context, status map[string]interface{}) error {
+func (fa *FieldAgent) putStatus(ctx context.Context, status map[string]any) error {
 	if fa.postStatusFn != nil {
 		return fa.postStatusFn(ctx, status)
 	}
 	if fa.apiClient == nil {
-		return fmt.Errorf("api client is not initialized")
+		return errors.New("api client is not initialized")
 	}
 	return fa.apiClient.PutJSON(ctx, "status", status)
 }
 
 // getFogStatus creates the fog status report
-func (fa *FieldAgent) getFogStatus() map[string]interface{} {
+func (fa *FieldAgent) getFogStatus() map[string]any {
 	logging.LogDebug(moduleName, "get Fog Status")
 
 	// Get StatusReporter instance to get status from all modules
@@ -285,7 +289,7 @@ func (fa *FieldAgent) getFogStatus() map[string]interface{} {
 		statusreporter.GetAvailableRuntimes(),
 	)
 
-	status := map[string]interface{}{
+	status := map[string]any{
 		"daemonStatus":              daemonStatusStr,
 		"daemonOperatingDuration":   supervisorStatus.GetOperationDuration(),
 		"daemonLastStart":           supervisorStatus.DaemonLastStart,
@@ -333,7 +337,7 @@ func annotateMicroserviceStatusForControlRestart(rawJSON string) string {
 	if phase != "restarting" && !processmanager.IsQuiesced() {
 		return rawJSON
 	}
-	var items []map[string]interface{}
+	var items []map[string]any
 	if err := json.Unmarshal([]byte(rawJSON), &items); err != nil || len(items) == 0 {
 		return rawJSON
 	}
@@ -363,7 +367,7 @@ func runtimeNamesForController(_ string, available []string) []string {
 	for name := range filteredSet {
 		filtered = append(filtered, name)
 	}
-	sort.Strings(filtered)
+	slices.Sort(filtered)
 	return filtered
 }
 

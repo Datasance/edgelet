@@ -26,7 +26,7 @@ func TestWriteStageLine_SkipsDuplicate(t *testing.T) {
 	before := stderr.String()
 	u.WriteStageLine(line)
 	if stderr.String() != before {
-		t.Fatalf("expected duplicate stage line to be skipped")
+		t.Fatal("expected duplicate stage line to be skipped")
 	}
 }
 

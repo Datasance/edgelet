@@ -58,11 +58,11 @@ func TestHandleSystemGPSPost_RejectsOutOfRangeLatitude(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	var envelope map[string]interface{}
+	var envelope map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("failed to decode error envelope: %v", err)
 	}
-	if success, _ := envelope["success"].(bool); success {
+	if success, ok := envelope["success"].(bool); ok && success {
 		t.Fatal("expected success=false in error envelope")
 	}
 }

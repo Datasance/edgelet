@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/datasance/edgelet/internal/config"
 	"github.com/datasance/edgelet/internal/gps/nmea"
 	"github.com/datasance/edgelet/internal/utils/logging"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -51,7 +49,7 @@ func (d *DeviceHandler) Start() error {
 
 	devicePath := d.config.GPSDevice
 	if devicePath == "" {
-		return fmt.Errorf("GPS device not configured")
+		return errors.New("GPS device not configured")
 	}
 
 	logging.LogDebug(deviceHandlerModuleName, fmt.Sprintf("Starting GPS device handler: %s", devicePath))
@@ -107,13 +105,13 @@ func (d *DeviceHandler) ReadAndUpdateCoordinates() error {
 	d.mu.RLock()
 	if !d.isRunning || d.reader == nil {
 		d.mu.RUnlock()
-		return fmt.Errorf("device handler not running")
+		return errors.New("device handler not running")
 	}
 	reader := d.reader
 	deviceFile := d.deviceFile
 	d.mu.RUnlock()
 	if deviceFile == nil {
-		return fmt.Errorf("device file is not open")
+		return errors.New("device file is not open")
 	}
 
 	// Read line with timeout
@@ -132,7 +130,7 @@ func (d *DeviceHandler) ReadAndUpdateCoordinates() error {
 
 	if !nmeaMsg.IsValid() {
 		logging.LogWarn(deviceHandlerModuleName, "Invalid NMEA message received")
-		return fmt.Errorf("invalid NMEA message")
+		return errors.New("invalid NMEA message")
 	}
 
 	// Update coordinates in configuration
@@ -141,40 +139,4 @@ func (d *DeviceHandler) ReadAndUpdateCoordinates() error {
 
 	logging.LogDebug(deviceHandlerModuleName, fmt.Sprintf("Updated GPS coordinates: %s", coordinates))
 	return nil
-}
-
-// readLineWithTimeout reads a line from reader with timeout
-func (d *DeviceHandler) readLineWithTimeout(file *os.File, reader *bufio.Reader, timeout time.Duration) (string, error) {
-	if file == nil {
-		return "", fmt.Errorf("nil device file")
-	}
-
-	pollFds := []unix.PollFd{{
-		Fd:     int32(file.Fd()),
-		Events: unix.POLLIN | unix.POLLPRI,
-	}}
-	pollTimeoutMs := int(timeout.Milliseconds())
-	if pollTimeoutMs < 0 {
-		pollTimeoutMs = -1
-	}
-
-	n, err := unix.Poll(pollFds, pollTimeoutMs)
-	if err != nil {
-		return "", fmt.Errorf("poll failed: %w", err)
-	}
-	if n == 0 {
-		return "", fmt.Errorf("read timeout")
-	}
-	if pollFds[0].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-		return "", errors.New("device poll error")
-	}
-	if pollFds[0].Revents&(unix.POLLIN|unix.POLLPRI) == 0 {
-		return "", errors.New("device not readable")
-	}
-
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(line), nil
 }

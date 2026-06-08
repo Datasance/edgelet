@@ -69,26 +69,26 @@ func TestForwardingBackoffAndHealthyPreference(t *testing.T) {
 	w1 := &testDNSWriter{}
 	r.handleDNSQuery(ScopeManaged, w1, req)
 	if w1.msg == nil || w1.msg.Rcode != dns.RcodeSuccess || len(w1.msg.Answer) == 0 {
-		t.Fatalf("expected successful forwarded response on first query")
+		t.Fatal("expected successful forwarded response on first query")
 	}
 
 	badState := r.forwardState[badAddr]
 	if badState == nil || badState.failureStreak == 0 {
-		t.Fatalf("expected bad upstream failure state after first query")
+		t.Fatal("expected bad upstream failure state after first query")
 	}
 	firstFailures := badState.failureStreak
 
 	w2 := &testDNSWriter{}
 	r.handleDNSQuery(ScopeManaged, w2, req)
 	if w2.msg == nil || w2.msg.Rcode != dns.RcodeSuccess || len(w2.msg.Answer) == 0 {
-		t.Fatalf("expected successful forwarded response on second query")
+		t.Fatal("expected successful forwarded response on second query")
 	}
 
 	if r.forwardState[badAddr].failureStreak != firstFailures {
-		t.Fatalf("expected bad upstream not retried while in backoff")
+		t.Fatal("expected bad upstream not retried while in backoff")
 	}
 	if snap := r.Snapshot(); snap.ForwardBackoffSkipTotal == 0 {
-		t.Fatalf("expected backoff skip counter to increase")
+		t.Fatal("expected backoff skip counter to increase")
 	}
 }
 
@@ -103,14 +103,14 @@ func TestForwardingDegradedSignalOnFailure(t *testing.T) {
 	w := &testDNSWriter{}
 	r.handleDNSQuery(ScopeManaged, w, req)
 	if w.msg == nil || w.msg.Rcode != dns.RcodeServerFailure {
-		t.Fatalf("expected SERVFAIL on total forwarding failure")
+		t.Fatal("expected SERVFAIL on total forwarding failure")
 	}
 	snap := r.Snapshot()
 	if !snap.ForwardingDegraded {
-		t.Fatalf("expected forwarding degraded state after failure")
+		t.Fatal("expected forwarding degraded state after failure")
 	}
 	if snap.ForwardErrTotal == 0 {
-		t.Fatalf("expected forward error counter increment")
+		t.Fatal("expected forward error counter increment")
 	}
 }
 
@@ -132,9 +132,9 @@ func TestInternalResolutionUnaffectedByForwardingFailures(t *testing.T) {
 	r.handleDNSQuery(ScopeManaged, w, req)
 
 	if w.msg == nil || w.msg.Rcode != dns.RcodeSuccess {
-		t.Fatalf("expected internal answer success despite forward degradation")
+		t.Fatal("expected internal answer success despite forward degradation")
 	}
 	if len(w.msg.Answer) == 0 {
-		t.Fatalf("expected internal answer records")
+		t.Fatal("expected internal answer records")
 	}
 }

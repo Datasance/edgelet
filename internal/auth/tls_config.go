@@ -17,9 +17,10 @@ func CreateControllerTLSConfig(controllerCert *x509.Certificate) (*tls.Config, e
 	trustManager := trustStore.CreateCombinedTrustManager()
 
 	return &tls.Config{
-		RootCAs:            trustStore.systemCerts,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: false,
+		RootCAs:                trustStore.systemCerts,
+		MinVersion:             tls.VersionTLS12,
+		InsecureSkipVerify:     false,
+		SessionTicketsDisabled: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
 				return fmt.Errorf("unable to validate server certificate for controller connection: %w", err)
@@ -39,9 +40,10 @@ func CreateRouterTLSConfig(routerCert *x509.Certificate) (*tls.Config, error) {
 	trustManager := trustStore.CreateCombinedTrustManager()
 
 	return &tls.Config{
-		RootCAs:            trustStore.systemCerts,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: false,
+		RootCAs:                trustStore.systemCerts,
+		MinVersion:             tls.VersionTLS12,
+		InsecureSkipVerify:     false,
+		SessionTicketsDisabled: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
 				return fmt.Errorf("unable to validate server certificate for router connection: %w", err)
@@ -61,9 +63,10 @@ func CreateWebSocketTLSConfig(webSocketCert *x509.Certificate) (*tls.Config, err
 	trustManager := trustStore.CreateCombinedTrustManager()
 
 	return &tls.Config{
-		RootCAs:            trustStore.systemCerts,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: false,
+		RootCAs:                trustStore.systemCerts,
+		MinVersion:             tls.VersionTLS12,
+		InsecureSkipVerify:     false,
+		SessionTicketsDisabled: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
 				return fmt.Errorf("unable to validate server certificate for websocket connection: %w", err)
@@ -99,10 +102,11 @@ func CreateTLSConfigWithClientCerts(caCert *x509.Certificate, tlsCert []byte, tl
 	trustManager := trustStore.CreateCombinedTrustManager()
 
 	return &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		RootCAs:            trustStore.systemCerts,
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: false,
+		Certificates:           []tls.Certificate{cert},
+		RootCAs:                trustStore.systemCerts,
+		MinVersion:             tls.VersionTLS12,
+		InsecureSkipVerify:     false,
+		SessionTicketsDisabled: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if err := trustManager.VerifyPeerCertificate(rawCerts, verifiedChains); err != nil {
 				return fmt.Errorf("unable to validate server certificate: %w", err)

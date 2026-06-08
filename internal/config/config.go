@@ -307,10 +307,10 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 		if len(paddedLabel) < 40 {
 			paddedLabel += strings.Repeat(" ", 40-len(paddedLabel))
 		}
-		result.WriteString(paddedLabel)
-		result.WriteString(" : ")
-		result.WriteString(value)
-		result.WriteString("\n")
+		_, _ = result.WriteString(paddedLabel)
+		_, _ = result.WriteString(" : ")
+		_, _ = result.WriteString(value)
+		_, _ = result.WriteString("\n")
 	}
 
 	// IP address is passed as parameter

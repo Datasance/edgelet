@@ -143,7 +143,7 @@ func (j *JWTManager) ensureProvisionedSignerLocked() (*config.Config, error) {
 	return cfg, nil
 }
 
-func (j *JWTManager) signPurposeJWTLocked(subject, audience string, ttl time.Duration, tokenUse string, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+func (j *JWTManager) signPurposeJWTLocked(subject, audience string, ttl time.Duration, tokenUse string, extraClaims map[string]any) (string, string, int64, int64, error) {
 	if strings.TrimSpace(subject) == "" {
 		return "", "", 0, 0, errors.New("subject is required")
 	}
@@ -176,7 +176,15 @@ func (j *JWTManager) signPurposeJWTLocked(subject, audience string, ttl time.Dur
 	if err != nil {
 		return "", "", 0, 0, err
 	}
-	return tokenString, jti, claims["iat"].(int64), claims["exp"].(int64), nil
+	iatSec, ok := claims["iat"].(int64)
+	if !ok {
+		return "", "", 0, 0, errors.New("missing iat claim")
+	}
+	expSec, ok := claims["exp"].(int64)
+	if !ok {
+		return "", "", 0, 0, errors.New("missing exp claim")
+	}
+	return tokenString, jti, iatSec, expSec, nil
 }
 
 // GenerateJWT generates a controller-auth JWT token with the configured private key.
@@ -218,7 +226,7 @@ func (j *JWTManager) GenerateControllerJWT(controllerAudience string, ttl time.D
 }
 
 // GenerateEdgeletAPITokenJWT creates a provisioned local admin token.
-func (j *JWTManager) GenerateEdgeletAPITokenJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+func (j *JWTManager) GenerateEdgeletAPITokenJWT(subject string, ttl time.Duration, extraClaims map[string]any) (string, string, int64, int64, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	cfg, err := j.ensureProvisionedSignerLocked()
@@ -245,10 +253,13 @@ func (j *JWTManager) ValidateJWT(tokenString string) (*jwt.Token, error) {
 	}
 
 	// Get public key from private key
-	publicKey := j.privateKey.Public().(ed25519.PublicKey)
+	publicKey, ok := j.privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		publicKey = ed25519.PublicKey{}
+	}
 
 	// Parse and validate token
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// Verify signing method
 		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -282,7 +293,7 @@ func generateJWTID(claims jwt.MapClaims) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"claims": claims,
 		"nonce":  hex.EncodeToString(nonce),
 	}
@@ -295,7 +306,7 @@ func generateJWTID(claims jwt.MapClaims) (string, error) {
 }
 
 // GenerateServiceAccountJWT creates a signed JWT for a managed microservice service-account identity.
-func (j *JWTManager) GenerateServiceAccountJWT(subject string, ttl time.Duration, extraClaims map[string]interface{}) (string, string, int64, int64, error) {
+func (j *JWTManager) GenerateServiceAccountJWT(subject string, ttl time.Duration, extraClaims map[string]any) (string, string, int64, int64, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if _, err := j.ensureProvisionedSignerLocked(); err != nil {
@@ -315,8 +326,34 @@ func (j *JWTManager) GenerateEdgeGuardJWT(hash string, ttl time.Duration) (strin
 	if err != nil {
 		return "", "", 0, 0, err
 	}
-	extra := map[string]interface{}{"hash": hash}
+	extra := map[string]any{"hash": hash}
 	return j.signPurposeJWTLocked("system:edgeguard:"+cfg.IOFogUUID, edgeGuardAudience, ttl, tokenUseEdgeGuard, extra)
+}
+
+// EdgeGuardHashFromJWT returns the hardware fingerprint hash claim from a stored Edge Guard JWT.
+// Comparison must use this stable hash, not the full JWT string (iat/exp/jti change every signing).
+func EdgeGuardHashFromJWT(tokenString string) (string, error) {
+	tokenString = strings.TrimSpace(tokenString)
+	if tokenString == "" {
+		return "", errors.New("edgeguard jwt is empty")
+	}
+	token, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return "", fmt.Errorf("parse edgeguard jwt: %w", err)
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", errors.New("edgeguard jwt claims are invalid")
+	}
+	raw, ok := claims["hash"]
+	if !ok {
+		return "", errors.New("edgeguard jwt missing hash claim")
+	}
+	hash, ok := raw.(string)
+	if !ok || strings.TrimSpace(hash) == "" {
+		return "", errors.New("edgeguard jwt hash claim is invalid")
+	}
+	return hash, nil
 }
 
 // TokenSHA256 computes the stable hash used for persisted token metadata.

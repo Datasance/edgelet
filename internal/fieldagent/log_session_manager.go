@@ -15,7 +15,7 @@ import (
 
 // parseTailConfig extracts follow, lines, since, until from tailConfigMap (from LOG_START).
 // Returns defaults (follow=true, lines=100) when map is nil or empty.
-func parseTailConfig(tailConfigMap map[string]interface{}) *engine.TailConfig {
+func parseTailConfig(tailConfigMap map[string]any) *engine.TailConfig {
 	cfg := &engine.TailConfig{
 		Follow: true,
 		Lines:  100,
@@ -153,9 +153,9 @@ func (lsm *LogSessionManager) FetchLogSessions(ctx context.Context) ([]*LogSessi
 
 	// Parse log sessions
 	sessions := make([]*LogSession, 0)
-	if logSessionsArray, ok := result["logSessions"].([]interface{}); ok {
+	if logSessionsArray, ok := result["logSessions"].([]any); ok {
 		for _, sessionData := range logSessionsArray {
-			if sessionMap, ok := sessionData.(map[string]interface{}); ok {
+			if sessionMap, ok := sessionData.(map[string]any); ok {
 				session := lsm.parseLogSession(sessionMap)
 				if session != nil {
 					sessions = append(sessions, session)
@@ -169,7 +169,7 @@ func (lsm *LogSessionManager) FetchLogSessions(ctx context.Context) ([]*LogSessi
 }
 
 // parseLogSession parses a log session from JSON data
-func (lsm *LogSessionManager) parseLogSession(data map[string]interface{}) *LogSession {
+func (lsm *LogSessionManager) parseLogSession(data map[string]any) *LogSession {
 	session := &LogSession{}
 
 	if sessionID, ok := data["sessionId"].(string); ok {
@@ -315,7 +315,7 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 
 // StartLogStreamingOnActivation starts log streaming when WebSocket becomes active
 // This method is called from LogSessionWebSocketHandler when it receives LOG_START
-func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, tailConfigMap map[string]interface{}) {
+func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, tailConfigMap map[string]any) {
 	lsm.mu.Lock()
 	defer lsm.mu.Unlock()
 

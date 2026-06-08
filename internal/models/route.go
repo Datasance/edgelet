@@ -1,8 +1,6 @@
 package models
 
-import (
-	"sort"
-)
+import "slices"
 
 // Route represents microservice routings
 type Route struct {
@@ -20,7 +18,7 @@ func NewRoute() *Route {
 func (r *Route) SetReceivers(receivers []string) {
 	r.Receivers = make([]string, len(receivers))
 	copy(r.Receivers, receivers)
-	sort.Strings(r.Receivers)
+	slices.Sort(r.Receivers)
 }
 
 // Equals checks if two Routes are equal

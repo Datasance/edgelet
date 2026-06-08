@@ -2,6 +2,7 @@ package version
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -183,7 +184,7 @@ func (rm *ReleaseManager) GetInstalledVersion() string {
 }
 
 // GetCandidateVersion resolves the controller target from action data or GitHub latest.
-func (rm *ReleaseManager) GetCandidateVersion(actionData map[string]interface{}) (string, error) {
+func (rm *ReleaseManager) GetCandidateVersion(actionData map[string]any) (string, error) {
 	if target := targetVersionFromAction(actionData); target != "" {
 		return normalizeVersion(target), nil
 	}
@@ -225,7 +226,9 @@ func (rm *ReleaseManager) IsPreviousDownloadReachable(url string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	return resp.StatusCode >= 200 && resp.StatusCode < 400
 }
 
@@ -245,7 +248,9 @@ func (rm *ReleaseManager) fetchLatestReleaseTag() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("github releases/latest: %s (%s)", resp.Status, strings.TrimSpace(string(body)))
@@ -259,13 +264,13 @@ func (rm *ReleaseManager) fetchLatestReleaseTag() (string, error) {
 	}
 	tag := strings.TrimSpace(release.TagName)
 	if tag == "" {
-		return "", fmt.Errorf("github releases/latest: empty tag_name")
+		return "", errors.New("github releases/latest: empty tag_name")
 	}
 	return normalizeVersion(tag), nil
 }
 
 func readKVFile(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- release metadata path from build-time constant or env
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -287,7 +292,7 @@ func readKVFile(path string) (map[string]string, error) {
 	return kv, nil
 }
 
-func targetVersionFromAction(actionData map[string]interface{}) string {
+func targetVersionFromAction(actionData map[string]any) string {
 	if actionData == nil {
 		return ""
 	}

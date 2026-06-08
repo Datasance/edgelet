@@ -2,7 +2,7 @@ package output
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -70,7 +70,7 @@ var infoAliasToCanonical = map[string]string{
 }
 
 // FormatEdgeletAPIHuman renders human-readable output for a EdgeletAPI v1 route payload.
-func FormatEdgeletAPIHuman(routePath string, result map[string]interface{}) string {
+func FormatEdgeletAPIHuman(routePath string, result map[string]any) string {
 	routePath = stripQuery(routePath)
 	switch routePath {
 	case "/v1/system/status":
@@ -100,20 +100,20 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]interface{}) stri
 	}
 }
 
-func formatMSInspect(result map[string]interface{}) string {
+func formatMSInspect(result map[string]any) string {
 	if len(result) == 0 {
 		return ""
 	}
 	return formatFlatMapWithOrder(result, nil)
 }
 
-func formatFlatMapWithOrder(result map[string]interface{}, preferred []string) string {
+func formatFlatMapWithOrder(result map[string]any, preferred []string) string {
 	if len(result) == 0 {
 		return ""
 	}
 	for _, value := range result {
 		switch value.(type) {
-		case map[string]interface{}, []interface{}:
+		case map[string]any, []any:
 			return ""
 		}
 	}
@@ -124,7 +124,7 @@ func formatFlatMapWithOrder(result map[string]interface{}, preferred []string) s
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&b, "%s: %v\n", key, value)
+		_, _ = fmt.Fprintf(&b, "%s: %v\n", key, value)
 		seen[key] = true
 	}
 	remaining := make([]string, 0, len(result))
@@ -133,20 +133,20 @@ func formatFlatMapWithOrder(result map[string]interface{}, preferred []string) s
 			remaining = append(remaining, key)
 		}
 	}
-	sort.Strings(remaining)
+	slices.Sort(remaining)
 	for _, key := range remaining {
-		fmt.Fprintf(&b, "%s: %v\n", key, result[key])
+		_, _ = fmt.Fprintf(&b, "%s: %v\n", key, result[key])
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func formatInfoWithAliasOrder(result map[string]interface{}) string {
+func formatInfoWithAliasOrder(result map[string]any) string {
 	if len(result) == 0 {
 		return ""
 	}
 	for _, value := range result {
 		switch value.(type) {
-		case map[string]interface{}, []interface{}:
+		case map[string]any, []any:
 			return ""
 		}
 	}
@@ -162,7 +162,7 @@ func formatInfoWithAliasOrder(result map[string]interface{}) string {
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&b, "%s: %v\n", alias, value)
+		_, _ = fmt.Fprintf(&b, "%s: %v\n", alias, value)
 		seenCanonical[canonical] = true
 	}
 
@@ -173,15 +173,15 @@ func formatInfoWithAliasOrder(result map[string]interface{}) string {
 		}
 		remainingAliases = append(remainingAliases, canonical)
 	}
-	sort.Strings(remainingAliases)
+	slices.Sort(remainingAliases)
 	for _, key := range remainingAliases {
-		fmt.Fprintf(&b, "%s: %v\n", key, result[key])
+		_, _ = fmt.Fprintf(&b, "%s: %v\n", key, result[key])
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func formatMSList(result map[string]interface{}) string {
-	rawItems, ok := result["items"].([]interface{})
+func formatMSList(result map[string]any) string {
+	rawItems, ok := result["items"].([]any)
 	if !ok || len(rawItems) == 0 {
 		return "No microservices found."
 	}
@@ -189,7 +189,7 @@ func formatMSList(result map[string]interface{}) string {
 		{"UUID", "APPLICATIONNAME", "MICROSERVICENAME", "STATE", "CONTAINERID", "IMAGE", "TYPE"},
 	}
 	for _, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
+		item, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -206,8 +206,8 @@ func formatMSList(result map[string]interface{}) string {
 	return formatAlignedTable(rows)
 }
 
-func formatRegistryList(result map[string]interface{}) string {
-	rawItems, ok := result["items"].([]interface{})
+func formatRegistryList(result map[string]any) string {
+	rawItems, ok := result["items"].([]any)
 	if !ok || len(rawItems) == 0 {
 		return "No registries found."
 	}
@@ -215,7 +215,7 @@ func formatRegistryList(result map[string]interface{}) string {
 		{"ID", "URL", "PUBLIC", "USERNAME", "EMAIL"},
 	}
 	for _, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
+		item, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -230,8 +230,8 @@ func formatRegistryList(result map[string]interface{}) string {
 	return formatAlignedTable(rows)
 }
 
-func formatRuntimeClassList(result map[string]interface{}) string {
-	rawItems, ok := result["items"].([]interface{})
+func formatRuntimeClassList(result map[string]any) string {
+	rawItems, ok := result["items"].([]any)
 	if !ok || len(rawItems) == 0 {
 		return "No runtime classes found."
 	}
@@ -239,7 +239,7 @@ func formatRuntimeClassList(result map[string]interface{}) string {
 		{"NAME", "HANDLER", "RUNTIME"},
 	}
 	for _, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
+		item, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -270,7 +270,7 @@ var controlPlaneStatusOrder = []string{
 	"type",
 }
 
-func formatControlPlaneStatus(result map[string]interface{}) string {
+func formatControlPlaneStatus(result map[string]any) string {
 	if _, hasUUID := result["controllerUuid"]; !hasUUID {
 		if MapValueAsString(result, "status") == "ok" {
 			return "control plane deployment removed successfully"
@@ -280,7 +280,7 @@ func formatControlPlaneStatus(result map[string]interface{}) string {
 	return formatFlatMapWithOrder(result, controlPlaneStatusOrder)
 }
 
-func formatControlPlaneManifest(result map[string]interface{}) string {
+func formatControlPlaneManifest(result map[string]any) string {
 	yaml := strings.TrimSpace(MapValueAsString(result, "manifestYaml"))
 	if yaml == "" {
 		return "control plane manifest unavailable"
@@ -293,8 +293,8 @@ func formatControlPlaneManifest(result map[string]interface{}) string {
 	return header + "\n" + yaml
 }
 
-func formatImageList(result map[string]interface{}) string {
-	rawItems, ok := result["items"].([]interface{})
+func formatImageList(result map[string]any) string {
+	rawItems, ok := result["items"].([]any)
 	if !ok || len(rawItems) == 0 {
 		return "No images found."
 	}
@@ -302,7 +302,7 @@ func formatImageList(result map[string]interface{}) string {
 		{"REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"},
 	}
 	for _, raw := range rawItems {
-		item, ok := raw.(map[string]interface{})
+		item, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -53,13 +54,13 @@ func GetInstance() *Manager {
 }
 
 // Update starts or stops SSH tunnel according to current config
-func (m *Manager) Update(config map[string]interface{}) error {
+func (m *Manager) Update(config map[string]any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if len(config) == 0 {
 		m.handleUnexpectedTunnelState("Received invalid proxy config", SSHConnectionStatusFailed)
-		return fmt.Errorf("invalid proxy config")
+		return errors.New("invalid proxy config")
 	}
 
 	m.setSSHConnection(config)
@@ -203,11 +204,23 @@ func (m *Manager) setSSHProxyManagerStatus(status SSHConnectionStatus, errMsg st
 }
 
 // setSSHConnection sets proxy connection info from config
-func (m *Manager) setSSHConnection(config map[string]interface{}) {
-	username, _ := config["username"].(string)
-	password, _ := config["password"].(string)
-	host, _ := config["host"].(string)
-	rsaKey, _ := config["rsakey"].(string)
+func (m *Manager) setSSHConnection(config map[string]any) {
+	username, ok := config["username"].(string)
+	if !ok {
+		username = ""
+	}
+	password, ok := config["password"].(string)
+	if !ok {
+		password = ""
+	}
+	host, ok := config["host"].(string)
+	if !ok {
+		host = ""
+	}
+	rsaKey, ok := config["rsakey"].(string)
+	if !ok {
+		rsaKey = ""
+	}
 
 	rport := defaultRemotePort
 	if rportVal, ok := config["rport"].(float64); ok {

@@ -72,7 +72,7 @@ func (rm *Manager) startWorker() {
 	rm.workerCtx, rm.workerCancel = context.WithCancel(rm.ctx)
 
 	rm.wg.Add(1)
-	go rm.getUsageDataWorker(rm.workerCtx)
+	go rm.runUsageDataWorker(rm.workerCtx)
 }
 
 // Stop stops the ResourceManager
@@ -106,8 +106,8 @@ func (rm *Manager) InstanceConfigUpdated() {
 	rm.startWorker()
 }
 
-// getUsageDataWorker periodically gets usage data and sends HW/USB info to controller
-func (rm *Manager) getUsageDataWorker(ctx context.Context) {
+// runUsageDataWorker periodically gets usage data and sends HW/USB info to controller
+func (rm *Manager) runUsageDataWorker(ctx context.Context) {
 	defer rm.wg.Done()
 
 	cfg := rm.config

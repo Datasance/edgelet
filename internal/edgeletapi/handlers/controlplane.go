@@ -32,14 +32,14 @@ type controlPlaneApplyOperation struct {
 
 // HandleSystemControlPlane routes GET/DELETE /v1/system/controlplane and GET manifest.
 func (h *EdgeletAPIHandler) HandleSystemControlPlane(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.URL.Path == "/v1/system/controlplane/manifest":
+	switch r.URL.Path {
+	case "/v1/system/controlplane/manifest":
 		if r.Method != http.MethodGet {
 			writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
 			return
 		}
 		h.handleSystemControlPlaneManifest(w)
-	case r.URL.Path == "/v1/system/controlplane":
+	case "/v1/system/controlplane":
 		switch r.Method {
 		case http.MethodGet:
 			h.handleSystemControlPlaneStatus(w)
@@ -85,7 +85,7 @@ func (h *EdgeletAPIHandler) handleSystemControlPlaneManifest(w http.ResponseWrit
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"manifestYaml": masked,
 		"masked":       true,
 	})
@@ -100,7 +100,7 @@ func (h *EdgeletAPIHandler) handleSystemControlPlaneDelete(w http.ResponseWriter
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (h *EdgeletAPIHandler) HandleDeployControlPlaneApply(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +114,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApply(w http.ResponseWriter,
 		return
 	}
 	if activeID, busy := h.activeControlPlaneApply(); busy {
-		writeAPIError(w, http.StatusConflict, ErrCodeApplyInProgress, "control plane apply already in progress", map[string]interface{}{
+		writeAPIError(w, http.StatusConflict, ErrCodeApplyInProgress, "control plane apply already in progress", map[string]any{
 			"activeOperationId": activeID,
 		})
 		return
@@ -185,7 +185,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApply(w http.ResponseWriter,
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("control plane apply succeeded operationId=%s controllerUuid=%s dryRun=%v", operationID, result.ControllerUUID, applyDryRun))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
-	writeSuccess(w, http.StatusAccepted, map[string]interface{}{
+	writeSuccess(w, http.StatusAccepted, map[string]any{
 		"operationId":    op.OperationID,
 		"status":         op.Status,
 		"controllerUuid": op.ControllerUUID,
@@ -214,7 +214,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApplyStatus(w http.ResponseW
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "control plane apply operation not found", nil)
 		return
 	}
-	response := map[string]interface{}{
+	response := map[string]any{
 		"operationId": op.OperationID,
 		"status":      op.Status,
 		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
@@ -254,7 +254,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApplyStatus(w http.ResponseW
 		if code == "" {
 			code = ErrCodeInternal
 		}
-		response["error"] = map[string]interface{}{
+		response["error"] = map[string]any{
 			"code":    code,
 			"message": op.ErrorMessage,
 		}
@@ -288,7 +288,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneValidate(w http.ResponseWrit
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, map[string]interface{}{
+	writeSuccess(w, http.StatusOK, map[string]any{
 		"valid":      true,
 		"kind":       doc.Kind,
 		"name":       doc.Metadata.Name,

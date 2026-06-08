@@ -10,7 +10,7 @@ import (
 
 var (
 	debugSampleOnce sync.Once
-	debugSampleRate float64 = 1.0
+	debugSampleRate = 1.0
 )
 
 // debugLogEnabled returns whether a Debug-level runtimeops event should be written to the log backend.
@@ -24,7 +24,7 @@ func debugLogEnabled() bool {
 	if debugSampleRate <= 0 {
 		return false
 	}
-	return rand.Float64() < debugSampleRate
+	return rand.Float64() < debugSampleRate // #nosec G404 -- non-cryptographic log sampling only
 }
 
 func initDebugSampleRate() {

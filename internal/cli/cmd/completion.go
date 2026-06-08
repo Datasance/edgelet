@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -73,7 +74,7 @@ func newShellCompletionCommand(root *cobra.Command, shell string, gen func(w io.
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if root == nil {
-				return fmt.Errorf("root command is nil")
+				return errors.New("root command is nil")
 			}
 			return gen(cmd.OutOrStdout())
 		},

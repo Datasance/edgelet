@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package models
 
 import (
@@ -79,14 +80,7 @@ spec:
 
 func TestControlPlaneManifestValidate_HTTPSEmptyBlockAllowed(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{}
+	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{}
 	if err := doc.Validate(); err != nil {
 		t.Fatalf("expected empty https block to pass: %v", err)
 	}
@@ -96,20 +90,9 @@ func TestControlPlaneManifestValidate_HTTPSPathAndBase64MutuallyExclusive(t *tes
 	doc := validControlPlaneManifestForTest()
 	dir := t.TempDir()
 	writeControlPlaneCertFiles(t, dir, false)
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{
+	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{
 		Path: dir,
-		Base64: &struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		}{
+		Base64: &ControlPlaneHTTPSBase64{
 			Cert: base64.StdEncoding.EncodeToString([]byte("cert")),
 			Key:  base64.StdEncoding.EncodeToString([]byte("key")),
 		},
@@ -121,14 +104,7 @@ func TestControlPlaneManifestValidate_HTTPSPathAndBase64MutuallyExclusive(t *tes
 
 func TestControlPlaneManifestValidate_HTTPSPathRequiresAbsoluteExistingDir(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{Path: "relative/certs"}
+	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{Path: "relative/certs"}
 	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("expected absolute path error, got: %v", err)
 	}
@@ -147,19 +123,8 @@ func TestControlPlaneManifestValidate_HTTPSPathRequiresAbsoluteExistingDir(t *te
 
 func TestControlPlaneManifestValidate_HTTPSBase64RequiresValidEncoding(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &struct {
-		Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-		Base64 *struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		} `yaml:"base64,omitempty" json:"base64,omitempty"`
-	}{
-		Base64: &struct {
-			CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-			Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-			Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-		}{
+	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{
+		Base64: &ControlPlaneHTTPSBase64{
 			Cert: "not-base64!!!",
 			Key:  base64.StdEncoding.EncodeToString([]byte("key")),
 		},

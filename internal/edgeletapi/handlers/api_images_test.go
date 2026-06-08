@@ -1,3 +1,4 @@
+//revive:disable:nested-structs
 package handlers
 
 import (
@@ -60,8 +61,8 @@ func TestHandleImagePull_AsyncReturnsOperationID(t *testing.T) {
 		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var envelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("failed to decode envelope: %v", err)
@@ -96,13 +97,16 @@ func TestHandleImageLoad_AsyncAccepted(t *testing.T) {
 		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var envelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	operationID, _ := envelope.Data["operationId"].(string)
+	operationID, ok := envelope.Data["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for operationID")
+	}
 	if strings.TrimSpace(operationID) == "" {
 		t.Fatalf("expected operationId, got %#v", envelope.Data)
 	}
@@ -223,8 +227,8 @@ func TestHandleDeployMicroservicesApply_AsyncAccepted(t *testing.T) {
 		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var envelope struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -232,11 +236,17 @@ func TestHandleDeployMicroservicesApply_AsyncAccepted(t *testing.T) {
 	if !envelope.Success {
 		t.Fatalf("expected success response, got %s", rec.Body.String())
 	}
-	operationID, _ := envelope.Data["operationId"].(string)
+	operationID, ok := envelope.Data["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for operationID")
+	}
 	if strings.TrimSpace(operationID) == "" {
 		t.Fatalf("expected operationId in response, got: %v", envelope.Data)
 	}
-	status, _ := envelope.Data["status"].(string)
+	status, ok := envelope.Data["status"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for status")
+	}
 	if !strings.EqualFold(status, "running") {
 		t.Fatalf("expected running status, got: %v", envelope.Data)
 	}

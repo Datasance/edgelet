@@ -2,6 +2,7 @@ package edgeletapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ func (l *EdgeletAPI) Start() error {
 		return nil
 	case err := <-errCh:
 		if err == nil {
-			err = fmt.Errorf("local api server exited before signaling readiness")
+			err = errors.New("local api server exited before signaling readiness")
 		}
 		handlers.SetEdgeletAPIStartupState(handlers.EdgeletAPIStartupFailed, err.Error())
 		logging.LogError(localAPIModuleName, "Failed to start local api server", err)

@@ -14,8 +14,8 @@ import (
 func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 	originalSink := wsLogSink
 	defer func() { wsLogSink = originalSink }()
-	var captured map[string]interface{}
-	wsLogSink = func(_ string, fields map[string]interface{}) {
+	var captured map[string]any
+	wsLogSink = func(_ string, fields map[string]any) {
 		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
@@ -34,15 +34,15 @@ func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 		t.Fatalf("expected websocket_unauthorized reject event, got %#v", captured)
 	}
 	if captured["requestId"] == "" {
-		t.Fatalf("requestId missing in websocket reject log")
+		t.Fatal("requestId missing in websocket reject log")
 	}
 }
 
 func TestHandle_NonGETRejected(t *testing.T) {
 	originalSink := wsLogSink
 	defer func() { wsLogSink = originalSink }()
-	var captured map[string]interface{}
-	wsLogSink = func(_ string, fields map[string]interface{}) {
+	var captured map[string]any
+	wsLogSink = func(_ string, fields map[string]any) {
 		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
@@ -69,8 +69,8 @@ func TestHandle_V3MissingMicroserviceUUIDRejected(t *testing.T) {
 		wsLogSink = originalSink
 		validateLocalJWTFn = originalValidate
 	}()
-	var captured map[string]interface{}
-	wsLogSink = func(_ string, fields map[string]interface{}) {
+	var captured map[string]any
+	wsLogSink = func(_ string, fields map[string]any) {
 		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
@@ -107,8 +107,8 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 		validateLocalJWTFn = originalValidate
 		authorizeV3WSFn = originalAuthorize
 	}()
-	var captured map[string]interface{}
-	wsLogSink = func(_ string, fields map[string]interface{}) {
+	var captured map[string]any
+	wsLogSink = func(_ string, fields map[string]any) {
 		if fields["event"] == "edgeletapi.reject" {
 			captured = fields
 		}
@@ -118,8 +118,8 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"edgelet.iofog.org": map[string]interface{}{
-					"microservice": map[string]interface{}{
+				"edgelet.iofog.org": map[string]any{
+					"microservice": map[string]any{
 						"uuid": "ms-1",
 					},
 				},
@@ -151,8 +151,8 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 		validateLocalJWTFn = originalValidate
 		authorizeV3WSFn = originalAuthorize
 	}()
-	var captured map[string]interface{}
-	wsLogSink = func(_ string, fields map[string]interface{}) {
+	var captured map[string]any
+	wsLogSink = func(_ string, fields map[string]any) {
 		if fields["event"] == "edgeletapi.reject" && fields["reasonCode"] == "websocket_upgrade_failed" {
 			captured = fields
 		}
@@ -162,8 +162,8 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"edgelet.iofog.org": map[string]interface{}{
-					"microservice": map[string]interface{}{
+				"edgelet.iofog.org": map[string]any{
+					"microservice": map[string]any{
 						"uuid": "ms-1",
 					},
 				},
@@ -195,16 +195,16 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 			Claims: jwt.MapClaims{
 				"sub":      "system:serviceaccount:app:svc",
 				"tokenUse": "serviceaccount",
-				"edgelet.iofog.org": map[string]interface{}{
-					"microservice": map[string]interface{}{
+				"edgelet.iofog.org": map[string]any{
+					"microservice": map[string]any{
 						"uuid": "ms-1",
 					},
-					"rbac": map[string]interface{}{
-						"rulesByGroup": map[string]interface{}{
-							"edgelet.iofog.org/v1": []interface{}{
-								map[string]interface{}{
-									"resources": []interface{}{"microservices/control/self"},
-									"verbs":     []interface{}{"get"},
+					"rbac": map[string]any{
+						"rulesByGroup": map[string]any{
+							"edgelet.iofog.org/v1": []any{
+								map[string]any{
+									"resources": []any{"microservices/control/self"},
+									"verbs":     []any{"get"},
 								},
 							},
 						},
@@ -217,7 +217,9 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 
 	handler := NewControlHandler()
 	server := httptest.NewServer(http.HandlerFunc(handler.Handle))
-	defer server.Close()
+	defer func() {
+		server.Close()
+	}()
 
 	dial := func(path string) error {
 		wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + path

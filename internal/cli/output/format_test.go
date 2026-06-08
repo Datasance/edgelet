@@ -10,9 +10,9 @@ import (
 )
 
 func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {
-	out := FormatConfigPatchResult(map[string]interface{}{
+	out := FormatConfigPatchResult(map[string]any{
 		"status": "ok",
-		"errorMap": map[string]interface{}{
+		"errorMap": map[string]any{
 			"a": "invalid",
 		},
 	})
@@ -22,7 +22,7 @@ func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {
 }
 
 func TestFormatEdgeletAPIHuman_StatusOrder(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]any{
 		"controllerUrl":          "u",
 		"connectionToController": "not provisioned",
 		"cpuUsage":               "1%",
@@ -35,7 +35,7 @@ func TestFormatEdgeletAPIHuman_StatusOrder(t *testing.T) {
 }
 
 func TestFormatEdgeletAPIHuman_StatusIncludesAvailableNetworkInterfacesAfterTotalCPU(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]any{
 		"systemTotalCpu":             "3200%",
 		"availableNetworkInterfaces": "eth0, wlan0",
 		"connectionToController":     "ok",
@@ -74,9 +74,9 @@ func TestFormatVersionHuman_DaemonUnavailableFallback(t *testing.T) {
 }
 
 func TestFormatEdgeletAPIHuman_MSListHandlesQueryPath(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/ms?source=all", map[string]interface{}{
-		"items": []interface{}{
-			map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/ms?source=all", map[string]any{
+		"items": []any{
+			map[string]any{
 				"uuid":        "u1",
 				"application": "app",
 				"name":        "ms",
@@ -93,7 +93,7 @@ func TestFormatEdgeletAPIHuman_MSListHandlesQueryPath(t *testing.T) {
 }
 
 func TestFormatEdgeletAPIHuman_MSLifecycleFormatting(t *testing.T) {
-	out := FormatEdgeletAPIHuman("/v1/ms/abc/start", map[string]interface{}{
+	out := FormatEdgeletAPIHuman("/v1/ms/abc/start", map[string]any{
 		"status":           "ok",
 		"microserviceUuid": "abc",
 		"warning":          "controller reconcile may restart it",
@@ -104,7 +104,7 @@ func TestFormatEdgeletAPIHuman_MSLifecycleFormatting(t *testing.T) {
 }
 
 func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
-	out := FormatRegistryInspect(map[string]interface{}{
+	out := FormatRegistryInspect(map[string]any{
 		"id": 3, "url": "registry.example.com", "isPublic": false,
 		"userName": "john", "userEmail": "john@example.com", "password": "s3cr3t",
 	}, false)
@@ -115,11 +115,11 @@ func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
 }
 
 func TestFormatLogEntries_PreservesDockerStyleSpacing(t *testing.T) {
-	out := FormatLogEntries(map[string]interface{}{
-		"entries": []interface{}{
-			map[string]interface{}{"line": "line1\n"},
-			map[string]interface{}{"line": "\n"},
-			map[string]interface{}{"line": "line3\n"},
+	out := FormatLogEntries(map[string]any{
+		"entries": []any{
+			map[string]any{"line": "line1\n"},
+			map[string]any{"line": "\n"},
+			map[string]any{"line": "line3\n"},
 		},
 	}, false)
 	if out != "line1\n\nline3\n" {
@@ -128,7 +128,7 @@ func TestFormatLogEntries_PreservesDockerStyleSpacing(t *testing.T) {
 }
 
 func TestFormatDeployApplyResult_KindSpecific(t *testing.T) {
-	msOut := formatDeployApplyResult(map[string]interface{}{
+	msOut := formatDeployApplyResult(map[string]any{
 		"accepted": true, "kind": "Microservice", "deploymentId": "dep-1",
 	})
 	if !strings.Contains(msOut, "microservice manifest applied successfully") {

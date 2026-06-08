@@ -21,10 +21,10 @@ const (
 )
 
 type apiErrorBody struct {
-	Code      string                 `json:"code"`
-	Message   string                 `json:"message"`
-	Details   map[string]interface{} `json:"details,omitempty"`
-	RequestID string                 `json:"requestId,omitempty"`
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details,omitempty"`
+	RequestID string         `json:"requestId,omitempty"`
 }
 
 type apiErrorEnvelope struct {
@@ -33,11 +33,11 @@ type apiErrorEnvelope struct {
 }
 
 type apiSuccessEnvelope struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
+	Success bool `json:"success"`
+	Data    any  `json:"data,omitempty"`
 }
 
-func writeSuccess(w http.ResponseWriter, statusCode int, payload interface{}) {
+func writeSuccess(w http.ResponseWriter, statusCode int, payload any) {
 	writeJSONEnvelope(w, statusCode, apiSuccessEnvelope{
 		Success: true,
 		Data:    payload,
@@ -52,7 +52,7 @@ func writeMicroserviceLifecycleError(w http.ResponseWriter, err error) {
 	writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 }
 
-func writeAPIError(w http.ResponseWriter, statusCode int, code, message string, details map[string]interface{}) {
+func writeAPIError(w http.ResponseWriter, statusCode int, code, message string, details map[string]any) {
 	writeJSONEnvelope(w, statusCode, apiErrorEnvelope{
 		Success: false,
 		Error: apiErrorBody{
@@ -63,7 +63,7 @@ func writeAPIError(w http.ResponseWriter, statusCode int, code, message string, 
 	})
 }
 
-func writeJSONEnvelope(w http.ResponseWriter, statusCode int, payload interface{}) {
+func writeJSONEnvelope(w http.ResponseWriter, statusCode int, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

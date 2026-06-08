@@ -3,11 +3,11 @@ package output
 import (
 	"encoding/base64"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
-func formatMutationRoute(routePath string, result map[string]interface{}) string {
+func formatMutationRoute(routePath string, result map[string]any) string {
 	switch routePath {
 	case "/v1/system/config":
 		return FormatConfigPatchResult(result)
@@ -55,48 +55,60 @@ func formatMutationRoute(routePath string, result map[string]interface{}) string
 }
 
 // FormatConfigPatchResult renders PATCH /v1/system/config output.
-func FormatConfigPatchResult(result map[string]interface{}) string {
+func FormatConfigPatchResult(result map[string]any) string {
 	if len(result) == 0 {
 		return ""
 	}
-	status, _ := result["status"].(string)
-	errorMap, _ := result["errorMap"].(map[string]interface{})
+	status, ok := result["status"].(string)
+	if !ok {
+		status = ""
+	}
+	errorMap, ok := result["errorMap"].(map[string]any)
+	if !ok {
+		errorMap = map[string]any{}
+	}
 	var b strings.Builder
 	if len(errorMap) == 0 {
 		if status == "" {
 			status = "ok"
 		}
-		fmt.Fprintf(&b, "config update: %s (all requested changes accepted)", status)
-		if pending, _ := result["pendingRestart"].(bool); pending {
-			if msg, _ := result["message"].(string); msg != "" {
-				b.WriteString("\n")
-				b.WriteString(msg)
+		_, _ = fmt.Fprintf(&b, "config update: %s (all requested changes accepted)", status)
+		if pending, ok := result["pendingRestart"].(bool); ok && pending {
+			if msg, ok := result["message"].(string); ok && msg != "" {
+				_, _ = b.WriteString("\n")
+				_, _ = b.WriteString(msg)
 			} else {
-				b.WriteString("\nRestart required: systemctl restart edgelet")
+				_, _ = b.WriteString("\nRestart required: systemctl restart edgelet")
 			}
 		}
 		return b.String()
 	}
-	fmt.Fprintf(&b, "config update: %s\n", status)
-	fmt.Fprintln(&b, "rejected keys:")
+	_, _ = fmt.Fprintf(&b, "config update: %s\n", status)
+	_, _ = fmt.Fprintln(&b, "rejected keys:")
 	keys := make([]string, 0, len(errorMap))
 	for k := range errorMap {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
-		fmt.Fprintf(&b, "  - %s: %v\n", k, errorMap[k])
+		_, _ = fmt.Fprintf(&b, "  - %s: %v\n", k, errorMap[k])
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // FormatConfigMutationOutput renders accepted/rejected config key changes.
-func FormatConfigMutationOutput(setMap, before, patchResult map[string]interface{}) string {
+func FormatConfigMutationOutput(setMap, before, patchResult map[string]any) string {
 	if len(setMap) == 0 {
 		return "config update: no changes requested"
 	}
-	errorMap, _ := patchResult["errorMap"].(map[string]interface{})
-	status, _ := patchResult["status"].(string)
+	errorMap, ok := patchResult["errorMap"].(map[string]any)
+	if !ok {
+		errorMap = map[string]any{}
+	}
+	status, ok := patchResult["status"].(string)
+	if !ok {
+		status = ""
+	}
 	if status == "" {
 		status = "ok"
 	}
@@ -106,7 +118,7 @@ func FormatConfigMutationOutput(setMap, before, patchResult map[string]interface
 	for k := range setMap {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		if _, failed := errorMap[key]; failed {
 			rejected = append(rejected, fmt.Sprintf("%s (%v)", key, errorMap[key]))
@@ -121,24 +133,24 @@ func FormatConfigMutationOutput(setMap, before, patchResult map[string]interface
 		accepted = append(accepted, fmt.Sprintf("%s: %s -> %v", key, oldVal, setMap[key]))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "config update: %s\n", status)
+	_, _ = fmt.Fprintf(&b, "config update: %s\n", status)
 	if len(accepted) > 0 {
-		fmt.Fprintln(&b, "accepted:")
+		_, _ = fmt.Fprintln(&b, "accepted:")
 		for _, line := range accepted {
-			fmt.Fprintf(&b, "  - %s\n", line)
+			_, _ = fmt.Fprintf(&b, "  - %s\n", line)
 		}
 	}
 	if len(rejected) > 0 {
-		fmt.Fprintln(&b, "rejected:")
+		_, _ = fmt.Fprintln(&b, "rejected:")
 		for _, line := range rejected {
-			fmt.Fprintf(&b, "  - %s\n", line)
+			_, _ = fmt.Fprintf(&b, "  - %s\n", line)
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // FormatSwitchResult renders profile switch output.
-func FormatSwitchResult(result map[string]interface{}) string {
+func FormatSwitchResult(result map[string]any) string {
 	oldProfile := fmt.Sprintf("%v", result["oldProfile"])
 	profile := fmt.Sprintf("%v", result["profile"])
 	reloaded := fmt.Sprintf("%v", result["reloaded"])
@@ -154,7 +166,7 @@ func FormatProvisionSuccess(agentUUID string) string {
 }
 
 // FormatRegistryInspect renders registry inspect human output.
-func FormatRegistryInspect(result map[string]interface{}, passwordPlain bool) string {
+func FormatRegistryInspect(result map[string]any, passwordPlain bool) string {
 	if len(result) == 0 {
 		return "Error[NOT_FOUND]: registry not found"
 	}
@@ -176,7 +188,7 @@ func FormatRegistryInspect(result map[string]interface{}, passwordPlain bool) st
 	return strings.Join(lines, "\n")
 }
 
-func formatImagePullResult(result map[string]interface{}) string {
+func formatImagePullResult(result map[string]any) string {
 	return fmt.Sprintf(
 		"image pulled successfully: %s (engine=%s, platform=%s)",
 		MapValueAsString(result, "resolvedImage"),
@@ -185,7 +197,7 @@ func formatImagePullResult(result map[string]interface{}) string {
 	)
 }
 
-func formatImageRemoveResult(result map[string]interface{}) string {
+func formatImageRemoveResult(result map[string]any) string {
 	return fmt.Sprintf(
 		"image removed successfully: %s (engine=%s)",
 		ValueOrDefault(MapValueAsString(result, "removed"), ValueOrDefault(MapValueAsString(result, "selector"), "<unknown>")),
@@ -193,7 +205,7 @@ func formatImageRemoveResult(result map[string]interface{}) string {
 	)
 }
 
-func formatImageLoadResult(result map[string]interface{}) string {
+func formatImageLoadResult(result map[string]any) string {
 	return fmt.Sprintf(
 		"image archive loaded successfully: %s image imported (engine=%s)",
 		MapValueAsString(result, "count"),
@@ -201,7 +213,7 @@ func formatImageLoadResult(result map[string]interface{}) string {
 	)
 }
 
-func formatImagePruneResult(result map[string]interface{}) string {
+func formatImagePruneResult(result map[string]any) string {
 	mode := strings.ToLower(strings.TrimSpace(MapValueAsString(result, "mode")))
 	engineName := ValueOrDefault(MapValueAsString(result, "engine"), "<unknown>")
 	switch mode {
@@ -236,14 +248,14 @@ func formatImagePruneResult(result map[string]interface{}) string {
 	)
 }
 
-func formatRegistryRemoveResult(result map[string]interface{}) string {
+func formatRegistryRemoveResult(result map[string]any) string {
 	if id := MapValueAsString(result, "id"); id != "<unknown>" {
 		return fmt.Sprintf("registry removed successfully (id=%s)", id)
 	}
 	return "registry removed successfully"
 }
 
-func formatRuntimeClassInspect(result map[string]interface{}) string {
+func formatRuntimeClassInspect(result map[string]any) string {
 	if len(result) == 0 {
 		return "Error[NOT_FOUND]: runtimeclass not found"
 	}
@@ -255,14 +267,14 @@ func formatRuntimeClassInspect(result map[string]interface{}) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatRuntimeClassRemoveResult(result map[string]interface{}) string {
+func formatRuntimeClassRemoveResult(result map[string]any) string {
 	if name := MapValueAsString(result, "name"); name != "<unknown>" {
 		return fmt.Sprintf("runtimeclass removed successfully (name=%s)", name)
 	}
 	return "runtimeclass removed successfully"
 }
 
-func formatMSLifecycleResult(path string, result map[string]interface{}) string {
+func formatMSLifecycleResult(path string, result map[string]any) string {
 	operation := "operation"
 	switch {
 	case strings.HasSuffix(path, "/start"):
@@ -287,21 +299,21 @@ func formatMSLifecycleResult(path string, result map[string]interface{}) string 
 	return msg
 }
 
-func formatDeployValidateResult(result map[string]interface{}) string {
+func formatDeployValidateResult(result map[string]any) string {
 	if valid, ok := result["valid"].(bool); ok && valid {
 		return fmt.Sprintf("manifest is valid (kind=%v name=%v apiVersion=%v)", result["kind"], result["name"], result["apiVersion"])
 	}
 	return "manifest validation result unavailable"
 }
 
-func formatDeployApplyResult(result map[string]interface{}) string {
+func formatDeployApplyResult(result map[string]any) string {
 	status := normalizeOperationStatus(MapValueAsString(result, "status"))
 	kind := strings.ToLower(strings.TrimSpace(MapValueAsString(result, "kind")))
 	operationID := strings.TrimSpace(MapValueAsString(result, "operationId"))
 	if accepted, ok := result["accepted"].(bool); ok && accepted {
 		switch kind {
 		case "registry":
-			if reg, ok := result["registry"].(map[string]interface{}); ok {
+			if reg, ok := result["registry"].(map[string]any); ok {
 				return fmt.Sprintf("registry manifest applied successfully (id=%s url=%s)", MapValueAsString(reg, "id"), MapValueAsString(reg, "url"))
 			}
 			return "registry manifest applied successfully"
@@ -311,7 +323,7 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 			}
 			return "microservice manifest applied successfully"
 		case "runtimeclass":
-			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+			if item, ok := result["runtimeClass"].(map[string]any); ok {
 				return fmt.Sprintf(
 					"runtimeclass manifest applied successfully (name=%s handler=%s)",
 					ValueOrDefault(MapValueAsString(item, "name"), "<unknown>"),
@@ -337,7 +349,7 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 	if kind == "runtimeclass" || result["runtimeClass"] != nil {
 		switch status {
 		case "succeeded":
-			if item, ok := result["runtimeClass"].(map[string]interface{}); ok {
+			if item, ok := result["runtimeClass"].(map[string]any); ok {
 				return fmt.Sprintf(
 					"runtimeclass manifest applied successfully (name=%s handler=%s)",
 					ValueOrDefault(MapValueAsString(item, "name"), "<unknown>"),
@@ -364,10 +376,10 @@ func formatDeployApplyResult(result map[string]interface{}) string {
 	return "manifest apply result unavailable"
 }
 
-func formatDeployApplyError(result map[string]interface{}) (string, string) {
+func formatDeployApplyError(result map[string]any) (string, string) {
 	code := "INTERNAL"
 	message := ""
-	if rawErr, ok := result["error"].(map[string]interface{}); ok {
+	if rawErr, ok := result["error"].(map[string]any); ok {
 		if c := strings.TrimSpace(MapValueAsString(rawErr, "code")); c != "" && c != "<unknown>" {
 			code = c
 		}

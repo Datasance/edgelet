@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // legacy package name
 
 // Either represents a value that can be either Left (error) or Right (success)
 type Either[T any] interface {

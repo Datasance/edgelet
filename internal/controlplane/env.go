@@ -1,6 +1,8 @@
+//revive:disable:nested-structs
 package controlplane
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,10 +28,10 @@ var controlPlaneRouterArchSlots = []struct {
 // Omitted spec blocks emit no variables; CONTROL_PLANE=Remote is always set.
 func BuildControllerEnv(doc *models.ControlPlaneManifest, controllerUUID string) (map[string]string, error) {
 	if doc == nil {
-		return nil, fmt.Errorf("manifest is nil")
+		return nil, errors.New("manifest is nil")
 	}
 	if strings.TrimSpace(controllerUUID) == "" {
-		return nil, fmt.Errorf("controllerUUID is required")
+		return nil, errors.New("controllerUUID is required")
 	}
 	doc.NormalizeDefaults()
 	if err := doc.Validate(); err != nil {
@@ -157,14 +159,7 @@ func projectNATSEnv(env map[string]string, nats *struct {
 	setEnv(env, "NATS_ENABLED", strconv.FormatBool(*nats.Enabled))
 }
 
-func projectHTTPSEnv(env map[string]string, https *struct {
-	Path   string `yaml:"path,omitempty" json:"path,omitempty"`
-	Base64 *struct {
-		CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-		Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-		Key  string `yaml:"key,omitempty" json:"key,omitempty"`
-	} `yaml:"base64,omitempty" json:"base64,omitempty"`
-}) {
+func projectHTTPSEnv(env map[string]string, https *models.ControlPlaneHTTPSConfig) {
 	if https == nil {
 		return
 	}

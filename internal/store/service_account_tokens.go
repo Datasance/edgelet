@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 // UpsertServiceAccountToken upserts token metadata.
 func (d *DB) UpsertServiceAccountToken(token *models.ServiceAccountToken) error {
 	if token == nil {
-		return fmt.Errorf("token is nil")
+		return errors.New("token is nil")
 	}
 
 	_, err := d.Conn().Exec(`INSERT OR REPLACE INTO local_service_account_tokens (
@@ -32,14 +33,14 @@ func (d *DB) UpsertServiceAccountToken(token *models.ServiceAccountToken) error 
 }
 
 // RevokeServiceAccountToken revokes a token by JTI.
-func (d *DB) RevokeServiceAccountToken(jti string, revokedAt int64) error {
+func (d *DB) RevokeServiceAccountToken(jti string, revokedAtSec int64) error {
 	if jti == "" {
-		return fmt.Errorf("jti is required")
+		return errors.New("jti is required")
 	}
-	if revokedAt == 0 {
-		revokedAt = time.Now().Unix()
+	if revokedAtSec == 0 {
+		revokedAtSec = time.Now().Unix()
 	}
-	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE jti = ?`, revokedAt, time.Now().Unix(), jti)
+	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE jti = ?`, revokedAtSec, time.Now().Unix(), jti)
 	return err
 }
 
@@ -54,7 +55,9 @@ func (d *DB) ListServiceAccountTokens() ([]*models.ServiceAccountToken, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query local_service_account_tokens: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.ServiceAccountToken
 	for rows.Next() {
@@ -90,7 +93,9 @@ func (d *DB) ListActiveServiceAccountTokens() ([]*models.ServiceAccountToken, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active local_service_account_tokens: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var result []*models.ServiceAccountToken
 	for rows.Next() {
@@ -116,11 +121,11 @@ func (d *DB) ListActiveServiceAccountTokens() ([]*models.ServiceAccountToken, er
 }
 
 // RevokeAllServiceAccountTokens marks all tokens revoked.
-func (d *DB) RevokeAllServiceAccountTokens(revokedAt int64) error {
-	if revokedAt == 0 {
-		revokedAt = time.Now().Unix()
+func (d *DB) RevokeAllServiceAccountTokens(revokedAtSec int64) error {
+	if revokedAtSec == 0 {
+		revokedAtSec = time.Now().Unix()
 	}
-	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE revoked_at IS NULL`, revokedAt, time.Now().Unix())
+	_, err := d.Conn().Exec(`UPDATE local_service_account_tokens SET revoked_at = ?, updated_at = ? WHERE revoked_at IS NULL`, revokedAtSec, time.Now().Unix())
 	return err
 }
 

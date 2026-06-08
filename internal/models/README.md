@@ -1,12 +1,13 @@
 # Models Package
 
-This package contains all data structures and models migrated from Java to Go for the ioFog Agent.
+This package contains Edgelet data structures and domain models shared across the daemon, field agent, EdgeletAPI, and CLI.
 
 ## Overview
 
-All models have been migrated with:
+Models provide:
+
 - JSON/YAML marshaling support
-- Proper field naming to match Java JSON output
+- Controller-compatible field naming for PoT wire formats
 - Validation functions
 - Constructor functions (New*)
 - Thread-safe operations where needed
@@ -91,9 +92,9 @@ if err := ms.Validate(); err != nil {
 }
 ```
 
-## JSON Compatibility
+## JSON compatibility
 
-All models are designed to produce JSON output compatible with the Java implementation. Field names match exactly, and null values are handled appropriately using pointers.
+Models use PoT-compatible JSON field names. Optional fields use pointers to distinguish nil from zero values.
 
 ## Thread Safety
 

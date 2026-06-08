@@ -17,10 +17,10 @@ const runtimeClassApplyPollTimeout = 90 * time.Second
 
 var (
 	runtimeClassApplyPollInterval = time.Second
-	startMultipartApply           = func(api run.EdgeletAPIClient, target Target, manifestPath string, fields map[string]string) (map[string]interface{}, error) {
+	startMultipartApply           = func(api run.EdgeletAPIClient, target Target, manifestPath string, fields map[string]string) (map[string]any, error) {
 		return api.RequestMultipartFile("POST", target.applyPath(), "manifest", manifestPath, fields)
 	}
-	fetchApplyStatus = func(api run.EdgeletAPIClient, target Target, operationID string) (map[string]interface{}, error) {
+	fetchApplyStatus = func(api run.EdgeletAPIClient, target Target, operationID string) (map[string]any, error) {
 		return api.Request("GET", target.applyStatusPath(operationID), nil)
 	}
 )
@@ -34,7 +34,7 @@ type Request struct {
 
 // Result is the deploy command outcome.
 type Result struct {
-	Data   map[string]interface{}
+	Data   map[string]any
 	Stages []string
 	Human  string
 }
@@ -191,19 +191,19 @@ func applyAsync(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI
 		progress.Spinner = spin
 	}
 
-	final, stages, err := client.PollAsyncOperation(ctx, pollCfg, func() (map[string]interface{}, error) {
+	final, stages, err := client.PollAsyncOperation(ctx, pollCfg, func() (map[string]any, error) {
 		return fetchApplyStatus(api, target, operationID)
 	}, progress)
 	if err != nil {
-		if err == client.ErrPollTimeout && target == TargetRuntimeClasses {
+		if errors.Is(err, client.ErrPollTimeout) && target == TargetRuntimeClasses {
 			human := FormatRuntimeClassInProgress(operationID, "running", lastStageFrom(stages))
-			data := map[string]interface{}{
+			data := map[string]any{
 				"operationId": operationID,
 				"status":      "running",
 			}
 			return &Result{Data: WithStages(data, stages), Stages: stages, Human: human}, nil
 		}
-		if err == client.ErrPollTimeout && target == TargetControlPlane {
+		if errors.Is(err, client.ErrPollTimeout) && target == TargetControlPlane {
 			return nil, controlPlanePollTimeoutError(operationID)
 		}
 		return nil, run.MapAPIError(err)
@@ -224,7 +224,7 @@ func lastStageFrom(stages []string) string {
 	return stages[len(stages)-1]
 }
 
-func finalizeApply(data map[string]interface{}, stages []string) (*Result, error) {
+func finalizeApply(data map[string]any, stages []string) (*Result, error) {
 	human := FormatApplyHuman(data)
 	if strings.HasPrefix(human, "Error[") {
 		code, message := ApplyError(data)
