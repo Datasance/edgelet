@@ -110,12 +110,12 @@ func (e *ErrContainerdReconfigureOperation) Unwrap() error {
 	return e.Err
 }
 
-func (e *ErrContainerdReconfigureOperation) Details() map[string]interface{} {
+func (e *ErrContainerdReconfigureOperation) Details() map[string]any {
 	stage := strings.TrimSpace(strings.ToLower(e.Stage))
 	if stage == "" {
 		return nil
 	}
-	details := map[string]interface{}{
+	details := map[string]any{
 		"stage": stage,
 	}
 	if e.Attempt > 0 {
@@ -477,7 +477,9 @@ func (s *Service) IsHealthy() bool {
 	if err != nil {
 		return false
 	}
-	defer c.Close()
+	defer func() {
+		_ = c.Close()
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, err = c.Version(ctx)
@@ -586,7 +588,7 @@ func (s *Service) verifyStabilityWindow(window time.Duration) error {
 			if waitErr != nil {
 				return fmt.Errorf("containerd exited during stability window: %w", waitErr)
 			}
-			return fmt.Errorf("containerd exited during stability window")
+			return errors.New("containerd exited during stability window")
 		default:
 		}
 		if time.Now().After(deadline) {
@@ -598,7 +600,7 @@ func (s *Service) verifyStabilityWindow(window time.Duration) error {
 
 func (s *Service) rollbackToLKG(previousLKG []byte, hasLKG bool) error {
 	if !hasLKG {
-		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("last-known-good config is unavailable"))
+		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, errors.New("last-known-good config is unavailable"))
 	}
 	if err := writeAtomicForService(constants.EdgeletContainerdConfigFile, previousLKG, 0644); err != nil {
 		return wrapReconfigureError(reconfigureStageRollbackConfig, 0, fmt.Errorf("restore last-known-good config: %w", err))
@@ -642,7 +644,9 @@ func (s *Service) postSetup() error {
 	if err != nil {
 		return fmt.Errorf("create containerd client: %w", err)
 	}
-	defer c.Close()
+	defer func() {
+		_ = c.Close()
+	}()
 
 	if err := s.healthCheck(ctx, c); err != nil {
 		return fmt.Errorf("health check: %w", err)
@@ -743,7 +747,7 @@ func (s *Service) reapManagedShims() error {
 		if stillRunning, listErr := findManagedShimPIDs(constants.EdgeletContainerdSocket); listErr == nil {
 			return fmt.Errorf("managed shims still running after reap attempts: pids=%v", stillRunning)
 		}
-		return fmt.Errorf("managed shims still running after reap attempts")
+		return errors.New("managed shims still running after reap attempts")
 	}
 	return nil
 }

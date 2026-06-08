@@ -3,12 +3,12 @@
 package data
 
 import (
-	"fmt"
+	"errors"
 )
 
 // Asset is unavailable on lite and non-linux builds.
 func Asset(name string) ([]byte, error) {
-	return nil, fmt.Errorf("embedded data bundle not available in this build")
+	return nil, errors.New("embedded data bundle not available in this build")
 }
 
 // AssetNames is empty on lite and non-linux builds.

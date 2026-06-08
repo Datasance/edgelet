@@ -45,7 +45,7 @@ func (noopEngine) GetContainerStatus(string, string) (*models.MicroserviceStatus
 func (noopEngine) GetContainerStats(string) (*ContainerStats, error) { return nil, nil }
 func (noopEngine) GetContainerIPAddress(string) (string, error)      { return "", nil }
 func (noopEngine) GetContainerStartedAt(string) (int64, error)       { return 0, nil }
-func (noopEngine) InspectContainerRaw(string) (map[string]interface{}, error) {
+func (noopEngine) InspectContainerRaw(string) (map[string]any, error) {
 	return nil, nil
 }
 func (noopEngine) TailContainerLogs(string, string, string, LogTailHandler, *TailConfig) error {

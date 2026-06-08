@@ -98,7 +98,7 @@ type ContainerEngine interface {
 	GetContainerStats(containerID string) (*ContainerStats, error)
 	GetContainerIPAddress(containerID string) (string, error)
 	GetContainerStartedAt(containerID string) (int64, error)
-	InspectContainerRaw(containerID string) (map[string]interface{}, error)
+	InspectContainerRaw(containerID string) (map[string]any, error)
 
 	// Log streaming
 	TailContainerLogs(containerID, sessionID, microserviceUUID string, handler LogTailHandler, cfg *TailConfig) error
@@ -144,8 +144,8 @@ type PullImageOptions struct {
 }
 
 // EngineConfig holds the configuration passed to ContainerEngine.Init().
-// For docker/podman the SocketURL and APIVersion fields are used.
-// For iofog the SocketURL is always overridden by the EdgeletContainerdSocket constant.
+//
+//nolint:revive // exported API
 type EngineConfig struct {
 	SocketURL  string // e.g. "unix:///var/run/docker.sock"
 	APIVersion string // Docker API version negotiation (empty = auto)

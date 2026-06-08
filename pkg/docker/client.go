@@ -89,7 +89,7 @@ func (c *Client) initDockerClient() error {
 	// Ensure "edgelet" bridge network exists before returning
 	// call in initDockerClient(). Use the lock-free variant because c.mu is already
 	// held by Init() / ReInit(); calling ensureIoFogNetworkExists() here would deadlock.
-	if err := c.ensureNetworkLockFree(cli, c.ctx); err != nil {
+	if err := c.ensureNetworkLockFree(c.ctx, cli); err != nil {
 		c.logger.Warnf("Failed to ensure iofog network exists: %v", err)
 	}
 

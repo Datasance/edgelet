@@ -3,11 +3,11 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 
 	edgeletcontainerdd "github.com/datasance/edgelet/pkg/containerd"
 )
 
 func startEmbeddedContainerdWithRetry() (*edgeletcontainerdd.Service, error) {
-	return nil, fmt.Errorf("embedded containerd bootstrap is only available on linux")
+	return nil, errors.New("embedded containerd bootstrap is only available on linux")
 }

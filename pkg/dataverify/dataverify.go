@@ -108,11 +108,13 @@ func VerifyLinks(root, linkListFile string) error {
 }
 
 func fileMapFields(fileName string, key, val int) (map[string]string, error) {
-	file, err := os.Open(fileName)
+	file, err := os.Open(fileName) // #nosec G304 -- path under verified extract root from caller
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 	result := map[string]string{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -129,11 +131,13 @@ func fileMapFields(fileName string, key, val int) (map[string]string, error) {
 }
 
 func sha256Sum(filePath string) (string, error) {
-	file, err := os.Open(filePath)
+	file, err := os.Open(filePath) // #nosec G304 -- path under verified extract root from caller
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err

@@ -14,13 +14,13 @@ func TestIsNonRestartableContainerError(t *testing.T) {
 	}
 	wrapped := errors.New("wrapper: " + inner.Error())
 	if _, ok := IsNonRestartableContainerError(wrapped); ok {
-		t.Fatalf("expected false for non-wrapped error")
+		t.Fatal("expected false for non-wrapped error")
 	}
 
 	err := errors.Join(errors.New("wrapper"), inner)
 	got, ok := IsNonRestartableContainerError(err)
 	if !ok {
-		t.Fatalf("expected typed non-restartable error")
+		t.Fatal("expected typed non-restartable error")
 	}
 	if got.Reason != CRIReasonContainerExited {
 		t.Fatalf("expected reason %q, got %q", CRIReasonContainerExited, got.Reason)
@@ -29,12 +29,12 @@ func TestIsNonRestartableContainerError(t *testing.T) {
 
 func TestIsNonRestartableCRIReason(t *testing.T) {
 	if !IsNonRestartableCRIReason("CONTAINER_EXITED") {
-		t.Fatalf("expected CONTAINER_EXITED to be non-restartable")
+		t.Fatal("expected CONTAINER_EXITED to be non-restartable")
 	}
 	if !IsNonRestartableCRIReason("container_exited") {
-		t.Fatalf("expected case-insensitive match")
+		t.Fatal("expected case-insensitive match")
 	}
 	if IsNonRestartableCRIReason("OOMKILLED") {
-		t.Fatalf("did not expect OOMKILLED to be non-restartable")
+		t.Fatal("did not expect OOMKILLED to be non-restartable")
 	}
 }

@@ -66,6 +66,6 @@ func TestEmitContainerRuntimeWatchEvent_OOM(t *testing.T) {
 		t.Fatalf("runtimeStatus=%v", ev.Fields["runtimeStatus"])
 	}
 	if _, has := ev.Fields["exitCode"]; has {
-		t.Fatalf("expected no exitCode for zero exit")
+		t.Fatal("expected no exitCode for zero exit")
 	}
 }

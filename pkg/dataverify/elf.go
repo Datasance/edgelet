@@ -12,11 +12,13 @@ const FatRuntimeName = "edgelet"
 
 // IsELF reports whether path points to a file with a valid ELF header.
 func IsELF(path string) (bool, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path under verified extract root from caller
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	hdr := make([]byte, 4)
 	n, err := f.Read(hdr)

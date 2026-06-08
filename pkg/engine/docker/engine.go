@@ -171,7 +171,9 @@ func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]eng
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	loaded, err := e.client.LoadImage(f)
 	if err != nil {
 		return nil, err
@@ -206,7 +208,7 @@ func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, err
 	return &engine.ImagePruneReport{
 		Deleted:             deleted,
 		DeletedCount:        len(deleted),
-		SpaceReclaimedBytes: int64(report.SpaceReclaimed),
+		SpaceReclaimedBytes: int64(report.SpaceReclaimed), // #nosec G115 -- Docker prune space fits int64 in practice
 	}, nil
 }
 
@@ -241,7 +243,7 @@ func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, err
 	return &engine.VolumePruneReport{
 		Deleted:             deleted,
 		DeletedCount:        len(deleted),
-		SpaceReclaimedBytes: int64(report.SpaceReclaimed),
+		SpaceReclaimedBytes: int64(report.SpaceReclaimed), // #nosec G115 -- Docker prune space fits int64 in practice
 	}, nil
 }
 
@@ -274,12 +276,12 @@ func (e *Engine) GetContainerStartedAt(containerID string) (int64, error) {
 	return e.client.GetContainerStartedAt(containerID)
 }
 
-func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+func (e *Engine) InspectContainerRaw(containerID string) (map[string]any, error) {
 	raw, err := e.client.GetContainerInspectRaw(containerID)
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]interface{}{}
+	out := map[string]any{}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}

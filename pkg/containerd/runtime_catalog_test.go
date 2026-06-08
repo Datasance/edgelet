@@ -1,3 +1,4 @@
+//revive:disable:package-directory-mismatch
 package edgeletcontainerdd
 
 import (
@@ -45,9 +46,9 @@ func TestBuildRuntimeCatalog_DeterministicOrderAndEligibility(t *testing.T) {
 		t.Fatalf("wasmer should not be present when unavailable, got %+v", wasmer)
 	}
 
-	edgelet, ok := runtimeEntryByHandler("edgelet", catalog)
-	if !ok || edgelet.Family != RuntimeFamilyShim || edgelet.RuntimeType != "io.containerd.edgelet.v2" {
-		t.Fatalf("expected discovered edgelet shim entry, got %+v", edgelet)
+	edgeletWasmtime, ok := runtimeEntryByHandler("edgelet-wasmtime", catalog)
+	if !ok || edgeletWasmtime.Family != RuntimeFamilyShim || edgeletWasmtime.RuntimeType != "io.containerd.edgelet.v2" {
+		t.Fatalf("expected discovered edgelet-wasmtime shim entry, got %+v", edgeletWasmtime)
 	}
 }
 
@@ -56,8 +57,7 @@ func TestBuildRuntimeCatalog_UsesNvidiaExperimentalHyphenBinary(t *testing.T) {
 	t.Cleanup(func() { lookPathForRuntimeCatalog = prev })
 
 	lookPathForRuntimeCatalog = func(file string) (string, error) {
-		switch file {
-		case "nvidia-container-runtime-experimental":
+		if file == "nvidia-container-runtime-experimental" {
 			return "/usr/bin/nvidia-container-runtime-experimental", nil
 		}
 		return "", errors.New("not found")
@@ -66,7 +66,7 @@ func TestBuildRuntimeCatalog_UsesNvidiaExperimentalHyphenBinary(t *testing.T) {
 	catalog := BuildRuntimeCatalog()
 	nvidiaExperimental, ok := runtimeEntryByHandler("nvidia-experimental", catalog)
 	if !ok {
-		t.Fatalf("expected nvidia-experimental entry")
+		t.Fatal("expected nvidia-experimental entry")
 	}
 	if nvidiaExperimental.Binary != "nvidia-container-runtime-experimental" {
 		t.Fatalf("expected hyphenated binary candidate, got %q", nvidiaExperimental.Binary)

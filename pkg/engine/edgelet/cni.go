@@ -3,6 +3,7 @@
 package iofog
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,12 +18,12 @@ func buildHostsFile(targetPath string, extraHosts []string) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("127.0.0.1\tlocalhost\n")
-	sb.WriteString("::1\t\tlocalhost ip6-localhost ip6-loopback\n")
-	sb.WriteString("fe00::0\tip6-localnet\n")
-	sb.WriteString("ff00::0\tip6-mcastprefix\n")
-	sb.WriteString("ff02::1\tip6-allnodes\n")
-	sb.WriteString("ff02::2\tip6-allrouters\n")
+	_, _ = sb.WriteString("127.0.0.1\tlocalhost\n")
+	_, _ = sb.WriteString("::1\t\tlocalhost ip6-localhost ip6-loopback\n")
+	_, _ = sb.WriteString("fe00::0\tip6-localnet\n")
+	_, _ = sb.WriteString("ff00::0\tip6-mcastprefix\n")
+	_, _ = sb.WriteString("ff02::1\tip6-allnodes\n")
+	_, _ = sb.WriteString("ff02::2\tip6-allrouters\n")
 
 	for _, h := range extraHosts {
 		h = strings.TrimSpace(h)
@@ -36,7 +37,7 @@ func buildHostsFile(targetPath string, extraHosts []string) error {
 		ip := strings.TrimSpace(h[idx+1:])
 		host := strings.TrimSpace(h[:idx])
 		if ip != "" && host != "" {
-			sb.WriteString(fmt.Sprintf("%s\t%s\n", ip, host))
+			_, _ = sb.WriteString(fmt.Sprintf("%s\t%s\n", ip, host))
 		}
 	}
 
@@ -47,7 +48,7 @@ func buildHostsFile(targetPath string, extraHosts []string) error {
 // the embedded bridge-scoped DNS server.
 func buildResolvConfFile(targetPath string, nameserver string) error {
 	if strings.TrimSpace(nameserver) == "" {
-		return fmt.Errorf("nameserver is required")
+		return errors.New("nameserver is required")
 	}
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 		return fmt.Errorf("mkdir resolv dir: %w", err)

@@ -65,7 +65,7 @@ func EnsureExtracted() error {
 func getAssetAndDir(dataDir string) (string, string, error) {
 	names := AssetNames()
 	if len(names) == 0 {
-		return "", "", fmt.Errorf("no embedded data bundle found (run scripts/package-data before building full profile)")
+		return "", "", errors.New("no embedded data bundle found (run scripts/package-data before building full profile)")
 	}
 	asset := names[len(names)-1]
 	root, err := datadir.BundleRoot(dataDir)
@@ -185,7 +185,7 @@ func extract(dataDir string) (string, error) {
 			setExtractDir(dir)
 			return dir, nil
 		}
-		return "", fmt.Errorf("no embedded data bundle found (run scripts/package-data before building full profile)")
+		return "", errors.New("no embedded data bundle found (run scripts/package-data before building full profile)")
 	}
 
 	asset, dir, err := getAssetAndDir(dataDir)

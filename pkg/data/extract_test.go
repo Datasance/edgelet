@@ -17,7 +17,7 @@ func TestGenerateManagedCNIConfigUsesManagedConstants(t *testing.T) {
 	}
 	plugins, ok := cfg["plugins"].([]map[string]any)
 	if !ok || len(plugins) == 0 {
-		t.Fatalf("plugins missing from managed config")
+		t.Fatal("plugins missing from managed config")
 	}
 	bridge := plugins[0]
 	if got := bridge["bridge"]; got != constants.EdgeletBridgeName {

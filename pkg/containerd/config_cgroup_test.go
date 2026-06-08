@@ -24,11 +24,26 @@ func TestGenerateConfigSystemdDriverOmitsCgroupPath(t *testing.T) {
 		t.Fatalf("cgroup.path = %q want empty for systemd driver", got)
 	}
 
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	containerdCfg := criRuntime["containerd"].(map[string]any)
-	runtimes := containerdCfg["runtimes"].(map[string]any)
-	crunOpts := runtimes["crun"].(map[string]any)["options"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	containerdCfg, ok := criRuntime["containerd"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for containerdCfg")
+	}
+	runtimes, ok := containerdCfg["runtimes"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for runtimes")
+	}
+	crunOpts, ok := runtimes["crun"].(map[string]any)["options"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for crunOpts")
+	}
 	if got := crunOpts["SystemdCgroup"]; got != false {
 		t.Fatalf("crun SystemdCgroup = %v want false", got)
 	}
@@ -50,11 +65,26 @@ func TestGenerateConfigCgroupfsDriverSetsCgroupPath(t *testing.T) {
 		t.Fatalf("cgroup.path = %v", got)
 	}
 
-	plugins := cfg["plugins"].(map[string]any)
-	criRuntime := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
-	containerdCfg := criRuntime["containerd"].(map[string]any)
-	runtimes := containerdCfg["runtimes"].(map[string]any)
-	crunOpts := runtimes["crun"].(map[string]any)["options"].(map[string]any)
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	criRuntime, ok := plugins["io.containerd.cri.v1.runtime"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for criRuntime")
+	}
+	containerdCfg, ok := criRuntime["containerd"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for containerdCfg")
+	}
+	runtimes, ok := containerdCfg["runtimes"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for runtimes")
+	}
+	crunOpts, ok := runtimes["crun"].(map[string]any)["options"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for crunOpts")
+	}
 	if got := crunOpts["SystemdCgroup"]; got != false {
 		t.Fatalf("crun SystemdCgroup = %v want false", got)
 	}

@@ -29,12 +29,12 @@ func exitDaemon(code int) {
 
 func runDaemon() {
 	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(1)
 	}
 
 	if err := config.ValidateConfig(config.GetInstance()); err != nil {
-		fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -42,12 +42,12 @@ func runDaemon() {
 	startLoggingService()
 
 	if utils.IsAnotherInstanceRunning() {
-		fmt.Println("Edgelet is already running.")
+		_, _ = fmt.Println("Edgelet is already running.")
 		os.Exit(0)
 	}
 
 	if err := utils.WritePIDFile(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write PID file: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to write PID file: %v\n", err)
 		os.Exit(1)
 	}
 	defer utils.RemovePIDFile()
@@ -71,7 +71,7 @@ func runDaemon() {
 				time.Sleep(5 * time.Second)
 			}
 			if attachErr != nil {
-				fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", attachErr)
+				_, _ = fmt.Fprintf(os.Stderr, "Failed to attach to data-plane containerd: %v\n", attachErr)
 				os.Exit(1)
 			}
 			prestarted = attached
@@ -81,13 +81,13 @@ func runDaemon() {
 			}
 		} else {
 			if _, err := cgroups.Bootstrap(); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
 				os.Exit(1)
 			}
 			var err error
 			prestarted, err = startEmbeddedContainerdWithRetry()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Failed to start embedded containerd: %v\n", err)
 				os.Exit(1)
 			}
 			logging.LogInfo("MAIN_DAEMON", "Embedded containerd started before Supervisor (monolithic)")
@@ -102,7 +102,7 @@ func runDaemon() {
 		}
 	}
 	if err := sup.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to start supervisor: %v\n", err)
 		exitDaemon(1)
 	}
 
@@ -180,7 +180,7 @@ func runDaemon() {
 func setupEnvironment() {
 	mkErr := os.MkdirAll(utils.VarRun, 0755) // #nosec G301
 	if mkErr != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to create var/run directory: %v\n", mkErr)
 		os.Exit(1)
 	}
 }
@@ -193,12 +193,11 @@ func startLoggingService() {
 	cfg := config.GetInstance()
 	logo += fmt.Sprintf("  Log Level: %s\n", cfg.LogLevel)
 	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDiskDirectory)
-
-	fmt.Print(logo)
+	_, _ = fmt.Print(logo)
 
 	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
 	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 		os.Exit(1)
 	}
 

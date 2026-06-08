@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,7 +21,7 @@ type ContainerStats struct {
 func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx, cancel := context.WithTimeout(c.GetContext(), 2*time.Second)
@@ -31,7 +32,9 @@ func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer statsStream.Body.Close()
+	defer func() {
+		_ = statsStream.Body.Close()
+	}()
 
 	// Read first stats response
 	var stats types.StatsJSON

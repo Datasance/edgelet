@@ -41,7 +41,7 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()

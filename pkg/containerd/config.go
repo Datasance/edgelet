@@ -4,10 +4,11 @@ package edgeletcontainerdd
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -89,11 +90,11 @@ func renderContainerdTemplatePipeline(baseConfig []byte) ([]byte, error) {
 		return rendered.Bytes(), nil
 	}
 	if rendered.Len() > 0 && !bytes.HasSuffix(rendered.Bytes(), []byte("\n")) {
-		rendered.WriteString("\n")
+		_, _ = rendered.WriteString("\n")
 	}
-	rendered.Write(extension)
+	_, _ = rendered.Write(extension)
 	if !bytes.HasSuffix(rendered.Bytes(), []byte("\n")) {
-		rendered.WriteString("\n")
+		_, _ = rendered.WriteString("\n")
 	}
 	return rendered.Bytes(), nil
 }
@@ -345,8 +346,8 @@ func generateConfig() map[string]any {
 func appendDiscoveredRuntimes(runtimes map[string]any, systemdCgroup bool) {
 	catalog := BuildRuntimeCatalog()
 	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
-	sort.Slice(catalog, func(i, j int) bool {
-		return catalog[i].Handler < catalog[j].Handler
+	slices.SortFunc(catalog, func(a, b RuntimeCatalogEntry) int {
+		return cmp.Compare(a.Handler, b.Handler)
 	})
 	for _, entry := range catalog {
 		if entry.Handler == "" || entry.Path == "" {

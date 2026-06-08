@@ -39,7 +39,9 @@ func untar(r io.Reader, dir string) (err error) {
 	if err != nil {
 		return fmt.Errorf("error extracting zstd-compressed body: %w", err)
 	}
-	defer zr.Close()
+	defer func() {
+		zr.Close()
+	}()
 	tr := tar.NewReader(zr)
 	loggedChtimesError := false
 	for {
@@ -62,16 +64,16 @@ func untar(r io.Reader, dir string) (err error) {
 		case mode.IsRegular():
 			parent := filepath.Dir(abs)
 			if !madeDir[parent] {
-				if err := os.MkdirAll(parent, 0755); err != nil {
+				if err := os.MkdirAll(parent, 0755); err != nil { // #nosec G301 -- embed bundle dirs must be traversable for runtime
 					return err
 				}
 				madeDir[parent] = true
 			}
-			wf, err := os.OpenFile(abs, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode.Perm())
+			wf, err := os.OpenFile(abs, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode.Perm()) // #nosec G304 -- abs under validated tar entry + fixed extract dir
 			if err != nil {
 				return err
 			}
-			n, err := io.Copy(wf, tr)
+			n, err := io.Copy(wf, tr) // #nosec G110 -- trusted signed embed bundle; zstd decoder memory capped
 			if closeErr := wf.Close(); closeErr != nil && err == nil {
 				err = closeErr
 			}
@@ -92,7 +94,7 @@ func untar(r io.Reader, dir string) (err error) {
 			}
 			nFiles++
 		case mode.IsDir():
-			if err := os.MkdirAll(abs, 0755); err != nil {
+			if err := os.MkdirAll(abs, 0755); err != nil { // #nosec G301 -- embed bundle dirs must be traversable for runtime
 				return err
 			}
 			madeDir[abs] = true

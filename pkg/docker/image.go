@@ -1,9 +1,11 @@
+//revive:disable:nested-structs
 package docker
 
 import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,7 +24,7 @@ import (
 func (c *Client) PullImage(imageName, _ string, platform string, registry *models.Registry, progressCallback func(float32)) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -30,7 +32,7 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 
 	pullRef := strings.TrimSpace(imageName)
 	if pullRef == "" {
-		return fmt.Errorf("image name cannot be empty")
+		return errors.New("image name cannot be empty")
 	}
 
 	// Build pull options
@@ -58,7 +60,7 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 		}
 
 		// Encode auth config to JSON and then base64
-		authJSON, err := json.Marshal(authConfig)
+		authJSON, err := json.Marshal(authConfig) // #nosec G117 -- Docker registry API requires password in auth JSON blob
 		if err != nil {
 			return fmt.Errorf("failed to marshal auth config: %w", err)
 		}
@@ -70,7 +72,9 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 	if err != nil {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
-	defer pullResp.Close()
+	defer func() {
+		_ = pullResp.Close()
+	}()
 
 	// Read pull progress
 	if progressCallback != nil {
@@ -90,7 +94,7 @@ func (c *Client) PullImage(imageName, _ string, platform string, registry *model
 func (c *Client) FindLocalImage(imageName string) (bool, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return false, fmt.Errorf("Docker client not initialized")
+		return false, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -114,7 +118,7 @@ func (c *Client) FindLocalImage(imageName string) (bool, error) {
 func (c *Client) RemoveImage(imageID string) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -194,7 +198,7 @@ func readPullProgress(reader io.Reader, callback func(float32)) error {
 func (c *Client) GetImageInspect(imageName string) (*types.ImageInspect, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -210,7 +214,7 @@ func (c *Client) GetImageInspect(imageName string) (*types.ImageInspect, error) 
 func (c *Client) GetImages() ([]image.Summary, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -226,7 +230,7 @@ func (c *Client) GetImages() ([]image.Summary, error) {
 func (c *Client) DockerPrune() (image.PruneReport, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return image.PruneReport{}, fmt.Errorf("Docker client not initialized")
+		return image.PruneReport{}, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -242,7 +246,7 @@ func (c *Client) DockerPrune() (image.PruneReport, error) {
 func (c *Client) PruneContainers() (container.PruneReport, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return container.PruneReport{}, fmt.Errorf("Docker client not initialized")
+		return container.PruneReport{}, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -257,7 +261,7 @@ func (c *Client) PruneContainers() (container.PruneReport, error) {
 func (c *Client) PruneVolumes() (volume.PruneReport, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return volume.PruneReport{}, fmt.Errorf("Docker client not initialized")
+		return volume.PruneReport{}, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -272,14 +276,16 @@ func (c *Client) PruneVolumes() (volume.PruneReport, error) {
 func (c *Client) LoadImage(archive io.Reader) ([]LoadedImage, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	resp, err := cli.ImageLoad(ctx, archive, false)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	loaded := make([]LoadedImage, 0)
 	scanner := bufio.NewScanner(resp.Body)
@@ -295,7 +301,7 @@ func (c *Client) LoadImage(archive io.Reader) ([]LoadedImage, error) {
 			continue
 		}
 		// Podman-compatible API may emit JSON lines.
-		var item map[string]interface{}
+		var item map[string]any
 		if err := json.Unmarshal([]byte(line), &item); err == nil {
 			if v, ok := item["stream"].(string); ok && strings.Contains(v, "Loaded image:") {
 				name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(v), "Loaded image:"))

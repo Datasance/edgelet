@@ -11,6 +11,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -169,12 +170,16 @@ func (e *Engine) importPauseImage() error {
 	if err != nil {
 		return fmt.Errorf("open pause image: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("gzip reader: %w", err)
 	}
-	defer gz.Close()
+	defer func() {
+		_ = gz.Close()
+	}()
 	if _, err := e.client.Import(e.ctx(), gz); err != nil {
 		return fmt.Errorf("import pause image: %w", err)
 	}
@@ -985,7 +990,9 @@ func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]eng
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	imported, err := e.client.Import(e.ctx(), f)
 	if err != nil {
 		return nil, err
@@ -1158,7 +1165,7 @@ func (e *Engine) PruneVolumes(_ context.Context) (*engine.VolumePruneReport, err
 func (e *Engine) RemoveNamedVolume(_ context.Context, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("volume name is required")
+		return errors.New("volume name is required")
 	}
 	target := filepath.Join(config.GetInstance().DiskDirectory, "volumes", name)
 	if _, err := os.Stat(target); err != nil {
@@ -1389,7 +1396,7 @@ func (e *Engine) GetContainerStartedAt(containerID string) (int64, error) {
 	return time.Now().UnixMilli(), nil
 }
 
-func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}, error) {
+func (e *Engine) InspectContainerRaw(containerID string) (map[string]any, error) {
 	ctx := e.ctx()
 	c, err := e.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -1400,7 +1407,7 @@ func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}
 		return nil, err
 	}
 	spec, _ := c.Spec(ctx)
-	taskState := map[string]interface{}{}
+	taskState := map[string]any{}
 	if task, taskErr := c.Task(ctx, nil); taskErr == nil {
 		if st, stErr := task.Status(ctx); stErr == nil {
 			taskState["status"] = fmt.Sprintf("%v", st.Status)
@@ -1410,7 +1417,7 @@ func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}
 	}
 	ip, _ := e.GetContainerIPAddress(containerID)
 	startedAt, _ := e.GetContainerStartedAt(containerID)
-	out := map[string]interface{}{
+	out := map[string]any{
 		"id":          c.ID(),
 		"image":       info.Image,
 		"labels":      info.Labels,
@@ -1420,15 +1427,15 @@ func (e *Engine) InspectContainerRaw(containerID string) (map[string]interface{}
 		"updatedAt":   info.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		"spec":        spec,
 		"task":        taskState,
-		"network": map[string]interface{}{
+		"network": map[string]any{
 			"ipAddress": ip,
 		},
-		"state": map[string]interface{}{
+		"state": map[string]any{
 			"startedAtUnixMs": startedAt,
 		},
 	}
 	if raw, err := json.Marshal(out); err == nil {
-		normalized := map[string]interface{}{}
+		normalized := map[string]any{}
 		if err := json.Unmarshal(raw, &normalized); err == nil {
 			return normalized, nil
 		}
@@ -1496,7 +1503,7 @@ func parseCRILogLine(line string) ([]byte, engine.StreamType) {
 // parseISOTimestamp parses an ISO 8601 timestamp string.
 func parseISOTimestamp(s string) (time.Time, error) {
 	if s == "" {
-		return time.Time{}, fmt.Errorf("empty timestamp")
+		return time.Time{}, errors.New("empty timestamp")
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err == nil {
@@ -1655,7 +1662,9 @@ func readLastCRILines(logPath string, nLines int, since, until *time.Time) ([]cr
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	var lines []criLine
 	scanner := bufio.NewScanner(f)
@@ -1771,7 +1780,9 @@ func readLastPlainLines(logPath string, nLines int) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	var lines [][]byte
 	scanner := bufio.NewScanner(f)
@@ -1935,7 +1946,10 @@ func (e *Engine) addExecSession(containerID, execID string) {
 	e.execToCont.Store(execID, containerID)
 	var ids []string
 	if v, ok := e.execSessions.Load(containerID); ok {
-		ids = v.([]string)
+		ids, ok = v.([]string)
+		if !ok {
+			ids = []string{}
+		}
 	}
 	ids = append(ids, execID)
 	e.execSessions.Store(containerID, ids)
@@ -1943,9 +1957,15 @@ func (e *Engine) addExecSession(containerID, execID string) {
 
 func (e *Engine) removeExecSession(execID string) {
 	if v, ok := e.execToCont.LoadAndDelete(execID); ok {
-		containerID := v.(string)
+		containerID, ok := v.(string)
+		if !ok {
+			containerID = ""
+		}
 		if v2, ok2 := e.execSessions.Load(containerID); ok2 {
-			ids := v2.([]string)
+			ids, ok := v2.([]string)
+			if !ok {
+				ids = []string{}
+			}
 			newIds := make([]string, 0, len(ids)-1)
 			for _, id := range ids {
 				if id != execID {
@@ -2188,11 +2208,11 @@ func (e *Engine) GetExecSessionExitCode(execID string) (int, error) {
 	e.execMu.Lock()
 	defer e.execMu.Unlock()
 	if _, running := e.runningProcs[execID]; running {
-		return 0, fmt.Errorf("exec session is still running")
+		return 0, errors.New("exec session is still running")
 	}
 	code, ok := e.execExitCode[execID]
 	if !ok {
-		return 0, fmt.Errorf("exec session exit code is unavailable")
+		return 0, errors.New("exec session exit code is unavailable")
 	}
 	return code, nil
 }
@@ -2203,7 +2223,7 @@ func (e *Engine) ResizeExecSession(execID string, cols, rows uint32) error {
 	proc := e.runningProcs[execID]
 	e.execMu.Unlock()
 	if proc == nil {
-		return fmt.Errorf("exec session is not running")
+		return errors.New("exec session is not running")
 	}
 	return proc.Resize(e.ctx(), cols, rows)
 }

@@ -1,9 +1,11 @@
 package docker
 
 import (
+	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,7 +43,7 @@ type Container struct {
 func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -73,7 +75,7 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 func (c *Client) GetContainerByID(containerID string) (*Container, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
@@ -100,7 +102,7 @@ func (c *Client) GetContainerByID(containerID string) (*Container, error) {
 func (c *Client) listContainers(all bool) ([]Container, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -146,7 +148,7 @@ func (c *Client) GetRunningContainers() ([]Container, error) {
 func (c *Client) GetContainerStatus(containerID string) (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -171,7 +173,7 @@ func (c *Client) IsContainerRunning(containerID string) (bool, error) {
 func (c *Client) StartContainer(containerID string) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -182,7 +184,7 @@ func (c *Client) StartContainer(containerID string) error {
 func (c *Client) StopContainer(containerID string) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	// Check if container is running first
@@ -203,7 +205,7 @@ func (c *Client) StopContainer(containerID string) error {
 func (c *Client) KillContainer(containerID string) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	return cli.ContainerKill(ctx, containerID, "SIGKILL")
@@ -213,7 +215,7 @@ func (c *Client) KillContainer(containerID string) error {
 func (c *Client) RemoveContainer(containerID string, removeVolumes bool) error {
 	cli := c.GetClient()
 	if cli == nil {
-		return fmt.Errorf("Docker client not initialized")
+		return errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -227,7 +229,7 @@ func (c *Client) RemoveContainer(containerID string, removeVolumes bool) error {
 func (c *Client) GetContainerIPAddress(containerID string) (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -258,14 +260,14 @@ func (c *Client) GetContainerIPAddress(containerID string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no IP address found for container")
+	return "", errors.New("no IP address found for container")
 }
 
 // GetContainerStartedAt returns container last start epoch time in milliseconds
 func (c *Client) GetContainerStartedAt(containerID string) (int64, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return 0, fmt.Errorf("Docker client not initialized")
+		return 0, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -296,7 +298,7 @@ func (c *Client) GetContainerStartedAt(containerID string) (int64, error) {
 func (c *Client) GetContainerInspectRaw(containerID string) ([]byte, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	inspect, err := cli.ContainerInspect(ctx, containerID)
@@ -329,7 +331,7 @@ func (c *Client) GetRunningNonIofogContainers() ([]Container, error) {
 func (c *Client) GetRouterMicroserviceIP() (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
@@ -356,7 +358,7 @@ func (c *Client) GetRouterMicroserviceIP() (string, error) {
 func (c *Client) GetNatsMicroserviceIP() (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
@@ -387,7 +389,7 @@ func ParseAnnotationsString(annotationsString string) (map[string]string, error)
 	}
 
 	// Parse the JSON string
-	var jsonMap map[string]interface{}
+	var jsonMap map[string]any
 	if err := json.Unmarshal([]byte(annotationsString), &jsonMap); err != nil {
 		return nil, fmt.Errorf("failed to parse annotations JSON: %w", err)
 	}
@@ -441,7 +443,7 @@ func (c *Client) GetContainerName(cont Container) string {
 func (c *Client) GetInspectContainersImage(containerID string) (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -457,7 +459,7 @@ func (c *Client) GetInspectContainersImage(containerID string) (string, error) {
 func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.MicroserviceStatus, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return nil, fmt.Errorf("Docker client not initialized")
+		return nil, errors.New("docker client not initialized")
 	}
 
 	ctx := c.GetContext()
@@ -684,11 +686,11 @@ func (c *Client) getContainerPorts(inspect types.ContainerJSON) []*models.PortMa
 
 // sortPortMappings sorts port mappings by inside port, then outside port
 func sortPortMappings(ports []*models.PortMapping) {
-	sort.Slice(ports, func(i, j int) bool {
-		if ports[i].Inside == ports[j].Inside {
-			return ports[i].Outside < ports[j].Outside
+	slices.SortFunc(ports, func(a, b *models.PortMapping) int {
+		if c := cmp.Compare(a.Inside, b.Inside); c != 0 {
+			return c
 		}
-		return ports[i].Inside < ports[j].Inside
+		return cmp.Compare(a.Outside, b.Outside)
 	})
 }
 
@@ -758,14 +760,14 @@ func appendCanonicalReservedHosts(extraHosts []string, routerIP string, natsIP s
 func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (string, error) {
 	cli := c.GetClient()
 	if cli == nil {
-		return "", fmt.Errorf("Docker client not initialized")
+		return "", errors.New("docker client not initialized")
 	}
 
 	// Ensure the "edgelet" bridge network exists before attempting container creation.
 	// This guards against races where the network hasn't been created yet (e.g. after
 	// a Docker client re-init)
 	if !ms.HostNetworkMode {
-		if err := c.ensureNetworkLockFree(c.GetClient(), c.GetContext()); err != nil {
+		if err := c.ensureNetworkLockFree(c.GetContext(), c.GetClient()); err != nil {
 			return "", fmt.Errorf("failed to ensure iofog network: %w", err)
 		}
 	}
@@ -844,7 +846,7 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 
 	// Build resource limits
 	if ms.MemoryLimit != nil {
-		hostConfig.Resources.Memory = *ms.MemoryLimit
+		hostConfig.Memory = *ms.MemoryLimit
 	}
 
 	// Build security options
@@ -1078,7 +1080,8 @@ func buildVolumeBindsAndMounts(volumeMappings []*models.VolumeMapping, microserv
 		// Determine access mode
 		isReadOnly := strings.ToLower(vm.AccessMode) == "ro"
 
-		if vm.Type == models.VolumeMappingTypeVolumeMount {
+		switch vm.Type {
+		case models.VolumeMappingTypeVolumeMount:
 			// Use Mount API for VOLUME_MOUNT type
 			m := mount.Mount{
 				Type:     mount.TypeBind,
@@ -1087,13 +1090,8 @@ func buildVolumeBindsAndMounts(volumeMappings []*models.VolumeMapping, microserv
 				ReadOnly: isReadOnly,
 			}
 			mounts = append(mounts, m)
-		} else if vm.Type == models.VolumeMappingTypeBind {
-			// Use bind mount (legacy format)
-			bind := fmt.Sprintf("%s:%s:%s", resolvedHostDestination, vm.ContainerDestination, vm.AccessMode)
-			binds = append(binds, bind)
-		} else if vm.Type == models.VolumeMappingTypeVolume {
-			// Named volume - just add to volumes list (handled separately)
-			// For now, we'll use bind mount format
+		case models.VolumeMappingTypeBind, models.VolumeMappingTypeVolume:
+			// Use bind mount (legacy format; named volumes handled separately)
 			bind := fmt.Sprintf("%s:%s:%s", resolvedHostDestination, vm.ContainerDestination, vm.AccessMode)
 			binds = append(binds, bind)
 		}
