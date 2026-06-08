@@ -167,4 +167,5 @@ See [test/init/README.md](../../test/init/README.md): systemd install smoke, Alp
 
 - [cgroups.md](cgroups.md) — cgroup driver detection for embedded engine
 - [workload-continuity.md](workload-continuity.md) — control/data plane split
-- [deployment.md](deployment.md) — install paths
+- [installation.md](installation.md) — install paths
+- [deployment.md](deployment.md) — production topology

@@ -76,4 +76,4 @@ Missing **hugetlb** / **rdma** controllers on edge hardware are tolerated.
 
 - [troubleshooting.md](troubleshooting.md) — cgroup delegation errors
 - [container-engine.md](container-engine.md) — engine selection
-- [deployment.md](deployment.md) — production install
+- [deployment.md](deployment.md) — production deployment

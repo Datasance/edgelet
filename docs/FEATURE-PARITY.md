@@ -1,6 +1,6 @@
-# Edgelet feature parity checklist
+# Edgelet feature checklist
 
-This document tracks feature parity for Edgelet (Go implementation) against the legacy Java agent.
+This document tracks implemented Edgelet capabilities for the v1.0.0-beta.0 release.
 
 ## Core Features
 
@@ -129,9 +129,9 @@ This document tracks feature parity for Edgelet (Go implementation) against the 
 ## Performance
 
 ### Targets
-- [x] Binary size < 50MB (vs ~200MB Java)
-- [x] Memory at idle < 100MB (vs ~300MB Java)
-- [x] Startup time < 2 seconds (vs ~5 seconds Java)
+- [x] Binary size < 50MB (linux thin wrapper)
+- [x] Memory at idle < 100MB
+- [x] Startup time < 2 seconds
 - [x] CPU overhead < 1% at idle
 
 ### Optimizations
@@ -159,16 +159,14 @@ This document tracks feature parity for Edgelet (Go implementation) against the 
 
 - [x] API documentation
 - [x] Architecture documentation
-- [x] Migration guide
 - [x] Deployment guide
 - [x] Troubleshooting guide
 
 ## Packaging
 
-- [x] DEB packages
-- [x] RPM packages
 - [x] systemd service files
-- [x] Docker images
+- [x] Container images
+- [x] Release binaries (see GitHub Releases)
 
 ## CI/CD
 
@@ -179,8 +177,6 @@ This document tracks feature parity for Edgelet (Go implementation) against the 
 
 ## Summary
 
-**Total Features**: 100+
-**Implemented**: 100+
-**Status**: ✅ Complete
-
-All features from the Java implementation have been successfully migrated to Go.
+**Total features**: 100+  
+**Implemented**: 100+  
+**Status**: Complete for beta.0 scope

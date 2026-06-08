@@ -1,22 +1,47 @@
 # EdgeletAPI v1
 
-The **EdgeletAPI** is the on-device operator API exposed by the Edgelet daemon. The `edgelet` CLI is a thin client over this API.
+The **EdgeletAPI** is the on-device operator API exposed by the Edgelet daemon. The `edgelet` CLI is a thin transport client over this API and must not implement daemon runtime logic.
 
-> **Not the Controller API.** Remote Pot/Controller REST remains at `/api/v3/...` on the controller URL. EdgeletAPI is localhost-only administration (`/v1/...`).
+> **Not the Controller API.** Remote Pot/Controller REST remains at `/api/v3/...` on the controller URL. EdgeletAPI is localhost-only administration under `/v1/...`.
+
+## Related documents
+
+| Document | Role |
+|----------|------|
+| [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) | OpenAPI 3.1 baseline — request/response schemas and route inventory |
+| [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md) | Endpoint → RBAC resource/verb mapping (deny-by-default) |
+| [../cli/README.md](../cli/README.md) | CLI command reference |
+| [../cli/output-schemas.md](../cli/output-schemas.md) | JSON/YAML output shapes for `-o json` |
+
+---
 
 ## Base URL and transport
 
-| Transport | URL |
-|-----------|-----|
-| HTTPS (default) | `https://127.0.0.1:54321` |
-| Unix socket | `http+unix:///run/edgelet/edgelet.sock` |
-| WebSocket | `wss://127.0.0.1:54321` (control/message channels) |
+| Transport | URL | Notes |
+|-----------|-----|-------|
+| HTTPS (default) | `https://127.0.0.1:54321` | TLS required; trust `/etc/edgelet/edgeletapi-ca.crt` |
+| Unix socket | `http+unix:///run/edgelet/edgelet.sock` | Same router as HTTPS; preferred for CLI on-node |
+| WebSocket | `wss://127.0.0.1:54321` | Log stream, exec attach, microservice control channel |
 
-TLS server name: `edgelet.default.svc.bridge.local`.
+TLS server name (SNI): `edgelet.default.svc.bridge.local`.
+
+Dual transport is part of the v1 contract: both HTTPS and Unix socket listeners share the same route table and middleware.
+
+### Unauthenticated probes
+
+These routes skip JWT auth (for orchestrators and monitoring):
+
+| Route | Purpose |
+|-------|---------|
+| `GET /health/live` | Process liveness |
+| `GET /health/ready` | Readiness (daemon modules up) |
+| `GET /metrics` | Prometheus metrics |
+
+---
 
 ## Authentication
 
-Send the contents of `/etc/edgelet/edgelet-api` as a bearer token:
+Send the bearer token from `/etc/edgelet/edgelet-api`:
 
 ```bash
 TOKEN=$(sudo cat /etc/edgelet/edgelet-api)
@@ -25,30 +50,59 @@ curl -sk --cacert /etc/edgelet/edgeletapi-ca.crt \
   https://127.0.0.1:54321/v1/system/status
 ```
 
-JWT claims for CLI admin tokens:
+### JWT modes
+
+| Agent state | Token policy |
+|-------------|--------------|
+| **Unprovisioned (bootstrap)** | Unsigned bootstrap JWT accepted on all EdgeletAPI routes |
+| **Provisioned** | Unsigned JWT rejected globally; signed Ed25519 JWT required |
+| **Deprovisioned** | Reverts to bootstrap mode |
+
+CLI admin tokens use:
 
 | Claim | Value |
 |-------|--------|
 | `tokenUse` | `edgeletapi` |
 | `aud` | `edgelet://edgeletapi/v1` |
 
-**Bootstrap mode** (unprovisioned): unsigned bootstrap JWT accepted. **Provisioned**: signed Ed25519 required globally.
+Service account and microservice workload tokens carry additional claims (for example `iofog.org.microservice.uuid` for self-scoped routes). Use `GET /v1/auth/whoami` to inspect the caller identity.
 
-## Route groups
+### API-group claims mapping
 
-| Prefix | Purpose |
-|--------|---------|
-| `/v1/system/*` | Status, info, version, reload, stop, prune, config, GPS, provision |
-| `/v1/ms/*` | Microservice list, inspect, lifecycle, logs, exec |
-| `/v1/deploy/*` | Manifest apply/validate (Microservice, Registry, RuntimeClass) |
-| `/v1/auth/*` | whoami, token list, revoke |
-| `/v1/images/*` | Image list, pull, load, prune |
+RBAC rules are evaluated from JWT claims:
 
-Unauthenticated probes: `/health/live`, `/health/ready`, `/metrics`.
+- Rules under `edgelet.iofog.org/v1` and `edgelet.datasance.com/v1` are normalized to the `edgelet.iofog.org` group key.
+- Other API groups are passed through under their own group keys.
+
+---
+
+## Authorization (RBAC)
+
+Authorization is **deny-by-default**. Every `/v1/...` route must appear in [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md); unmapped routes return `403 FORBIDDEN`.
+
+### HTTP method → verb
+
+| HTTP method | RBAC verb |
+|-------------|-----------|
+| `GET` | `get` |
+| `POST` | `create` |
+| `PATCH`, `PUT` | `update` |
+| `DELETE` | `delete` |
+
+The evaluator accepts `patch`/`put` as aliases for `update`.
+
+### Scope examples
+
+- Local admin token: broad rules such as `system:localadmin:*`
+- Service account token: explicit resource + verb, e.g. `microservices` + `get` with optional resource name
+
+Microservice self routes (`/v1/microservices/config`, `/v1/microservices/control`) bind identity from the JWT claim `iofog.org.microservice.uuid`; the server resolves the caller UUID and rejects mismatches.
+
+---
 
 ## Response envelope
 
-Successful responses wrap data:
+Successful responses:
 
 ```json
 {
@@ -64,38 +118,206 @@ Errors:
   "success": false,
   "error": {
     "code": "INVALID_ARGUMENT",
-    "message": "..."
+    "message": "human-readable detail",
+    "details": { }
   }
 }
 ```
 
-Stable codes: [edgelet-api-v1-error-codes.md](edgelet-api-v1-error-codes.md).
+The `details` object is optional and appears on validation failures and RuntimeClass guard errors.
 
-## Deploy apply semantics
+### Async operations
 
-Manifest apply uses `multipart/form-data`:
+Long-running applies (ControlPlane, RuntimeClass, some image pulls) may return **HTTP 202** with an `operationId`. Poll status endpoints documented in OpenAPI (for example `GET /v1/deploy/controlplane:apply/{operationId}`). Terminal failure on a known operation still returns HTTP 200 with `success=true` and `data.status=failed` plus nested `data.error`.
+
+---
+
+## Error taxonomy
+
+Stable error codes for API and CLI consumers:
+
+| Code | Meaning |
+|------|---------|
+| `INVALID_ARGUMENT` | Malformed payload, unsupported field/value, validation error |
+| `UNAUTHORIZED` | Missing or invalid authentication token |
+| `FORBIDDEN` | Authenticated but RBAC denied |
+| `NOT_FOUND` | Requested resource does not exist |
+| `CONFLICT` | State conflict prevents the operation (e.g. apply already in progress) |
+| `NOT_IMPLEMENTED` | Endpoint or operation not implemented |
+| `METHOD_NOT_ALLOWED` | HTTP method not supported for route |
+| `INTERNAL` | Unexpected server-side failure |
+
+### CLI exit mapping
+
+| Error code | CLI exit code |
+|------------|---------------|
+| `INVALID_ARGUMENT` | 2 |
+| `UNAUTHORIZED`, `FORBIDDEN` | 3 |
+| `NOT_FOUND` | 4 |
+| `CONFLICT` | 5 |
+| `NOT_IMPLEMENTED` | 6 |
+| All others | 1 |
+
+Daemon unreachable (connection failure) uses exit code **10** (not an API error code).
+
+### RuntimeClass-specific errors
+
+When RuntimeClass endpoints are called outside supported mode (`full` build flavor + `containerEngine=edgelet`):
+
+- HTTP `400`
+- code: `INVALID_ARGUMENT`
+- message: `runtimeclass is supported only when containerEngine=edgelet on full flavor builds`
+
+**Reserved runtime delete** (e.g. `crun`):
+
+- HTTP `400`, code `INVALID_ARGUMENT`
+- message: `runtimeclass delete is not allowed for reserved runtime name: <name>`
+- `details.runtimeClassName` set
+
+**Runtime class in use**:
+
+- HTTP `400`, code `INVALID_ARGUMENT`
+- message includes blocking microservice UUID and runtime name
+- `details`: `runtimeClassName`, `runtimeNames`, `blockingMicroserviceUuids`
+
+**RuntimeClass operation polling** (`GET .../runtimeclasses:apply/{operationId}`, `GET .../runtimeclasses:delete/{operationId}`):
+
+- Known operation: HTTP 200, `success=true`; terminal failure uses `data.status=failed` with nested error
+- Unknown operation ID: HTTP 404, code `NOT_FOUND`
+
+---
+
+## Route groups
+
+### `/v1/system/*`
+
+Daemon administration: status, info, version, provision/deprovision, config get/patch/switch, reload, stop, prune, GPS, controller certificate upload, controller connection status, ControlPlane get/delete, daemon logs (HTTP and `:stream` WebSocket).
+
+Notable behaviors:
+
+- `POST /v1/system/reload` — SIGHUP-style config reload; rejected changes do not mutate on-disk config
+- `POST /v1/system/provision` / `DELETE /v1/system/provision` — agent lifecycle; affects JWT mode
+- `GET /v1/system/controlplane` — local Datasance Controller deployment status (see [control-plane.md](control-plane.md))
+
+### `/v1/ms/*`
+
+Runtime view and lifecycle for workloads (managed, local, and control-plane sources):
+
+- `GET /v1/ms` — list microservices; **`source` query only**: `managed`, `local`, `controlplane`, or `all` (default). Pagination filters (`cursor`, `limit`, `application`, `name`, `state`) are not implemented.
+- `GET /v1/ms/{id}` — inspect (UUID or `namespace.name`)
+- Lifecycle: `start`, `stop`, `restart`, `kill`
+- Logs: `GET .../logs` (HTTP); `GET .../logs:stream` (WebSocket follow)
+- Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket)
+
+### `/v1/deploy/*`
+
+Manifest-driven local persistence and apply:
+
+| Kind | Apply | Validate | List/get/delete |
+|------|-------|----------|-----------------|
+| Microservice | `POST .../microservices:apply` | `...:validate` | `GET/DELETE .../microservices/{id}` |
+| Registry | `POST .../registries:apply` | `...:validate` | `GET/DELETE .../registries/{id}` |
+| RuntimeClass | `POST .../runtimeclasses:apply` | `...:validate` | `GET/DELETE .../runtimeclasses/{name}` |
+| ControlPlane | `POST .../controlplane:apply` (async) | `...:validate` | status via `/v1/system/controlplane` |
+
+Manifest YAML uses `apiVersion: edgelet.iofog.org/v1`. See [manifest-reference.md](manifest-reference.md).
+
+#### Deploy apply semantics
+
+Apply uses `multipart/form-data`:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `manifest` | yes | YAML manifest (`apiVersion: edgelet.iofog.org/v1`) |
-| `dryRun` | no | Validate only (`200`, no persistence) |
-| `async` | no | Return `202` with `operationId` for background apply |
+| `manifest` | yes | YAML manifest body |
+| `dryRun` | no | Validate only — HTTP 200, no persistence |
+| `async` | no | HTTP 202 with `operationId` for background apply |
 
-Poll async operations via `GET /v1/deploy/{kind}:apply/{operationId}`.
+Poll: `GET /v1/deploy/{kind}:apply/{operationId}` (and RuntimeClass delete status route).
 
-## RuntimeClass (full + edgelet only)
+Registry apply is synchronous. ControlPlane apply is asynchronous by default (long container pull/start).
 
-RuntimeClass endpoints under `/v1/deploy/runtimeclasses*` require **full** build flavor and `containerEngine=edgelet`. Other modes return `400 INVALID_ARGUMENT`.
+### `/v1/auth/*`
 
-See OpenAPI for full request/response shapes and RBAC mapping: [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md).
+| Route | Purpose |
+|-------|---------|
+| `GET /v1/auth/whoami` | Caller identity and effective RBAC summary |
+| `GET /v1/auth/tokens` | List active service account tokens |
+| `POST /v1/auth/tokens/revoke` | Revoke token by JTI |
 
-## Contract references
+### `/v1/images/*`
 
-| Document | Description |
-|----------|-------------|
-| [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) | OpenAPI 3.1 baseline |
-| [edgelet-api-v1-contract-freeze.md](edgelet-api-v1-contract-freeze.md) | Change-control policy |
-| [edgelet-api-v1-qa-gates.md](edgelet-api-v1-qa-gates.md) | CI/QA gates |
-| [edgelet-api-v1-error-codes.md](edgelet-api-v1-error-codes.md) | Error taxonomy |
+Engine image operations: list, pull (with async status poll), load, prune, remove. Requires a healthy container engine.
 
-CLI mapping: [../cli/README.md](../cli/README.md).
+### Microservice self routes
+
+| Route | Transport | Purpose |
+|-------|-----------|---------|
+| `GET /v1/microservices/config` | HTTP | Config blob for calling microservice UUID |
+| `GET /v1/microservices/control` | WebSocket | Control/message channel for calling microservice |
+
+Both require a JWT with `iofog.org.microservice.uuid` matching a running workload.
+
+---
+
+## WebSockets
+
+Upgrade paths use the same TLS trust and bearer token as HTTP. Client must send `Authorization: Bearer ...` on the upgrade request.
+
+| Route | Use |
+|-------|-----|
+| `GET /v1/system/logs:stream` | Follow daemon logs |
+| `GET /v1/ms/{id}/logs:stream` | Follow container logs |
+| `GET /v1/ms/{id}/exec/sessions/{sessionId}:attach` | Interactive exec terminal |
+| `GET /v1/microservices/control` | Microservice control channel (self) |
+
+Exact message framing is defined in OpenAPI operation descriptions.
+
+---
+
+## RuntimeClass gating
+
+RuntimeClass endpoints under `/v1/deploy/runtimeclasses*` require:
+
+1. **Full** build flavor (embedded engine bundle present)
+2. `containerEngine=edgelet` in active config
+
+Other combinations return HTTP 400 with `INVALID_ARGUMENT` (see error taxonomy above). Operator guide: [container-engine.md](container-engine.md).
+
+---
+
+## Contract stability
+
+EdgeletAPI in this repository is **v1-only**. The canonical contract is [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml).
+
+### Locked decisions
+
+1. Route namespace `/v1/...` (no v2 fallback routes)
+2. Dual transport: Unix socket `/run/edgelet/edgelet.sock` and HTTPS/WSS on port 54321
+3. Bootstrap vs provisioned JWT policy (see Authentication)
+4. RuntimeClass surface is part of v1 with full+edgelet gating
+5. CLI remains a thin client — no daemon logic in `cmd/edgelet` beyond transport
+
+### Breaking changes
+
+The following require an explicit contract amendment before merge:
+
+- Endpoint path or HTTP method change from the OpenAPI baseline
+- Auth requirement changes (bootstrap/provisioned acceptance rules)
+- Request/response schema changes for existing operations
+- Namespace change away from `/v1/...`
+
+Non-breaking additions (new optional fields, new routes with RBAC entries) should still update OpenAPI, RBAC mapping, and this document together.
+
+---
+
+## Implementation map
+
+| Layer | Package | Role |
+|-------|---------|------|
+| HTTP server | `internal/edgeletapi` | Listeners, router, middleware |
+| Handlers | `internal/edgeletapi/handlers` | Request parsing, envelope |
+| RBAC | `internal/edgeletapi/rbac.go` | Claim → permission evaluation |
+| Domain | `internal/runtimeapi` | Facade to processmanager, fieldagent, store |
+| Auth | `internal/auth` | JWT validation, PKI, token file |
+
+Runtime module details: [modules/edgeletapi.md](modules/edgeletapi.md).

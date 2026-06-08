@@ -1,0 +1,513 @@
+# Edgelet installation and upgrade
+
+Install Edgelet on **linux**, **darwin**, and **windows** using **`install.sh`**. Releases ship **raw binaries only** (no `.tar.gz` install bundles, no DEB/RPM).
+
+For production topology (systemd layout, engine selection, provisioning workflow), see [deployment.md](deployment.md).
+
+---
+
+## Overview
+
+| Platform | Install artifact | Default `containerEngine` | OTA via `install.sh` |
+|----------|------------------|---------------------------|----------------------|
+| **linux** | Thin wrapper + zstd-embedded fat runtime | `edgelet` | Yes (native + controller-driven) |
+| **darwin** | Monolithic binary | `docker` | Manual binary replace only |
+| **windows** | Monolithic `.exe` | `docker` | Not supported by version handler |
+
+Fleet upgrades on linux use **two layers**:
+
+| Layer | Mechanism | On-disk state |
+|-------|-----------|---------------|
+| **1 — Thin binary** | `install.sh --upgrade` / `--rollback` | `/var/backups/edgelet/` receipts and cache |
+| **2 — Fat embed** | `edgelet daemon` extract on new embed hash | `/var/lib/edgelet/data/current`, `data/previous` |
+
+See [architecture.md](architecture.md#release-ota-two-layers) for the architecture diagram.
+
+**Forbidden upgrade paths:** `iofog-agentvc.jar`, apt/dnf/yum edgelet packages, or any path that bypasses `install.sh` on linux native installs.
+
+---
+
+## Prerequisites
+
+| Platform | Requirements |
+|----------|--------------|
+| **linux** | Root/sudo; Ubuntu 20.04+, RHEL 8+, Debian 11+ (or equivalent); network for online install |
+| **darwin** | Admin for `/usr/local/bin`; Docker or Podman when not using linux embedded engine |
+| **windows** | Admin; Docker or Podman |
+| **`containerEngine: edgelet` (linux)** | No external container runtime on the host |
+| **`docker` / `podman`** | Docker 26.10+ or Podman 3.0+ |
+
+Linux init detection (auto): **systemd**, **procd** (OpenWrt), OpenRC, SysV, upstart, s6, runit. Templates live under `packaging/init/`.
+
+---
+
+## Release artifacts
+
+Per tag on GitHub **`datasance/edgelet`** (override with `EDGELET_GITHUB_REPO`):
+
+| OS / arch | Binary file |
+|-----------|-------------|
+| linux amd64 / arm64 / arm / riscv64 | `edgelet-linux-<arch>` |
+| darwin amd64 / arm64 | `edgelet-darwin-<arch>` |
+| windows amd64 | `edgelet-windows-amd64.exe` |
+
+Also published: `SHA256SUMS`, `edgelet-config.yaml.sample`, `edgelet-controller-ca.crt.sample`, `install.sh`, `uninstall.sh`.
+
+Download URL pattern:
+
+```text
+https://github.com/datasance/edgelet/releases/download/<tag>/edgelet-<os>-<arch>[.exe]
+```
+
+Build locally: `make release-binaries VERSION=v1.0.0` → `dist/`.
+
+The fat runtime inside the linux zstd embed is **statically linked by default** (`STATIC_BUILD=true`), so one artifact runs on glibc and musl (Alpine, OpenWrt). CI runs `scripts/check-embed-static.sh` after packaging.
+
+---
+
+## Install paths
+
+| Item | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `Program Files\Edgelet\edgelet.exe` |
+| Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config.yaml` |
+| Controller CA | `/etc/edgelet/cert.crt` | same | same |
+| Data | `/var/lib/edgelet/` | `/var/lib/edgelet/` | `%ProgramData%\Edgelet\data\` |
+| OTA metadata | `/var/backups/edgelet/` | — | — |
+| Bundled scripts (linux) | `/usr/share/edgelet/install.sh` | optional | optional |
+
+Linux thin runtime chain: `/usr/local/bin/edgelet` → lazy extract → `/var/lib/edgelet/data/current/bin/edgelet` (fat).
+
+---
+
+## Fresh installation
+
+### Online (linux)
+
+```bash
+curl -fsSL https://github.com/datasance/edgelet/releases/download/vX.Y.Z/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh --version=vX.Y.Z
+```
+
+When `--version` is omitted or set to `latest`, the script resolves the tag from GitHub `releases/latest` before downloading the binary.
+
+### From a clone (dev / CI)
+
+```bash
+sudo ./install.sh --bin-path=build/edgelet-linux-amd64 --version=dev
+```
+
+### Airgap
+
+On a connected machine, download the binary and verify against `SHA256SUMS`, then copy to the edge host:
+
+```bash
+sudo ./install.sh \
+  --airgap \
+  --bin-path=/tmp/edgelet-linux-arm64 \
+  --expected-sha256=<sha256-from-SHA256SUMS> \
+  --version=v1.2.3
+```
+
+Alternatively use `--checksum-path=SHA256SUMS` with the manifest in the same directory as the binary.
+
+### First-time configuration
+
+If `/etc/edgelet/config.yaml` is missing, `install.sh` installs a sample from packaging or `/usr/share/edgelet/edgelet-config.yaml.sample`. You can also run:
+
+```bash
+sudo edgelet init-config
+```
+
+`init-config` is idempotent and does **not** overwrite an existing file.
+
+Controller CA (`/etc/edgelet/cert.crt`) is **not** installed by default. For lab installs use `--with-sample-ca`; for production use **`edgelet provision`** or `edgelet config cert`.
+
+### Install flags
+
+| Flag | Purpose |
+|------|---------|
+| `--version=` | Release tag (default `latest` when downloading) |
+| `--arch=` | Override auto-detected arch (`amd64`, `arm64`, `arm`, `riscv64`) |
+| `--bin-path=` | Local binary (dev, airgap, CI) |
+| `--airgap` | Offline; requires `--bin-path` |
+| `--expected-sha256=` | Verify local binary SHA256 |
+| `--checksum-path=` | `SHA256SUMS` file for verification |
+| `--upgrade` / `--rollback` | In-place thin-binary OTA |
+| `--force-config` | Replace config from sample (destructive) |
+| `--with-sample-ca` | Copy sample controller CA if `cert.crt` missing |
+| `--container-engine=` | `edgelet`, `docker`, or `podman` (linux default: **edgelet**) |
+
+Environment: `EDGELET_VERSION`, `EDGELET_GITHUB_REPO`.
+
+### After install
+
+`install.sh` does **not** provision the node. On linux it installs the init unit and **starts** `edgelet.service` (and `edgelet-containerd` when `containerEngine=edgelet`).
+
+```bash
+edgelet --version
+edgelet system status
+edgelet config --a <controller-api-endpoint>
+edgelet provision <provisioning-key>
+```
+
+Orchestrators (`potctl`, `iofogctl`) must **not** pass provision keys to `install.sh`. See [deployment.md](deployment.md#potctl--iofogctl-contract).
+
+---
+
+## `install.sh` execution flow
+
+The script sources `scripts/lib/init-detect.sh` and `init-edgelet.sh`, then branches on `--upgrade`, `--rollback`, or fresh install.
+
+```mermaid
+flowchart TD
+  A[Parse arguments] --> B[detect_os / arch / init]
+  B --> C{ACTION}
+  C -->|install| F[Resolve version]
+  C -->|upgrade| U[Read install-receipt]
+  C -->|rollback| R[Read previous-release]
+  F --> D[download_or_stage_binary]
+  U --> U1[Backup config]
+  U1 --> U2[Cache old binary + write previous-release]
+  U2 --> U3[stop_edgelet_service]
+  U3 --> D
+  R --> R1[Resolve binary: cache / --bin-path / URL]
+  R1 --> R2[stop_edgelet_service]
+  R2 --> IB[install_binary_file]
+  D --> V[verify_binary_checksum]
+  V --> IB
+  IB --> ID[install_dirs + config + receipt]
+  ID --> BS[copy_bundled_scripts]
+  BS --> IU{linux?}
+  IU -->|yes| INIT[install_init_unit → start services]
+  IU -->|no| DONE[Done]
+  INIT --> DONE
+```
+
+### Phase 1 — Bootstrap
+
+Constants set at the top of `install.sh`:
+
+| Path | Role |
+|------|------|
+| `/var/backups/edgelet/` | `BACKUP_DIR` |
+| `/var/backups/edgelet/cache/` | Cached previous binaries |
+| `/var/backups/edgelet/install-receipt` | Current install metadata |
+| `/var/backups/edgelet/previous-release` | Rollback metadata |
+| `/usr/share/edgelet/` | Bundled `install.sh`, init templates, lib helpers |
+
+### Phase 2 — Fresh install
+
+1. `download_or_stage_binary` — GitHub release URL or `--bin-path`
+2. `install_dirs` — config, log, data, backup, share directories
+3. `install_binary_file` → `/usr/local/bin/edgelet` (or platform path)
+4. `install_config_samples` — preserve existing config unless `--force-config`
+5. `apply_container_engine_to_config` — patch `containerEngine` in config when flag set
+6. `write_install_receipt` — `install_method=install` or `install-airgap`
+7. `copy_bundled_scripts` — copy self to `/usr/share/edgelet/install.sh` (linux)
+8. `install_init_unit` — install systemd/OpenRC/… unit and **start** the daemon
+
+### Phase 3 — Upgrade (`--upgrade`)
+
+Requires an existing binary and `install-receipt`.
+
+1. Read current receipt (`installed_version`, `os`, `arch`, `container_engine`, `source_url`, `binary_sha256`)
+2. Resolve target version (`--version=` or GitHub `latest`)
+3. Copy `/etc/edgelet/config.yaml` to `/var/backups/edgelet/config.yaml.<timestamp>`
+4. `cache_binary` — copy current thin binary to `cache/edgelet-<ver>-<os>-<arch>`
+5. `write_previous_release` — record rollback metadata including `config_backup_path`
+6. `stop_edgelet_service`
+7. Download or stage new binary, verify checksum, install
+8. Update receipt (`install_method=upgrade` or `upgrade-airgap`)
+9. Refresh bundled scripts and `install_init_unit` — **restarts** edgelet via init
+
+```bash
+sudo sh /usr/share/edgelet/install.sh --upgrade --version=v1.2.3
+sudo sh /usr/share/edgelet/install.sh --upgrade   # target = GitHub latest
+```
+
+### Phase 4 — Rollback (`--rollback`)
+
+Requires `previous-release` from the last upgrade.
+
+1. Read `previous_version`, `previous_os`, `previous_arch`, `previous_download_url`, `config_backup_path`
+2. Prefer cached binary at `cache/edgelet-<previous_version>-<os>-<arch>`
+3. Else `--bin-path` (with optional `--airgap`), else download from `previous_download_url`
+4. `stop_edgelet_service`, install old binary
+5. Restore config from `config_backup_path` unless `--force-config`
+6. `write_install_receipt` with `install_method=rollback`
+7. `install_init_unit` — **restarts** edgelet
+
+```bash
+sudo sh /usr/share/edgelet/install.sh --rollback
+```
+
+---
+
+## OTA on-disk state
+
+### `install-receipt`
+
+Written after every successful install, upgrade, or rollback (`chmod 600`):
+
+```text
+installed_version=v1.2.3
+os=linux
+arch=arm64
+container_engine=edgelet
+source_url=https://github.com/datasance/edgelet/releases/download/v1.2.3/edgelet-linux-arm64
+installed_at=2026-06-06T12:00:00Z
+install_method=upgrade
+binary_sha256=<sha256>
+```
+
+`ReleaseManager.GetInstalledVersion()` reads `installed_version` from this file; if missing, it falls back to the running build version from `edgelet --version`.
+
+### `previous-release`
+
+Written on **upgrade** before replacing the binary:
+
+```text
+previous_version=v1.2.2
+previous_os=linux
+previous_arch=arm64
+previous_container_engine=edgelet
+previous_download_url=https://github.com/.../edgelet-linux-arm64
+previous_binary_sha256=<sha256>
+config_backup_path=/var/backups/edgelet/config.yaml.20260606115900
+```
+
+### Binary cache
+
+```text
+/var/backups/edgelet/cache/edgelet-<version>-<os>-<arch>
+```
+
+Rollback uses the cache first; the version handler treats cache **or** a reachable `previous_download_url` (HTTP HEAD or `file://`) as sufficient for `readyToRollback`.
+
+---
+
+## Layer 2 — Fat embed (daemon)
+
+After a thin upgrade, if the embedded bundle hash changed, the next `edgelet daemon` start:
+
+1. Extracts to `/var/lib/edgelet/data/<new-hash>/`
+2. Rotates `data/current` and `data/previous` symlinks
+
+Operator CLI (`edgelet ms`, `edgelet deploy`, …) runs in the **thin** process and does not trigger extract.
+
+### Service restart impact
+
+| Change | Restart | Microservice impact |
+|--------|---------|---------------------|
+| Thin binary only (same embed hash) | `systemctl restart edgelet` (done by `install_init_unit`) | None on docker/podman; none on embedded split |
+| New embed hash | `edgelet-containerd` then `edgelet` | MS stop during data-plane restart; reconcile on control start |
+
+Details: [workload-continuity.md](workload-continuity.md).
+
+Coordinated rollback: controller or operator runs `install.sh --rollback`; an on-disk `data/previous` hash tree may still be reused if present.
+
+---
+
+## OTA readiness (`readyToUpgrade` / `readyToRollback`)
+
+Edgelet does **not** self-upgrade when readiness is true. Readiness flags tell the **Pot / ioFog controller** that the node can accept a version command. The field agent publishes them on the controller status heartbeat.
+
+### Scan loop
+
+On daemon start, the field agent runs `upgradeScanWorker` (`internal/fieldagent/workers.go`). It calls `version.Handler` readiness checks on boot and on a timer:
+
+- Config key: **`upgradeScanFrequency`** (hours, default **24**; CLI alias `uf`)
+- Updates `FieldAgentStatus.ReadyToUpgrade` / `ReadyToRollback`
+- Status POST to controller uses legacy keys **`isReadyToUpgrade`** and **`isReadyToRollback`**
+
+Readiness can lag up to one scan interval unless you wait for the next tick after changing receipt state.
+
+### `IsReadyToUpgrade` / `IsReadyToUpgradeWithAction`
+
+All conditions must pass (`internal/version/handler.go`):
+
+| Gate | Reason when false |
+|------|-------------------|
+| Not mid-OTA | 60s window after `ChangeVersion` launches `install.sh` |
+| Not `EDGELET_DAEMON=container` | Container deploys use image-tag comparison instead |
+| Not Windows | Native OTA not implemented on Windows |
+| `/usr/share/edgelet/install.sh` exists | Bundled script missing (incomplete install) |
+| Daemon healthy | Supervisor status not `Running` |
+| `installed_version ≠ target` | Already on target version |
+
+**Target version** resolution (`ReleaseManager.GetCandidateVersion`):
+
+1. Controller action fields: `version`, `targetVersion`, or `target`
+2. If none provided: GitHub `GET /repos/{repo}/releases/latest` → `tag_name`
+
+Example: installed `v1.2.2`, GitHub latest `v1.2.3` → `readyToUpgrade=true`.
+
+### `IsReadyToRollback`
+
+| Gate | Reason when false |
+|------|-------------------|
+| Not mid-OTA | Same 60s block |
+| Not container mode | Rollback via orchestrator image rollout |
+| Not Windows | — |
+| `previous-release` exists and readable | No prior upgrade recorded |
+| Cached binary **or** reachable `previous_download_url` | Nothing to restore |
+
+### Verify readiness locally
+
+```bash
+# Receipt vs running version
+grep installed_version /var/backups/edgelet/install-receipt
+edgelet --version
+
+# Bundled OTA script (required for controller OTA)
+test -f /usr/share/edgelet/install.sh && echo ok
+
+# Rollback metadata
+cat /var/backups/edgelet/previous-release
+ls /var/backups/edgelet/cache/
+```
+
+---
+
+## Controller-driven upgrade (Pot / ioFog)
+
+When the controller sets `changes.version=true`, the field agent fetches the version command and may launch `install.sh` in the background.
+
+```mermaid
+sequenceDiagram
+  participant Pot as Pot Controller
+  participant FA as Field Agent
+  participant VH as Version Handler
+  participant IS as install.sh
+
+  FA->>Pot: Status heartbeat (isReadyToUpgrade=true)
+  Pot->>FA: changes.version=true
+  FA->>Pot: GET version → versionCommand
+  Note over Pot,FA: command, version, provisionKey
+  FA->>VH: ChangeVersion(versionCommand)
+  VH->>VH: isValidChangeVersionOperation()
+  alt ready
+    VH->>IS: detached sh /usr/share/edgelet/install.sh --upgrade|--rollback
+    IS->>IS: stop → replace binary → install_init_unit start
+  else not ready
+    VH-->>FA: no-op (command ignored)
+  end
+```
+
+### `versionCommand` payload
+
+Fetched from the controller **`version`** endpoint when `changes["version"]` is true:
+
+```json
+{
+  "command": "UPGRADE",
+  "version": "v1.2.3",
+  "provisionKey": "<optional-audit-key>"
+}
+```
+
+| Field | Values |
+|-------|--------|
+| `command` | `UPGRADE` or `ROLLBACK` (case-insensitive) |
+| `version` | Target tag for upgrade (optional; defaults to GitHub latest in script) |
+| `provisionKey` | Logged for audit only; not passed to `install.sh` |
+
+`ChangeVersion` validates readiness **again** before spawning the script. Stale controller commands are ignored if the node is not ready.
+
+Detached invocation:
+
+```text
+sh /usr/share/edgelet/install.sh --upgrade [--version=<target>]
+sh /usr/share/edgelet/install.sh --rollback
+```
+
+Uses a new session (`Setsid`) so OTA continues if the parent daemon stops.
+
+---
+
+## Manual upgrade and rollback
+
+Use the bundled script path so controller OTA and manual paths stay aligned:
+
+```bash
+# Upgrade to a specific release
+sudo sh /usr/share/edgelet/install.sh --upgrade --version=v1.2.3
+
+# Upgrade to GitHub latest
+sudo sh /usr/share/edgelet/install.sh --upgrade
+
+# Rollback to previous-release
+sudo sh /usr/share/edgelet/install.sh --rollback
+
+# Airgap upgrade
+sudo sh /usr/share/edgelet/install.sh --upgrade --airgap \
+  --bin-path=/tmp/edgelet-linux-arm64 \
+  --expected-sha256=<hash> \
+  --version=v1.2.3
+```
+
+Manual runs perform the same steps as controller-driven OTA, including service stop/start via `install_init_unit` on linux.
+
+---
+
+## Container deployments (`EDGELET_DAEMON=container`)
+
+When Edgelet runs inside **`ghcr.io/datasance/edgelet:<tag>`** with `EDGELET_DAEMON=container`:
+
+| Behavior | Detail |
+|----------|--------|
+| `install.sh` OTA | **Not used** — version handler logs and returns |
+| Readiness | Compares running image tag vs controller target |
+| Upgrade | Orchestrator replaces the container image tag and restarts the pod/service |
+
+See [deployment.md](deployment.md#container-image-linux).
+
+---
+
+## Uninstall
+
+```bash
+sudo sh uninstall.sh
+sudo sh uninstall.sh --remove-data   # also removes /etc/edgelet when set
+```
+
+Bundled copy: `sudo sh /usr/share/edgelet/uninstall.sh`.
+
+---
+
+## Integration tests
+
+```bash
+sudo ./test/install/install-fresh-linux.sh
+sudo ./test/install/install-upgrade-rollback.sh
+sudo ./test/install/install-airgap.sh
+./test/embedded/run-all.sh --ci --arch=arm64   # Lima VM on macOS
+```
+
+---
+
+## Troubleshooting
+
+| Symptom | Check |
+|---------|--------|
+| `readyToUpgrade` never true | Receipt version vs target; daemon health; missing `/usr/share/edgelet/install.sh` |
+| Controller OTA no-op | Readiness false at command time; inspect daemon logs for version handler |
+| Rollback fails | `previous-release` missing; cache deleted; URL unreachable |
+| MS down after upgrade | New embed hash → see [workload-continuity.md](workload-continuity.md) |
+
+General daemon and service issues: [troubleshooting.md](troubleshooting.md).
+
+---
+
+## See also
+
+| Document | Topic |
+|----------|--------|
+| [deployment.md](deployment.md) | Production topology, engines, provisioning, potctl contract |
+| [architecture.md](architecture.md) | Thin/fat model, OTA diagram |
+| [init-systems.md](init-systems.md) | Init template matrix |
+| [workload-continuity.md](workload-continuity.md) | MS behavior across restarts |
+| [persistence.md](persistence.md) | SQLite across upgrades |
+| [packaging/PACKAGING-STRUCTURE.md](../../packaging/PACKAGING-STRUCTURE.md) | Packaging layout |

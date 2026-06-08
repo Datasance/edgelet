@@ -114,7 +114,7 @@ Changing **`containerEngine`** still requires quiesce, MS cleanup, `pendingResta
 | Thin **edgelet** binary only | `systemctl restart edgelet` |
 | Fat / containerd runtime bundle | `systemctl restart edgelet-containerd` then `edgelet` |
 
-See [deployment.md](deployment.md) and install docs for hash-based OTA details.
+See [installation.md](installation.md) for hash-based OTA details.
 
 ---
 
