@@ -43,7 +43,14 @@ Linux init detection (auto): **systemd**, **procd** (OpenWrt), OpenRC, SysV, ups
 
 ## Release artifacts
 
-Per tag on GitHub **`datasance/edgelet`** (override with `EDGELET_GITHUB_REPO`):
+Per tag on GitHub **`eclipse-iofog/edgelet`** (override with `EDGELET_GITHUB_REPO`):
+
+**Datasance distribution mirror:** [Datasance/edgelet](https://github.com/Datasance/edgelet) publishes the same tags and artifacts. Release `install.sh` is stamped with the publisher repo; override with `EDGELET_GITHUB_REPO` if needed.
+
+| Channel | Download URL pattern |
+|---------|----------------------|
+| Eclipse | `https://github.com/eclipse-iofog/edgelet/releases/download/<tag>/edgelet-<os>-<arch>[.exe]` |
+| Datasance | `https://github.com/Datasance/edgelet/releases/download/<tag>/edgelet-<os>-<arch>[.exe]` |
 
 | OS / arch | Binary file |
 |-----------|-------------|
@@ -56,7 +63,7 @@ Also published: `SHA256SUMS`, `edgelet-config.yaml.sample`, `edgelet-controller-
 Download URL pattern:
 
 ```text
-https://github.com/datasance/edgelet/releases/download/<tag>/edgelet-<os>-<arch>[.exe]
+https://github.com/eclipse-iofog/edgelet/releases/download/<tag>/edgelet-<os>-<arch>[.exe]
 ```
 
 Build locally: `make release-binaries VERSION=v1.0.0` → `dist/`.
@@ -85,12 +92,22 @@ Linux thin runtime chain: `/usr/local/bin/edgelet` → lazy extract → `/var/li
 ### Online (linux)
 
 ```bash
-curl -fsSL https://github.com/datasance/edgelet/releases/download/vX.Y.Z/install.sh -o install.sh
+curl -fsSL https://github.com/eclipse-iofog/edgelet/releases/download/vX.Y.Z/install.sh -o install.sh
 chmod +x install.sh
 sudo ./install.sh --version=vX.Y.Z
 ```
 
 When `--version` is omitted or set to `latest`, the script resolves the tag from GitHub `releases/latest` before downloading the binary.
+
+### Online (Datasance mirror)
+
+Same flow; `install.sh` from the Datasance release defaults to `datasance/edgelet`:
+
+```bash
+curl -fsSL https://github.com/Datasance/edgelet/releases/download/vX.Y.Z/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh --version=vX.Y.Z
+```
 
 ### From a clone (dev / CI)
 
@@ -256,7 +273,7 @@ installed_version=v1.2.3
 os=linux
 arch=arm64
 container_engine=edgelet
-source_url=https://github.com/datasance/edgelet/releases/download/v1.2.3/edgelet-linux-arm64
+source_url=https://github.com/eclipse-iofog/edgelet/releases/download/v1.2.3/edgelet-linux-arm64
 installed_at=2026-06-06T12:00:00Z
 install_method=upgrade
 binary_sha256=<sha256>
@@ -454,7 +471,10 @@ Manual runs perform the same steps as controller-driven OTA, including service s
 
 ## Container deployments (`EDGELET_DAEMON=container`)
 
-When Edgelet runs inside **`ghcr.io/datasance/edgelet:<tag>`** with `EDGELET_DAEMON=container`:
+When Edgelet runs inside a release container image with `EDGELET_DAEMON=container`:
+
+- Eclipse: `ghcr.io/eclipse-iofog/edgelet:<tag>`
+- Datasance mirror: `ghcr.io/datasance/edgelet:<tag>`
 
 | Behavior | Detail |
 |----------|--------|

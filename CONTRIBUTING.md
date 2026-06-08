@@ -1,10 +1,10 @@
 # Contributing to Edgelet
 
-Thank you for contributing to **Edgelet** (`github.com/datasance/edgelet`) — the greenfield edge runtime and PoT node agent. This repository is **not** a Java parity port; all source lives at the repository root.
+Thank you for contributing to **Edgelet** (`github.com/eclipse-iofog/edgelet`) — the greenfield edge runtime and PoT node agent. This repository is **not** a Java parity port; all source lives at the repository root.
 
 ## Branch workflow
 
-1. Fork [github.com/datasance/edgelet](https://github.com/datasance/edgelet).
+1. Fork [github.com/eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet).
 2. Clone your fork and create a feature branch from **`develop`**.
 3. Make focused changes with tests where behavior is non-obvious.
 4. Run the gates below before opening a pull request.

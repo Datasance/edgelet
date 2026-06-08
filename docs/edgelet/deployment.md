@@ -104,7 +104,8 @@ edgelet deprovision
 
 | Item | Value |
 |------|--------|
-| Image | `ghcr.io/datasance/edgelet:<tag>` (multi-arch manifest) |
+| Image | `ghcr.io/eclipse-iofog/edgelet:<tag>` (multi-arch manifest) |
+| Datasance mirror | `ghcr.io/datasance/edgelet:<tag>` (same manifest, different registry) |
 | Dockerfile | Root `Dockerfile` (scratch + CA certs layer) |
 | Entrypoint | `edgelet daemon` |
 | Env | `EDGELET_DAEMON=container` |

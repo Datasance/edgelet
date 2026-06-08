@@ -41,8 +41,10 @@ Development deploys of the scratch image inside Docker are supported when the co
 docker run -d --name edgelet --privileged \
   -v /var/lib/edgelet:/var/lib/edgelet \
   -v /etc/edgelet:/etc/edgelet \
-  ghcr.io/datasance/edgelet:<tag>
+  ghcr.io/eclipse-iofog/edgelet:<tag>
 ```
+
+Datasance mirror: `ghcr.io/datasance/edgelet:<tag>`
 
 Without `--privileged`, cgroup controller delegation fails and edgelet exits or CRI returns errors such as `controller cpu is not available`.
 

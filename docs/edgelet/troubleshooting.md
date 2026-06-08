@@ -66,8 +66,10 @@ Common issues when running Edgelet on edge nodes.
    docker run -d --name edgelet --privileged \
      -v /var/lib/edgelet:/var/lib/edgelet \
      -v /etc/edgelet:/etc/edgelet \
-     ghcr.io/datasance/edgelet:<tag>
+     ghcr.io/eclipse-iofog/edgelet:<tag>
    ```
+
+   Datasance mirror: `ghcr.io/datasance/edgelet:<tag>`
 
    Without `--privileged`, cpu/memory/pids controllers are not delegated and CRI cannot create sandboxes.
 

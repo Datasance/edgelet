@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-beta.0] — mid-June 2026
 
-First public pre-release of **Edgelet** — a greenfield edge runtime and ioFog/PoT node agent (`github.com/datasance/edgelet`). GitHub Releases are marked **Pre-release** and ship binary-only artifacts (no DEB/RPM, no release tarballs).
+First public pre-release of **Edgelet** — a greenfield edge runtime and ioFog/PoT node agent (`github.com/eclipse-iofog/edgelet`). GitHub Releases are marked **Pre-release** and ship binary-only artifacts (no DEB/RPM, no release tarballs).
 
 ### Added
 
@@ -21,7 +21,8 @@ First public pre-release of **Edgelet** — a greenfield edge runtime and ioFog/
 - **Binary-only install/OTA:** `install.sh` / `uninstall.sh` for Linux, macOS, and Windows; `--upgrade` / `--rollback` with receipt under `/var/backups/edgelet/`; six Linux init system templates.
 - **Release packaging:** `scripts/release-binaries.sh` produces seven binaries + `SHA256SUMS` + config/CA samples.
 - **Seven release binaries:** `edgelet-linux-{amd64,arm64,arm,riscv64}`, `edgelet-darwin-{amd64,arm64}`, `edgelet-windows-amd64.exe`.
-- **Container image:** `ghcr.io/datasance/edgelet-linux:<tag>` (scratch base, `EDGELET_DAEMON=container`).
+- **Dual publish:** Eclipse upstream at [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet); Datasance mirror at [Datasance/edgelet](https://github.com/Datasance/edgelet) with identical tags (separate GHCR namespaces).
+- **Container image:** `ghcr.io/eclipse-iofog/edgelet:<tag>` (scratch base, `EDGELET_DAEMON=container`); Datasance mirror: `ghcr.io/datasance/edgelet:<tag>`.
 - **macOS release build path:** `test/release/build-all.sh` (Docker embed loop) for developers without native Linux cross-toolchains.
 - **Arch smoke scripts:** `test/release/smoke-linux-{arm,riscv64}.sh` for post-build daemon, version, and CRI socket checks.
 - **Security gates:** `make security-code` (gosec), `make vulncheck` (govulncheck), CI workflow for vulnerability scanning; see [SECURITY.md](SECURITY.md).

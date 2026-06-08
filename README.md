@@ -1,13 +1,15 @@
 # Edgelet
 
-[![CI](https://github.com/datasance/edgelet/actions/workflows/ci-go.yml/badge.svg)](https://github.com/datasance/edgelet/actions/workflows/ci-go.yml)
-[![Release](https://img.shields.io/github/v/release/datasance/edgelet?include_prereleases)](https://github.com/datasance/edgelet/releases)
+[![CI](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci-go.yml/badge.svg)](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci-go.yml)
+[![Release](https://img.shields.io/github/v/release/eclipse-iofog/edgelet?include_prereleases)](https://github.com/eclipse-iofog/edgelet/releases)
 [![Go](https://img.shields.io/badge/Go-1.26.4-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-EPL--2.0-blue.svg)](LICENSE)
-[![Binary size](https://img.shields.io/badge/linux%20thin-~35%20MiB-informational)](https://github.com/datasance/edgelet/releases)
-[![govulncheck](https://github.com/datasance/edgelet/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/datasance/edgelet/actions/workflows/govulncheck.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/datasance/edgelet/badge)](https://securityscorecards.dev/viewer/?uri=github.com/datasance/edgelet)
-[![codecov](https://img.shields.io/badge/codecov-post--beta-lightgrey)](https://codecov.io/gh/datasance/edgelet)
+[![Binary size](https://img.shields.io/badge/linux%20thin-~35%20MiB-informational)](https://github.com/eclipse-iofog/edgelet/releases)
+[![govulncheck](https://github.com/eclipse-iofog/edgelet/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/eclipse-iofog/edgelet/actions/workflows/govulncheck.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/eclipse-iofog/edgelet/badge)](https://securityscorecards.dev/viewer/?uri=github.com/eclipse-iofog/edgelet)
+[![codecov](https://img.shields.io/badge/codecov-post--beta-lightgrey)](https://codecov.io/gh/eclipse-iofog/edgelet)
+
+**Upstream:** [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet) · **Datasance distribution:** [Datasance/edgelet](https://github.com/Datasance/edgelet)
 
 **Lightweight container runtime for far-edge devices and ioFog/PoT node agent.**
 
@@ -159,13 +161,30 @@ make fmt
 
 ## Installation
 
-Binary-only releases on **[`datasance/edgelet`](https://github.com/datasance/edgelet)** (no DEB/RPM, no release `.tar.gz` bundles). Default Linux engine: **edgelet**.
+Binary-only releases (no DEB/RPM, no release `.tar.gz` bundles). Default Linux engine: **edgelet**.
+
+| Channel | GitHub repo | Container image |
+|---------|-------------|-----------------|
+| **Eclipse (canonical)** | [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet) | `ghcr.io/eclipse-iofog/edgelet:<tag>` |
+| **Datasance mirror** | [Datasance/edgelet](https://github.com/Datasance/edgelet) | `ghcr.io/datasance/edgelet:<tag>` |
+
+Identical builds and tags; choose the channel that matches your fleet docs. Override install source at runtime with `EDGELET_GITHUB_REPO`.
+
+### Eclipse (canonical)
 
 ```bash
-curl -fsSL https://github.com/datasance/edgelet/releases/download/v1.0.0-beta.0/install.sh -o install.sh
+curl -fsSL https://github.com/eclipse-iofog/edgelet/releases/download/v1.0.0-beta.0/install.sh -o install.sh
 chmod +x install.sh
 sudo ./install.sh --version=v1.0.0-beta.0
 # dev / CI: sudo ./install.sh --bin-path=build/edgelet-linux-amd64 --version=dev
+```
+
+### Datasance mirror
+
+```bash
+curl -fsSL https://github.com/Datasance/edgelet/releases/download/v1.0.0-beta.0/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh --version=v1.0.0-beta.0
 ```
 
 Release artifacts per tag: seven binaries (`edgelet-linux-<arch>`, `edgelet-darwin-<arch>`, `edgelet-windows-amd64.exe`), `SHA256SUMS`, `install.sh`, `uninstall.sh`, and config/CA samples.
@@ -180,7 +199,7 @@ edgelet provision <key>                      # register with Controller (post-in
 
 Installation: [docs/edgelet/installation.md](docs/edgelet/installation.md) · Deployment topology: [docs/edgelet/deployment.md](docs/edgelet/deployment.md)
 
-Container image (linux): `ghcr.io/datasance/edgelet:<tag>`. Local IT tag: `edgelet:local`.
+Local IT container tag: `edgelet:local` (`EDGELET_IMAGE=edgelet:local`).
 
 ### Uninstall
 
