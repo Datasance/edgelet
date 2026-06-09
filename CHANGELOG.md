@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0-beta.1] — mid-June 2026
-
+Hotfix pre-release after `v1.0.0-beta.0`. GitHub Releases remain binary-only; `install.sh` is now self-contained.
 ### Fixed
-- install monolith / curl fix
+- **Curl / fresh-host install:** `install.sh` no longer requires co-located `scripts/lib/` or `packaging/init/` on the release download path. A single `install.sh` from GitHub Releases embeds init helpers and unit templates (assemble pipeline); fixes `Missing init helper scripts` on first install.
+- **Post-install layout:** `/usr/share/edgelet/` ships self-contained `install.sh` / `uninstall.sh` and config samples only — not `lib/` or `init/` trees.
+### Changed
+- **Supply-chain CI:** Dependabot (gomod + github-actions), CodeQL for Go, pinned Actions and Docker base images, `read-all` workflow defaults, keyless cosign signatures on release assets, bounded fuzz smoke in CI, `SCORECARD_TOKEN` for OpenSSF Scorecard branch-protection checks.
+- **Dependencies:** `golang.org/x/net` bumped (vulnerability reduction).
+### Known limitations (beta)
+- **Pre-release:** `v1.0.0-beta.1` is not production GA; expect refinements before 1.0.0.
 
 ## [1.0.0-beta.0] — mid-June 2026
 
