@@ -59,7 +59,7 @@ spec:
   #   # Provide only the block for your selected provider. Operator creates Secret "controller-vault-credentials" from these values.
   #   hashicorp:
   #     address: "http://192.168.139.3:8200"
-  #     token: "s.JCqRS37hu1VOy7PX3QRVdSY2"   # Vault token (sensitive; consider External Secrets to populate the CR)
+  #     token: "<replace-me>"   # Vault token (sensitive; consider External Secrets to populate the CR)
   #     mount: "kv"
     # aws:
     #   region: "us-east-1"

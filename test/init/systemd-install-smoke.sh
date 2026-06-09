@@ -57,13 +57,13 @@ else
     SSH_CONFIG="${HOME}/.lima/${VM_NAME}/ssh.config"
     SSH_HOST="lima-${VM_NAME}"
     STAGE="/tmp/edgelet-t10a"
-    log_info "Staging install bundle to ${STAGE} (binary, install.sh, scripts/lib, packaging/init)..."
+    log_info "Staging install bundle to ${STAGE} (install.sh, binary, optional samples)..."
     stage_install_bundle_ssh "${SSH_CONFIG}" "${SSH_HOST}" "${STAGE}" "${REPO_ROOT}" "${BIN}"
     run_remote "
         set -e
         systemctl stop edgelet 2>/dev/null || true
         systemctl reset-failed edgelet 2>/dev/null || true
-        chmod +x ${STAGE}/install.sh ${STAGE}/edgelet ${STAGE}/scripts/edgelet-shutdown
+        chmod +x ${STAGE}/install.sh ${STAGE}/edgelet
         ${STAGE}/install.sh --bin-path=${STAGE}/edgelet --version=dev-t10a --arch=${TARGET_ARCH} --container-engine=edgelet
     "
 fi

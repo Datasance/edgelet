@@ -69,7 +69,7 @@ stage_install_bundle_ssh "${SSH_CONFIG}" "${SSH_HOST}" "${STAGE}" "${REPO_ROOT}"
 
 run_remote "
     set -e
-    chmod +x ${STAGE}/install.sh ${STAGE}/edgelet ${STAGE}/scripts/edgelet-shutdown
+    chmod +x ${STAGE}/install.sh ${STAGE}/edgelet
     ${STAGE}/install.sh --bin-path=${STAGE}/edgelet --version=dev-t10b --arch=${TARGET_ARCH} --container-engine=edgelet
 "
 

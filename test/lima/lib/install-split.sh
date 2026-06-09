@@ -19,8 +19,6 @@ lima_install_embedded_split() {
     # shellcheck source=test/init/lib/stage-install-bundle.sh
     source "${_root}/test/init/lib/stage-install-bundle.sh"
     validate_install_bundle_sources "${_root}"
-    [[ -f "${_root}/packaging/init/systemd/edgelet-containerd.service" ]] \
-        || die "Missing edgelet-containerd.service (runtime split)"
 
     _stage="/tmp/edgelet-lima-install"
     _ssh_config="$(lima_ssh_config "${_vm}")"
@@ -32,7 +30,7 @@ lima_install_embedded_split() {
 
     lima_remote "${_vm}" "
         set -e
-        chmod +x ${_stage}/install.sh ${_stage}/edgelet ${_stage}/scripts/edgelet-shutdown
+        chmod +x ${_stage}/install.sh ${_stage}/edgelet
         ${_stage}/install.sh --bin-path=${_stage}/edgelet --version=${_version} --arch=${_arch} --container-engine=edgelet
     "
 

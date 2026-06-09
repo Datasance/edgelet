@@ -90,7 +90,7 @@ else
         set -e
         STOP_OPENRC=0
         ${EMBED_RUNTIME_CLEANUP_SNIPPET}
-        chmod +x ${STAGE}/install.sh ${STAGE}/edgelet ${STAGE}/scripts/edgelet-shutdown
+        chmod +x ${STAGE}/install.sh ${STAGE}/edgelet
         ${STAGE}/install.sh --bin-path=${STAGE}/edgelet --version=dev-t10b-runtime --arch=${TARGET_ARCH} --container-engine=edgelet
     "
     log_step "Wait for split install readiness (install.sh starts units via need)"
