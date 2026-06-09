@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test/init/lib/stage-install-bundle.sh
-# Build a minimal repo layout for install.sh inside a Lima VM (init IT).
+# Build a minimal release-flat layout for install.sh inside a Lima VM (init IT).
 # Source from test/init/*-smoke.sh — do not execute directly.
 
 # validate_install_bundle_sources REPO_ROOT
@@ -9,12 +9,7 @@ validate_install_bundle_sources() {
     local _missing=""
     for _p in \
         "${_root}/install.sh" \
-        "${_root}/uninstall.sh" \
-        "${_root}/scripts/lib/init-detect.sh" \
-        "${_root}/scripts/lib/init-edgelet.sh" \
-        "${_root}/scripts/edgelet-shutdown" \
-        "${_root}/packaging/init/systemd/edgelet.service" \
-        "${_root}/packaging/init/systemd/edgelet-containerd.service"
+        "${_root}/uninstall.sh"
     do
         [ -f "${_p}" ] || _missing="${_missing} ${_p}"
     done
@@ -24,8 +19,26 @@ validate_install_bundle_sources() {
     fi
 }
 
+# stage_optional_samples REPO_ROOT DEST_DIR
+# Copies config/CA samples when present (dist release or packaging tree).
+stage_optional_samples() {
+    local _root="$1" _dest="$2"
+    if [ -f "${_root}/dist/edgelet-config.yaml.sample" ]; then
+        cp "${_root}/dist/edgelet-config.yaml.sample" "${_dest}/"
+    elif [ -f "${_root}/packaging/edgelet/etc/edgelet/config.default.yaml" ]; then
+        cp "${_root}/packaging/edgelet/etc/edgelet/config.default.yaml" \
+            "${_dest}/edgelet-config.yaml.sample"
+    fi
+    if [ -f "${_root}/dist/edgelet-controller-ca.crt.sample" ]; then
+        cp "${_root}/dist/edgelet-controller-ca.crt.sample" "${_dest}/"
+    elif [ -f "${_root}/packaging/edgelet/etc/edgelet/controller-ca.sample.crt" ]; then
+        cp "${_root}/packaging/edgelet/etc/edgelet/controller-ca.sample.crt" \
+            "${_dest}/edgelet-controller-ca.crt.sample"
+    fi
+}
+
 # stage_install_bundle_ssh SSH_CONFIG SSH_HOST STAGE_DIR REPO_ROOT BIN_PATH
-# Copies install.sh + helpers + packaging/init preserving SCRIPT_DIR layout.
+# Copies install.sh + binary (+ optional samples) — no scripts/lib or packaging/init tree.
 stage_install_bundle_ssh() {
     local _ssh_config="$1" _ssh_host="$2" _stage="$3" _root="$4" _bin="$5"
     local _tmpdir
@@ -33,12 +46,10 @@ stage_install_bundle_ssh() {
     # shellcheck disable=SC2064
     trap "rm -rf '${_tmpdir}'" RETURN
 
-    mkdir -p "${_tmpdir}/scripts/lib" "${_tmpdir}/packaging"
+    mkdir -p "${_tmpdir}"
     cp "${_root}/install.sh" "${_root}/uninstall.sh" "${_tmpdir}/"
     cp "${_bin}" "${_tmpdir}/edgelet"
-    cp "${_root}/scripts/lib/"*.sh "${_tmpdir}/scripts/lib/"
-    install -m 755 "${_root}/scripts/edgelet-shutdown" "${_tmpdir}/scripts/edgelet-shutdown"
-    cp -R "${_root}/packaging/init" "${_tmpdir}/packaging/"
+    stage_optional_samples "${_root}" "${_tmpdir}"
 
     ssh -F "${_ssh_config}" "${_ssh_host}" "rm -rf '${_stage}' && mkdir -p '${_stage}'"
     # COPYFILE_DISABLE avoids macOS xattr noise in GNU tar on the VM.
