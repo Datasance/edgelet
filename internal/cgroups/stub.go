@@ -30,3 +30,8 @@ func EnsureAgentSubtree(_ *CgroupPolicy) error {
 func ValidatePreflight(_ *CgroupPolicy) error {
 	return nil
 }
+
+// ValidatePreflightLight is unsupported off Linux.
+func ValidatePreflightLight(_ *CgroupPolicy) error {
+	return nil
+}

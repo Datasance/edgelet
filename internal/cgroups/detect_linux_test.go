@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -261,4 +262,129 @@ func detectModeString() string {
 
 func asErrDelegation(err error, target **ErrDelegation) bool {
 	return errors.As(err, target)
+}
+
+func TestMachineRootDelegationSatisfied(t *testing.T) {
+	t.Parallel()
+	const mount = "/sys/fs/cgroup"
+
+	tests := []struct {
+		name      string
+		rootSub   string
+		lxcExists bool
+		lxcSub    string
+		want      bool
+	}{
+		{
+			name:      "root and lxc delegated",
+			rootSub:   "cpu memory pids",
+			lxcExists: true,
+			lxcSub:    "cpu memory pids",
+			want:      true,
+		},
+		{
+			name:      "root missing cpu",
+			rootSub:   "memory pids",
+			lxcExists: true,
+			lxcSub:    "cpu memory pids",
+			want:      false,
+		},
+		{
+			name:      "lxc missing pids",
+			rootSub:   "cpu memory pids",
+			lxcExists: true,
+			lxcSub:    "cpu memory",
+			want:      false,
+		},
+		{
+			name:      "no lxc node bare root only",
+			rootSub:   "cpu memory pids",
+			lxcExists: false,
+			want:      true,
+		},
+		{
+			name:      "no lxc node root incomplete",
+			rootSub:   "cpu",
+			lxcExists: false,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			prevRead := readFileFn
+			prevStat := statFn
+			t.Cleanup(func() {
+				readFileFn = prevRead
+				statFn = prevStat
+			})
+
+			readFileFn = func(path string) ([]byte, error) {
+				switch path {
+				case filepath.Join(mount, "cgroup.subtree_control"):
+					return []byte(tt.rootSub), nil
+				case filepath.Join(mount, ".lxc", "cgroup.subtree_control"):
+					return []byte(tt.lxcSub), nil
+				default:
+					return prevRead(path)
+				}
+			}
+			statFn = func(name string) (os.FileInfo, error) {
+				if name == filepath.Join(mount, ".lxc", "cgroup.controllers") {
+					if tt.lxcExists {
+						return fakeDirInfo{}, nil
+					}
+					return nil, os.ErrNotExist
+				}
+				return prevStat(name)
+			}
+
+			if got := machineRootDelegationSatisfied(mount); got != tt.want {
+				t.Fatalf("machineRootDelegationSatisfied() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrepareMachineRootDelegationSkipsWhenSatisfied(t *testing.T) {
+	const mount = "/sys/fs/cgroup"
+	prevRead := readFileFn
+	prevWrite := writeFileFn
+	prevStat := statFn
+	t.Cleanup(func() {
+		readFileFn = prevRead
+		writeFileFn = prevWrite
+		statFn = prevStat
+	})
+
+	evacuateWrites := 0
+	delegatedSubCtrl := []byte("cpu memory pids")
+	readFileFn = func(path string) ([]byte, error) {
+		if strings.HasSuffix(path, "cgroup.subtree_control") && strings.HasPrefix(path, mount) {
+			return delegatedSubCtrl, nil
+		}
+		return prevRead(path)
+	}
+	statFn = func(name string) (os.FileInfo, error) {
+		if name == filepath.Join(mount, ".lxc", "cgroup.controllers") {
+			return fakeDirInfo{}, nil
+		}
+		return prevStat(name)
+	}
+	writeFileFn = func(name string, data []byte, perm os.FileMode) error {
+		if strings.HasSuffix(name, "cgroup.procs") {
+			evacuateWrites++
+		}
+		return prevWrite(name, data, perm)
+	}
+
+	policy := &CgroupPolicy{UnifiedMountpoint: mount}
+	if err := prepareMachineRootDelegation(policy); err != nil {
+		t.Fatalf("prepareMachineRootDelegation: %v", err)
+	}
+	if evacuateWrites != 0 {
+		t.Fatalf("expected no cgroup.procs evacuate when delegation satisfied, got %d writes", evacuateWrites)
+	}
 }

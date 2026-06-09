@@ -5,6 +5,18 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.2] — mid-June 2026
+
+### Fixed
+
+- **Cgroup preflight on LXC/VM machine roots:** OpenRC hosts with `/.lxc` cgroup layout (e.g. OrbStack Alpine) no longer fail cold boot with a misleading docker `--privileged` error. Machine-root paths are distinguished from workload-nested containers; `edgelet cgroup-preflight` performs light mount/mode checks only; strict delegation validation runs after bootstrap prep.
+- **LXC/VM machine OpenRC containerd restart:** `/.lxc/init` staging cgroups are treated as machine-root boundaries (not workload-nested). Runtime bootstrap skips Moby-style reparent when `edgelet-cgroup-prep` already delegated at the unified root and `/.lxc`, then prepares the OpenRC/service staging cgroup and `/edgelet` before spawning embedded containerd (OrbStack Alpine cold boot).
+- **OpenRC sysinit prep:** `edgelet-cgroup-prep` reparents unified root and `/.lxc` cgroups and delegates `cpu`/`memory`/`pids` before `edgelet-containerd` starts (Moby/dind-style).
+
+### Changed
+
+- **`cgroupNested` status:** `true` only for workload containers (Docker/k8s dev deploy), not LXC/VM machine boundaries.
+
 ## [1.0.0-beta.1] — mid-June 2026
 Hotfix pre-release after `v1.0.0-beta.0`. GitHub Releases remain binary-only; `install.sh` is now self-contained.
 ### Fixed

@@ -2,6 +2,32 @@ package cgroups
 
 import "testing"
 
+func TestIsMachineRootCgroupPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/", true},
+		{"", true},
+		{"/.lxc", true},
+		{"/.lxc/init", true},
+		{".lxc/init", true},
+		{"/init.scope", true},
+		{"/docker/abc/container", false},
+		{"/lxc/payload/uid_1000/pid_12345", false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			if got := IsMachineRootCgroupPath(tt.path); got != tt.want {
+				t.Fatalf("IsMachineRootCgroupPath(%q) = %t, want %t", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCgroupPathIndicatesNested(t *testing.T) {
 	t.Parallel()
 
@@ -18,6 +44,36 @@ func TestCgroupPathIndicatesNested(t *testing.T) {
 		{
 			name: "edgelet control plane unit",
 			path: "/system.slice/edgelet.service/edgelet.scope",
+			want: false,
+		},
+		{
+			name: "orbstack machine root",
+			path: "/.lxc",
+			want: false,
+		},
+		{
+			name: "orbstack cgroup prep staging",
+			path: "/.lxc/init",
+			want: false,
+		},
+		{
+			name: "orbstack cgroup prep staging relative",
+			path: ".lxc/init",
+			want: false,
+		},
+		{
+			name: "wsl init scope",
+			path: "/init.scope",
+			want: false,
+		},
+		{
+			name: "host root",
+			path: "/",
+			want: false,
+		},
+		{
+			name: "openrc service cgroup",
+			path: "openrc.edgelet-containerd",
 			want: false,
 		},
 		{
@@ -46,7 +102,7 @@ func TestCgroupPathIndicatesNested(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "lxc nested",
+			name: "lxc payload nested",
 			path: "/lxc/payload/uid_1000/pid_12345",
 			want: true,
 		},

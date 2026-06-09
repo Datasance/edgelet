@@ -75,7 +75,7 @@ func TestValidatePreflightSkipsV1(t *testing.T) {
 	}
 }
 
-func TestValidatePreflightMissingCPU(t *testing.T) {
+func TestValidatePreflightMissingCPUWorkloadNested(t *testing.T) {
 	policy := &CgroupPolicy{
 		Mode:                 ModeV2,
 		Nested:               true,
@@ -89,8 +89,40 @@ func TestValidatePreflightMissingCPU(t *testing.T) {
 	if !errors.As(err, &del) {
 		t.Fatalf("expected ErrDelegation, got %T: %v", err, err)
 	}
-	if del.Controller != "cpu" || !del.Nested {
+	if del.Controller != "cpu" || !del.Nested || del.MachineRoot {
 		t.Fatalf("unexpected delegation error: %+v", del)
+	}
+}
+
+func TestValidatePreflightMissingCPUMachineRoot(t *testing.T) {
+	policy := &CgroupPolicy{
+		Mode:                 ModeV2,
+		Driver:               DriverCgroupfs,
+		MachineRoot:          true,
+		DelegatedControllers: []string{"memory", "pids"},
+	}
+	err := ValidatePreflight(policy)
+	if err == nil {
+		t.Fatal("expected delegation error")
+	}
+	var del *ErrDelegation
+	if !errors.As(err, &del) {
+		t.Fatalf("expected ErrDelegation, got %T: %v", err, err)
+	}
+	if del.Controller != "cpu" || del.Nested || !del.MachineRoot {
+		t.Fatalf("unexpected delegation error: %+v", del)
+	}
+}
+
+func TestValidatePreflightLightPassesWithoutDelegation(t *testing.T) {
+	policy := &CgroupPolicy{
+		Mode:                 ModeV2,
+		MachineRoot:          true,
+		UnifiedMountpoint:    "/sys/fs/cgroup",
+		DelegatedControllers: []string{},
+	}
+	if err := ValidatePreflightLight(policy); err != nil {
+		t.Fatalf("expected light preflight pass, got %v", err)
 	}
 }
 

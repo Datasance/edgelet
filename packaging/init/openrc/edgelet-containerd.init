@@ -13,6 +13,7 @@ error_log="/var/log/edgelet/containerd.log"
 
 depend() {
     need net
+    need edgelet-cgroup-prep
     before edgelet
 }
 

@@ -116,6 +116,10 @@ install_init_unit() {
             install -m 755 "${_root}/openrc/edgelet.init" /etc/init.d/edgelet
             apply_openrc_engine_deps "${_eng}" /etc/init.d/edgelet
             chmod 755 /etc/init.d/edgelet
+            if [ -f "${_root}/openrc/edgelet-cgroup-prep.init" ]; then
+                install -m 755 "${_root}/openrc/edgelet-cgroup-prep.init" /etc/init.d/edgelet-cgroup-prep
+                rc-update add edgelet-cgroup-prep sysinit 2>/dev/null || true
+            fi
             if [ -f "${_root}/openrc/edgelet-containerd.init" ]; then
                 install -m 755 "${_root}/openrc/edgelet-containerd.init" /etc/init.d/edgelet-containerd
             fi

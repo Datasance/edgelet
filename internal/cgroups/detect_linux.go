@@ -38,6 +38,7 @@ var (
 func Detect() (*CgroupPolicy, error) {
 	mode, mount, hybridWarning := detectMode()
 	nested := detectNested()
+	machineRoot := DetectMachineRoot()
 	delegatedList := checkControllersFn(mount)
 	delegated := delegatedSet(delegatedList)
 
@@ -49,6 +50,7 @@ func Detect() (*CgroupPolicy, error) {
 		Mode:                 mode,
 		Driver:               driver,
 		Nested:               nested,
+		MachineRoot:          machineRoot,
 		SystemdCgroup:        systemdCgroup,
 		UnifiedMountpoint:    mount,
 		AgentCgroupPath:      agentPath,
@@ -296,11 +298,24 @@ func EnsureAgentSubtree(policy *CgroupPolicy) error {
 	if policy == nil {
 		return errors.New("cgroup policy is not initialized")
 	}
+	if cgv3.Mode() != cgv3.Legacy && policy.MachineRoot && !policy.Nested {
+		if err := prepareMachineRootDelegation(policy); err != nil {
+			return fmt.Errorf("machine-root cgroup prep: %w", err)
+		}
+		if err := prepareMachineRootStagingCgroup(policy); err != nil {
+			return fmt.Errorf("machine-root staging cgroup: %w", err)
+		}
+	}
 	if cgv3.Mode() != cgv3.Legacy && policy.Nested {
 		if err := prepareNestedContainerRoot(policy); err != nil {
 			return err
 		}
 	}
+	mount := policy.UnifiedMountpoint
+	if mount == "" {
+		mount = unifiedMountFn()
+	}
+	policy.DelegatedControllers = checkControllersFn(mount)
 	if err := ValidatePreflight(policy); err != nil {
 		return err
 	}
@@ -331,7 +346,7 @@ func ensureAgentCgroupV2(policy *CgroupPolicy) error {
 	containerdPath := normalizeUnifiedGroupPath(policy.ContainerdCgroupPath)
 
 	edgeletParent := strings.TrimPrefix(filepath.Dir(agentPath), "/")
-	if policy.Nested && edgeletParent != "" && edgeletParent != "." {
+	if NeedsEdgeletCgroupParentPrep(policy) && edgeletParent != "" && edgeletParent != "." {
 		if err := ensureUnifiedCgroup(mount, "/"+edgeletParent); err != nil {
 			return fmt.Errorf("create edgelet parent cgroup /%s: %w", edgeletParent, err)
 		}
@@ -373,6 +388,149 @@ func prepareNestedContainerRoot(policy *CgroupPolicy) error {
 		return fmt.Errorf("prepare nested container cgroup root %q: %w", selfPath, err)
 	}
 	return nil
+}
+
+// prepareMachineRootStagingCgroup enables delegation on the process cgroup (e.g. openrc.edgelet-containerd
+// or /.lxc/init) so runtime-bootstrap can create /edgelet/agent and spawn containerd on OrbStack-style hosts.
+func prepareMachineRootStagingCgroup(policy *CgroupPolicy) error {
+	if policy == nil || policy.Nested || !policy.MachineRoot || policy.Driver != DriverCgroupfs {
+		return nil
+	}
+	mount := policy.UnifiedMountpoint
+	if mount == "" {
+		mount = unifiedMountFn()
+	}
+	selfPath, err := currentUnifiedCgroupPath(mount)
+	if err != nil {
+		return fmt.Errorf("resolve staging cgroup path: %w", err)
+	}
+	logging.LogInfo("Cgroups", fmt.Sprintf("preparing machine-root staging cgroup %q", selfPath))
+	if err := prepareV2ParentForChildren(mount, selfPath); err != nil {
+		return fmt.Errorf("prepare staging cgroup %q: %w", selfPath, err)
+	}
+	return nil
+}
+
+// prepareMachineRootDelegation enables cgroup v2 delegation on LXC/VM machine roots
+// (Moby/dind-style reparent at unified root and /.lxc). Primary path is openrc
+// edgelet-cgroup-prep at sysinit; this is a runtime fallback when prep already ran
+// or on hosts that allow late reparent.
+func prepareMachineRootDelegation(policy *CgroupPolicy) error {
+	mount := policy.UnifiedMountpoint
+	if mount == "" {
+		mount = unifiedMountFn()
+	}
+	if machineRootDelegationSatisfied(mount) {
+		logging.LogInfo("Cgroups", "machine-root cgroup delegation already satisfied; skipping reparent")
+		return nil
+	}
+	logging.LogInfo("Cgroups", "preparing machine-root cgroup delegation")
+	if err := reparentAndDelegateMachineRoot(mount); err != nil {
+		return err
+	}
+	if isUnifiedCgroupNode(mount, ".lxc") {
+		if err := reparentAndDelegateCgroup(mount, ".lxc"); err != nil {
+			return fmt.Errorf("prepare /.lxc: %w", err)
+		}
+	}
+	return nil
+}
+
+// machineRootDelegationSatisfied reports whether sysinit edgelet-cgroup-prep (or a prior
+// bootstrap) already delegated cpu/memory/pids at the unified root and /.lxc when present.
+func machineRootDelegationSatisfied(mount string) bool {
+	if !subtreeControlHasRequired(mount, "") {
+		return false
+	}
+	if isUnifiedCgroupNode(mount, ".lxc") {
+		return subtreeControlHasRequired(mount, ".lxc")
+	}
+	return true
+}
+
+func reparentAndDelegateMachineRoot(mount string) error {
+	if err := ensureUnifiedCgroup(mount, "/init"); err != nil {
+		return fmt.Errorf("create root init cgroup: %w", err)
+	}
+	if err := evacuateUnifiedProcesses(mount, "", "init"); err != nil {
+		return fmt.Errorf("reparent root cgroup procs: %w", err)
+	}
+	return enableRequiredControllersSubtree(mount, "")
+}
+
+func reparentAndDelegateCgroup(mount, rel string) error {
+	staging := joinRelUnifiedPath(rel, "init")
+	if err := ensureUnifiedCgroup(mount, stagingGroupPath(staging)); err != nil {
+		return fmt.Errorf("create staging cgroup %s: %w", staging, err)
+	}
+	if err := evacuateUnifiedProcesses(mount, rel, staging); err != nil {
+		return fmt.Errorf("reparent %q procs: %w", rel, err)
+	}
+	return enableRequiredControllersSubtree(mount, rel)
+}
+
+func enableRequiredControllersSubtree(mount, rel string) error {
+	if subtreeControlHasRequired(mount, rel) {
+		return nil
+	}
+	ctrlFile := filepath.Join(unifiedCgroupDir(mount, rel), "cgroup.controllers")
+	raw, err := readFileFn(ctrlFile)
+	if err != nil {
+		return err
+	}
+	available := delegatedSet(strings.Fields(string(raw)))
+	subCtrl := filepath.Join(unifiedCgroupDir(mount, rel), "cgroup.subtree_control")
+	subRaw, _ := readFileFn(subCtrl)
+	enabled := string(subRaw)
+	for _, c := range []string{"cpu", "memory", "pids"} {
+		if !available[c] || strings.Contains(enabled, c) {
+			continue
+		}
+		if err := appendSubtreeControlToken(subCtrl, "+"+c); err != nil {
+			if err := prepareV2ParentForChildren(mount, rel); err != nil {
+				return fmt.Errorf("enable %s on %q: %w", c, rel, err)
+			}
+			subRaw, _ = readFileFn(subCtrl)
+			enabled = string(subRaw)
+			if strings.Contains(enabled, c) {
+				continue
+			}
+			return fmt.Errorf("enable %s on %q: %w", c, rel, err)
+		}
+		enabled += " " + c
+	}
+	return nil
+}
+
+func subtreeControlHasRequired(mount, rel string) bool {
+	subRaw, err := readFileFn(filepath.Join(unifiedCgroupDir(mount, rel), "cgroup.subtree_control"))
+	if err != nil {
+		return false
+	}
+	enabled := string(subRaw)
+	for _, c := range []string{"cpu", "memory", "pids"} {
+		if !strings.Contains(enabled, c) {
+			return false
+		}
+	}
+	return true
+}
+
+func appendSubtreeControlToken(path, token string) error {
+	raw, err := readFileFn(path)
+	if err != nil {
+		return err
+	}
+	controller := strings.TrimPrefix(token, "+")
+	if strings.Contains(string(raw), controller) {
+		return nil
+	}
+	line := strings.TrimSpace(string(raw))
+	if line != "" {
+		line += " "
+	}
+	line += token
+	return writeFileFn(path, []byte(line), 0)
 }
 
 // prepareV2ParentForChildren enables cgroup v2 controller delegation on parent so
@@ -542,8 +700,11 @@ func Bootstrap() (*CgroupPolicy, error) {
 	if policy.HybridWarning != "" {
 		logging.LogWarn("Cgroups", policy.HybridWarning)
 	}
-	if policy.Nested {
-		logging.LogInfo("Cgroups", "nested container environment detected; using cgroupfs driver — docker run --privileged is required")
+	switch {
+	case policy.Nested:
+		logging.LogInfo("Cgroups", "workload container detected; cgroupfs driver — docker run --privileged required for dev deploys")
+	case policy.MachineRoot:
+		logging.LogInfo("Cgroups", "machine-root cgroup environment detected (LXC/VM); preparing delegation for cgroupfs driver")
 	}
 	logging.LogInfo("Cgroups", fmt.Sprintf(
 		"cgroup mode=%s driver=%s nested=%t systemd_cgroup=%t",
