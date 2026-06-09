@@ -4,6 +4,20 @@ Production deployment topology for Edgelet on **linux**, **darwin**, and **windo
 
 **Installation, upgrade, rollback, and OTA readiness:** see **[installation.md](installation.md)**.
 
+## Install script distribution
+
+`install.sh` and `uninstall.sh` are **self-contained monoliths**. Online install, airgap staging, and GitHub Releases need only those scripts plus the platform binary (or `install.sh --bin-path=…`). No co-located helper directories (`scripts/lib/`, `packaging/init/`, or similar) are required beside the scripts.
+
+After install on **linux**, `/usr/share/edgelet/` holds:
+
+| Path | Role |
+|------|------|
+| `install.sh`, `uninstall.sh` | OTA lifecycle copies (same self-contained monoliths) |
+| `edgelet-config.yaml.sample` | Default config template |
+| `edgelet-controller-ca.crt.sample` | Lab bootstrap CA sample |
+
+Init units and `edgelet-shutdown` are written directly to system paths (`/etc/systemd/system/`, `/usr/libexec/edgelet/`, etc.) at install time — not stored under `/usr/share/edgelet/lib/` or `/usr/share/edgelet/init/`.
+
 ## Product model
 
 | Platform | Binary | Embedded engine | `containerEngine` | Default engine |

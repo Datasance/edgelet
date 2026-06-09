@@ -12,20 +12,63 @@ set -e
 die() { echo "ERROR: $1" >&2; exit 1; }
 info() { echo ">>> $1"; }
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-if [ -f "${SCRIPT_DIR}/scripts/lib/init-detect.sh" ]; then
-    LIB_DIR="${SCRIPT_DIR}/scripts/lib"
-elif [ -f "${SCRIPT_DIR}/lib/init-detect.sh" ]; then
-    LIB_DIR="${SCRIPT_DIR}/lib"
-else
-    LIB_DIR=""
-fi
-if [ -n "$LIB_DIR" ] && [ -f "${LIB_DIR}/init-detect.sh" ]; then
-    # shellcheck source=scripts/lib/init-detect.sh
-    . "${LIB_DIR}/init-detect.sh"
-    # shellcheck source=scripts/lib/init-edgelet.sh
-    . "${LIB_DIR}/init-edgelet.sh"
-fi
+# OpenRC ships /sbin/openrc-run on Alpine even when PID 1 is busybox (Lima
+# template:alpine). Require a running OpenRC supervisor, not merely openrc-run.
+openrc_is_pid1() {
+    [ -x /sbin/openrc-run ] || return 1
+    if rc-status -s >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ -f /etc/inittab ] && grep -q '/sbin/openrc' /etc/inittab 2>/dev/null; then
+        return 0
+    fi
+    _init="$(readlink -f /sbin/init 2>/dev/null || readlink /sbin/init 2>/dev/null || true)"
+    case "${_init}" in
+        *openrc*) return 0 ;;
+    esac
+    return 1
+}
+
+procd_is_openwrt() {
+    [ -x /sbin/procd ] && [ -f /etc/rc.common ] || return 1
+    return 0
+}
+
+detect_init() {
+    if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
+        echo "systemd"
+        return 0
+    fi
+    if procd_is_openwrt; then
+        echo "procd"
+        return 0
+    fi
+    if openrc_is_pid1 && {
+        command -v openrc >/dev/null 2>&1 \
+            || [ -x /sbin/openrc-run ] \
+            || [ -f /sbin/openrc ]
+    }; then
+        echo "openrc"
+        return 0
+    fi
+    if command -v initctl >/dev/null 2>&1 && [ -d /etc/init ]; then
+        echo "upstart"
+        return 0
+    fi
+    if [ -d /etc/s6 ] || command -v s6-svc >/dev/null 2>&1; then
+        echo "s6"
+        return 0
+    fi
+    if command -v runsvdir >/dev/null 2>&1 || [ -d /etc/runit ]; then
+        echo "runit"
+        return 0
+    fi
+    if [ -f /etc/inittab ] || command -v update-rc.d >/dev/null 2>&1 || command -v chkconfig >/dev/null 2>&1; then
+        echo "sysvinit"
+        return 0
+    fi
+    echo "unknown"
+}
 
 [ "$(id -u)" -eq 0 ] || die "Must be run as root. Try: sudo $0 $*"
 
@@ -120,10 +163,7 @@ lazy_umount_edgelet() {
 }
 
 remove_init_service() {
-    _init=""
-    if [ -n "$LIB_DIR" ]; then
-        _init=$(detect_init 2>/dev/null) || true
-    fi
+    _init=$(detect_init 2>/dev/null) || _init="unknown"
     if [ -f /etc/systemd/system/edgelet.service ]; then
         stop_systemd
     elif [ -f /etc/init.d/edgelet ] && [ -x /sbin/procd ]; then
