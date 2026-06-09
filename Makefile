@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -93,6 +93,14 @@ cli-docs-check: cli-docs ## Fail if docs/cli/ differs from committed generated o
 
 cli-help-check: ## Fail if CLI help regression tests fail
 	@go test ./internal/cli/cmd/ -run '^TestHelp_' -count=1
+
+install-scripts: ## Regenerate monolithic install.sh from authoring inputs
+	@chmod +x scripts/assemble-install.sh scripts/install/gen-embedded-block.sh
+	@./scripts/assemble-install.sh
+
+install-scripts-check: install-scripts ## Fail if install.sh drift from assemble
+	@git diff --exit-code install.sh || (echo "ERROR: install.sh drift — run 'make install-scripts' and commit" && exit 1)
+	@echo "install.sh is up to date"
 	@echo "CLI help regression tests passed"
 
 cli-completion: build-cli ## Regenerate bash completion for packaging

@@ -9,6 +9,8 @@ on:
       - 'go.sum'
       - 'Makefile'
       - 'scripts/**'
+      - 'install.sh'
+      - 'packaging/init/**'
       - 'build/Dockerfile.embedded'
       - 'Dockerfile'
       - 'docs/cli/**'
@@ -21,6 +23,8 @@ on:
       - 'go.sum'
       - 'Makefile'
       - 'scripts/**'
+      - 'install.sh'
+      - 'packaging/init/**'
       - 'build/Dockerfile.embedded'
       - 'Dockerfile'
       - 'docs/cli/**'
@@ -73,6 +77,9 @@ jobs:
 
       - name: CLI docs drift gate
         run: make cli-docs-check
+
+      - name: Install script assemble drift gate
+        run: make install-scripts-check
 
       - name: CLI help regression
         run: make cli-help-check
