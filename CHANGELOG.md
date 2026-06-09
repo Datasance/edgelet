@@ -5,6 +5,11 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.1] — mid-June 2026
+
+### Fixed
+- install monolith / curl fix
+
 ## [1.0.0-beta.0] — mid-June 2026
 
 First public pre-release of **Edgelet** — a greenfield edge runtime and ioFog/PoT node agent (`github.com/eclipse-iofog/edgelet`). GitHub Releases are marked **Pre-release** and ship binary-only artifacts (no DEB/RPM, no release tarballs).
