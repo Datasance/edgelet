@@ -193,17 +193,16 @@ jobs:
           set -euo pipefail
           for f in dist/*; do
             case "$(basename "$f")" in
-              *.sig|*.pem|*.sigstore) continue ;;
+              *.pem|*.sigstore) continue ;;
             esac
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
               --bundle "${f}.sigstore" \
-              --output-signature "${f}.sig" \
               "$f"
           done
           shopt -s nullglob
-          sigs=(dist/*.sig)
-          test "${#sigs[@]}" -gt 0
+          bundles=(dist/*.sigstore)
+          test "${#bundles[@]}" -gt 0
           ls -la dist/
 
       - name: Generate release notes
