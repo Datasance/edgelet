@@ -324,6 +324,7 @@ error_log="/var/log/edgelet/containerd.log"
 
 depend() {
     need net
+    need edgelet-cgroup-prep
     before edgelet
 }
 
@@ -381,6 +382,62 @@ stop() {
 }
 EDGELET_OPENRC_EDGELET_CONTAINERD_INIT_EOF
     chmod 755 "/etc/init.d/edgelet-containerd"
+}
+write_openrc_edgelet_cgroup_prep_init() {
+    cat > "/etc/init.d/edgelet-cgroup-prep" << 'EDGELET_OPENRC_EDGELET_CGROUP_PREP_INIT_EOF'
+#!/sbin/openrc-run
+
+# Early cgroup v2 delegation for LXC/VM machine roots (OrbStack Alpine, etc.).
+# Moby/dind-style reparent before enabling subtree_control on root and /.lxc.
+name="edgelet-cgroup-prep"
+description="Edgelet cgroup delegation prep (machine root)"
+
+depend() {
+    before edgelet-containerd edgelet
+}
+
+cgroup_delegate_controllers() {
+    _dir="$1"
+    _ctrl="${_dir}/cgroup.controllers"
+    _sub="${_dir}/cgroup.subtree_control"
+    [ -f "${_ctrl}" ] || return 0
+    for _c in cpu memory pids; do
+        grep -qw "${_c}" "${_ctrl}" 2>/dev/null || continue
+        grep -qw "${_c}" "${_sub}" 2>/dev/null && continue
+        echo "+${_c}" >> "${_sub}" 2>/dev/null || true
+    done
+}
+
+cgroup_reparent_procs() {
+    _from="$1"
+    _to="$2"
+    [ -f "${_from}/cgroup.procs" ] || return 0
+    [ -s "${_from}/cgroup.procs" ] || return 0
+    mkdir -p "${_to}"
+    xargs -rn1 < "${_from}/cgroup.procs" > "${_to}/cgroup.procs" 2>/dev/null || true
+}
+
+start() {
+    # No-op on bare-metal / systemd VM layouts without LXC machine cgroup.
+    [ -d /sys/fs/cgroup/.lxc ] || return 0
+
+    ebegin "Preparing cgroup delegation for machine root"
+    _cg="/sys/fs/cgroup"
+
+    cgroup_reparent_procs "${_cg}" "${_cg}/init"
+    cgroup_delegate_controllers "${_cg}"
+
+    cgroup_reparent_procs "${_cg}/.lxc" "${_cg}/.lxc/init"
+    cgroup_delegate_controllers "${_cg}/.lxc"
+
+    eend 0
+}
+
+stop() {
+    return 0
+}
+EDGELET_OPENRC_EDGELET_CGROUP_PREP_INIT_EOF
+    chmod 755 "/etc/init.d/edgelet-cgroup-prep"
 }
 write_procd_edgelet() {
     cat > "/etc/init.d/edgelet" << 'EDGELET_PROCD_EDGELET_EOF'
@@ -623,12 +680,18 @@ install_init_unit() {
         openrc)
             if [ -n "${_root}" ]; then
                 install -m 755 "${_root}/openrc/edgelet.init" /etc/init.d/edgelet
+                if [ -f "${_root}/openrc/edgelet-cgroup-prep.init" ]; then
+                    install -m 755 "${_root}/openrc/edgelet-cgroup-prep.init" /etc/init.d/edgelet-cgroup-prep
+                    rc-update add edgelet-cgroup-prep sysinit 2>/dev/null || true
+                fi
                 if [ -f "${_root}/openrc/edgelet-containerd.init" ]; then
                     install -m 755 "${_root}/openrc/edgelet-containerd.init" /etc/init.d/edgelet-containerd
                 fi
             else
                 write_openrc_edgelet_init
+                write_openrc_edgelet_cgroup_prep_init
                 write_openrc_edgelet_containerd_init
+                rc-update add edgelet-cgroup-prep sysinit 2>/dev/null || true
             fi
             apply_openrc_engine_deps "${_eng}" /etc/init.d/edgelet
             chmod 755 /etc/init.d/edgelet

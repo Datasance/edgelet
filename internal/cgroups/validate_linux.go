@@ -4,9 +4,28 @@ package cgroups
 
 import (
 	"errors"
+	"os"
 )
 
-// ValidatePreflight checks delegation requirements before CRI starts.
+// ValidatePreflightLight checks cgroup detectability for init start_pre hooks (no mutation).
+func ValidatePreflightLight(policy *CgroupPolicy) error {
+	if policy == nil {
+		return errors.New("cgroup policy is not initialized")
+	}
+	if policy.Mode == ModeUnknown {
+		return errors.New("cgroup mode could not be detected")
+	}
+	mount := policy.UnifiedMountpoint
+	if mount == "" {
+		mount = "/sys/fs/cgroup"
+	}
+	if st, err := os.Stat(mount); err != nil || !st.IsDir() {
+		return errors.New("cgroup filesystem is not mounted at " + mount)
+	}
+	return nil
+}
+
+// ValidatePreflight checks delegation requirements after bootstrap prep (fat runtime).
 func ValidatePreflight(policy *CgroupPolicy) error {
 	if policy == nil {
 		return errors.New("cgroup policy is not initialized")
@@ -17,7 +36,7 @@ func ValidatePreflight(policy *CgroupPolicy) error {
 	if policy.Driver == DriverSystemd {
 		return nil
 	}
-	if !policy.Nested {
+	if !policy.Nested && !policy.MachineRoot {
 		return nil
 	}
 	delegated := delegatedSet(policy.DelegatedControllers)
@@ -25,7 +44,12 @@ func ValidatePreflight(policy *CgroupPolicy) error {
 		if delegated[required] {
 			continue
 		}
-		return &ErrDelegation{Controller: required, Nested: policy.Nested, Mode: policy.Mode}
+		return &ErrDelegation{
+			Controller:  required,
+			Nested:      policy.Nested,
+			MachineRoot: policy.MachineRoot,
+			Mode:        policy.Mode,
+		}
 	}
 	return nil
 }

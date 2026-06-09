@@ -7,6 +7,7 @@ package cgroups
 func DetectPreflight() (*CgroupPolicy, error) {
 	mode, mount, hybridWarning := detectModeHost()
 	nested := detectNestedHost()
+	machineRoot := DetectMachineRoot()
 	delegatedList := checkDelegatedControllersForMode(mount, mode)
 	delegated := delegatedSet(delegatedList)
 
@@ -18,6 +19,7 @@ func DetectPreflight() (*CgroupPolicy, error) {
 		Mode:                 mode,
 		Driver:               driver,
 		Nested:               nested,
+		MachineRoot:          machineRoot,
 		SystemdCgroup:        systemdCgroup,
 		UnifiedMountpoint:    mount,
 		AgentCgroupPath:      agentPath,

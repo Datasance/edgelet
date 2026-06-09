@@ -75,7 +75,26 @@ Common issues when running Edgelet on edge nodes.
 
 5. **Non-systemd init** (openrc, sysvinit, s6): edgelet uses the **cgroupfs** driver automatically — ensure `/sys/fs/cgroup` is writable and controllers are mounted.
 
-6. **`RunPodSandbox` / `sd-bus call: Invalid unit name or type`:** crun with `SystemdCgroup=true` (manual `config.d` override or an old edgelet build). Reinstall the current edgelet build — generated config must have **`SystemdCgroup = false`** for crun; systemd bare-metal hosts must stay in `edgelet.service` with no `cgroup.path`. Verify:
+6. **LXC/VM machine root** (`/.lxc`, OpenRC on OrbStack Alpine): error mentions `edgelet-cgroup-prep` or empty `/.lxc/cgroup.controllers` after cold boot:
+
+   ```bash
+   rc-status | grep edgelet-cgroup-prep
+   cat /proc/self/cgroup
+   cat /sys/fs/cgroup/.lxc/cgroup.controllers
+   ```
+
+   Reinstall edgelet so `install.sh` registers `edgelet-cgroup-prep` in **sysinit**, then reboot:
+
+   ```bash
+   sudo ./install.sh --version=<tag>
+   sudo reboot
+   ```
+
+   After reboot, `edgelet cgroup-preflight` should pass and `rc-service edgelet-containerd start` should succeed without manual cgroup commands.
+
+   If **`edgelet-containerd` fails after a prior successful start** with `preparing machine-root cgroup delegation` or immediate spawn failure in `/var/log/edgelet/containerd.log`, upgrade to a current beta.2 build (skips reparent when prep already ran and prepares OpenRC staging + `/edgelet` cgroups). Do not run manual Moby reparent commands if `edgelet-cgroup-prep` already ran at sysinit.
+
+7. **`RunPodSandbox` / `sd-bus call: Invalid unit name or type`:** crun with `SystemdCgroup=true` (manual `config.d` override or an old edgelet build). Reinstall the current edgelet build — generated config must have **`SystemdCgroup = false`** for crun; systemd bare-metal hosts must stay in `edgelet.service` with no `cgroup.path`. Verify:
 
    ```bash
    edgelet system status -o json | jq '{cgroupDriver,cgroupContainerdPath}'
@@ -83,7 +102,7 @@ Common issues when running Edgelet on edge nodes.
    cat /proc/$(systemctl show edgelet -p MainPID --value)/cgroup
    ```
 
-7. **`bpf pin to /sys/fs/bpf/crun/k8s_io/...`:** often appears when `SystemdCgroup=true` was enabled for crun. Use a current edgelet build (`SystemdCgroup = false`). If BPF is still required on your host, ensure `/sys/fs/bpf` is mounted and `/sys/fs/bpf/crun/k8s_io` exists (see [cgroups.md](cgroups.md)).
+8. **`bpf pin to /sys/fs/bpf/crun/k8s_io/...`:** often appears when `SystemdCgroup=true` was enabled for crun. Use a current edgelet build (`SystemdCgroup = false`). If BPF is still required on your host, ensure `/sys/fs/bpf` is mounted and `/sys/fs/bpf/crun/k8s_io` exists (see [cgroups.md](cgroups.md)).
 
 See [cgroups.md](cgroups.md) for the full matrix.
 

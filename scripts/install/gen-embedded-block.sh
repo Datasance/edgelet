@@ -88,6 +88,11 @@ heredoc_writer write_openrc_edgelet_containerd_init \
     "${ROOT}/packaging/init/openrc/edgelet-containerd.init" \
     EDGELET_OPENRC_EDGELET_CONTAINERD_INIT_EOF 755
 
+heredoc_writer write_openrc_edgelet_cgroup_prep_init \
+    /etc/init.d/edgelet-cgroup-prep \
+    "${ROOT}/packaging/init/openrc/edgelet-cgroup-prep.init" \
+    EDGELET_OPENRC_EDGELET_CGROUP_PREP_INIT_EOF 755
+
 heredoc_writer write_procd_edgelet \
     /etc/init.d/edgelet \
     "${ROOT}/packaging/init/procd/edgelet" \
@@ -223,12 +228,18 @@ install_init_unit() {
         openrc)
             if [ -n "${_root}" ]; then
                 install -m 755 "${_root}/openrc/edgelet.init" /etc/init.d/edgelet
+                if [ -f "${_root}/openrc/edgelet-cgroup-prep.init" ]; then
+                    install -m 755 "${_root}/openrc/edgelet-cgroup-prep.init" /etc/init.d/edgelet-cgroup-prep
+                    rc-update add edgelet-cgroup-prep sysinit 2>/dev/null || true
+                fi
                 if [ -f "${_root}/openrc/edgelet-containerd.init" ]; then
                     install -m 755 "${_root}/openrc/edgelet-containerd.init" /etc/init.d/edgelet-containerd
                 fi
             else
                 write_openrc_edgelet_init
+                write_openrc_edgelet_cgroup_prep_init
                 write_openrc_edgelet_containerd_init
+                rc-update add edgelet-cgroup-prep sysinit 2>/dev/null || true
             fi
             apply_openrc_engine_deps "${_eng}" /etc/init.d/edgelet
             chmod 755 /etc/init.d/edgelet

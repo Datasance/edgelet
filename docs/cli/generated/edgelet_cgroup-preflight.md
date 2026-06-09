@@ -4,7 +4,7 @@ Validate cgroup mounts and delegation before start
 
 ### Synopsis
 
-Runs cgroup detect + preflight checks used by init start_pre hooks. Does not mutate cgroups.
+Runs cgroup detect + light preflight checks used by init start_pre hooks. Does not mutate cgroups.
 
 ```
 edgelet cgroup-preflight [flags]

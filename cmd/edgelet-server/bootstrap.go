@@ -109,7 +109,7 @@ func wrapBootstrapErr(stage string, err error) error {
 
 func wrapBootstrapContainerdStartErr(err error) error {
 	if err == nil {
-		return errors.New("embedded containerd Start returned no error detail")
+		return fmt.Errorf("embedded containerd exited before ready: %w", containerd.ErrContainerdExitedEarly)
 	}
 	switch {
 	case errors.Is(err, containerd.ErrContainerdSpawnFailure):

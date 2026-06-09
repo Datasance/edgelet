@@ -4,9 +4,10 @@ import "fmt"
 
 // ErrDelegation indicates required cgroup controllers are not delegated to edgelet.
 type ErrDelegation struct {
-	Controller string
-	Nested     bool
-	Mode       Mode
+	Controller  string
+	Nested      bool // workload container (docker/k8s dev image)
+	MachineRoot bool // LXC/VM machine root without delegation
+	Mode        Mode
 }
 
 func (e *ErrDelegation) Error() string {
@@ -16,6 +17,9 @@ func (e *ErrDelegation) Error() string {
 	base := fmt.Sprintf("controller %s is not available", e.Controller)
 	if e.Nested {
 		return base + ": nested edgelet container requires `docker run --privileged` so cpu/memory/pids controllers are delegated; see docs/edgelet/cgroups.md"
+	}
+	if e.MachineRoot {
+		return base + ": LXC/VM machine root lacks delegated cgroup controllers; on OpenRC ensure edgelet-cgroup-prep runs at sysinit (reinstall edgelet); see docs/edgelet/troubleshooting.md"
 	}
 	switch e.Mode {
 	case ModeHybrid:
@@ -32,13 +36,14 @@ func MapRuntimeError(err error, policy *CgroupPolicy) error {
 	}
 	msg := err.Error()
 	nested := policy != nil && policy.Nested
+	machineRoot := policy != nil && policy.MachineRoot
 	mode := ModeUnknown
 	if policy != nil {
 		mode = policy.Mode
 	}
 	for _, ctrl := range []string{"cpu", "memory", "pids", "cpuset", "io"} {
 		if containsControllerUnavailable(msg, ctrl) {
-			return &ErrDelegation{Controller: ctrl, Nested: nested, Mode: mode}
+			return &ErrDelegation{Controller: ctrl, Nested: nested, MachineRoot: machineRoot, Mode: mode}
 		}
 	}
 	return err

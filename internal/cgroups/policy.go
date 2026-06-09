@@ -29,6 +29,7 @@ type CgroupPolicy struct {
 	Mode                 Mode
 	Driver               Driver
 	Nested               bool
+	MachineRoot          bool
 	SystemdCgroup        bool
 	UnifiedMountpoint    string
 	AgentCgroupPath      string
@@ -87,6 +88,17 @@ func SnapshotFromPolicy(p *CgroupPolicy) Snapshot {
 // GetSnapshot returns diagnostics for the active policy.
 func GetSnapshot() Snapshot {
 	return SnapshotFromPolicy(GetGlobalPolicy())
+}
+
+// NeedsEdgeletCgroupParentPrep reports whether /edgelet must be prepared before agent subtrees.
+func NeedsEdgeletCgroupParentPrep(policy *CgroupPolicy) bool {
+	if policy == nil {
+		return false
+	}
+	if policy.Nested {
+		return true
+	}
+	return policy.MachineRoot && policy.Driver == DriverCgroupfs
 }
 
 func joinControllers(controllers []string) string {

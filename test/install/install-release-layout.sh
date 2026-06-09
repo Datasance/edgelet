@@ -4,14 +4,14 @@
 # Proves the monolithic install.sh needs no sibling scripts/lib or packaging/init tree.
 #
 # Usage:
-#   ./scripts/release-binaries.sh v1.0.0-beta.1-test   # when build/edgelet-linux-<arch> exists
+#   ./scripts/release-binaries.sh v1.0.0-beta.2-test   # when build/edgelet-linux-<arch> exists
 #   sudo ./test/install/install-release-layout.sh
 #   sudo ./test/install/install-release-layout.sh --arch=arm64
 #
 # Requires: Linux, root (uid 0).
 # On macOS (Darwin): run inside a Lima VM with the repo home mount, e.g.:
 #   make build-linux-arm64
-#   ./scripts/release-binaries.sh v1.0.0-beta.1-test
+#   ./scripts/release-binaries.sh v1.0.0-beta.2-test
 #   limactl shell edgelet-test -- sudo bash -c \
 #     'cd '"$(pwd)"' && ./test/install/install-release-layout.sh --arch=arm64'
 
@@ -61,8 +61,8 @@ BIN="${REPO_ROOT}/build/edgelet-linux-${ARCH}"
 
 DIST_INSTALL="${REPO_ROOT}/dist/install.sh"
 if [[ ! -f "${DIST_INSTALL}" ]]; then
-    echo ">>> dist/install.sh missing — running scripts/release-binaries.sh v1.0.0-beta.1-test"
-    "${REPO_ROOT}/scripts/release-binaries.sh" "v1.0.0-beta.1-test"
+    echo ">>> dist/install.sh missing — running scripts/release-binaries.sh v1.0.0-beta.2-test"
+    "${REPO_ROOT}/scripts/release-binaries.sh" "v1.0.0-beta.2-test"
 fi
 [[ -f "${DIST_INSTALL}" ]] || { echo "ERROR: missing ${DIST_INSTALL}" >&2; exit 1; }
 

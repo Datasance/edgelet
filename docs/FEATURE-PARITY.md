@@ -1,6 +1,6 @@
 # Edgelet feature checklist
 
-This document tracks implemented Edgelet capabilities for the v1.0.0-beta.1 release.
+This document tracks implemented Edgelet capabilities for the v1.0.0-beta.2 release.
 
 ## Core Features
 
