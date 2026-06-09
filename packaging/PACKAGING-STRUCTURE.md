@@ -26,7 +26,7 @@ No DEB/RPM. Install via **`install.sh`**; remove via **`uninstall.sh`**.
 | `SHA256SUMS` | Checksums for all of the above + samples |
 | `edgelet-config.yaml.sample` | Default config template |
 | `edgelet-controller-ca.crt.sample` | Lab bootstrap CA |
-| `install.sh` / `uninstall.sh` | On-node lifecycle scripts |
+| `install.sh` / `uninstall.sh` | **Self-contained** on-node lifecycle monoliths (curl-safe; no sibling helper tree) |
 
 **Not published:** `.tar.gz` bundles, `install-minimal.sh`, DEB/RPM.
 
@@ -49,7 +49,7 @@ Script: `scripts/release-binaries.sh` (replaces `release-tarballs.sh`).
 | Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `Program Files\Edgelet\edgelet.exe` |
 | Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config.yaml` |
 | OTA | `/var/backups/edgelet/` | — | — |
-| Scripts | `/usr/share/edgelet/` | optional | optional |
+| Scripts + samples | `/usr/share/edgelet/install.sh`, `uninstall.sh`, `edgelet-config.yaml.sample`, `edgelet-controller-ca.crt.sample` | optional | optional |
 
 ---
 
@@ -103,7 +103,7 @@ Under `packaging/init/`:
 | s6 | `s6/run`, `s6/finish` |
 | runit | `runit/run`, `runit/finish` |
 
-Helpers: `scripts/lib/init-detect.sh`, `scripts/lib/init-edgelet.sh`, `scripts/edgelet-shutdown` → `/usr/libexec/edgelet/edgelet-shutdown`; CLI: `edgelet shutdown`, `edgelet cgroup-preflight`.
+**Install-time delivery:** `install.sh` embeds init templates and writes units to the detected init system. Shutdown helper → `/usr/libexec/edgelet/edgelet-shutdown`. Authoring inputs: `scripts/lib/*.sh`, `packaging/init/**`, `scripts/edgelet-shutdown` (assembled into monolithic `install.sh`; **not** copied to `/usr/share/edgelet/`). CLI: `edgelet shutdown`, `edgelet cgroup-preflight`.
 
 Operator matrix: `docs/edgelet/init-systems.md` (Plan 10). IT: `test/init/README.md`.
 
