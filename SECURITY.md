@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| `v1.0.0-beta.0` and later pre-releases on `develop` | Yes |
+| `v1.0.0-beta.1` and later pre-releases on `develop` | Yes |
 | Earlier migration / dev builds | No |
 
 ## Reporting a vulnerability
@@ -41,7 +41,7 @@ make vulncheck       # govulncheck@v1.1.4 + go mod verify
 
 ## Known vulnerability exceptions
 
-The following findings are **documented exceptions** accepted for `v1.0.0-beta.0`. They are enforced by `scripts/vulncheck.sh` (keep `ALLOWED_VULNS` in sync with this table).
+The following findings are **documented exceptions** accepted for `v1.0.0-beta.1`. They are enforced by `scripts/vulncheck.sh` (keep `ALLOWED_VULNS` in sync with this table).
 
 | ID | CVE | Component | Rationale | Fix timeline |
 |----|-----|-----------|-----------|--------------|
