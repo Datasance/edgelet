@@ -7,6 +7,7 @@
 [![Binary size](https://img.shields.io/badge/linux%20thin-~35%20MiB-informational)](https://github.com/eclipse-iofog/edgelet/releases)
 [![govulncheck](https://github.com/eclipse-iofog/edgelet/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/eclipse-iofog/edgelet/actions/workflows/govulncheck.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/eclipse-iofog/edgelet/badge)](https://securityscorecards.dev/viewer/?uri=github.com/eclipse-iofog/edgelet)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13141/badge)](https://www.bestpractices.dev/en/projects/13141)
 [![codecov](https://img.shields.io/badge/codecov-post--beta-lightgrey)](https://codecov.io/gh/eclipse-iofog/edgelet)
 
 **Upstream:** [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet) · **Datasance distribution:** [Datasance/edgelet](https://github.com/Datasance/edgelet)
