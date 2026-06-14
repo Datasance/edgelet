@@ -21,6 +21,7 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/store"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/eclipse-iofog/edgelet/internal/version"
 	"github.com/eclipse-iofog/edgelet/internal/volumemount"
 )
 
@@ -77,6 +78,8 @@ type FieldAgent struct {
 
 	// test hook: allows status POST override in unit tests.
 	postStatusFn func(ctx context.Context, status map[string]any) error
+
+	controllerRegister *controllerRegisterState
 }
 
 var (
@@ -97,6 +100,7 @@ func GetInstance() *FieldAgent {
 			currentMicroservices: make([]*models.Microservice, 0),
 			registries:           make([]*models.Registry, 0),
 			containerConfigMap:   make(map[string]string),
+			controllerRegister:   newControllerRegisterState(),
 		}
 	})
 	return instance
@@ -115,6 +119,8 @@ func (fa *FieldAgent) Start() error {
 	fa.apiClient = apiClient
 	logging.LogDebug(moduleName, "API client initialized")
 
+	version.GetInstance().SetVersionRefreshFunc(fa.fetchControllerVersion)
+
 	// Initialize Orchestrator
 	fa.orchestrator = NewOrchestrator(apiClient)
 	logging.LogDebug(moduleName, "Orchestrator initialized")
@@ -131,6 +137,7 @@ func (fa *FieldAgent) Start() error {
 		cfg.PrivateKey = ""
 		auth.GetJWTManager().Reset()
 	}
+	fa.hydrateControllerRegisterState()
 
 	// Enforce invariant: unprovisioned agent cannot keep edge guard enabled.
 	if cfg.IOFogUUID == "" && cfg.EdgeGuardFrequency > 0 {
@@ -190,6 +197,8 @@ func (fa *FieldAgent) Start() error {
 	if err := auth.EnsureEdgeletAPITokenForCurrentState(); err != nil {
 		return fmt.Errorf("failed to reconcile edgelet-api JWT token: %w", err)
 	}
+
+	fa.maybeReprovisionAfterOTA()
 
 	// Ping controller
 	logging.LogDebug(moduleName, "Pinging controller to verify connectivity")
@@ -268,13 +277,14 @@ func (fa *FieldAgent) Start() error {
 
 	// Start background workers
 	logging.LogDebug(moduleName, "Starting background workers")
-	fa.wg.Add(6)
+	fa.wg.Add(7)
 	go fa.pingControllerWorker()
 	go fa.runChangesWorker()
 	go fa.postStatusWorker()
 	go fa.upgradeScanWorker()
 	go fa.localAPITokenRotationWorker()
 	go fa.serviceAccountTokenRotationWorker()
+	go fa.controllerRegisterWorker()
 
 	logging.LogInfo(moduleName, "Field Agent started successfully")
 	return nil
@@ -341,14 +351,19 @@ func (fa *FieldAgent) SetProcessManager(pm *processmanager.ProcessManager) {
 	fa.processManager = pm
 }
 
+// SetControllerStatus updates the agent controller connection status.
+func (fa *FieldAgent) SetControllerStatus(status models.ControllerStatus) {
+	fa.state.SetControllerStatus(status)
+}
+
 // NotProvisioned checks if the agent is not provisioned
 func (fa *FieldAgent) NotProvisioned() bool {
 	logging.LogDebug(moduleName, "Started checking provisioned")
 	status := fa.state.GetControllerStatus()
 	notProvisioned := status == models.ControllerStatusNotProvisioned
-	if notProvisioned {
-		logging.LogWarn(moduleName, "Not provisioned")
-	}
+	// if notProvisioned {
+	// 	logging.LogWarn(moduleName, "Not provisioned")
+	// }
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished checking provisioned: %v", !notProvisioned))
 	return notProvisioned
 }
@@ -451,7 +466,7 @@ func (fa *FieldAgent) ping() bool {
 
 	if fa.NotProvisioned() {
 		logging.LogDebug(moduleName, "Agent not provisioned, skipping ping")
-		logging.LogInfo(moduleName, "Finished Ping: false (not provisioned)")
+		// logging.LogInfo(moduleName, "Finished Ping: false (not provisioned)")
 		return false
 	}
 
@@ -886,6 +901,8 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 
 		// Clear service-account token projections and metadata.
 		serviceaccount.GetInstance().Clear()
+
+		fa.resetControllerRegisterState()
 
 		// Run again after runtime cleanup for best-effort convergence.
 		fa.clearSQLiteCacheTablesOnDeprovision(preserveLocal)
