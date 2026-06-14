@@ -115,4 +115,14 @@ fi
     exit 1
 }
 
+[[ -f /usr/share/edgelet/install.sh ]] || {
+    echo "ERROR: /usr/share/edgelet/install.sh missing (OTA path)" >&2
+    exit 1
+}
+
+[[ -f /usr/share/edgelet/uninstall.sh ]] || {
+    echo "ERROR: /usr/share/edgelet/uninstall.sh missing" >&2
+    exit 1
+}
+
 echo ">>> PASS: curl pipe install"

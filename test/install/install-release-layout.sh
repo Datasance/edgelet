@@ -121,4 +121,9 @@ fi
     exit 1
 }
 
+[[ -f /usr/share/edgelet/uninstall.sh ]] || {
+    echo "ERROR: /usr/share/edgelet/uninstall.sh missing" >&2
+    exit 1
+}
+
 echo ">>> PASS: release-layout install (install.sh + binary only)"

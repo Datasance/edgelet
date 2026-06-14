@@ -4,13 +4,46 @@
 # Usage:
 #   sudo sh uninstall.sh [--remove-data]
 #
-# --remove-data  also removes /var/lib/edgelet, /var/lib/edgelet-containerd,
-#               /run/edgelet, /var/log/edgelet, /etc/edgelet, /var/backups/edgelet
+# --remove-data  also removes config, data, runtime, logs, and backup directories
 
 set -e
 
 die() { echo "ERROR: $1" >&2; exit 1; }
 info() { echo ">>> $1"; }
+
+detect_os() {
+    _u=$(uname -s)
+    case "${_u}" in
+        Linux)  echo "linux" ;;
+        Darwin) echo "darwin" ;;
+        MINGW*|MSYS*|CYGWIN*|Windows_NT) echo "windows" ;;
+        *) die "Unsupported OS: ${_u}" ;;
+    esac
+}
+
+windows_program_data_edgelet() {
+    echo "${ProgramData:-/c/ProgramData}/Edgelet"
+}
+
+share_dir_for_os() {
+    case "$1" in
+        linux)  echo "/usr/share/edgelet" ;;
+        darwin) echo "/usr/local/share/edgelet" ;;
+        windows) echo "$(windows_program_data_edgelet)/scripts" ;;
+        *) die "Unsupported OS: $1" ;;
+    esac
+}
+
+binary_path_for_os() {
+    case "$1" in
+        linux|darwin) echo "/usr/local/bin/edgelet" ;;
+        windows)
+            _pf="${ProgramFiles:-/c/Program Files}"
+            echo "${_pf}/Edgelet/edgelet.exe"
+            ;;
+        *) die "Unsupported OS: $1" ;;
+    esac
+}
 
 # OpenRC ships /sbin/openrc-run on Alpine even when PID 1 is busybox (Lima
 # template:alpine). Require a running OpenRC supervisor, not merely openrc-run.
@@ -71,6 +104,10 @@ detect_init() {
 }
 
 [ "$(id -u)" -eq 0 ] || die "Must be run as root. Try: sudo $0 $*"
+
+OS=$(detect_os)
+SHARE_DIR=$(share_dir_for_os "$OS")
+BINARY_PATH=$(binary_path_for_os "$OS")
 
 REMOVE_DATA=false
 for arg in "$@"; do
@@ -155,7 +192,7 @@ lazy_umount_edgelet() {
     if ! command -v umount >/dev/null 2>&1; then
         return 0
     fi
-    mount 2>/dev/null | grep -E '/run/edgelet|/var/lib/edgelet' | awk '{print $3}' | \
+    mount 2>/dev/null | grep -E '/run/edgelet|/var/run/edgelet|/var/lib/edgelet' | awk '{print $3}' | \
         sort -r | while read -r mp; do
             [ -n "$mp" ] || continue
             umount -l "${mp}" 2>/dev/null || true
@@ -197,33 +234,75 @@ remove_init_service() {
 remove_init_service
 lazy_umount_edgelet
 
-rm -f /usr/local/bin/edgelet
+rm -f "$BINARY_PATH"
 info "Binary removed."
 
-rm -rf /usr/libexec/edgelet
-info "Init helpers removed from /usr/libexec/edgelet/"
+case "$OS" in
+    linux)
+        rm -rf /usr/libexec/edgelet
+        info "Init helpers removed from /usr/libexec/edgelet/"
+        ;;
+esac
 
-rm -rf /usr/share/edgelet
-info "Bundled scripts removed from /usr/share/edgelet/"
+rm -rf "$SHARE_DIR"
+info "Bundled scripts removed from ${SHARE_DIR}/"
 
 if [ "${REMOVE_DATA}" = "true" ]; then
     info "Removing agent data directories..."
     lazy_umount_edgelet
-    rm -rf /var/lib/edgelet
-    rm -rf /var/lib/edgelet-containerd
-    rm -rf /run/edgelet
-    rm -rf /var/log/edgelet
-    rm -rf /var/backups/edgelet
-    rm -rf /etc/edgelet
+    case "$OS" in
+        linux)
+            rm -rf /var/lib/edgelet
+            rm -rf /var/lib/edgelet-containerd
+            rm -rf /run/edgelet
+            rm -rf /var/log/edgelet
+            rm -rf /var/backups/edgelet
+            rm -rf /etc/edgelet
+            ;;
+        darwin)
+            rm -rf /var/lib/edgelet
+            rm -rf /var/run/edgelet
+            rm -rf /var/log/edgelet
+            rm -rf /var/backups/edgelet
+            rm -rf /etc/edgelet
+            ;;
+        windows)
+            _pd=$(windows_program_data_edgelet)
+            rm -rf "${_pd}/data"
+            rm -rf "${_pd}/config"
+            rm -rf "${_pd}/run"
+            rm -rf "${_pd}/log"
+            rm -rf "${_pd}/scripts"
+            rm -rf "${_pd}"
+            ;;
+    esac
     info "Data, backups, and configuration removed."
 else
     info "Data directories preserved (use --remove-data to remove):"
-    info "  /var/lib/edgelet"
-    info "  /var/lib/edgelet-containerd"
-    info "  /run/edgelet"
-    info "  /var/log/edgelet"
-    info "  /var/backups/edgelet"
-    info "  /etc/edgelet"
+    case "$OS" in
+        linux)
+            info "  /var/lib/edgelet"
+            info "  /var/lib/edgelet-containerd"
+            info "  /run/edgelet"
+            info "  /var/log/edgelet"
+            info "  /var/backups/edgelet"
+            info "  /etc/edgelet"
+            ;;
+        darwin)
+            info "  /var/lib/edgelet"
+            info "  /var/run/edgelet"
+            info "  /var/log/edgelet"
+            info "  /var/backups/edgelet"
+            info "  /etc/edgelet"
+            ;;
+        windows)
+            _pd=$(windows_program_data_edgelet)
+            info "  ${_pd}/data"
+            info "  ${_pd}/config"
+            info "  ${_pd}/run"
+            info "  ${_pd}/log"
+            ;;
+    esac
 fi
 
 info ""
