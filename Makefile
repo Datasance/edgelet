@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test test-linux lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -95,7 +95,7 @@ cli-help-check: ## Fail if CLI help regression tests fail
 	@go test ./internal/cli/cmd/ -run '^TestHelp_' -count=1
 
 install-scripts: ## Regenerate monolithic install.sh from authoring inputs
-	@chmod +x scripts/assemble-install.sh scripts/install/gen-embedded-block.sh
+	@chmod +x scripts/assemble-install.sh scripts/install/gen-embedded-block.sh scripts/install/gen-embedded-uninstall-block.sh scripts/install/gen-embedded-install-self-block.sh
 	@./scripts/assemble-install.sh
 
 install-scripts-check: install-scripts ## Fail if install.sh drift from assemble
@@ -181,6 +181,10 @@ test-unit: ## Run unit tests only (skip integration tests)
 test-integration: ## Run integration tests
 	@echo "Running integration tests..."
 	@go test -v ./test/integration/...
+
+test-linux: ## Run make test-unit in Linux Docker (CI Test job parity; GOARCH=host arch)
+	@chmod +x scripts/test-linux.sh
+	@GOARCH=$${GOARCH:-$$(go env GOARCH)} scripts/test-linux.sh
 
 test-embedded: ## Run embedded-containerd integration tests in a Lima VM (macOS only)
 	@echo "Running embedded containerd integration tests..."
@@ -484,11 +488,11 @@ security-code: ## Run static Go security analysis (gosec)
 	fi
 	@gosec -exclude-dir=build $(GOSEC_SCOPE)
 
-quality-linux-arm64: ## Run lint, vulncheck, security-code in Linux arm64 Docker
+quality-linux-arm64: test-linux ## Run test-linux and then lint, vulncheck, security-code in Linux arm64 Docker
 	@chmod +x scripts/quality-linux.sh
 	@GOARCH=arm64 scripts/quality-linux.sh
 
-quality-linux-amd64: ## Run lint, vulncheck, security-code in Linux amd64 Docker
+quality-linux-amd64: test-linux ## Run test-linux and then lint, vulncheck, security-code in Linux amd64 Docker
 	@chmod +x scripts/quality-linux.sh
 	@GOARCH=amd64 scripts/quality-linux.sh
 

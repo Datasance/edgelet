@@ -1,6 +1,6 @@
 # Edgelet
 
-[![CI](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci-go.yml/badge.svg)](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci-go.yml)
+[![CI](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci.yml/badge.svg)](https://github.com/eclipse-iofog/edgelet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/eclipse-iofog/edgelet?include_prereleases)](https://github.com/eclipse-iofog/edgelet/releases)
 [![Go](https://img.shields.io/badge/Go-1.26.4-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-EPL--2.0-blue.svg)](LICENSE)
@@ -190,6 +190,17 @@ sudo ./install.sh --version=v1.0.0-beta.2
 
 Release artifacts per tag: seven binaries (`edgelet-linux-<arch>`, `edgelet-darwin-<arch>`, `edgelet-windows-amd64.exe`), `SHA256SUMS`, `install.sh`, `uninstall.sh`, and config/CA samples.
 
+### Install paths
+
+| Purpose | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `%ProgramFiles%\Edgelet\edgelet.exe` |
+| Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config\config.yaml` |
+| Data | `/var/lib/edgelet/` | `/var/lib/edgelet/` | `%ProgramData%\Edgelet\data\` |
+| Runtime | `/run/edgelet/` | `/var/run/edgelet/` | `%ProgramData%\Edgelet\run\` |
+| Logs | `/var/log/edgelet/` | `/var/log/edgelet/` | `%ProgramData%\Edgelet\log\` |
+| Scripts | `/usr/share/edgelet/` | `/usr/local/share/edgelet/` | `%ProgramData%\Edgelet\scripts\` |
+
 ```bash
 sudo edgelet init-config                     # default config if missing
 edgelet daemon                               # foreground
@@ -228,7 +239,7 @@ Controller REST (field agent) uses `/api/v3/...` on the controller URL — separ
 
 | Workflow | Purpose |
 |----------|---------|
-| [`.github/workflows/ci-go.yml`](.github/workflows/ci-go.yml) | Build, lint, unit tests |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Build, lint, unit tests |
 | [`.github/workflows/govulncheck.yml`](.github/workflows/govulncheck.yml) | Dependency vulnerability scan |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | Release matrix on tag push |
 
