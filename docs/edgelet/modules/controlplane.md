@@ -36,12 +36,12 @@ Does **not** run HTTP or containers directly.
 | UUID | Generated controller UUID (stable in SQLite) |
 | `IsController` | `true`, `IsSystem` |
 | Host API port | **51121** → `spec.controller.port` (default 51121) |
-| Host viewer port | **80** → `spec.ecnViewerPort` (default 8008) |
+| Host console port | **80** → `spec.console.port` (default 8008) |
 | Volumes | `iofog-controller-db`, `iofog-controller-log` |
-| HTTPS | Optional bind mount to `/etc/iofog/controller-cert/` |
+| TLS | Optional bind mount to `/etc/iofog/controller-cert/` |
 | Registry | `RegistryID = 2` (local default) |
 
-Constants in `runtime.go`: `HostAPIPort`, `HostViewerPort`, volume names, container paths.
+Constants in `runtime.go`: `HostAPIPort`, `HostConsolePort`, volume names, container paths.
 
 ## Environment
 

@@ -27,15 +27,25 @@ func (m *ControlPlaneManifest) MaskSecrets() {
 	if m == nil {
 		return
 	}
-	m.Spec.Auth.ControllerSecret = maskSecretValue(m.Spec.Auth.ControllerSecret)
+	if m.Spec.Auth != nil {
+		if m.Spec.Auth.Bootstrap != nil {
+			m.Spec.Auth.Bootstrap.Password = maskSecretValue(m.Spec.Auth.Bootstrap.Password)
+		}
+		if m.Spec.Auth.Client != nil {
+			m.Spec.Auth.Client.Secret = maskSecretValue(m.Spec.Auth.Client.Secret)
+		}
+		if m.Spec.Auth.SessionStore != nil {
+			m.Spec.Auth.SessionStore.Secret = maskSecretValue(m.Spec.Auth.SessionStore.Secret)
+		}
+	}
 	if m.Spec.Database != nil {
 		m.Spec.Database.Password = maskSecretValue(m.Spec.Database.Password)
 		m.Spec.Database.CA = maskSecretValue(m.Spec.Database.CA)
 	}
-	if m.Spec.HTTPS != nil && m.Spec.HTTPS.Base64 != nil {
-		m.Spec.HTTPS.Base64.Cert = maskSecretValue(m.Spec.HTTPS.Base64.Cert)
-		m.Spec.HTTPS.Base64.Key = maskSecretValue(m.Spec.HTTPS.Base64.Key)
-		m.Spec.HTTPS.Base64.CA = maskSecretValue(m.Spec.HTTPS.Base64.CA)
+	if m.Spec.TLS != nil && m.Spec.TLS.Base64 != nil {
+		m.Spec.TLS.Base64.Cert = maskSecretValue(m.Spec.TLS.Base64.Cert)
+		m.Spec.TLS.Base64.Key = maskSecretValue(m.Spec.TLS.Base64.Key)
+		m.Spec.TLS.Base64.CA = maskSecretValue(m.Spec.TLS.Base64.CA)
 	}
 	if m.Spec.Vault != nil {
 		if m.Spec.Vault.Hashicorp != nil {

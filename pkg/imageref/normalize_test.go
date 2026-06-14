@@ -52,6 +52,23 @@ func TestResolveKeepsQualifiedRef(t *testing.T) {
 	}
 }
 
+func TestMatchDockerHubShortAndQualified(t *testing.T) {
+	if !Match(
+		"emirhandurmus/controller:3.8.0-beta.1",
+		"docker.io/emirhandurmus/controller:3.8.0-beta.1",
+		"docker.io",
+		false,
+	) {
+		t.Fatal("expected docker hub short and qualified refs to match")
+	}
+}
+
+func TestMatchPrivateRegistryDoesNotMatchDockerHubAlias(t *testing.T) {
+	if Match("myapp:1.0", "docker.io/myapp:1.0", "registry.local:5000", false) {
+		t.Fatal("private registry hostless ref must not match docker.io alias")
+	}
+}
+
 func TestResolveDockerHubFullyQualifiedIncludesShortAlias(t *testing.T) {
 	_, lookup := Resolve("docker.io/library/alpine:3.19", "from_cache", true)
 	foundShort := false

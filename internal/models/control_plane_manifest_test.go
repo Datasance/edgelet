@@ -9,13 +9,16 @@ import (
 	"testing"
 )
 
+const controlPlaneTestImage = "ghcr.io/datasance/controller:3.8.0-beta.0"
+
 func validControlPlaneManifestForTest() *ControlPlaneManifest {
 	doc := &ControlPlaneManifest{}
 	doc.APIVersion = controlPlaneAPIVersion
 	doc.Kind = controlPlaneKind
 	doc.Metadata.Name = "pot"
 	doc.Metadata.Namespace = "default"
-	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
+	doc.Spec.Controller.Image = controlPlaneTestImage
+	doc.Spec.Auth = ValidEmbeddedAuthForTest()
 	return doc
 }
 
@@ -23,6 +26,76 @@ func TestControlPlaneManifestValidate_Minimal(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
 	if err := doc.Validate(); err != nil {
 		t.Fatalf("expected minimal manifest to pass: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_RequiresAuth(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth = nil
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth is required") {
+		t.Fatalf("expected auth required error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_RequiresAuthMode(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Mode = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.mode is required") {
+		t.Fatalf("expected auth mode required error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_EmbeddedRequiresBootstrapUsername(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Bootstrap.Username = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.bootstrap.username is required") {
+		t.Fatalf("expected bootstrap username error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_EmbeddedPasswordComplexity(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Bootstrap.Password = "short"
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), bootstrapPasswordComplexityMessage) {
+		t.Fatalf("expected password complexity error, got: %v", err)
+	}
+
+	doc.Spec.Auth.Bootstrap.Password = "alllowercase12!"
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), bootstrapPasswordComplexityMessage) {
+		t.Fatalf("expected missing uppercase error, got: %v", err)
+	}
+
+	doc.Spec.Auth.Bootstrap.Password = "NoSpecialChar12"
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), bootstrapPasswordComplexityMessage) {
+		t.Fatalf("expected missing special char error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_ExternalRequiresClientAndIssuer(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Mode = "external"
+	doc.Spec.Auth.Bootstrap = nil
+	doc.Spec.Auth.IssuerURL = "https://auth.example.com/realms/pot"
+	doc.Spec.Auth.Client = &ControlPlaneAuthClient{ID: "client", Secret: "secret"}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("expected valid external auth, got: %v", err)
+	}
+
+	doc.Spec.Auth.IssuerURL = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.issuerUrl is required") {
+		t.Fatalf("expected issuerUrl error, got: %v", err)
+	}
+
+	doc.Spec.Auth.IssuerURL = "https://auth.example.com/realms/pot"
+	doc.Spec.Auth.Client.ID = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.client.id is required") {
+		t.Fatalf("expected client.id error, got: %v", err)
+	}
+
+	doc.Spec.Auth.Client.ID = "client"
+	doc.Spec.Auth.Client.Secret = ""
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.client.secret is required") {
+		t.Fatalf("expected client.secret error, got: %v", err)
 	}
 }
 
@@ -50,7 +123,12 @@ metadata:
   name: pot
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: AdminPass123!
   siteCA:
     cert: ignored
 `
@@ -68,7 +146,12 @@ metadata:
   name: pot
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: AdminPass123!
   localCA:
     cert: ignored
 `
@@ -78,21 +161,142 @@ spec:
 	}
 }
 
-func TestControlPlaneManifestValidate_HTTPSEmptyBlockAllowed(t *testing.T) {
-	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{}
-	if err := doc.Validate(); err != nil {
-		t.Fatalf("expected empty https block to pass: %v", err)
+func TestParseControlPlaneManifest_RejectsMissingAuth(t *testing.T) {
+	manifest := `
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: pot
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+`
+	_, err := ParseControlPlaneManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "spec.auth is required") {
+		t.Fatalf("expected missing auth error, got: %v", err)
 	}
 }
 
-func TestControlPlaneManifestValidate_HTTPSPathAndBase64MutuallyExclusive(t *testing.T) {
+func TestParseControlPlaneManifest_RejectsLegacyAuthURL(t *testing.T) {
+	manifest := `
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: pot
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: external
+    url: https://auth.example.com/
+    bootstrap:
+      username: admin
+      password: AdminPass123!
+`
+	_, err := ParseControlPlaneManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "url") {
+		t.Fatalf("expected legacy auth.url rejection, got: %v", err)
+	}
+}
+
+func TestParseControlPlaneManifest_RejectsLegacyAuthExternal(t *testing.T) {
+	manifest := `
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: pot
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: external
+    external:
+      issuerUrl: https://auth.example.com/
+      clientId: client
+      clientSecret: secret
+`
+	_, err := ParseControlPlaneManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "external") {
+		t.Fatalf("expected legacy auth.external rejection, got: %v", err)
+	}
+}
+
+func TestParseControlPlaneManifest_RejectsLegacyECNViewerPort(t *testing.T) {
+	manifest := `
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: pot
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: AdminPass123!
+  ecnViewerPort: 8008
+`
+	_, err := ParseControlPlaneManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "ecnViewerPort") {
+		t.Fatalf("expected legacy ecnViewerPort rejection, got: %v", err)
+	}
+}
+
+func TestParseControlPlaneManifest_RejectsLegacyHTTPS(t *testing.T) {
+	manifest := `
+apiVersion: edgelet.iofog.org/v1
+kind: ControlPlane
+metadata:
+  name: pot
+spec:
+  controller:
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: AdminPass123!
+  https:
+    path: /etc/certs
+`
+	_, err := ParseControlPlaneManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("expected legacy spec.https rejection, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_InvalidAuthMode(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Mode = "keycloak"
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.mode must be embedded or external") {
+		t.Fatalf("expected auth mode error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_InvalidSessionStoreType(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.SessionStore = &ControlPlaneAuthSessionStore{Type: "redis"}
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "spec.auth.sessionStore.type must be memory or database") {
+		t.Fatalf("expected session store type error, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_TLSEmptyBlockAllowed(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.TLS = &ControlPlaneTLSConfig{}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("expected empty tls block to pass: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_TLSPathAndBase64MutuallyExclusive(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
 	dir := t.TempDir()
 	writeControlPlaneCertFiles(t, dir, false)
-	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{
+	doc.Spec.TLS = &ControlPlaneTLSConfig{
 		Path: dir,
-		Base64: &ControlPlaneHTTPSBase64{
+		Base64: &ControlPlaneTLSBase64{
 			Cert: base64.StdEncoding.EncodeToString([]byte("cert")),
 			Key:  base64.StdEncoding.EncodeToString([]byte("key")),
 		},
@@ -102,29 +306,29 @@ func TestControlPlaneManifestValidate_HTTPSPathAndBase64MutuallyExclusive(t *tes
 	}
 }
 
-func TestControlPlaneManifestValidate_HTTPSPathRequiresAbsoluteExistingDir(t *testing.T) {
+func TestControlPlaneManifestValidate_TLSPathRequiresAbsoluteExistingDir(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{Path: "relative/certs"}
+	doc.Spec.TLS = &ControlPlaneTLSConfig{Path: "relative/certs"}
 	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("expected absolute path error, got: %v", err)
 	}
 
 	dir := t.TempDir()
-	doc.Spec.HTTPS.Path = dir
+	doc.Spec.TLS.Path = dir
 	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "tls.crt") {
 		t.Fatalf("expected missing tls.crt error, got: %v", err)
 	}
 
 	writeControlPlaneCertFiles(t, dir, true)
 	if err := doc.Validate(); err != nil {
-		t.Fatalf("expected valid https path to pass: %v", err)
+		t.Fatalf("expected valid tls path to pass: %v", err)
 	}
 }
 
-func TestControlPlaneManifestValidate_HTTPSBase64RequiresValidEncoding(t *testing.T) {
+func TestControlPlaneManifestValidate_TLSBase64RequiresValidEncoding(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
-	doc.Spec.HTTPS = &ControlPlaneHTTPSConfig{
-		Base64: &ControlPlaneHTTPSBase64{
+	doc.Spec.TLS = &ControlPlaneTLSConfig{
+		Base64: &ControlPlaneTLSBase64{
 			Cert: "not-base64!!!",
 			Key:  base64.StdEncoding.EncodeToString([]byte("key")),
 		},
@@ -143,16 +347,38 @@ func TestControlPlaneManifestNormalizeDefaults(t *testing.T) {
 	}
 }
 
-func writeControlPlaneCertFiles(t *testing.T, dir string, withCA bool) {
+func TestControlPlaneManifestMaskSecrets(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	doc.Spec.Auth.Client = &ControlPlaneAuthClient{ID: "client", Secret: "top-secret"}
+	doc.Spec.Auth.SessionStore = &ControlPlaneAuthSessionStore{Secret: "session-secret"}
+	doc.Spec.TLS = &ControlPlaneTLSConfig{
+		Base64: &ControlPlaneTLSBase64{Cert: "cert-b64", Key: "key-b64", CA: "ca-b64"},
+	}
+	doc.MaskSecrets()
+	if doc.Spec.Auth.Bootstrap.Password != controlPlaneSecretMask {
+		t.Fatalf("expected masked bootstrap password, got %q", doc.Spec.Auth.Bootstrap.Password)
+	}
+	if doc.Spec.Auth.Client.Secret != controlPlaneSecretMask {
+		t.Fatalf("expected masked client secret, got %q", doc.Spec.Auth.Client.Secret)
+	}
+	if doc.Spec.Auth.SessionStore.Secret != controlPlaneSecretMask {
+		t.Fatalf("expected masked session secret, got %q", doc.Spec.Auth.SessionStore.Secret)
+	}
+	if doc.Spec.TLS.Base64.Key != controlPlaneSecretMask {
+		t.Fatalf("expected masked tls key, got %q", doc.Spec.TLS.Base64.Key)
+	}
+}
+
+func writeControlPlaneCertFiles(t *testing.T, dir string, withIntermediate bool) {
 	t.Helper()
-	for _, name := range []string{ControlPlaneHTTPSCertFilename, ControlPlaneHTTPSKeyFilename} {
+	for _, name := range []string{ControlPlaneTLSCertFilename, ControlPlaneTLSKeyFilename} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("pem"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	if withCA {
-		if err := os.WriteFile(filepath.Join(dir, ControlPlaneHTTPSCAFilename), []byte("ca"), 0o600); err != nil {
-			t.Fatalf("write ca: %v", err)
+	if withIntermediate {
+		if err := os.WriteFile(filepath.Join(dir, ControlPlaneTLSCAFilename), []byte("ca"), 0o600); err != nil {
+			t.Fatalf("write intermediate cert: %v", err)
 		}
 	}
 }
