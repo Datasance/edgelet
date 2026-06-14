@@ -21,6 +21,13 @@ func TestFormatConfigPatchResult_PrintsRejectedKeys(t *testing.T) {
 	}
 }
 
+func TestFormatMutationRoute_SystemReload(t *testing.T) {
+	out := formatMutationRoute("/v1/system/reload", map[string]any{"status": "ok"})
+	if out != "configuration reloaded successfully" {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
 func TestFormatEdgeletAPIHuman_StatusOrder(t *testing.T) {
 	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]any{
 		"controllerUrl":          "u",

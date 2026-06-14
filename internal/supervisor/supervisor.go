@@ -249,8 +249,8 @@ func (s *Supervisor) Start() error {
 
 	// Start Edgelet API Server and wait until listeners are ready.
 	s.localAPI = edgeletapi.GetInstance()
-	// Register Supervisor's ReloadConfig as the config reload callback
-	s.config.SetReloadCallback(s.ReloadConfig)
+	// Register full disk reload (validate, logger, supervisor) as the config reload callback.
+	s.config.SetReloadCallback(s.ReloadFromDisk)
 	// Register FieldAgent GPS callback for dedicated config/gps controller sync.
 	s.config.SetGPSConfigCallback(s.fieldAgent.InstanceGPSConfigUpdated)
 	if err := s.localAPI.Start(); err != nil {
@@ -685,6 +685,15 @@ func (s *Supervisor) GetName() string {
 // GetModuleIndex returns the supervisor module index
 func (s *Supervisor) GetModuleIndex() int {
 	return utils.ProcessManager
+}
+
+// ReloadFromDisk performs a full hot reload: read disk, validate, update logger, notify modules.
+func (s *Supervisor) ReloadFromDisk() error {
+	return config.FullReload(config.ReloadHooks{
+		ConfigPath:    utils.ConfigYAMLPath,
+		BeginReload:   s.BeginConfigReload,
+		NotifyModules: s.ReloadConfig,
+	})
 }
 
 // BeginConfigReload snapshots engine connection settings before LoadConfig replaces them.
