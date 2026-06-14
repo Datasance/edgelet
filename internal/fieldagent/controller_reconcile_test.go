@@ -133,9 +133,9 @@ func TestReconcileControllerMicroservice_IgnoresEquivalentDockerHubImageRef(t *t
 
 	const uuid = "cp-reconcile-image-alias"
 	cp := &models.ControlPlaneDeployment{
-		ControllerUUID:     uuid,
-		Namespace:          "default",
-		Name:               "pot",
+		ControllerUUID: uuid,
+		Namespace:      "default",
+		Name:           "pot",
 		ManifestYAML: `apiVersion: edgelet.iofog.org/v1
 kind: ControlPlane
 metadata:
@@ -187,9 +187,9 @@ func TestReconcileControllerMicroservice_BumpsGenerationOnImageChange(t *testing
 
 	const uuid = "cp-reconcile-image-change"
 	cp := &models.ControlPlaneDeployment{
-		ControllerUUID:     uuid,
-		Namespace:          "default",
-		Name:               "pot",
+		ControllerUUID: uuid,
+		Namespace:      "default",
+		Name:           "pot",
 		ManifestYAML: `apiVersion: edgelet.iofog.org/v1
 kind: ControlPlane
 metadata:
@@ -244,9 +244,9 @@ func TestReconcileControllerMicroservice_BumpsGenerationOnRegistryDrift(t *testi
 
 	const uuid = "cp-reconcile-registry-drift"
 	cp := &models.ControlPlaneDeployment{
-		ControllerUUID:     uuid,
-		Namespace:          "default",
-		Name:               "pot",
+		ControllerUUID: uuid,
+		Namespace:      "default",
+		Name:           "pot",
 		ManifestYAML: `apiVersion: edgelet.iofog.org/v1
 kind: ControlPlane
 metadata:
