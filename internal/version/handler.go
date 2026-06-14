@@ -44,12 +44,16 @@ func ParseVersionCommand(actionData map[string]any) (VersionCommand, error) {
 	}
 }
 
+// RefreshFunc fetches a fresh controller version payload (used for OTA key refresh).
+type RefreshFunc func() (map[string]any, error)
+
 // Handler orchestrates controller-driven OTA via install.sh.
 type Handler struct {
 	manager         *ReleaseManager
 	isContainer     func() bool
 	isDaemonHealthy func() bool
 	startDetached   func(script string, args ...string) error
+	refreshVersion  RefreshFunc
 
 	mu       sync.Mutex
 	otaUntil time.Time
@@ -79,6 +83,14 @@ func GetInstance() *Handler {
 		instance = NewHandler(NewReleaseManager())
 	})
 	return instance
+}
+
+// SetVersionRefreshFunc configures a callback to re-fetch controller version metadata.
+func (h *Handler) SetVersionRefreshFunc(fn RefreshFunc) {
+	if h == nil {
+		return
+	}
+	h.refreshVersion = fn
 }
 
 // ChangeVersion performs a controller-initiated upgrade or rollback.
@@ -117,8 +129,25 @@ func (h *Handler) ChangeVersion(actionData map[string]any) error {
 }
 
 func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData map[string]any, provisionKey string) error {
+	actionData, provisionKey, err := h.refreshVersionActionIfNeeded(actionData, provisionKey)
+	if err != nil {
+		return err
+	}
+
 	if provisionKey != "" {
-		logging.LogInfo(moduleName, fmt.Sprintf("Change version audit provisionKey=%s", provisionKey))
+		pending, err := PendingFromAction(actionData)
+		if err != nil {
+			return fmt.Errorf("OTA reprovision pending: %w", err)
+		}
+		if err := WriteOTAReprovisionPending(
+			pending.ProvisionKey,
+			pending.Command,
+			pending.TargetVersion,
+			pending.ExpirationTime,
+		); err != nil {
+			return fmt.Errorf("write OTA reprovision pending: %w", err)
+		}
+		logging.LogInfo(moduleName, "Wrote OTA reprovision pending file before install.sh")
 	}
 
 	script := h.manager.InstallScriptPath()
@@ -127,7 +156,7 @@ func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData 
 	case VersionCommandUpgrade:
 		args = append(args, "--upgrade")
 		if target := targetVersionFromAction(actionData); target != "" {
-			args = append(args, "--version="+target)
+			args = append(args, "--version="+versionForInstallScript(target))
 		}
 	case VersionCommandRollback:
 		args = append(args, "--rollback")
@@ -145,12 +174,53 @@ func (h *Handler) executeChangeVersionScript(command VersionCommand, actionData 
 	return nil
 }
 
+func (h *Handler) refreshVersionActionIfNeeded(actionData map[string]any, provisionKey string) (map[string]any, string, error) {
+	if provisionKey == "" {
+		return actionData, provisionKey, nil
+	}
+
+	pending, err := PendingFromAction(actionData)
+	if err != nil {
+		return actionData, provisionKey, err
+	}
+	if !pending.NeedsPreflightRefresh(time.Now()) {
+		return actionData, provisionKey, nil
+	}
+	if h.refreshVersion == nil {
+		logging.LogWarn(moduleName, "OTA provision key near expiry but version refresh callback is unset")
+		return actionData, provisionKey, nil
+	}
+
+	raw, err := h.refreshVersion()
+	if err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Pre-flight version refresh failed: %v", err))
+		return actionData, provisionKey, nil
+	}
+
+	refreshed, err := NormalizeVersionResponse(raw)
+	if err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Pre-flight version refresh normalize failed: %v", err))
+		return actionData, provisionKey, nil
+	}
+	if refreshed == nil {
+		return actionData, provisionKey, nil
+	}
+
+	key, ok := refreshed["provisionKey"].(string)
+	if !ok || strings.TrimSpace(key) == "" {
+		return actionData, provisionKey, nil
+	}
+
+	logging.LogInfo(moduleName, "Refreshed OTA provision key before install.sh")
+	return refreshed, key, nil
+}
+
 func (h *Handler) isValidChangeVersionOperation(command VersionCommand, actionData map[string]any) bool {
 	switch command {
 	case VersionCommandUpgrade:
 		return h.IsReadyToUpgradeWithAction(actionData)
 	case VersionCommandRollback:
-		return h.IsReadyToRollback()
+		return h.IsReadyToRollbackWithAction(actionData)
 	default:
 		return false
 	}
@@ -213,6 +283,11 @@ func (h *Handler) containerUpgradeReady(actionData map[string]any) bool {
 
 // IsReadyToRollback reports rollback readiness from previous-release and cache/url.
 func (h *Handler) IsReadyToRollback() bool {
+	return h.IsReadyToRollbackWithAction(nil)
+}
+
+// IsReadyToRollbackWithAction reports rollback readiness for an optional controller target.
+func (h *Handler) IsReadyToRollbackWithAction(actionData map[string]any) bool {
 	logging.LogDebug(moduleName, "Checking is ready to rollback")
 
 	if h.otaInProgress() {
@@ -238,6 +313,16 @@ func (h *Handler) IsReadyToRollback() bool {
 	if err != nil || prev == nil || strings.TrimSpace(prev.PreviousVersion) == "" {
 		logging.LogDebug(moduleName, "Is ready to rollback: false (previous-release unreadable)")
 		return false
+	}
+
+	if target := targetVersionFromAction(actionData); target != "" {
+		if normalizeVersion(prev.PreviousVersion) != normalizeVersion(target) {
+			logging.LogDebug(moduleName, fmt.Sprintf(
+				"Is ready to rollback: false (semver/target %s != previous %s)",
+				target, prev.PreviousVersion,
+			))
+			return false
+		}
 	}
 
 	osName := prev.PreviousOS

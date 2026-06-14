@@ -216,14 +216,19 @@ func (fa *FieldAgent) changeVersion() error {
 		return fmt.Errorf("unable to get version command: %w", err)
 	}
 
-	// Extract version command from result
-	if versionData, ok := result["versionCommand"].(map[string]any); ok {
-		versionHandler := version.GetInstance()
-		if err := versionHandler.ChangeVersion(versionData); err != nil {
-			return fmt.Errorf("failed to change version: %w", err)
-		}
-	} else {
+	// Extract version command from result (flat v3.8 or legacy nested).
+	actionData, err := version.NormalizeVersionResponse(result)
+	if err != nil {
+		return fmt.Errorf("failed to normalize version response: %w", err)
+	}
+	if actionData == nil {
 		logging.LogDebug(moduleName, fmt.Sprintf("Version change result: %+v", result))
+		return nil
+	}
+
+	versionHandler := version.GetInstance()
+	if err := versionHandler.ChangeVersion(actionData); err != nil {
+		return fmt.Errorf("failed to change version: %w", err)
 	}
 
 	logging.LogInfo(moduleName, "Finished change version operation, received from ioFog controller")

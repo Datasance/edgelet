@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
 )
@@ -156,8 +157,11 @@ func TestExecuteChangeVersionScript_LaunchesDetachedInstallSh(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "install.sh")
 	logFile := filepath.Join(dir, "invocation.log")
+	pendingFile := filepath.Join(dir, "ota-reprovision-pending")
 	writeFile(t, script, "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \""+logFile+"\"\n")
 	_ = os.Chmod(script, 0o755)
+	SetOTAReprovisionPendingPath(pendingFile)
+	t.Cleanup(func() { SetOTAReprovisionPendingPath("") })
 
 	var mu sync.Mutex
 	var launched []string
@@ -172,9 +176,16 @@ func TestExecuteChangeVersionScript_LaunchesDetachedInstallSh(t *testing.T) {
 	}
 
 	writeKV(t, filepath.Join(dir, "receipt"), map[string]string{"installed_version": "1.0.0"})
+	expiry := time.Now().Add(20 * time.Minute).UnixMilli()
 	err := h.executeChangeVersionScript(
 		VersionCommandUpgrade,
-		map[string]any{"version": "v2.0.0", "provisionKey": "audit-key"},
+		map[string]any{
+			"version":        "v2.0.0",
+			"semver":         "2.0.0",
+			"provisionKey":   "audit-key",
+			"expirationTime": expiry,
+			"command":        "UPGRADE",
+		},
 		"audit-key",
 	)
 	if err != nil {
@@ -188,6 +199,14 @@ func TestExecuteChangeVersionScript_LaunchesDetachedInstallSh(t *testing.T) {
 	}
 	if !strings.Contains(launched[0], "--upgrade") || !strings.Contains(launched[0], "--version=v2.0.0") {
 		t.Fatalf("unexpected launch args: %q", launched[0])
+	}
+
+	pending, err := ReadOTAReprovisionPending()
+	if err != nil {
+		t.Fatalf("read pending: %v", err)
+	}
+	if pending == nil || pending.ProvisionKey != "audit-key" {
+		t.Fatalf("expected pending file written, got %+v", pending)
 	}
 }
 
@@ -211,6 +230,105 @@ func TestChangeVersion_ContainerSkipsInstallScript(t *testing.T) {
 func TestNormalizeVersion(t *testing.T) {
 	if normalizeVersion("v1.2.3") != "1.2.3" {
 		t.Fatal("unexpected normalize result")
+	}
+}
+
+func TestExecuteChangeVersionScript_NoPendingWithoutProvisionKey(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "install.sh")
+	pendingFile := filepath.Join(dir, "ota-reprovision-pending")
+	writeFile(t, script, "#!/bin/sh\n")
+	_ = os.Chmod(script, 0o755)
+	SetOTAReprovisionPendingPath(pendingFile)
+	t.Cleanup(func() { SetOTAReprovisionPendingPath("") })
+
+	h := NewHandler(NewReleaseManager(WithPaths(script, filepath.Join(dir, "receipt"), filepath.Join(dir, "prev"), filepath.Join(dir, "cache"))))
+	h.startDetached = func(string, ...string) error { return nil }
+
+	err := h.executeChangeVersionScript(
+		VersionCommandUpgrade,
+		map[string]any{"command": "UPGRADE", "version": "2.0.0"},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("executeChangeVersionScript failed: %v", err)
+	}
+	if pending, _ := ReadOTAReprovisionPending(); pending != nil {
+		t.Fatalf("expected no pending for manual-style upgrade, got %+v", pending)
+	}
+}
+
+func TestExecuteChangeVersionScript_PreflightRefresh(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "install.sh")
+	pendingFile := filepath.Join(dir, "ota-reprovision-pending")
+	writeFile(t, script, "#!/bin/sh\n")
+	_ = os.Chmod(script, 0o755)
+	SetOTAReprovisionPendingPath(pendingFile)
+	t.Cleanup(func() { SetOTAReprovisionPendingPath("") })
+
+	var launched []string
+	h := NewHandler(NewReleaseManager(WithPaths(script, filepath.Join(dir, "receipt"), filepath.Join(dir, "prev"), filepath.Join(dir, "cache"))))
+	h.startDetached = func(_ string, args ...string) error {
+		launched = append(launched, strings.Join(args, ","))
+		return nil
+	}
+	h.refreshVersion = func() (map[string]any, error) {
+		return map[string]any{
+			"versionCommand": "upgrade",
+			"provisionKey":   "fresh-key",
+			"expirationTime": time.Now().Add(15 * time.Minute).UnixMilli(),
+			"semver":         "2.0.0",
+		}, nil
+	}
+
+	nearExpiry := time.Now().Add(2 * time.Minute).UnixMilli()
+	err := h.executeChangeVersionScript(
+		VersionCommandUpgrade,
+		map[string]any{
+			"command":        "UPGRADE",
+			"provisionKey":   "stale-key",
+			"expirationTime": nearExpiry,
+			"semver":         "2.0.0",
+		},
+		"stale-key",
+	)
+	if err != nil {
+		t.Fatalf("executeChangeVersionScript failed: %v", err)
+	}
+	pending, err := ReadOTAReprovisionPending()
+	if err != nil {
+		t.Fatalf("read pending: %v", err)
+	}
+	if pending == nil || pending.ProvisionKey != "fresh-key" {
+		t.Fatalf("expected refreshed pending key, got %+v", pending)
+	}
+	if len(launched) != 1 || !strings.Contains(launched[0], "--version=v2.0.0") {
+		t.Fatalf("unexpected launch args: %#v", launched)
+	}
+}
+
+func TestIsReadyToRollbackWithAction_SemverMustMatchPrevious(t *testing.T) {
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	previous := filepath.Join(dir, "previous-release")
+	_ = os.MkdirAll(cacheDir, 0o755)
+	writeKV(t, previous, map[string]string{
+		"previous_version": "1.0.0",
+		"previous_os":      "linux",
+		"previous_arch":    "amd64",
+	})
+	writeFile(t, filepath.Join(cacheDir, "edgelet-1.0.0-linux-amd64"), "binary")
+
+	rm := NewReleaseManager(WithPaths(filepath.Join(dir, "install.sh"), filepath.Join(dir, "receipt"), previous, cacheDir))
+	h := NewHandler(rm)
+	h.isContainer = func() bool { return false }
+
+	if !h.IsReadyToRollbackWithAction(map[string]any{"semver": "1.0.0"}) {
+		t.Fatal("expected ready when semver matches previous version")
+	}
+	if h.IsReadyToRollbackWithAction(map[string]any{"semver": "9.9.9"}) {
+		t.Fatal("expected not ready when semver mismatches previous version")
 	}
 }
 
