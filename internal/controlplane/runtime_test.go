@@ -140,11 +140,28 @@ func TestBuildMicroserviceFromControlPlaneTLSPathMount(t *testing.T) {
 	if certMount.Type != models.VolumeMappingTypeBind {
 		t.Fatalf("expected bind mount for cert path, got %q", certMount.Type)
 	}
-	if certMount.HostDestination != dir || certMount.ContainerDestination != ContainerCertMountPath {
+	if certMount.HostDestination != filepath.Clean(dir) || certMount.ContainerDestination != ContainerCertMountPath {
 		t.Fatalf("unexpected cert mount: %+v", certMount)
 	}
 	if certMount.AccessMode != "ro" {
 		t.Fatalf("expected read-only cert mount, got %q", certMount.AccessMode)
+	}
+}
+
+func TestBuildMicroserviceFromControlPlaneTLSPathRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{models.ControlPlaneTLSCertFilename, models.ControlPlaneTLSKeyFilename} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatalf("write cert file: %v", err)
+		}
+	}
+	doc := validControlPlaneManifestForRuntimeTest()
+	doc.Spec.TLS = &models.ControlPlaneTLSConfig{
+		Path: dir + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(dir),
+	}
+	if _, err := BuildMicroserviceFromControlPlane(doc, "cp-uuid-3", doc.ManifestControllerImage()); err == nil ||
+		!strings.Contains(err.Error(), "traversal") {
+		t.Fatalf("expected traversal rejection, got: %v", err)
 	}
 }
 

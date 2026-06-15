@@ -380,6 +380,84 @@ func validateControlPlaneAuthOptions(auth *ControlPlaneAuthSpec) error {
 	return nil
 }
 
+// ValidateControlPlaneTLSPath canonicalizes and validates a host TLS directory path.
+func ValidateControlPlaneTLSPath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", errors.New("spec.tls.path must not be empty")
+	}
+	if !isValidHostPath(trimmed) {
+		return "", errors.New("spec.tls.path must be an absolute host path")
+	}
+	if tlsPathHasTraversal(trimmed) {
+		return "", errors.New("spec.tls.path must not contain parent directory traversal")
+	}
+	cleaned := filepath.Clean(trimmed)
+	if isTLSPathRoot(cleaned) {
+		return "", errors.New("spec.tls.path must not be root")
+	}
+	return cleaned, nil
+}
+
+// StatControlPlaneTLSDir returns metadata for a validated host TLS directory.
+func StatControlPlaneTLSDir(hostDir string) (os.FileInfo, error) {
+	cleaned, err := ValidateControlPlaneTLSPath(hostDir)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("spec.tls.path must be a directory")
+	}
+	return info, nil
+}
+
+// StatControlPlaneTLSFile returns metadata for a known TLS file under a validated host directory.
+func StatControlPlaneTLSFile(hostDir, basename string) (os.FileInfo, error) {
+	switch basename {
+	case ControlPlaneTLSCertFilename, ControlPlaneTLSKeyFilename, ControlPlaneTLSCAFilename:
+	default:
+		return nil, fmt.Errorf("invalid control plane TLS filename %q", basename)
+	}
+	cleaned, err := ValidateControlPlaneTLSPath(hostDir)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(filepath.Join(cleaned, basename))
+}
+
+func tlsPathHasTraversal(path string) bool {
+	for _, part := range splitPathParts(path) {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func splitPathParts(path string) []string {
+	return strings.FieldsFunc(path, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+}
+
+func isTLSPathRoot(path string) bool {
+	cleaned := filepath.Clean(path)
+	if cleaned == string(filepath.Separator) {
+		return true
+	}
+	vol := filepath.VolumeName(cleaned)
+	if vol == "" {
+		return false
+	}
+	rest := strings.TrimPrefix(cleaned, vol)
+	rest = strings.Trim(rest, `/\`)
+	return rest == ""
+}
+
 func validateControlPlaneTLS(tls *ControlPlaneTLSConfig) error {
 	if tls == nil {
 		return nil
@@ -396,18 +474,19 @@ func validateControlPlaneTLS(tls *ControlPlaneTLSConfig) error {
 		return nil
 	}
 	if hasPath {
-		if !isValidHostPath(path) {
-			return errors.New("spec.tls.path must be an absolute host path")
-		}
-		info, err := os.Stat(path)
+		cleaned, err := ValidateControlPlaneTLSPath(path)
 		if err != nil {
-			return fmt.Errorf("spec.tls.path must exist on the Edgelet host: %w", err)
+			return err
 		}
-		if !info.IsDir() {
-			return errors.New("spec.tls.path must be a directory")
+		tls.Path = cleaned
+		if _, err := StatControlPlaneTLSDir(cleaned); err != nil {
+			if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+				return fmt.Errorf("spec.tls.path must exist on the Edgelet host: %w", err)
+			}
+			return err
 		}
 		for _, file := range []string{ControlPlaneTLSCertFilename, ControlPlaneTLSKeyFilename} {
-			if _, err := os.Stat(filepath.Join(path, file)); err != nil {
+			if _, err := StatControlPlaneTLSFile(cleaned, file); err != nil {
 				return fmt.Errorf("spec.tls.path must contain %s: %w", file, err)
 			}
 		}

@@ -325,6 +325,95 @@ func TestControlPlaneManifestValidate_TLSPathRequiresAbsoluteExistingDir(t *test
 	}
 }
 
+func TestValidateControlPlaneTLSPath_RejectsTraversalAndRoot(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	valid := filepath.Join(base, "certs")
+	if err := os.Mkdir(valid, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name    string
+		path    string
+		wantErr string
+	}{
+		{name: "valid", path: valid, wantErr: ""},
+		{name: "relative", path: "relative/certs", wantErr: "absolute"},
+		{name: "parent traversal", path: valid + string(filepath.Separator) + ".." + string(filepath.Separator) + "outside", wantErr: "traversal"},
+		{name: "embedded traversal", path: filepath.Join(base, "nested") + string(filepath.Separator) + ".." + string(filepath.Separator) + ".." + string(filepath.Separator) + "escape", wantErr: "traversal"},
+		{name: "unix root", path: string(filepath.Separator), wantErr: "root"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ValidateControlPlaneTLSPath(tc.path)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateControlPlaneTLSPath(%q): %v", tc.path, err)
+				}
+				if got != filepath.Clean(tc.path) {
+					t.Fatalf("got cleaned path %q, want %q", got, filepath.Clean(tc.path))
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ValidateControlPlaneTLSPath(%q) err=%v, want substring %q", tc.path, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestStatControlPlaneTLSFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeControlPlaneCertFiles(t, dir, true)
+
+	info, err := StatControlPlaneTLSFile(dir, ControlPlaneTLSCertFilename)
+	if err != nil {
+		t.Fatalf("StatControlPlaneTLSFile(cert): %v", err)
+	}
+	if info.IsDir() {
+		t.Fatal("expected file, got directory")
+	}
+
+	if _, err := StatControlPlaneTLSFile(dir, "evil.pem"); err == nil || !strings.Contains(err.Error(), "invalid control plane TLS filename") {
+		t.Fatalf("expected invalid basename error, got: %v", err)
+	}
+
+	traversal := dir + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(dir)
+	if _, err := StatControlPlaneTLSFile(traversal, ControlPlaneTLSCertFilename); err == nil || !strings.Contains(err.Error(), "traversal") {
+		t.Fatalf("expected traversal rejection, got: %v", err)
+	}
+}
+
+func TestControlPlaneManifestValidate_TLSPathCanonicalizes(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	dir := t.TempDir()
+	writeControlPlaneCertFiles(t, dir, false)
+	doc.Spec.TLS = &ControlPlaneTLSConfig{Path: dir + string(filepath.Separator)}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if doc.Spec.TLS.Path != filepath.Clean(dir) {
+		t.Fatalf("got canonical path %q, want %q", doc.Spec.TLS.Path, filepath.Clean(dir))
+	}
+}
+
+func TestControlPlaneManifestValidate_TLSPathRejectsTraversal(t *testing.T) {
+	doc := validControlPlaneManifestForTest()
+	dir := t.TempDir()
+	writeControlPlaneCertFiles(t, dir, false)
+	traversal := dir + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(dir)
+	doc.Spec.TLS = &ControlPlaneTLSConfig{Path: traversal}
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "traversal") {
+		t.Fatalf("expected traversal rejection, got: %v", err)
+	}
+}
+
 func TestControlPlaneManifestValidate_TLSBase64RequiresValidEncoding(t *testing.T) {
 	doc := validControlPlaneManifestForTest()
 	doc.Spec.TLS = &ControlPlaneTLSConfig{

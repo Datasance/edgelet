@@ -176,14 +176,14 @@ func TestExecuteChangeVersionScript_LaunchesDetachedInstallSh(t *testing.T) {
 	}
 
 	writeKV(t, filepath.Join(dir, "receipt"), map[string]string{"installed_version": "1.0.0"})
-	expiry := time.Now().Add(20 * time.Minute).UnixMilli()
+	expiryMilli := time.Now().Add(20 * time.Minute).UnixMilli()
 	err := h.executeChangeVersionScript(
 		VersionCommandUpgrade,
 		map[string]any{
 			"version":        "v2.0.0",
 			"semver":         "2.0.0",
 			"provisionKey":   "audit-key",
-			"expirationTime": expiry,
+			"expirationTime": expiryMilli,
 			"command":        "UPGRADE",
 		},
 		"audit-key",
@@ -282,13 +282,13 @@ func TestExecuteChangeVersionScript_PreflightRefresh(t *testing.T) {
 		}, nil
 	}
 
-	nearExpiry := time.Now().Add(2 * time.Minute).UnixMilli()
+	nearExpiryMilli := time.Now().Add(2 * time.Minute).UnixMilli()
 	err := h.executeChangeVersionScript(
 		VersionCommandUpgrade,
 		map[string]any{
 			"command":        "UPGRADE",
 			"provisionKey":   "stale-key",
-			"expirationTime": nearExpiry,
+			"expirationTime": nearExpiryMilli,
 			"semver":         "2.0.0",
 		},
 		"stale-key",

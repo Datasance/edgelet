@@ -4,7 +4,6 @@ package controlplane
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -218,8 +217,7 @@ func projectTLSEnv(env map[string]string, tls *models.ControlPlaneTLSConfig) {
 	if path := strings.TrimSpace(tls.Path); path != "" {
 		setEnv(env, "TLS_PATH_CERT", models.ControlPlaneTLSCertFilename)
 		setEnv(env, "TLS_PATH_KEY", models.ControlPlaneTLSKeyFilename)
-		intermediatePath := filepath.Join(path, models.ControlPlaneTLSCAFilename)
-		if _, err := os.Stat(intermediatePath); err == nil {
+		if _, err := models.StatControlPlaneTLSFile(path, models.ControlPlaneTLSCAFilename); err == nil {
 			setEnv(env, "TLS_PATH_INTERMEDIATE_CERT", models.ControlPlaneTLSCAFilename)
 			setEnv(env, "INTERMEDIATE_CERT", filepath.Join(ContainerCertMountPath, models.ControlPlaneTLSCAFilename))
 		}
