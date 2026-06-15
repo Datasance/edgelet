@@ -447,6 +447,8 @@ func (fa *FieldAgent) scanVersionReadiness() {
 		status.ReadyToUpgrade = readyUpgrade
 		status.ReadyToRollback = readyRollback
 	})
+
+	fa.retryOTAReprovisionIfNeeded()
 }
 
 func (fa *FieldAgent) serviceAccountTokenRotationWorker() {

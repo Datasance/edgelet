@@ -2,6 +2,7 @@ package utils //nolint:revive // legacy package name
 
 import (
 	"os"
+	"path/filepath"
 )
 
 // ModulesStatus represents the status of a module
@@ -95,7 +96,7 @@ var (
 
 // Path constants
 var (
-	WindowsEdgeletPath   = getEnvOrDefault("EDGELET_PATH", "./")
+	WindowsEdgeletPath   = getWindowsEdgeletBase()
 	VarRun               = getVarRunPath()
 	ConfigDir            = getConfigDir()
 	EdgeletAPITokenPath  = ConfigDir + "edgelet-api"
@@ -143,16 +144,27 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func getWindowsEdgeletBase() string {
+	if val := os.Getenv("EDGELET_PATH"); val != "" {
+		return val
+	}
+	pd := os.Getenv("ProgramData")
+	if pd == "" {
+		pd = `C:\ProgramData`
+	}
+	return filepath.Join(pd, "Edgelet")
+}
+
 func getVarRunPath() string {
 	if isWindows() {
-		return SNAPCommon + "./var/run/edgelet"
+		return filepath.Join(getWindowsEdgeletBase(), "run") + string(filepath.Separator)
 	}
-	return SNAPCommon + "/var/run/edgelet"
+	return SNAPCommon + "/var/run/edgelet/"
 }
 
 func getConfigDir() string {
 	if isWindows() {
-		return WindowsEdgeletPath
+		return filepath.Join(getWindowsEdgeletBase(), "config") + string(filepath.Separator)
 	}
 	return SNAPCommon + "/etc/edgelet/"
 }

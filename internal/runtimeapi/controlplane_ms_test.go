@@ -47,7 +47,7 @@ func TestFacadeListRuntimeMicroservices_IncludesControlPlaneEntry(t *testing.T) 
 		"name":        "pot",
 		"application": "default",
 		"source":      "controlplane",
-		"type":        "controlplane",
+		"type":        "controller",
 	} {
 		if got := item[key]; got != want {
 			t.Fatalf("%s: want %q got %v", key, want, got)
@@ -73,6 +73,7 @@ func TestFacadeGuardControlPlaneMicroserviceMutation_BlocksLifecycle(t *testing.
 	if err := f.db.UpsertSystemControlPlane(dep); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
+	f.fa.SetControllerStatus(models.ControllerStatusOK)
 
 	for _, op := range []struct {
 		name string
@@ -93,7 +94,7 @@ func TestFacadeGuardControlPlaneMicroserviceMutation_BlocksLifecycle(t *testing.
 			if !errors.As(err, &blocked) {
 				t.Fatalf("expected ErrControlPlaneLifecycleBlocked, got %v", err)
 			}
-			if !strings.Contains(err.Error(), "controlplane delete") {
+			if !strings.Contains(err.Error(), "while agent is provisioned") {
 				t.Fatalf("unexpected message: %v", err)
 			}
 		})
@@ -124,7 +125,7 @@ func TestFacadeGetRuntimeMicroservice_ControlPlane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if item["type"] != "controlplane" || item["application"] != "default" || item["name"] != "pot" {
+	if item["type"] != "controller" || item["application"] != "default" || item["name"] != "pot" {
 		t.Fatalf("unexpected item: %#v", item)
 	}
 	raw, ok := item["raw"].(map[string]any)
@@ -139,6 +140,33 @@ func TestFacadeGetRuntimeMicroservice_ControlPlane(t *testing.T) {
 	}
 	if raw["inspectSchemaVersion"] != "v1" {
 		t.Fatalf("unexpected inspectSchemaVersion: %v", raw["inspectSchemaVersion"])
+	}
+}
+
+func TestFacadeDeleteControlPlane_BlockedWhenProvisioned(t *testing.T) {
+	f := NewFacade()
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	if err := f.db.UpsertSystemControlPlane(&models.ControlPlaneDeployment{
+		ControllerUUID: "cp-del-1",
+		Namespace:      "default",
+		Name:           "pot",
+		ManifestYAML:   "kind: ControlPlane",
+		DesiredState:   "running",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	f.fa.SetControllerStatus(models.ControllerStatusOK)
+
+	err := f.DeleteControlPlane()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsControlPlaneDeleteBlocked(err) {
+		t.Fatalf("expected ErrControlPlaneDeleteBlocked, got %v", err)
 	}
 }
 

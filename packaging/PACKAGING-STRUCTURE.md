@@ -125,6 +125,6 @@ Operator matrix: `docs/edgelet/init-systems.md` (Plan 10). IT: `test/init/README
 | Target | Purpose |
 |--------|---------|
 | `scripts/ci` | Linux embed → build → test → size gate (≤55 MB thin) |
-| `.github/workflows/ci-go.yml` | Unit tests + embed job |
+| `.github/workflows/ci.yml` | Unit tests + embed job |
 | `test/install/*.sh` | Install / OTA script smoke (linux root) |
 | `test/embedded/run-all.sh` | Lima VM embedded engine IT |

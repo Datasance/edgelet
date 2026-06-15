@@ -108,7 +108,9 @@ func runDaemon() {
 			lastReloadTime = now
 
 			logging.LogInfo("Daemon", "Reloading configuration due to SIGHUP")
-			reloadAgentConfig(sup)
+			if err := sup.ReloadFromDisk(); err != nil {
+				logging.LogError("Daemon", "Configuration reload failed", err)
+			}
 			continue
 		}
 
@@ -165,35 +167,4 @@ func startLoggingService() {
 	}
 
 	logging.LogInfo("MAIN_DAEMON", "Configuration loaded.")
-}
-
-func reloadAgentConfig(sup *supervisor.Supervisor) {
-	logging.LogInfo("Daemon", "Reloading configuration...")
-	config.SetLastReloadSuccessful(false)
-	sup.BeginConfigReload()
-
-	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
-		logging.LogError("Daemon", "Failed to reload configuration", err)
-		logging.LogWarn("Daemon", "Rejected configuration reload; keeping last-known-good runtime config")
-		return
-	}
-
-	cfg := config.GetInstance()
-	if err := config.ValidateConfig(cfg); err != nil {
-		logging.LogError("Daemon", "Configuration validation failed after reload", err)
-		logging.LogWarn("Daemon", "Rejected configuration reload; keeping last-known-good runtime config")
-		return
-	}
-	config.SetLastReloadSuccessful(true)
-
-	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
-	if err := logging.InstanceConfigUpdated(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
-		logging.LogError("Daemon", "Failed to update logger configuration", err)
-	}
-
-	if err := sup.ReloadConfig(); err != nil {
-		logging.LogError("Daemon", "Failed to notify modules of config reload", err)
-	}
-
-	logging.LogInfo("Daemon", "Configuration reloaded successfully")
 }

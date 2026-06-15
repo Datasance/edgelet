@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# embedded CP apply + controller status API + CP lifecycle guards + CP DNS resolution on embedded engine (iofog-test Lima VM).
+# embedded CP apply + controller status API + CP lifecycle (unprovisioned) + CP DNS resolution on embedded engine (iofog-test Lima VM).
 #
 # Usage: ./test/control-plane/t12-embedded.sh [--vm-name=iofog-test] [--skip-setup]
 
@@ -36,7 +36,7 @@ cp_assert_status_api "${VM_NAME}"
 log_step "CP DNS resolution DNS (fixture namespace/name FQDNs)"
 cp_assert_dns "${VM_NAME}"
 
-log_step "CP lifecycle guards ms lifecycle block + controlplane delete"
+log_step "CP lifecycle (unprovisioned) ms rm + reconcile + controlplane delete"
 cp_deploy "${VM_NAME}" "${FIXTURE}"
 cp_wait_running "${VM_NAME}"
 cp_assert_lifecycle "${VM_NAME}"

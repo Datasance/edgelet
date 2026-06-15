@@ -157,7 +157,7 @@ cp_assert_deployed() {
             out=\$(edgelet ms ls --source controlplane)
             echo \"\${out}\" | grep -q '${CP_NS}'
             echo \"\${out}\" | grep -q '${CP_NAME}'
-            echo \"\${out}\" | grep -qi 'controlplane'
+            echo \"\${out}\" | grep -qi 'controller'
             echo \"\${out}\" | grep -qi 'running'
         "
 }
@@ -173,7 +173,9 @@ cp_assert_status_api() {
         "
 }
 
-# cp_assert_lifecycle VM — CP lifecycle guards (leaves CP deleted)
+# cp_assert_lifecycle VM — CP lifecycle when unprovisioned (leaves CP deleted).
+# ms rm is allowed; reconciler recreates the container while the DB row exists.
+# Provisioned guard tests (ms rm + controlplane delete blocked) require provision IT.
 # Poll limits align with cp_delete_if_present (docker engine delete can be slow under load).
 cp_assert_lifecycle() {
     local _vm="$1"
@@ -181,14 +183,27 @@ cp_assert_lifecycle() {
     _uuid="$(cp_controlplane_uuid "${_vm}")"
     [[ -n "${_uuid}" ]] || die "no controlplane uuid on ${_vm}"
 
-    assert_ok "ms rm on controlplane uuid is rejected" \
+    assert_ok "ms rm on controlplane uuid succeeds when unprovisioned" \
         cp_remote "${_vm}" "
             set +e
             out=\$(edgelet ms rm '${_uuid}' 2>&1)
             code=\$?
             set -e
-            test \"\${code}\" -ne 0
-            echo \"\${out}\" | grep -Eiq 'controlplane|control plane'
+            test \"\${code}\" -eq 0
+        "
+
+    assert_ok "controlplane still running after ms rm (reconcile)" \
+        cp_remote "${_vm}" "
+            set -e
+            for i in \$(seq 1 30); do
+                out=\$(edgelet controlplane get 2>/dev/null || true)
+                if echo \"\${out}\" | grep -qi 'runtimeState: running'; then
+                    exit 0
+                fi
+                sleep 2
+            done
+            edgelet controlplane get 2>&1 || true
+            exit 1
         "
 
     assert_ok "controlplane delete succeeds" \

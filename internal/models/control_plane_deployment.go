@@ -9,24 +9,26 @@ const ControlPlaneDefaultNamespace = "default"
 
 // ControlPlaneDeployment is the singleton SQLite record for a local ControlPlane manifest.
 type ControlPlaneDeployment struct {
-	ControllerUUID     string
-	Namespace          string
-	Name               string
-	ManifestYAML       string
-	Image              string
-	State              string
-	ContainerID        string
-	DesiredState       string
-	RuntimeState       string
-	LastError          string
-	RestartCount       int
-	LastTransitionAt   int64
-	LastReconcileAt    int64
-	LastStartAttemptAt int64
-	FailureCount       int
-	DeletedAt          *int64
-	Generation         int64
-	ObservedGeneration int64
+	ControllerUUID        string
+	Namespace             string
+	Name                  string
+	ManifestYAML          string
+	Image                 string
+	State                 string
+	ContainerID           string
+	DesiredState          string
+	RuntimeState          string
+	LastError             string
+	RestartCount          int
+	LastTransitionAt      int64
+	LastReconcileAt       int64
+	LastStartAttemptAt    int64
+	FailureCount          int
+	DeletedAt             *int64
+	Generation            int64
+	ObservedGeneration    int64
+	ControllerRegistered  bool
+	InitialRebuildSkipped bool
 }
 
 // NormalizeDefaults ensures lifecycle defaults for control plane records.

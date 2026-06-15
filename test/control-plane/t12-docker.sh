@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docker CP apply + controller status API + CP lifecycle guards on docker engine (edgelet-engine-lifecycle Lima VM).
+# docker CP apply + controller status API + CP lifecycle (unprovisioned) on docker engine (edgelet-engine-lifecycle Lima VM).
 #
 # Usage: ./test/control-plane/t12-docker.sh [--vm-name=edgelet-engine-lifecycle] [--skip-setup]
 
@@ -32,7 +32,7 @@ cp_assert_deployed "${VM_NAME}"
 log_step "controller status API controller /api/v3/status"
 cp_assert_status_api "${VM_NAME}"
 
-log_step "CP lifecycle guards ms lifecycle block + controlplane delete"
+log_step "CP lifecycle (unprovisioned) ms rm + reconcile + controlplane delete"
 cp_deploy "${VM_NAME}" "${FIXTURE}"
 cp_wait_running "${VM_NAME}"
 cp_assert_lifecycle "${VM_NAME}"

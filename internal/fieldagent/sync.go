@@ -81,9 +81,9 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 		}
 	}
 
-	// Store microservices for MicroserviceManagerInterface
 	fa.setLatestMicroservices(microserviceList)
 	fa.SetCurrentMicroservices(microserviceList)
+	fa.reconcileControllerMicroservice(microserviceList)
 
 	// Reconcile service-account token projections for controller-managed microservices.
 	if err := serviceaccount.GetInstance().ReconcileManagedMicroservices(microserviceList); err != nil {
@@ -99,6 +99,38 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished Loading microservices... (count: %d)", len(microserviceList)))
 	return microserviceList, nil
+}
+
+// parsePortMappingFromController maps Controller wire-format ports (internal/external/protocol)
+// to edgelet models. Legacy portInternal/portExternal/isUdp keys are accepted as fallback.
+func parsePortMappingFromController(pmMap map[string]any) *models.PortMapping {
+	var outside, inside int
+	var udp bool
+	hasPort := false
+
+	if v, ok := pmMap["external"].(float64); ok {
+		outside = int(v)
+		hasPort = true
+	} else if v, ok := pmMap["portExternal"].(float64); ok {
+		outside = int(v)
+		hasPort = true
+	}
+	if v, ok := pmMap["internal"].(float64); ok {
+		inside = int(v)
+		hasPort = true
+	} else if v, ok := pmMap["portInternal"].(float64); ok {
+		inside = int(v)
+		hasPort = true
+	}
+	if protocol, ok := pmMap["protocol"].(string); ok {
+		udp = strings.EqualFold(strings.TrimSpace(protocol), "udp")
+	} else if isUDP, ok := pmMap["isUdp"].(bool); ok {
+		udp = isUDP
+	}
+	if !hasPort {
+		return nil
+	}
+	return models.NewPortMapping(outside, inside, udp)
 }
 
 // parseMicroservice parses a microservice from JSON data
@@ -184,25 +216,21 @@ func parseMicroservice(data map[string]any) (*models.Microservice, error) {
 	if isNats, ok := data["isNats"].(bool); ok {
 		microservice.IsNats = isNats
 	}
+	if isController, ok := data["isController"].(bool); ok {
+		microservice.IsController = isController
+	}
+	if isSystem, ok := data["isSystem"].(bool); ok {
+		microservice.IsSystem = isSystem
+	}
 
 	// Parse port mappings
 	if portMappings, ok := data["portMappings"].([]any); ok {
 		microservice.PortMappings = make([]*models.PortMapping, 0, len(portMappings))
 		for _, pm := range portMappings {
 			if pmMap, ok := pm.(map[string]any); ok {
-				var outside, inside int
-				var udp bool
-				if portExternal, ok := pmMap["portExternal"].(float64); ok {
-					outside = int(portExternal)
+				if portMapping := parsePortMappingFromController(pmMap); portMapping != nil {
+					microservice.PortMappings = append(microservice.PortMappings, portMapping)
 				}
-				if portInternal, ok := pmMap["portInternal"].(float64); ok {
-					inside = int(portInternal)
-				}
-				if isUDP, ok := pmMap["isUdp"].(bool); ok {
-					udp = isUDP
-				}
-				portMapping := models.NewPortMapping(outside, inside, udp)
-				microservice.PortMappings = append(microservice.PortMappings, portMapping)
 			}
 		}
 	}

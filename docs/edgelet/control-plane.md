@@ -63,14 +63,24 @@ Use **controlplane get** for deployment status and manifest; **ms inspect** retu
 edgelet controlplane delete
 ```
 
-This is the **only** supported way to remove the controller deployment. `edgelet ms rm` on the controller UUID is rejected; Edgelet will reconcile the container back if the ControlPlane record still exists.
+This is the **only** supported way to remove the controller deployment while the agent is **unprovisioned**. `edgelet ms rm` on the controller UUID is rejected when provisioned; Edgelet will reconcile the container back if the ControlPlane record still exists.
+
+While the agent is **provisioned**, `edgelet controlplane delete` is also rejected — deprovision the agent first.
+
+## Controller registration (system fog)
+
+After the local ControlPlane container is running and the agent is provisioned, Edgelet registers the controller workload once with Pot (`POST /api/v3/agent/controller/register`). Pot then lists the controller microservice with `isController: true`.
+
+**Operator requirement:** the system fog must be created on Controller with **`isSystem: true`**. Registration uses the agent fog token and fails with **403** on non-system fogs.
+
+Spec updates from Pot (`microserviceList`) merge into the local ControlPlane deployment; the process manager does not ADD/DELETE a duplicate controller container.
 
 ## Ports
 
 | Host | Container | Service |
 |------|-----------|---------|
 | 51121 | `spec.controller.port` (default 51121) | Controller API |
-| 80 | `spec.ecnViewerPort` (default 8008) | ECN viewer |
+| 80 | `spec.console.port` (default 8008) | EdgeOps Console |
 
 ## DNS (embedded)
 

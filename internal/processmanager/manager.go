@@ -40,25 +40,27 @@ const (
 
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
-	engine                    engine.ContainerEngine
-	engineName                string
-	microserviceManager       MicroserviceManagerInterface
-	containerManager          *ContainerManager
-	taskQueue                 *TaskQueue
-	updateChan                chan struct{}
-	ctx                       context.Context
-	cancel                    context.CancelFunc
-	wg                        sync.WaitGroup
-	logger                    *logging.ModuleLogger
-	startMicroserviceFn       func(microserviceUUID string) error
-	removeContainerByIDFn     func(containerID string) error
-	launchLocalDeploymentFn   func(item *models.LocalDeployedMicroservice, now int64)
-	launchControlPlaneFn      func(item *models.ControlPlaneDeployment, now int64)
-	recreateLocalDeploymentFn func(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error
-	recreateControlPlaneFn    func(item *models.ControlPlaneDeployment, pullImage bool, now int64) error
-	getContainerStatusFn      func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
-	reconcileMonitorTick      uint64
-	localLaunchLocks          sync.Map // microservice UUID -> *sync.Mutex
+	engine                       engine.ContainerEngine
+	engineName                   string
+	microserviceManager          MicroserviceManagerInterface
+	containerManager             *ContainerManager
+	taskQueue                    *TaskQueue
+	updateChan                   chan struct{}
+	ctx                          context.Context
+	cancel                       context.CancelFunc
+	wg                           sync.WaitGroup
+	logger                       *logging.ModuleLogger
+	startMicroserviceFn          func(microserviceUUID string) error
+	removeContainerByIDFn        func(containerID string) error
+	launchLocalDeploymentFn      func(item *models.LocalDeployedMicroservice, now int64)
+	launchControlPlaneFn         func(item *models.ControlPlaneDeployment, now int64)
+	recreateLocalDeploymentFn    func(item *models.LocalDeployedMicroservice, pullImage bool, now int64) error
+	recreateControlPlaneFn       func(item *models.ControlPlaneDeployment, pullImage bool, now int64) error
+	getContainerStatusFn         func(containerID, microserviceUUID string) (*models.MicroserviceStatus, error)
+	reconcileMonitorTick         uint64
+	localLaunchLocks             sync.Map // microservice UUID -> *sync.Mutex
+	controlPlanePullOnRecreate   bool
+	controlPlanePullOnRecreateMu sync.Mutex
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -1075,6 +1077,9 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 		// IsUpdating is set before enqueueing and cleared when the task finishes,
 		// ensuring we never flood the queue with duplicate tasks.
 		if ms.GetIsUpdating() {
+			continue
+		}
+		if pm.isControlPlaneManagedMicroservice(ms) {
 			continue
 		}
 

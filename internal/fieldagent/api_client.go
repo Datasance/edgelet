@@ -160,6 +160,27 @@ func (c *APIClient) Request(ctx context.Context, command string, requestType Req
 	return nil, fmt.Errorf("request failed after %d attempts: %w", maxRetries+1, lastErr)
 }
 
+const maxErrorResponseBody = 4096
+
+func readLimitedResponseBody(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBody))
+	if err != nil {
+		return fmt.Sprintf("<read error: %v>", err)
+	}
+	return strings.TrimSpace(string(body))
+}
+
+func controllerHTTPError(status int, label, body string) error {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return fmt.Errorf("%s: status %d", label, status)
+	}
+	return fmt.Errorf("%s: status %d: %s", label, status, body)
+}
+
 // doRequest performs a single HTTP request to the controller
 func (c *APIClient) doRequest(ctx context.Context, command string, requestType RequestType, queryParams map[string]string, body any) (map[string]any, error) {
 	url := c.baseURL + "/agent/" + command
@@ -247,22 +268,22 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 		return make(map[string]any), nil
 	case http.StatusUnauthorized:
 		// Token invalid - trigger deprovision
-		return nil, errors.New("unauthorized: invalid JWT token")
+		return nil, controllerHTTPError(resp.StatusCode, "unauthorized: invalid JWT token", readLimitedResponseBody(resp))
 	case http.StatusNotFound:
-		return nil, errors.New("not found: controller endpoint not found")
+		return nil, controllerHTTPError(resp.StatusCode, "not found: controller endpoint not found", readLimitedResponseBody(resp))
 	case http.StatusBadRequest:
-		return nil, errors.New("bad request: invalid request")
+		return nil, controllerHTTPError(resp.StatusCode, "bad request", readLimitedResponseBody(resp))
 	case http.StatusForbidden:
-		return nil, errors.New("forbidden: access forbidden")
+		return nil, controllerHTTPError(resp.StatusCode, "forbidden: access forbidden", readLimitedResponseBody(resp))
 	case http.StatusInternalServerError:
-		return nil, errors.New("internal server error")
+		return nil, controllerHTTPError(resp.StatusCode, "internal server error", readLimitedResponseBody(resp))
 	default:
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return nil, fmt.Errorf("client error: status %d", resp.StatusCode)
+			return nil, controllerHTTPError(resp.StatusCode, "client error", readLimitedResponseBody(resp))
 		} else if resp.StatusCode >= 500 {
-			return nil, fmt.Errorf("server error: status %d", resp.StatusCode)
+			return nil, controllerHTTPError(resp.StatusCode, "server error", readLimitedResponseBody(resp))
 		}
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, controllerHTTPError(resp.StatusCode, "unexpected status code", readLimitedResponseBody(resp))
 	}
 }
 

@@ -250,6 +250,8 @@ func TestSchemaV1_SystemControlPlaneKeyColumns(t *testing.T) {
 		"deleted_at",
 		"generation",
 		"observed_generation",
+		"controller_registered",
+		"initial_rebuild_skipped",
 	})
 	if cols["id"].pk != 1 {
 		t.Fatal("system_control_plane.id must be primary key")

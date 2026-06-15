@@ -16,16 +16,17 @@ func validControlPlaneManifestForRuntimeTest() *models.ControlPlaneManifest {
 	doc.Kind = "ControlPlane"
 	doc.Metadata.Name = "pot"
 	doc.Metadata.Namespace = "default"
-	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
+	doc.Spec.Controller.Image = controlPlaneTestImage
+	doc.Spec.Auth = models.ValidEmbeddedAuthForTest()
 	return doc
 }
 
 func TestBuildMicroserviceFromControlPlaneLaunchSpec(t *testing.T) {
 	doc := validControlPlaneManifestForRuntimeTest()
 	port := 51121
-	viewer := 8008
+	console := 8008
 	doc.Spec.Controller.Port = &port
-	doc.Spec.ECNViewerPort = &viewer
+	doc.Spec.Console.Port = &console
 
 	ms, err := BuildMicroserviceFromControlPlane(doc, "cp-uuid-1", doc.ManifestControllerImage())
 	if err != nil {
@@ -51,8 +52,8 @@ func TestBuildMicroserviceFromControlPlaneLaunchSpec(t *testing.T) {
 	if ms.PortMappings[0].Outside != HostAPIPort || ms.PortMappings[0].Inside != port {
 		t.Fatalf("unexpected API port mapping: %+v", ms.PortMappings[0])
 	}
-	if ms.PortMappings[1].Outside != HostViewerPort || ms.PortMappings[1].Inside != viewer {
-		t.Fatalf("unexpected viewer port mapping: %+v", ms.PortMappings[1])
+	if ms.PortMappings[1].Outside != HostConsolePort || ms.PortMappings[1].Inside != console {
+		t.Fatalf("unexpected console port mapping: %+v", ms.PortMappings[1])
 	}
 
 	if len(ms.VolumeMappings) != 2 {
@@ -115,16 +116,16 @@ func TestBuildMicroserviceFromControlPlaneLaunchSpec(t *testing.T) {
 	}
 }
 
-func TestBuildMicroserviceFromControlPlaneHTTPSPathMount(t *testing.T) {
+func TestBuildMicroserviceFromControlPlaneTLSPathMount(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{models.ControlPlaneHTTPSCertFilename, models.ControlPlaneHTTPSKeyFilename} {
+	for _, name := range []string{models.ControlPlaneTLSCertFilename, models.ControlPlaneTLSKeyFilename} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
 			t.Fatalf("write cert file: %v", err)
 		}
 	}
 
 	doc := validControlPlaneManifestForRuntimeTest()
-	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{
+	doc.Spec.TLS = &models.ControlPlaneTLSConfig{
 		Path: dir,
 	}
 
@@ -139,11 +140,28 @@ func TestBuildMicroserviceFromControlPlaneHTTPSPathMount(t *testing.T) {
 	if certMount.Type != models.VolumeMappingTypeBind {
 		t.Fatalf("expected bind mount for cert path, got %q", certMount.Type)
 	}
-	if certMount.HostDestination != dir || certMount.ContainerDestination != ContainerCertMountPath {
+	if certMount.HostDestination != filepath.Clean(dir) || certMount.ContainerDestination != ContainerCertMountPath {
 		t.Fatalf("unexpected cert mount: %+v", certMount)
 	}
 	if certMount.AccessMode != "ro" {
 		t.Fatalf("expected read-only cert mount, got %q", certMount.AccessMode)
+	}
+}
+
+func TestBuildMicroserviceFromControlPlaneTLSPathRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{models.ControlPlaneTLSCertFilename, models.ControlPlaneTLSKeyFilename} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatalf("write cert file: %v", err)
+		}
+	}
+	doc := validControlPlaneManifestForRuntimeTest()
+	doc.Spec.TLS = &models.ControlPlaneTLSConfig{
+		Path: dir + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(dir),
+	}
+	if _, err := BuildMicroserviceFromControlPlane(doc, "cp-uuid-3", doc.ManifestControllerImage()); err == nil ||
+		!strings.Contains(err.Error(), "traversal") {
+		t.Fatalf("expected traversal rejection, got: %v", err)
 	}
 }
 

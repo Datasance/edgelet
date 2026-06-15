@@ -193,6 +193,8 @@ CREATE TABLE IF NOT EXISTS system_control_plane (
     deleted_at INTEGER,
     generation INTEGER NOT NULL DEFAULT 1,
     observed_generation INTEGER NOT NULL DEFAULT 0,
+    controller_registered INTEGER NOT NULL DEFAULT 0,
+    initial_rebuild_skipped INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 )

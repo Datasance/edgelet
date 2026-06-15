@@ -4,7 +4,6 @@ package controlplane
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -45,42 +44,94 @@ func BuildControllerEnv(doc *models.ControlPlaneManifest, controllerUUID string)
 		"CONTROLLER_NAME":      strings.TrimSpace(doc.Metadata.Name),
 	}
 
+	setEnvIfNonEmpty(env, "CONTROLLER_PUBLIC_URL", doc.Spec.Controller.PublicURL)
+	if doc.Spec.Controller.TrustProxy != nil {
+		setEnv(env, "TRUST_PROXY", strconv.FormatBool(*doc.Spec.Controller.TrustProxy))
+	}
 	if doc.Spec.Controller.Port != nil {
-		setEnv(env, "SERVER_PORT", strconv.Itoa(*doc.Spec.Controller.Port))
+		setEnv(env, "API_PORT", strconv.Itoa(*doc.Spec.Controller.Port))
 	}
-	if doc.Spec.ECNViewerPort != nil {
-		setEnv(env, "VIEWER_PORT", strconv.Itoa(*doc.Spec.ECNViewerPort))
+	if doc.Spec.Console.Port != nil {
+		setEnv(env, "CONSOLE_PORT", strconv.Itoa(*doc.Spec.Console.Port))
 	}
-	setEnvIfNonEmpty(env, "VIEWER_URL", doc.Spec.ECNViewerURL)
+	setEnvIfNonEmpty(env, "CONSOLE_URL", doc.Spec.Console.URL)
 	setEnvIfNonEmpty(env, "LOG_LEVEL", doc.Spec.LogLevel)
 
-	projectAuthEnv(env, &doc.Spec.Auth)
+	projectAuthEnv(env, doc.Spec.Auth)
 	projectDatabaseEnv(env, doc.Spec.Database)
 	projectEventsEnv(env, doc.Spec.Events)
 	projectSystemMicroserviceEnv(env, doc.Spec.SystemMicroservices)
 	projectNATSEnv(env, doc.Spec.NATS)
-	projectHTTPSEnv(env, doc.Spec.HTTPS)
+	projectTLSEnv(env, doc.Spec.TLS)
 	projectVaultEnv(env, doc.Spec.Vault)
 
 	return env, nil
 }
 
-func projectAuthEnv(env map[string]string, auth *struct {
-	URL              string `yaml:"url,omitempty" json:"url,omitempty"`
-	Realm            string `yaml:"realm,omitempty" json:"realm,omitempty"`
-	RealmKey         string `yaml:"realmKey,omitempty" json:"realmKey,omitempty"`
-	SSL              string `yaml:"ssl,omitempty" json:"ssl,omitempty"`
-	ControllerClient string `yaml:"controllerClient,omitempty" json:"controllerClient,omitempty"`
-	ControllerSecret string `yaml:"controllerSecret,omitempty" json:"controllerSecret,omitempty"`
-	ViewerClient     string `yaml:"viewerClient,omitempty" json:"viewerClient,omitempty"`
-}) {
-	setEnvIfNonEmpty(env, "KC_URL", auth.URL)
-	setEnvIfNonEmpty(env, "KC_REALM", auth.Realm)
-	setEnvIfNonEmpty(env, "KC_REALM_KEY", auth.RealmKey)
-	setEnvIfNonEmpty(env, "KC_SSL_REQ", auth.SSL)
-	setEnvIfNonEmpty(env, "KC_CLIENT", auth.ControllerClient)
-	setEnvIfNonEmpty(env, "KC_CLIENT_SECRET", auth.ControllerSecret)
-	setEnvIfNonEmpty(env, "KC_VIEWER_CLIENT", auth.ViewerClient)
+func projectAuthEnv(env map[string]string, auth *models.ControlPlaneAuthSpec) {
+	if auth == nil {
+		return
+	}
+	setEnvIfNonEmpty(env, "AUTH_MODE", auth.Mode)
+	if auth.InsecureAllowHTTP != nil {
+		setEnv(env, "AUTH_INSECURE_ALLOW_HTTP", strconv.FormatBool(*auth.InsecureAllowHTTP))
+	}
+	if auth.InsecureAllowBootstrapLog != nil {
+		setEnv(env, "AUTH_INSECURE_ALLOW_BOOTSTRAP_LOG", strconv.FormatBool(*auth.InsecureAllowBootstrapLog))
+	}
+	if auth.Bootstrap != nil {
+		setEnvIfNonEmpty(env, "OIDC_BOOTSTRAP_ADMIN_USERNAME", auth.Bootstrap.Username)
+		setEnvIfNonEmpty(env, "OIDC_BOOTSTRAP_ADMIN_PASSWORD", auth.Bootstrap.Password)
+	}
+	setEnvIfNonEmpty(env, "OIDC_ISSUER_URL", auth.IssuerURL)
+	if auth.Client != nil {
+		setEnvIfNonEmpty(env, "OIDC_CLIENT_ID", auth.Client.ID)
+		setEnvIfNonEmpty(env, "OIDC_CLIENT_SECRET", auth.Client.Secret)
+	}
+	setEnvIfNonEmpty(env, "OIDC_CONSOLE_CLIENT_ID", auth.ConsoleClient)
+	if auth.ConsoleClientEnabled != nil {
+		setEnv(env, "AUTH_CONSOLE_CLIENT_ENABLED", strconv.FormatBool(*auth.ConsoleClientEnabled))
+	}
+	if auth.RateLimit != nil {
+		if auth.RateLimit.Enabled != nil {
+			setEnv(env, "AUTH_RATE_LIMIT_ENABLED", strconv.FormatBool(*auth.RateLimit.Enabled))
+		}
+		if auth.RateLimit.MaxRequestsPerWindow != nil {
+			setEnv(env, "AUTH_RATE_LIMIT_MAX_REQUESTS", strconv.Itoa(*auth.RateLimit.MaxRequestsPerWindow))
+		}
+		if auth.RateLimit.WindowMs != nil {
+			setEnv(env, "AUTH_RATE_LIMIT_WINDOW_MS", strconv.Itoa(*auth.RateLimit.WindowMs))
+		}
+	}
+	if auth.SessionStore != nil {
+		setEnvIfNonEmpty(env, "AUTH_SESSION_STORE_TYPE", auth.SessionStore.Type)
+		if auth.SessionStore.TTLMs != nil {
+			setEnv(env, "AUTH_SESSION_STORE_TTL_MS", strconv.Itoa(*auth.SessionStore.TTLMs))
+		}
+		setEnvIfNonEmpty(env, "AUTH_SESSION_SECRET", auth.SessionStore.Secret)
+	}
+	if auth.TokenTTL != nil {
+		if auth.TokenTTL.AccessTokenTTLSeconds != nil {
+			setEnv(env, "AUTH_ACCESS_TOKEN_TTL_SECONDS", strconv.Itoa(*auth.TokenTTL.AccessTokenTTLSeconds))
+		}
+		if auth.TokenTTL.RefreshTokenTTLSeconds != nil {
+			setEnv(env, "AUTH_REFRESH_TOKEN_TTL_SECONDS", strconv.Itoa(*auth.TokenTTL.RefreshTokenTTLSeconds))
+		}
+	}
+	if auth.OIDCTTL != nil {
+		if auth.OIDCTTL.InteractionTTLSeconds != nil {
+			setEnv(env, "AUTH_OIDC_INTERACTION_TTL_SECONDS", strconv.Itoa(*auth.OIDCTTL.InteractionTTLSeconds))
+		}
+		if auth.OIDCTTL.GrantTTLSeconds != nil {
+			setEnv(env, "AUTH_OIDC_GRANT_TTL_SECONDS", strconv.Itoa(*auth.OIDCTTL.GrantTTLSeconds))
+		}
+		if auth.OIDCTTL.SessionTTLSeconds != nil {
+			setEnv(env, "AUTH_OIDC_SESSION_TTL_SECONDS", strconv.Itoa(*auth.OIDCTTL.SessionTTLSeconds))
+		}
+		if auth.OIDCTTL.IDTokenTTLSeconds != nil {
+			setEnv(env, "AUTH_OIDC_ID_TOKEN_TTL_SECONDS", strconv.Itoa(*auth.OIDCTTL.IDTokenTTLSeconds))
+		}
+	}
 }
 
 func projectDatabaseEnv(env map[string]string, db *struct {
@@ -159,24 +210,25 @@ func projectNATSEnv(env map[string]string, nats *struct {
 	setEnv(env, "NATS_ENABLED", strconv.FormatBool(*nats.Enabled))
 }
 
-func projectHTTPSEnv(env map[string]string, https *models.ControlPlaneHTTPSConfig) {
-	if https == nil {
+func projectTLSEnv(env map[string]string, tls *models.ControlPlaneTLSConfig) {
+	if tls == nil {
 		return
 	}
-	if path := strings.TrimSpace(https.Path); path != "" {
-		setEnv(env, "SSL_PATH_CERT", models.ControlPlaneHTTPSCertFilename)
-		setEnv(env, "SSL_PATH_KEY", models.ControlPlaneHTTPSKeyFilename)
-		if _, err := os.Stat(filepath.Join(path, models.ControlPlaneHTTPSCAFilename)); err == nil {
-			setEnv(env, "SSL_PATH_INTERMEDIATE_CERT", models.ControlPlaneHTTPSCAFilename)
+	if path := strings.TrimSpace(tls.Path); path != "" {
+		setEnv(env, "TLS_PATH_CERT", models.ControlPlaneTLSCertFilename)
+		setEnv(env, "TLS_PATH_KEY", models.ControlPlaneTLSKeyFilename)
+		if _, err := models.StatControlPlaneTLSFile(path, models.ControlPlaneTLSCAFilename); err == nil {
+			setEnv(env, "TLS_PATH_INTERMEDIATE_CERT", models.ControlPlaneTLSCAFilename)
+			setEnv(env, "INTERMEDIATE_CERT", filepath.Join(ContainerCertMountPath, models.ControlPlaneTLSCAFilename))
 		}
 		return
 	}
-	if https.Base64 == nil {
+	if tls.Base64 == nil {
 		return
 	}
-	setEnvIfNonEmpty(env, "SSL_BASE64_CERT", https.Base64.Cert)
-	setEnvIfNonEmpty(env, "SSL_BASE64_KEY", https.Base64.Key)
-	setEnvIfNonEmpty(env, "SSL_BASE64_INTERMEDIATE_CERT", https.Base64.CA)
+	setEnvIfNonEmpty(env, "TLS_BASE64_CERT", tls.Base64.Cert)
+	setEnvIfNonEmpty(env, "TLS_BASE64_KEY", tls.Base64.Key)
+	setEnvIfNonEmpty(env, "TLS_BASE64_INTERMEDIATE_CERT", tls.Base64.CA)
 }
 
 func projectVaultEnv(env map[string]string, vault *models.ControlPlaneVaultSpec) {

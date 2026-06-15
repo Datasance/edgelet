@@ -9,12 +9,12 @@ import (
 
 const (
 	HostAPIPort             = 51121
-	HostViewerPort          = 80
+	HostConsolePort         = 80
 	DefaultContainerAPIPort = 51121
-	DefaultViewerPort       = 8008
+	DefaultConsolePort      = 8008
 	VolumeDBName            = "iofog-controller-db"
 	VolumeLogName           = "iofog-controller-log"
-	ContainerDBPath         = "/home/runner/.npm-global/lib/node_modules/@datasance/iofogcontroller/src/data/sqlite_files/"
+	ContainerDBPath         = "/home/runner/.npm-global/lib/node_modules/controller/src/data/sqlite_files/"
 	ContainerLogPath        = "/var/log/iofog-controller"
 	ContainerCertMountPath  = "/etc/iofog/controller-cert/"
 )
@@ -51,13 +51,13 @@ func BuildMicroserviceFromControlPlane(doc *models.ControlPlaneManifest, control
 	if doc.Spec.Controller.Port != nil {
 		apiPort = *doc.Spec.Controller.Port
 	}
-	viewerPort := DefaultViewerPort
-	if doc.Spec.ECNViewerPort != nil {
-		viewerPort = *doc.Spec.ECNViewerPort
+	consolePort := DefaultConsolePort
+	if doc.Spec.Console.Port != nil {
+		consolePort = *doc.Spec.Console.Port
 	}
 	ms.PortMappings = append(ms.PortMappings,
 		models.NewPortMapping(HostAPIPort, apiPort, false),
-		models.NewPortMapping(HostViewerPort, viewerPort, false),
+		models.NewPortMapping(HostConsolePort, consolePort, false),
 	)
 
 	ms.CapAdd, ms.CapDrop = mergeControlPlaneCapabilities(nil, nil)
@@ -67,8 +67,8 @@ func BuildMicroserviceFromControlPlane(doc *models.ControlPlaneManifest, control
 		models.NewVolumeMapping(VolumeLogName, ContainerLogPath, "rw", models.VolumeMappingTypeVolume),
 	)
 
-	if doc.Spec.HTTPS != nil {
-		if path := strings.TrimSpace(doc.Spec.HTTPS.Path); path != "" {
+	if doc.Spec.TLS != nil {
+		if path := strings.TrimSpace(doc.Spec.TLS.Path); path != "" {
 			ms.VolumeMappings = append(ms.VolumeMappings, models.NewVolumeMapping(
 				path,
 				ContainerCertMountPath,

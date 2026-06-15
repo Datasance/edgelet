@@ -19,9 +19,16 @@ func (e *ErrControlPlaneLifecycleBlocked) Error() string {
 		op = "mutation"
 	}
 	return fmt.Sprintf(
-		"control plane microservice %s is not allowed; use DELETE /v1/system/controlplane or edgelet controlplane delete",
+		"controller microservice cannot be %s while agent is provisioned; deprovision the agent or use edgelet controlplane delete when unprovisioned",
 		op,
 	)
+}
+
+// ErrControlPlaneDeleteBlocked indicates DELETE /v1/system/controlplane is forbidden while provisioned.
+type ErrControlPlaneDeleteBlocked struct{}
+
+func (e *ErrControlPlaneDeleteBlocked) Error() string {
+	return "control plane delete is not allowed while agent is provisioned; deprovision the agent first"
 }
 
 func (f *Facade) controlPlaneDeploymentRow() (*models.ControlPlaneDeployment, bool) {
@@ -39,11 +46,21 @@ func (f *Facade) controlPlaneDeploymentRow() (*models.ControlPlaneDeployment, bo
 }
 
 func (f *Facade) guardControlPlaneMicroserviceMutation(uuid, operation string) error {
+	if f.fa.NotProvisioned() {
+		return nil
+	}
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return nil
+	}
+	if ms := f.fa.FindLatestMicroserviceByUUID(uuid); ms != nil && ms.IsController {
+		return &ErrControlPlaneLifecycleBlocked{Operation: operation}
+	}
 	item, ok := f.controlPlaneDeploymentRow()
 	if !ok {
 		return nil
 	}
-	if strings.TrimSpace(item.ControllerUUID) != strings.TrimSpace(uuid) {
+	if strings.TrimSpace(item.ControllerUUID) != uuid {
 		return nil
 	}
 	return &ErrControlPlaneLifecycleBlocked{Operation: operation}
@@ -63,11 +80,17 @@ func controlPlaneRuntimeListEntry(item *models.ControlPlaneDeployment) map[strin
 		"name":        item.Name,
 		"application": item.Namespace,
 		"source":      "controlplane",
-		"type":        "controlplane",
+		"type":        "controller",
 		"state":       state,
 		"containerId": item.ContainerID,
 		"image":       item.Image,
 	}
+}
+
+// IsControlPlaneDeleteBlocked reports whether err blocks control-plane delete while provisioned.
+func IsControlPlaneDeleteBlocked(err error) bool {
+	var blocked *ErrControlPlaneDeleteBlocked
+	return errors.As(err, &blocked)
 }
 
 // IsControlPlaneLifecycleBlocked reports whether err blocks control-plane ms lifecycle.

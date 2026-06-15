@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,10 +17,10 @@ import (
 const (
 	controlPlaneKind       = "ControlPlane"
 	controlPlaneAPIVersion = "edgelet.iofog.org/v1"
-	// ControlPlaneHTTPS*Filename are container-relative names under /etc/iofog/controller-cert/.
-	ControlPlaneHTTPSCertFilename = "tls.crt"
-	ControlPlaneHTTPSKeyFilename  = "tls.key"
-	ControlPlaneHTTPSCAFilename   = "ca.crt"
+	// ControlPlaneTLS*Filename are container-relative names under /etc/iofog/controller-cert/.
+	ControlPlaneTLSCertFilename = "tls.crt"
+	ControlPlaneTLSKeyFilename  = "tls.key"
+	ControlPlaneTLSCAFilename   = "ca.crt"
 )
 
 // ControlPlaneManifest is the operator YAML for kind ControlPlane.
@@ -37,19 +38,14 @@ type ControlPlaneManifest struct {
 // ControlPlaneManifestSpec holds controller deployment configuration.
 type ControlPlaneManifestSpec struct {
 	Controller struct {
-		Image    string `yaml:"image" json:"image"`
-		Registry *int   `yaml:"registry,omitempty" json:"registry,omitempty"`
-		Port     *int   `yaml:"port,omitempty" json:"port,omitempty"`
+		Image      string `yaml:"image" json:"image"`
+		Registry   *int   `yaml:"registry,omitempty" json:"registry,omitempty"`
+		Port       *int   `yaml:"port,omitempty" json:"port,omitempty"`
+		PublicURL  string `yaml:"publicUrl,omitempty" json:"publicUrl,omitempty"`
+		TrustProxy *bool  `yaml:"trustProxy,omitempty" json:"trustProxy,omitempty"`
 	} `yaml:"controller" json:"controller"`
-	Auth struct {
-		URL              string `yaml:"url,omitempty" json:"url,omitempty"`
-		Realm            string `yaml:"realm,omitempty" json:"realm,omitempty"`
-		RealmKey         string `yaml:"realmKey,omitempty" json:"realmKey,omitempty"`
-		SSL              string `yaml:"ssl,omitempty" json:"ssl,omitempty"`
-		ControllerClient string `yaml:"controllerClient,omitempty" json:"controllerClient,omitempty"`
-		ControllerSecret string `yaml:"controllerSecret,omitempty" json:"controllerSecret,omitempty"`
-		ViewerClient     string `yaml:"viewerClient,omitempty" json:"viewerClient,omitempty"`
-	} `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Console  ControlPlaneConsoleSpec `yaml:"console,omitempty" json:"console,omitempty"`
+	Auth     *ControlPlaneAuthSpec   `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Database *struct {
 		Provider     string `yaml:"provider,omitempty" json:"provider,omitempty"`
 		User         string `yaml:"user,omitempty" json:"user,omitempty"`
@@ -73,27 +69,87 @@ type ControlPlaneManifestSpec struct {
 	NATS *struct {
 		Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	} `yaml:"nats,omitempty" json:"nats,omitempty"`
-	ECNViewerPort *int                     `yaml:"ecnViewerPort,omitempty" json:"ecnViewerPort,omitempty"`
-	ECNViewerURL  string                   `yaml:"ecnViewerUrl,omitempty" json:"ecnViewerUrl,omitempty"`
-	LogLevel      string                   `yaml:"logLevel,omitempty" json:"logLevel,omitempty"`
-	HTTPS         *ControlPlaneHTTPSConfig `yaml:"https,omitempty" json:"https,omitempty"`
-	Vault         *ControlPlaneVaultSpec   `yaml:"vault,omitempty" json:"vault,omitempty"`
+	LogLevel string                 `yaml:"logLevel,omitempty" json:"logLevel,omitempty"`
+	TLS      *ControlPlaneTLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	Vault    *ControlPlaneVaultSpec `yaml:"vault,omitempty" json:"vault,omitempty"`
 	// Forbidden in Edgelet ControlPlane YAML (potctl REST import only).
 	SiteCA  any `yaml:"siteCA,omitempty" json:"-"`
 	LocalCA any `yaml:"localCA,omitempty" json:"-"`
 }
 
-// ControlPlaneHTTPSBase64 holds inline TLS material for ControlPlane HTTPS.
-type ControlPlaneHTTPSBase64 struct {
-	CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
-	Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
-	Key  string `yaml:"key,omitempty" json:"key,omitempty"`
+// ControlPlaneConsoleSpec configures EdgeOps Console exposure.
+type ControlPlaneConsoleSpec struct {
+	Port *int   `yaml:"port,omitempty" json:"port,omitempty"`
+	URL  string `yaml:"url,omitempty" json:"url,omitempty"`
 }
 
-// ControlPlaneHTTPSConfig configures TLS for the control plane controller.
-type ControlPlaneHTTPSConfig struct {
-	Path   string                   `yaml:"path,omitempty" json:"path,omitempty"`
-	Base64 *ControlPlaneHTTPSBase64 `yaml:"base64,omitempty" json:"base64,omitempty"`
+// ControlPlaneAuthSpec configures Controller OIDC (embedded or external).
+type ControlPlaneAuthSpec struct {
+	Mode                      string                        `yaml:"mode,omitempty" json:"mode,omitempty"`
+	InsecureAllowHTTP         *bool                         `yaml:"insecureAllowHttp,omitempty" json:"insecureAllowHttp,omitempty"`
+	InsecureAllowBootstrapLog *bool                         `yaml:"insecureAllowBootstrapLog,omitempty" json:"insecureAllowBootstrapLog,omitempty"`
+	Bootstrap                 *ControlPlaneAuthBootstrap    `yaml:"bootstrap,omitempty" json:"bootstrap,omitempty"`
+	IssuerURL                 string                        `yaml:"issuerUrl,omitempty" json:"issuerUrl,omitempty"`
+	Client                    *ControlPlaneAuthClient       `yaml:"client,omitempty" json:"client,omitempty"`
+	ConsoleClient             string                        `yaml:"consoleClient,omitempty" json:"consoleClient,omitempty"`
+	ConsoleClientEnabled      *bool                         `yaml:"consoleClientEnabled,omitempty" json:"consoleClientEnabled,omitempty"`
+	RateLimit                 *ControlPlaneAuthRateLimit    `yaml:"rateLimit,omitempty" json:"rateLimit,omitempty"`
+	SessionStore              *ControlPlaneAuthSessionStore `yaml:"sessionStore,omitempty" json:"sessionStore,omitempty"`
+	TokenTTL                  *ControlPlaneAuthTokenTTL     `yaml:"tokenTtl,omitempty" json:"tokenTtl,omitempty"`
+	OIDCTTL                   *ControlPlaneAuthOIDCTTL      `yaml:"oidcTtl,omitempty" json:"oidcTtl,omitempty"`
+}
+
+// ControlPlaneAuthBootstrap holds embedded OIDC bootstrap admin credentials.
+type ControlPlaneAuthBootstrap struct {
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+}
+
+// ControlPlaneAuthClient holds OIDC confidential client credentials.
+type ControlPlaneAuthClient struct {
+	ID     string `yaml:"id,omitempty" json:"id,omitempty"`
+	Secret string `yaml:"secret,omitempty" json:"secret,omitempty"`
+}
+
+// ControlPlaneAuthRateLimit configures auth endpoint rate limiting.
+type ControlPlaneAuthRateLimit struct {
+	Enabled              *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	MaxRequestsPerWindow *int  `yaml:"maxRequestsPerWindow,omitempty" json:"maxRequestsPerWindow,omitempty"`
+	WindowMs             *int  `yaml:"windowMs,omitempty" json:"windowMs,omitempty"`
+}
+
+// ControlPlaneAuthSessionStore configures OAuth BFF session storage.
+type ControlPlaneAuthSessionStore struct {
+	Type   string `yaml:"type,omitempty" json:"type,omitempty"`
+	TTLMs  *int   `yaml:"ttlMs,omitempty" json:"ttlMs,omitempty"`
+	Secret string `yaml:"secret,omitempty" json:"secret,omitempty"`
+}
+
+// ControlPlaneAuthTokenTTL configures JWT access/refresh token TTL overrides.
+type ControlPlaneAuthTokenTTL struct {
+	AccessTokenTTLSeconds  *int `yaml:"accessTokenTtlSeconds,omitempty" json:"accessTokenTtlSeconds,omitempty"`
+	RefreshTokenTTLSeconds *int `yaml:"refreshTokenTtlSeconds,omitempty" json:"refreshTokenTtlSeconds,omitempty"`
+}
+
+// ControlPlaneAuthOIDCTTL configures embedded OIDC provider TTL overrides.
+type ControlPlaneAuthOIDCTTL struct {
+	InteractionTTLSeconds *int `yaml:"interactionTtlSeconds,omitempty" json:"interactionTtlSeconds,omitempty"`
+	GrantTTLSeconds       *int `yaml:"grantTtlSeconds,omitempty" json:"grantTtlSeconds,omitempty"`
+	SessionTTLSeconds     *int `yaml:"sessionTtlSeconds,omitempty" json:"sessionTtlSeconds,omitempty"`
+	IDTokenTTLSeconds     *int `yaml:"idTokenTtlSeconds,omitempty" json:"idTokenTtlSeconds,omitempty"`
+}
+
+// ControlPlaneTLSBase64 holds inline TLS material for ControlPlane listeners.
+type ControlPlaneTLSBase64 struct {
+	Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
+	Key  string `yaml:"key,omitempty" json:"key,omitempty"`
+	CA   string `yaml:"ca,omitempty" json:"ca,omitempty"`
+}
+
+// ControlPlaneTLSConfig configures TLS for the control plane controller.
+type ControlPlaneTLSConfig struct {
+	Path   string                 `yaml:"path,omitempty" json:"path,omitempty"`
+	Base64 *ControlPlaneTLSBase64 `yaml:"base64,omitempty" json:"base64,omitempty"`
 }
 
 // ControlPlaneVaultSpec mirrors optional vault provider blocks.
@@ -121,6 +177,17 @@ type ControlPlaneVaultSpec struct {
 		ProjectID   string `yaml:"projectId,omitempty" json:"projectId,omitempty"`
 		Credentials string `yaml:"credentials,omitempty" json:"credentials,omitempty"`
 	} `yaml:"google,omitempty" json:"google,omitempty"`
+}
+
+// ValidEmbeddedAuthForTest returns a minimal valid embedded auth block for unit tests.
+func ValidEmbeddedAuthForTest() *ControlPlaneAuthSpec {
+	return &ControlPlaneAuthSpec{
+		Mode: "embedded",
+		Bootstrap: &ControlPlaneAuthBootstrap{
+			Username: "admin",
+			Password: "AdminPass123!",
+		},
+	}
 }
 
 // ParseControlPlaneManifest decodes and validates ControlPlane YAML.
@@ -192,51 +259,245 @@ func (m *ControlPlaneManifest) Validate() error {
 	if m.Spec.Controller.Port != nil && *m.Spec.Controller.Port <= 0 {
 		return errors.New("spec.controller.port must be positive when set")
 	}
-	if m.Spec.ECNViewerPort != nil && *m.Spec.ECNViewerPort <= 0 {
-		return errors.New("spec.ecnViewerPort must be positive when set")
+	if m.Spec.Console.Port != nil && *m.Spec.Console.Port <= 0 {
+		return errors.New("spec.console.port must be positive when set")
 	}
-	return validateControlPlaneHTTPS(m.Spec.HTTPS)
+	if err := validateControlPlaneAuth(m.Spec.Auth); err != nil {
+		return err
+	}
+	return validateControlPlaneTLS(m.Spec.TLS)
 }
 
-func validateControlPlaneHTTPS(https *ControlPlaneHTTPSConfig) error {
-	if https == nil {
+func validateControlPlaneAuth(auth *ControlPlaneAuthSpec) error {
+	if auth == nil {
+		return errors.New("spec.auth is required")
+	}
+	mode := strings.TrimSpace(auth.Mode)
+	if mode == "" {
+		return errors.New("spec.auth.mode is required")
+	}
+	switch mode {
+	case "embedded":
+		if err := validateEmbeddedAuth(auth); err != nil {
+			return err
+		}
+	case "external":
+		if err := validateExternalAuth(auth); err != nil {
+			return err
+		}
+	default:
+		return errors.New("spec.auth.mode must be embedded or external")
+	}
+	return validateControlPlaneAuthOptions(auth)
+}
+
+func validateEmbeddedAuth(auth *ControlPlaneAuthSpec) error {
+	if auth.Bootstrap == nil || strings.TrimSpace(auth.Bootstrap.Username) == "" {
+		return errors.New("spec.auth.bootstrap.username is required when spec.auth.mode is embedded")
+	}
+	return validateBootstrapPassword(auth.Bootstrap.Password)
+}
+
+func validateExternalAuth(auth *ControlPlaneAuthSpec) error {
+	if strings.TrimSpace(auth.IssuerURL) == "" {
+		return errors.New("spec.auth.issuerUrl is required when spec.auth.mode is external")
+	}
+	if auth.Client == nil || strings.TrimSpace(auth.Client.ID) == "" {
+		return errors.New("spec.auth.client.id is required when spec.auth.mode is external")
+	}
+	if auth.Client == nil || strings.TrimSpace(auth.Client.Secret) == "" {
+		return errors.New("spec.auth.client.secret is required when spec.auth.mode is external")
+	}
+	return nil
+}
+
+const bootstrapPasswordComplexityMessage = "spec.auth.bootstrap.password must be at least 12 characters with 1 uppercase letter and 1 special character" // #nosec G101 -- validation error text, not a credential
+
+func validateBootstrapPassword(password string) error {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return errors.New("spec.auth.bootstrap.password is required when spec.auth.mode is embedded")
+	}
+	if len(password) < 12 {
+		return errors.New(bootstrapPasswordComplexityMessage)
+	}
+	hasUpper := false
+	hasSpecial := false
+	for _, r := range password {
+		if unicode.IsUpper(r) {
+			hasUpper = true
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			hasSpecial = true
+		}
+	}
+	if !hasUpper || !hasSpecial {
+		return errors.New(bootstrapPasswordComplexityMessage)
+	}
+	return nil
+}
+
+func validateControlPlaneAuthOptions(auth *ControlPlaneAuthSpec) error {
+	if auth.SessionStore != nil {
+		sessionType := strings.TrimSpace(auth.SessionStore.Type)
+		if sessionType != "" && sessionType != "memory" && sessionType != "database" {
+			return errors.New("spec.auth.sessionStore.type must be memory or database")
+		}
+		if auth.SessionStore.TTLMs != nil && *auth.SessionStore.TTLMs <= 0 {
+			return errors.New("spec.auth.sessionStore.ttlMs must be positive when set")
+		}
+	}
+	if auth.RateLimit != nil {
+		if auth.RateLimit.MaxRequestsPerWindow != nil && *auth.RateLimit.MaxRequestsPerWindow <= 0 {
+			return errors.New("spec.auth.rateLimit.maxRequestsPerWindow must be positive when set")
+		}
+		if auth.RateLimit.WindowMs != nil && *auth.RateLimit.WindowMs <= 0 {
+			return errors.New("spec.auth.rateLimit.windowMs must be positive when set")
+		}
+	}
+	if auth.TokenTTL != nil {
+		if auth.TokenTTL.AccessTokenTTLSeconds != nil && *auth.TokenTTL.AccessTokenTTLSeconds <= 0 {
+			return errors.New("spec.auth.tokenTtl.accessTokenTtlSeconds must be positive when set")
+		}
+		if auth.TokenTTL.RefreshTokenTTLSeconds != nil && *auth.TokenTTL.RefreshTokenTTLSeconds <= 0 {
+			return errors.New("spec.auth.tokenTtl.refreshTokenTtlSeconds must be positive when set")
+		}
+	}
+	if auth.OIDCTTL != nil {
+		if auth.OIDCTTL.InteractionTTLSeconds != nil && *auth.OIDCTTL.InteractionTTLSeconds <= 0 {
+			return errors.New("spec.auth.oidcTtl.interactionTtlSeconds must be positive when set")
+		}
+		if auth.OIDCTTL.GrantTTLSeconds != nil && *auth.OIDCTTL.GrantTTLSeconds <= 0 {
+			return errors.New("spec.auth.oidcTtl.grantTtlSeconds must be positive when set")
+		}
+		if auth.OIDCTTL.SessionTTLSeconds != nil && *auth.OIDCTTL.SessionTTLSeconds <= 0 {
+			return errors.New("spec.auth.oidcTtl.sessionTtlSeconds must be positive when set")
+		}
+		if auth.OIDCTTL.IDTokenTTLSeconds != nil && *auth.OIDCTTL.IDTokenTTLSeconds <= 0 {
+			return errors.New("spec.auth.oidcTtl.idTokenTtlSeconds must be positive when set")
+		}
+	}
+	return nil
+}
+
+// ValidateControlPlaneTLSPath canonicalizes and validates a host TLS directory path.
+func ValidateControlPlaneTLSPath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", errors.New("spec.tls.path must not be empty")
+	}
+	if !isValidHostPath(trimmed) {
+		return "", errors.New("spec.tls.path must be an absolute host path")
+	}
+	if tlsPathHasTraversal(trimmed) {
+		return "", errors.New("spec.tls.path must not contain parent directory traversal")
+	}
+	cleaned := filepath.Clean(trimmed)
+	if isTLSPathRoot(cleaned) {
+		return "", errors.New("spec.tls.path must not be root")
+	}
+	return cleaned, nil
+}
+
+// StatControlPlaneTLSDir returns metadata for a validated host TLS directory.
+func StatControlPlaneTLSDir(hostDir string) (os.FileInfo, error) {
+	cleaned, err := ValidateControlPlaneTLSPath(hostDir)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("spec.tls.path must be a directory")
+	}
+	return info, nil
+}
+
+// StatControlPlaneTLSFile returns metadata for a known TLS file under a validated host directory.
+func StatControlPlaneTLSFile(hostDir, basename string) (os.FileInfo, error) {
+	switch basename {
+	case ControlPlaneTLSCertFilename, ControlPlaneTLSKeyFilename, ControlPlaneTLSCAFilename:
+	default:
+		return nil, fmt.Errorf("invalid control plane TLS filename %q", basename)
+	}
+	cleaned, err := ValidateControlPlaneTLSPath(hostDir)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(filepath.Join(cleaned, basename))
+}
+
+func tlsPathHasTraversal(path string) bool {
+	for _, part := range splitPathParts(path) {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func splitPathParts(path string) []string {
+	return strings.FieldsFunc(path, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+}
+
+func isTLSPathRoot(path string) bool {
+	cleaned := filepath.Clean(path)
+	if cleaned == string(filepath.Separator) {
+		return true
+	}
+	vol := filepath.VolumeName(cleaned)
+	if vol == "" {
+		return false
+	}
+	rest := strings.TrimPrefix(cleaned, vol)
+	rest = strings.Trim(rest, `/\`)
+	return rest == ""
+}
+
+func validateControlPlaneTLS(tls *ControlPlaneTLSConfig) error {
+	if tls == nil {
 		return nil
 	}
-	path := strings.TrimSpace(https.Path)
+	path := strings.TrimSpace(tls.Path)
 	hasPath := path != ""
-	hasBase64 := https.Base64 != nil && (strings.TrimSpace(https.Base64.Cert) != "" ||
-		strings.TrimSpace(https.Base64.Key) != "" ||
-		strings.TrimSpace(https.Base64.CA) != "")
+	hasBase64 := tls.Base64 != nil && (strings.TrimSpace(tls.Base64.Cert) != "" ||
+		strings.TrimSpace(tls.Base64.Key) != "" ||
+		strings.TrimSpace(tls.Base64.CA) != "")
 	if hasPath && hasBase64 {
-		return errors.New("spec.https.path and spec.https.base64 are mutually exclusive")
+		return errors.New("spec.tls.path and spec.tls.base64 are mutually exclusive")
 	}
 	if !hasPath && !hasBase64 {
 		return nil
 	}
 	if hasPath {
-		if !isValidHostPath(path) {
-			return errors.New("spec.https.path must be an absolute host path")
-		}
-		info, err := os.Stat(path)
+		cleaned, err := ValidateControlPlaneTLSPath(path)
 		if err != nil {
-			return fmt.Errorf("spec.https.path must exist on the Edgelet host: %w", err)
+			return err
 		}
-		if !info.IsDir() {
-			return errors.New("spec.https.path must be a directory")
+		tls.Path = cleaned
+		if _, err := StatControlPlaneTLSDir(cleaned); err != nil {
+			if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+				return fmt.Errorf("spec.tls.path must exist on the Edgelet host: %w", err)
+			}
+			return err
 		}
-		for _, file := range []string{ControlPlaneHTTPSCertFilename, ControlPlaneHTTPSKeyFilename} {
-			if _, err := os.Stat(filepath.Join(path, file)); err != nil {
-				return fmt.Errorf("spec.https.path must contain %s: %w", file, err)
+		for _, file := range []string{ControlPlaneTLSCertFilename, ControlPlaneTLSKeyFilename} {
+			if _, err := StatControlPlaneTLSFile(cleaned, file); err != nil {
+				return fmt.Errorf("spec.tls.path must contain %s: %w", file, err)
 			}
 		}
 		return nil
 	}
-	b := https.Base64
+	b := tls.Base64
 	if strings.TrimSpace(b.Cert) == "" {
-		return errors.New("spec.https.base64.cert is required when spec.https.base64 is set")
+		return errors.New("spec.tls.base64.cert is required when spec.tls.base64 is set")
 	}
 	if strings.TrimSpace(b.Key) == "" {
-		return errors.New("spec.https.base64.key is required when spec.https.base64 is set")
+		return errors.New("spec.tls.base64.key is required when spec.tls.base64 is set")
 	}
 	for _, item := range []struct {
 		field string
@@ -250,7 +511,7 @@ func validateControlPlaneHTTPS(https *ControlPlaneHTTPSConfig) error {
 			continue
 		}
 		if _, err := base64.StdEncoding.DecodeString(strings.TrimSpace(item.value)); err != nil {
-			return fmt.Errorf("spec.https.base64.%s must be valid base64: %w", item.field, err)
+			return fmt.Errorf("spec.tls.base64.%s must be valid base64: %w", item.field, err)
 		}
 	}
 	return nil

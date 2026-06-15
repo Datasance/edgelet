@@ -292,9 +292,15 @@ func readKVFile(path string) (map[string]string, error) {
 	return kv, nil
 }
 
-func targetVersionFromAction(actionData map[string]any) string {
+// TargetVersionFromAction resolves the controller target version with semver precedence.
+func TargetVersionFromAction(actionData map[string]any) string {
 	if actionData == nil {
 		return ""
+	}
+	if raw, ok := actionData["semver"].(string); ok {
+		if v := strings.TrimSpace(raw); v != "" {
+			return v
+		}
 	}
 	for _, key := range []string{"version", "targetVersion", "target"} {
 		if raw, ok := actionData[key].(string); ok {
@@ -306,6 +312,22 @@ func targetVersionFromAction(actionData map[string]any) string {
 	return ""
 }
 
+func targetVersionFromAction(actionData map[string]any) string {
+	return TargetVersionFromAction(actionData)
+}
+
 func normalizeVersion(version string) string {
 	return strings.TrimPrefix(strings.TrimSpace(version), "v")
+}
+
+// versionForInstallScript formats a release tag for install.sh --version= (always v-prefixed).
+func versionForInstallScript(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" || strings.EqualFold(version, "latest") {
+		return version
+	}
+	if strings.HasPrefix(version, "v") {
+		return version
+	}
+	return "v" + version
 }
