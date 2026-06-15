@@ -6,6 +6,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/controlplane"
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/store"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
@@ -20,6 +21,18 @@ type controlPlaneCaptureEngine struct {
 func (e *controlPlaneCaptureEngine) CreateContainer(ms *models.Microservice, _ string) (string, error) {
 	e.lastMS = ms
 	return "cp-cid-" + ms.MicroserviceUUID, nil
+}
+
+type controlPlaneStatsEngine struct {
+	controlPlaneCaptureEngine
+	stats *engine.ContainerStats
+}
+
+func (e *controlPlaneStatsEngine) GetContainerStats(string) (*engine.ContainerStats, error) {
+	if e.stats == nil {
+		return &engine.ContainerStats{}, nil
+	}
+	return e.stats, nil
 }
 
 func TestReconcileControlPlane_NoDeploymentIsNoOp(t *testing.T) {
@@ -148,6 +161,164 @@ func TestReconcileControlPlane_RecreatesOnGenerationBump(t *testing.T) {
 	}
 }
 
+func TestReconcileControlPlane_RecreatesWithPullOnRecreateFlag(t *testing.T) {
+	openLocalReconcileTestDB(t)
+
+	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
+
+	dep := &models.ControlPlaneDeployment{
+		ControllerUUID:     "cp-recreate-pull",
+		Namespace:          "default",
+		Name:               "pot",
+		ManifestYAML:       minimalControlPlaneManifestYAML(),
+		DesiredState:       "running",
+		Generation:         2,
+		ObservedGeneration: 1,
+		RuntimeState:       "running",
+		ContainerID:        "old-cid",
+	}
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert control plane: %v", err)
+	}
+
+	pm.SetControlPlanePullOnRecreate(true)
+
+	pullImage := false
+	pm.recreateControlPlaneFn = func(_ *models.ControlPlaneDeployment, wantPull bool, _ int64) error {
+		pullImage = wantPull
+		return nil
+	}
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateRunning}, nil
+	}
+
+	eng := &controlPlaneCaptureEngine{}
+	eng.workload = &engine.Container{
+		ID:    "old-cid",
+		Image: "ghcr.io/datasance/controller:3.7.0",
+		Labels: map[string]string{
+			workloadmeta.LabelMicroserviceUID: "cp-recreate-pull",
+		},
+	}
+	pm.engine = eng
+	pm.containerManager = NewContainerManager(eng, nil, "docker")
+
+	pm.reconcileControlPlane()
+
+	if !pullImage {
+		t.Fatal("expected recreateControlPlaneFn to receive pullImage=true")
+	}
+	if pm.consumeControlPlanePullOnRecreate() {
+		t.Fatal("expected pull-on-recreate flag to be consumed")
+	}
+}
+
+func TestReconcileControlPlane_ReportsContainerStatsWhenRegistered(t *testing.T) {
+	openLocalReconcileTestDB(t)
+	statusreporter.GetInstance().ResetProcessManagerStatus()
+	t.Cleanup(func() { statusreporter.GetInstance().ResetProcessManagerStatus() })
+
+	eng := &controlPlaneStatsEngine{
+		stats: &engine.ContainerStats{CPUUsage: 12.5, MemoryUsage: 987654},
+	}
+	pm := &ProcessManager{
+		logger:           logging.NewModuleLogger("test-process-manager"),
+		engine:           eng,
+		containerManager: NewContainerManager(eng, nil, "docker"),
+	}
+
+	dep := &models.ControlPlaneDeployment{
+		ControllerUUID:       "cp-stats",
+		Namespace:            "default",
+		Name:                 "pot",
+		ManifestYAML:         minimalControlPlaneManifestYAML(),
+		DesiredState:         "running",
+		Generation:           1,
+		ObservedGeneration:   1,
+		RuntimeState:         "running",
+		ContainerID:          "old-cid",
+		ControllerRegistered: true,
+	}
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert control plane: %v", err)
+	}
+
+	eng.workload = &engine.Container{
+		ID:    "old-cid",
+		Image: "ghcr.io/datasance/controller:3.7.0",
+		Labels: map[string]string{
+			workloadmeta.LabelMicroserviceUID: "cp-stats",
+		},
+	}
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateRunning}, nil
+	}
+
+	pm.reconcileControlPlane()
+
+	msStatus := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus("cp-stats")
+	if msStatus == nil {
+		t.Fatal("expected controller microservice status")
+	}
+	if msStatus.CPUUsage != 12.5 {
+		t.Fatalf("expected cpuUsage=12.5, got %v", msStatus.CPUUsage)
+	}
+	if msStatus.MemoryUsage != 987654 {
+		t.Fatalf("expected memoryUsage=987654, got %d", msStatus.MemoryUsage)
+	}
+}
+
+func TestReconcileControlPlane_OmitsContainerStatsBeforeRegister(t *testing.T) {
+	openLocalReconcileTestDB(t)
+	statusreporter.GetInstance().ResetProcessManagerStatus()
+	t.Cleanup(func() { statusreporter.GetInstance().ResetProcessManagerStatus() })
+
+	eng := &controlPlaneStatsEngine{
+		stats: &engine.ContainerStats{CPUUsage: 12.5, MemoryUsage: 987654},
+	}
+	pm := &ProcessManager{
+		logger:           logging.NewModuleLogger("test-process-manager"),
+		engine:           eng,
+		containerManager: NewContainerManager(eng, nil, "docker"),
+	}
+
+	dep := &models.ControlPlaneDeployment{
+		ControllerUUID:     "cp-no-stats",
+		Namespace:          "default",
+		Name:               "pot",
+		ManifestYAML:       minimalControlPlaneManifestYAML(),
+		DesiredState:       "running",
+		Generation:         1,
+		ObservedGeneration: 1,
+		RuntimeState:       "running",
+		ContainerID:        "old-cid",
+	}
+	if err := store.GetInstance().UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert control plane: %v", err)
+	}
+
+	eng.workload = &engine.Container{
+		ID:    "old-cid",
+		Image: "ghcr.io/datasance/controller:3.7.0",
+		Labels: map[string]string{
+			workloadmeta.LabelMicroserviceUID: "cp-no-stats",
+		},
+	}
+	pm.getContainerStatusFn = func(_, _ string) (*models.MicroserviceStatus, error) {
+		return &models.MicroserviceStatus{Status: models.MicroserviceStateRunning}, nil
+	}
+
+	pm.reconcileControlPlane()
+
+	msStatus := statusreporter.GetInstance().GetProcessManagerStatus().GetMicroserviceStatus("cp-no-stats")
+	if msStatus == nil {
+		t.Fatal("expected controller microservice status")
+	}
+	if msStatus.CPUUsage != 0 || msStatus.MemoryUsage != 0 {
+		t.Fatalf("expected stats omitted before register, got cpu=%v memory=%d", msStatus.CPUUsage, msStatus.MemoryUsage)
+	}
+}
+
 func TestBuildControlPlaneLaunchSpec(t *testing.T) {
 	openLocalReconcileTestDB(t)
 	pm := &ProcessManager{logger: logging.NewModuleLogger("test-process-manager")}
@@ -177,7 +348,7 @@ func assertControlPlaneLaunchSpec(t *testing.T, ms *models.Microservice) {
 	if len(ms.PortMappings) != 2 {
 		t.Fatalf("expected 2 port mappings, got %d", len(ms.PortMappings))
 	}
-	if ms.PortMappings[0].Outside != controlplane.HostAPIPort || ms.PortMappings[1].Outside != controlplane.HostViewerPort {
+	if ms.PortMappings[0].Outside != controlplane.HostAPIPort || ms.PortMappings[1].Outside != controlplane.HostConsolePort {
 		t.Fatalf("unexpected host ports: %+v", ms.PortMappings)
 	}
 
@@ -228,6 +399,11 @@ metadata:
   namespace: default
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
+  auth:
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: AdminPass123!
 `
 }

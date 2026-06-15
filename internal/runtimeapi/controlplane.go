@@ -80,7 +80,7 @@ func ControlPlaneStatusMap(item *models.ControlPlaneDeployment) map[string]any {
 		"observedGeneration": item.ObservedGeneration,
 		"lastTransitionAt":   item.LastTransitionAt,
 		"source":             "controlplane",
-		"type":               "controlplane",
+		"type":               "controller",
 	}
 }
 
@@ -95,6 +95,9 @@ func (f *Facade) GetControlPlaneManifestMasked() (string, error) {
 
 // DeleteControlPlane removes the controller deployment, container, and volumes.
 func (f *Facade) DeleteControlPlane() error {
+	if !f.fa.NotProvisioned() {
+		return &ErrControlPlaneDeleteBlocked{}
+	}
 	pm := processmanager.GetInstance()
 	if err := pm.DeleteControlPlane(); err != nil {
 		if errors.Is(err, processmanager.ErrControlPlaneNotFound) {
@@ -184,6 +187,10 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 	}
 	if existing != nil && strings.TrimSpace(existing.ContainerID) != "" {
 		item.ContainerID = strings.TrimSpace(existing.ContainerID)
+	}
+	if existing != nil {
+		item.ControllerRegistered = existing.ControllerRegistered
+		item.InitialRebuildSkipped = existing.InitialRebuildSkipped
 	}
 
 	emitDeployProgress(progress, DeployStagePersisting, "saving control plane deployment")

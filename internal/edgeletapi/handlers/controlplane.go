@@ -93,6 +93,10 @@ func (h *EdgeletAPIHandler) handleSystemControlPlaneManifest(w http.ResponseWrit
 
 func (h *EdgeletAPIHandler) handleSystemControlPlaneDelete(w http.ResponseWriter) {
 	if err := h.facade.DeleteControlPlane(); err != nil {
+		if runtimeapi.IsControlPlaneDeleteBlocked(err) {
+			writeAPIError(w, http.StatusForbidden, ErrCodeForbidden, err.Error(), nil)
+			return
+		}
 		if errors.Is(err, runtimeapi.ErrControlPlaneNotFound) {
 			writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "control plane deployment not found", nil)
 			return

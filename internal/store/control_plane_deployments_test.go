@@ -112,3 +112,29 @@ func TestSystemControlPlaneUpsertValidation(t *testing.T) {
 		t.Fatal("expected error for missing controller_uuid")
 	}
 }
+
+func TestSystemControlPlaneRegisterStateFlags(t *testing.T) {
+	db := openFreshStoreDB(t)
+
+	dep := &models.ControlPlaneDeployment{
+		ControllerUUID:        "cp-uuid-flags",
+		Name:                  "pot",
+		ManifestYAML:          "kind: ControlPlane",
+		ControllerRegistered:  true,
+		InitialRebuildSkipped: true,
+	}
+	if err := db.UpsertSystemControlPlane(dep); err != nil {
+		t.Fatalf("upsert system control plane: %v", err)
+	}
+
+	got, found, err := db.GetSystemControlPlane()
+	if err != nil || !found {
+		t.Fatalf("get system control plane: found=%v err=%v", found, err)
+	}
+	if !got.ControllerRegistered {
+		t.Fatal("expected controller_registered=true")
+	}
+	if !got.InitialRebuildSkipped {
+		t.Fatal("expected initial_rebuild_skipped=true")
+	}
+}

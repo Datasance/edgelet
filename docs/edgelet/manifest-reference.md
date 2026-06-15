@@ -154,6 +154,15 @@ Deploys **one** Datasance Controller container per Edgelet node (optional — re
 
 **Annotated reference:** [examples/controlplane.yaml](examples/controlplane.yaml) lists every YAML key (active + commented optional blocks).
 
+### Required fields
+
+| Field | Notes |
+|-------|-------|
+| `spec.controller.image` | Controller container image |
+| `spec.auth.mode` | `embedded` or `external` |
+| `spec.auth.bootstrap` | Required when `mode: embedded` (`username`, `password` with complexity rules) |
+| `spec.auth.issuerUrl` + `spec.auth.client` | Required when `mode: external` |
+
 ### Forbidden fields
 
 | Field | Reason |
@@ -172,13 +181,34 @@ spec:
     image: <image>            # required
     registry: <id>            # optional
     port: 51121               # optional API port
-  auth: { ... }               # optional Keycloak / auth block
+    publicUrl: <url>          # recommended — CONTROLLER_PUBLIC_URL
+    trustProxy: true|false    # optional
+  console:
+    port: 8008                # optional — host port 80 maps here
+    url: <url>                # optional — CONSOLE_URL
+  auth:                         # required
+    mode: embedded|external
+    insecureAllowHttp: false
+    insecureAllowBootstrapLog: false
+    bootstrap:                  # required when mode=embedded
+      username: admin
+      password: "<secret>"      # ≥12 chars, 1 uppercase, 1 special
+    issuerUrl: <url>            # required when mode=external
+    client:                     # required when mode=external
+      id: <id>
+      secret: <secret>
+    consoleClient: ecn-viewer
+    consoleClientEnabled: false
+    rateLimit: { enabled, maxRequestsPerWindow, windowMs }
+    sessionStore: { type, ttlMs, secret }
+    tokenTtl: { accessTokenTtlSeconds, refreshTokenTtlSeconds }
+    oidcTtl: { interactionTtlSeconds, grantTtlSeconds, sessionTtlSeconds, idTokenTtlSeconds }
   systemMicroservices:        # optional router/nats image maps per arch
     router: { amd64: "...", arm64: "..." }
     nats: { ... }
   nats:
     enabled: true|false
-  # events, database, https, vault, ecnViewerPort, logLevel — see control-plane.md
+  # events, database, tls, vault, logLevel — see control-plane.md
 ```
 
 ### Rules

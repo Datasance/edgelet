@@ -133,7 +133,7 @@ func runSystemReload(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return run.WriteRouteData(appCtx, path, data)
+	return writeHumanOrRoute(appCtx, path, output.FormatEdgeletAPIHuman(path, data), data)
 }
 
 func runSystemPrune(cmd *cobra.Command, args []string) error {

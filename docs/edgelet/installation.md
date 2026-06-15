@@ -74,14 +74,16 @@ The fat runtime inside the linux zstd embed is **statically linked by default** 
 
 ## Install paths
 
-| Item | Linux | macOS | Windows |
-|------|-------|-------|---------|
-| Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `Program Files\Edgelet\edgelet.exe` |
-| Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config.yaml` |
+| Purpose | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| Binary | `/usr/local/bin/edgelet` | `/usr/local/bin/edgelet` | `%ProgramFiles%\Edgelet\edgelet.exe` |
+| Config | `/etc/edgelet/config.yaml` | `/etc/edgelet/config.yaml` | `%ProgramData%\Edgelet\config\config.yaml` |
 | Controller CA | `/etc/edgelet/cert.crt` | same | same |
 | Data | `/var/lib/edgelet/` | `/var/lib/edgelet/` | `%ProgramData%\Edgelet\data\` |
+| Runtime | `/run/edgelet/` | `/var/run/edgelet/` | `%ProgramData%\Edgelet\run\` |
+| Logs | `/var/log/edgelet/` | `/var/log/edgelet/` | `%ProgramData%\Edgelet\log\` |
+| Scripts | `/usr/share/edgelet/` | `/usr/local/share/edgelet/` | `%ProgramData%\Edgelet\scripts\` |
 | OTA metadata | `/var/backups/edgelet/` | — | — |
-| Bundled scripts (linux) | `/usr/share/edgelet/install.sh` | optional | optional |
 
 Linux thin runtime chain: `/usr/local/bin/edgelet` → lazy extract → `/var/lib/edgelet/data/current/bin/edgelet` (fat).
 
@@ -160,7 +162,7 @@ Environment: `EDGELET_VERSION`, `EDGELET_GITHUB_REPO`.
 
 ### After install
 
-`install.sh` does **not** provision the node. On linux it installs the init unit and **starts** `edgelet.service` (and `edgelet-containerd` when `containerEngine=edgelet`).
+`install.sh` does **not** provision the node. On **linux** it installs the init unit and **starts** `edgelet.service` (and `edgelet-containerd` when `containerEngine=edgelet`). On **darwin** and **windows** it starts `edgelet daemon` in the background (`nohup`); logs go to `edgelet.0.log` under the platform log directory.
 
 ```bash
 edgelet --version
@@ -212,7 +214,9 @@ Constants set at the top of `install.sh`:
 | `/var/backups/edgelet/cache/` | Cached previous binaries |
 | `/var/backups/edgelet/install-receipt` | Current install metadata |
 | `/var/backups/edgelet/previous-release` | Rollback metadata |
-| `/usr/share/edgelet/` | Bundled `install.sh`, init templates, lib helpers |
+| `/usr/share/edgelet/` (linux) | Bundled `install.sh`, `uninstall.sh`, config/CA samples |
+| `/usr/local/share/edgelet/` (macOS) | Bundled `install.sh`, `uninstall.sh`, config/CA samples |
+| `%ProgramData%\Edgelet\scripts\` (windows) | Bundled `install.sh`, `uninstall.sh`, config/CA samples |
 
 ### Phase 2 — Fresh install
 
@@ -222,7 +226,7 @@ Constants set at the top of `install.sh`:
 4. `install_config_samples` — preserve existing config unless `--force-config`
 5. `apply_container_engine_to_config` — patch `containerEngine` in config when flag set
 6. `write_install_receipt` — `install_method=install` or `install-airgap`
-7. `copy_bundled_scripts` — copy self to `/usr/share/edgelet/install.sh` (linux)
+7. `copy_bundled_scripts` — copy `install.sh` and `uninstall.sh` to the platform scripts directory
 8. `install_init_unit` — install systemd/OpenRC/… unit and **start** the daemon
 
 ### Phase 3 — Upgrade (`--upgrade`)
@@ -397,39 +401,80 @@ sequenceDiagram
   participant Pot as Pot Controller
   participant FA as Field Agent
   participant VH as Version Handler
+  participant Disk as ota-reprovision-pending
   participant IS as install.sh
 
   FA->>Pot: Status heartbeat (isReadyToUpgrade=true)
   Pot->>FA: changes.version=true
-  FA->>Pot: GET version → versionCommand
-  Note over Pot,FA: command, version, provisionKey
-  FA->>VH: ChangeVersion(versionCommand)
+  FA->>Pot: GET version
+  Note over Pot,FA: versionCommand, semver, provisionKey, expirationTime (Unix ms)
+  FA->>VH: ChangeVersion(normalized action)
   VH->>VH: isValidChangeVersionOperation()
   alt ready
+    VH->>Disk: write pending (provisionKey, expiry) chmod 600
     VH->>IS: detached sh /usr/share/edgelet/install.sh --upgrade|--rollback
     IS->>IS: stop → replace binary → install_init_unit start
+    FA->>Disk: read pending on Start()
+    alt expiry valid
+      FA->>Pot: POST provision(provisionKey)
+      Note over FA,Pot: stable iofogUuid, new privateKey
+      FA->>Disk: delete pending
+    else expired
+      FA->>Pot: GET version (one refresh)
+    end
   else not ready
     VH-->>FA: no-op (command ignored)
   end
 ```
 
-### `versionCommand` payload
+### `versionCommand` payload (Controller v3.8)
 
-Fetched from the controller **`version`** endpoint when `changes["version"]` is true:
+Fetched from the controller **`version`** endpoint when `changes["version"]` is true.
+
+**Flat v3.8 shape:**
 
 ```json
 {
-  "command": "UPGRADE",
-  "version": "v1.2.3",
-  "provisionKey": "<optional-audit-key>"
+  "versionCommand": "upgrade",
+  "provisionKey": "<one-time-key>",
+  "expirationTime": 1718380800000,
+  "semver": "1.0.0-beta.3"
+}
+```
+
+**Legacy nested shape** (normalized internally):
+
+```json
+{
+  "versionCommand": {
+    "command": "UPGRADE",
+    "version": "v1.2.3",
+    "provisionKey": "<one-time-key>",
+    "expirationTime": 1718380800000
+  }
 }
 ```
 
 | Field | Values |
 |-------|--------|
-| `command` | `UPGRADE` or `ROLLBACK` (case-insensitive) |
-| `version` | Target tag for upgrade (optional; defaults to GitHub latest in script) |
-| `provisionKey` | Logged for audit only; not passed to `install.sh` |
+| `versionCommand` | `upgrade` or `rollback` (flat string) or nested `command` map |
+| `semver` | Target version when set; takes precedence over `version`/`target` |
+| `provisionKey` | One-time reprovision key; issued on **upgrade and rollback** |
+| `expirationTime` | Unix epoch **milliseconds** (JSON number or decimal string); typical TTL ~20 min |
+
+`semver` is omitted when unset — do not expect `null`.
+
+### Post-OTA reprovision
+
+Controller-driven OTA rotates the agent ed25519 key without changing `iofogUuid`:
+
+1. Version handler writes `/var/backups/edgelet/ota-reprovision-pending` before launching `install.sh`.
+2. `install.sh` stops the daemon, replaces the binary, and restarts via init.
+3. On `FieldAgent.Start()`, if the install receipt shows `install_method` of `upgrade`, `upgrade-airgap`, or `rollback`, Edgelet reads the pending file and calls `POST provision` with the stored key (if `expirationTime` is still valid).
+4. On success: pending file deleted, JWT rotated, Edge Guard baseline cleared, `postFogConfig` sent.
+5. If the key expired during OTA: one `GET version` refresh for a new key; otherwise log a warning, keep the old credentials, and retry on the upgrade scan worker.
+
+Manual `install.sh` runs do not create a pending file and do not auto-reprovision.
 
 `ChangeVersion` validates readiness **again** before spawning the script. Stale controller commands are ignored if the node is not ready.
 
@@ -493,7 +538,11 @@ sudo sh uninstall.sh
 sudo sh uninstall.sh --remove-data   # also removes /etc/edgelet when set
 ```
 
-Bundled copy: `sudo sh /usr/share/edgelet/uninstall.sh`.
+Bundled copy (linux): `sudo sh /usr/share/edgelet/uninstall.sh`.
+
+Bundled copy (macOS): `sudo sh /usr/local/share/edgelet/uninstall.sh`.
+
+Bundled copy (windows): `sh %ProgramData%\Edgelet\scripts\uninstall.sh`.
 
 ---
 

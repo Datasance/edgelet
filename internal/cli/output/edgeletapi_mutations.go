@@ -15,6 +15,8 @@ func formatMutationRoute(routePath string, result map[string]any) string {
 		return "controller certificate updated successfully"
 	case "/v1/system/config/switch":
 		return FormatSwitchResult(result)
+	case "/v1/system/reload":
+		return "configuration reloaded successfully"
 	case "/v1/images:pull":
 		return formatImagePullResult(result)
 	case "/v1/images:load":

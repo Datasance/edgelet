@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/eclipse-iofog/edgelet/internal/supervisor"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
 func registerDaemonSignals(sigChan chan os.Signal) {
@@ -15,7 +16,9 @@ func registerDaemonSignals(sigChan chan os.Signal) {
 }
 
 func onConfigFileChanged(sup *supervisor.Supervisor) {
-	reloadAgentConfig(sup)
+	if err := sup.ReloadFromDisk(); err != nil {
+		logging.LogError("Daemon", "Configuration reload failed", err)
+	}
 }
 
 func isConfigReloadSignal(_ os.Signal) bool {

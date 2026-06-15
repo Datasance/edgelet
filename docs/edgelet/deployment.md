@@ -47,6 +47,8 @@ Orchestrators must **not** pass provision keys to `install.sh`.
 3. **Airgap:** verify `SHA256SUMS` on the orchestrator → SCP binary → `install.sh --airgap --bin-path=…`.
 4. **Provision:** SSH `edgelet provision <key>` (and `edgelet config …` as needed).
 
+When deploying a **local ControlPlane** controller on a system fog, create that fog on Controller with **`isSystem: true`** so Edgelet can register the controller microservice after provision.
+
 ## Daemon and systemd
 
 Production linux uses the **thin** binary as the service entry point:

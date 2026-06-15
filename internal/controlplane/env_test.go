@@ -10,12 +10,20 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
-func TestBuildControllerEnv_MinimalRemoteIdentity(t *testing.T) {
+const controlPlaneTestImage = "ghcr.io/datasance/controller:3.8.0-beta.0"
+
+func validControlPlaneDocForEnvTest() *models.ControlPlaneManifest {
 	doc := &models.ControlPlaneManifest{}
 	doc.APIVersion = "edgelet.iofog.org/v1"
 	doc.Kind = "ControlPlane"
 	doc.Metadata.Name = "pot"
-	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
+	doc.Spec.Controller.Image = controlPlaneTestImage
+	doc.Spec.Auth = models.ValidEmbeddedAuthForTest()
+	return doc
+}
+
+func TestBuildControllerEnv_MinimalRemoteIdentity(t *testing.T) {
+	doc := validControlPlaneDocForEnvTest()
 
 	env, err := BuildControllerEnv(doc, "uuid-1")
 	if err != nil {
@@ -33,14 +41,17 @@ func TestBuildControllerEnv_MinimalRemoteIdentity(t *testing.T) {
 	if env["CONTROLLER_NAME"] != "pot" {
 		t.Fatalf("CONTROLLER_NAME=%q", env["CONTROLLER_NAME"])
 	}
-	if _, ok := env["SERVER_PORT"]; ok {
-		t.Fatal("expected SERVER_PORT omitted when port unset")
+	if env["AUTH_MODE"] != "embedded" {
+		t.Fatalf("AUTH_MODE=%q", env["AUTH_MODE"])
+	}
+	if _, ok := env["API_PORT"]; ok {
+		t.Fatal("expected API_PORT omitted when port unset")
 	}
 }
 
 func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	port := 51121
-	viewerPort := 8008
+	consolePort := 8008
 	dbPort := 5432
 	dbSSL := true
 	audit := true
@@ -50,25 +61,66 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	natsEnabled := true
 	vaultEnabled := true
 	registry := 1
+	trustProxy := true
+	insecureAllowHTTP := false
+	insecureAllowBootstrapLog := false
+	consoleClientEnabled := true
+	rateLimitEnabled := true
+	maxRequests := 60
+	windowMs := 60000
+	sessionTTLMs := 600000
+	accessTokenTTL := 900
+	refreshTokenTTL := 3600
+	interactionTTL := 600
+	grantTTL := 600
+	oidcSessionTTL := 3600
+	idTokenTTL := 900
 
 	doc := &models.ControlPlaneManifest{}
 	doc.APIVersion = "edgelet.iofog.org/v1"
 	doc.Kind = "ControlPlane"
 	doc.Metadata.Name = "pot"
 	doc.Metadata.Namespace = "cp-ns"
-	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
+	doc.Spec.Controller.Image = controlPlaneTestImage
 	doc.Spec.Controller.Registry = &registry
 	doc.Spec.Controller.Port = &port
-	doc.Spec.ECNViewerPort = &viewerPort
-	doc.Spec.ECNViewerURL = "https://viewer.example"
+	doc.Spec.Controller.PublicURL = "https://controller.example.com"
+	doc.Spec.Controller.TrustProxy = &trustProxy
+	doc.Spec.Console.Port = &consolePort
+	doc.Spec.Console.URL = "https://console.example.com"
 	doc.Spec.LogLevel = "info"
-	doc.Spec.Auth.URL = "https://auth.example/"
-	doc.Spec.Auth.Realm = "realm"
-	doc.Spec.Auth.RealmKey = "key"
-	doc.Spec.Auth.SSL = "external"
-	doc.Spec.Auth.ControllerClient = "pot-controller"
-	doc.Spec.Auth.ControllerSecret = "secret"
-	doc.Spec.Auth.ViewerClient = "ecn-viewer"
+	doc.Spec.Auth = &models.ControlPlaneAuthSpec{
+		Mode:                      "external",
+		InsecureAllowHTTP:         &insecureAllowHTTP,
+		InsecureAllowBootstrapLog: &insecureAllowBootstrapLog,
+		IssuerURL:                 "https://auth.example.com/realms/pot",
+		Client: &models.ControlPlaneAuthClient{
+			ID:     "pot-controller",
+			Secret: "secret",
+		},
+		ConsoleClient:        "ecn-viewer",
+		ConsoleClientEnabled: &consoleClientEnabled,
+		RateLimit: &models.ControlPlaneAuthRateLimit{
+			Enabled:              &rateLimitEnabled,
+			MaxRequestsPerWindow: &maxRequests,
+			WindowMs:             &windowMs,
+		},
+		SessionStore: &models.ControlPlaneAuthSessionStore{
+			Type:   "database",
+			TTLMs:  &sessionTTLMs,
+			Secret: "session-secret",
+		},
+		TokenTTL: &models.ControlPlaneAuthTokenTTL{
+			AccessTokenTTLSeconds:  &accessTokenTTL,
+			RefreshTokenTTLSeconds: &refreshTokenTTL,
+		},
+		OIDCTTL: &models.ControlPlaneAuthOIDCTTL{
+			InteractionTTLSeconds: &interactionTTL,
+			GrantTTLSeconds:       &grantTTL,
+			SessionTTLSeconds:     &oidcSessionTTL,
+			IDTokenTTLSeconds:     &idTokenTTL,
+		},
+	}
 	doc.Spec.Database = &struct {
 		Provider     string `yaml:"provider,omitempty" json:"provider,omitempty"`
 		User         string `yaml:"user,omitempty" json:"user,omitempty"`
@@ -133,8 +185,8 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	}
 	cert := base64.StdEncoding.EncodeToString([]byte("cert"))
 	key := base64.StdEncoding.EncodeToString([]byte("key"))
-	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{
-		Base64: &models.ControlPlaneHTTPSBase64{Cert: cert, Key: key},
+	doc.Spec.TLS = &models.ControlPlaneTLSConfig{
+		Base64: &models.ControlPlaneTLSBase64{Cert: cert, Key: key},
 	}
 
 	env, err := BuildControllerEnv(doc, "uuid-full")
@@ -142,13 +194,32 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 		t.Fatalf("BuildControllerEnv: %v", err)
 	}
 
-	assertEnv(t, env, "SERVER_PORT", "51121")
-	assertEnv(t, env, "VIEWER_PORT", "8008")
-	assertEnv(t, env, "VIEWER_URL", "https://viewer.example")
+	assertEnv(t, env, "CONTROLLER_PUBLIC_URL", "https://controller.example.com")
+	assertEnv(t, env, "TRUST_PROXY", "true")
+	assertEnv(t, env, "API_PORT", "51121")
+	assertEnv(t, env, "CONSOLE_PORT", "8008")
+	assertEnv(t, env, "CONSOLE_URL", "https://console.example.com")
 	assertEnv(t, env, "LOG_LEVEL", "info")
-	assertEnv(t, env, "KC_URL", "https://auth.example/")
-	assertEnv(t, env, "KC_REALM", "realm")
-	assertEnv(t, env, "KC_CLIENT", "pot-controller")
+	assertEnv(t, env, "AUTH_MODE", "external")
+	assertEnv(t, env, "AUTH_INSECURE_ALLOW_HTTP", "false")
+	assertEnv(t, env, "AUTH_INSECURE_ALLOW_BOOTSTRAP_LOG", "false")
+	assertEnv(t, env, "OIDC_ISSUER_URL", "https://auth.example.com/realms/pot")
+	assertEnv(t, env, "OIDC_CLIENT_ID", "pot-controller")
+	assertEnv(t, env, "OIDC_CLIENT_SECRET", "secret")
+	assertEnv(t, env, "OIDC_CONSOLE_CLIENT_ID", "ecn-viewer")
+	assertEnv(t, env, "AUTH_CONSOLE_CLIENT_ENABLED", "true")
+	assertEnv(t, env, "AUTH_RATE_LIMIT_ENABLED", "true")
+	assertEnv(t, env, "AUTH_RATE_LIMIT_MAX_REQUESTS", "60")
+	assertEnv(t, env, "AUTH_RATE_LIMIT_WINDOW_MS", "60000")
+	assertEnv(t, env, "AUTH_SESSION_STORE_TYPE", "database")
+	assertEnv(t, env, "AUTH_SESSION_STORE_TTL_MS", "600000")
+	assertEnv(t, env, "AUTH_SESSION_SECRET", "session-secret")
+	assertEnv(t, env, "AUTH_ACCESS_TOKEN_TTL_SECONDS", "900")
+	assertEnv(t, env, "AUTH_REFRESH_TOKEN_TTL_SECONDS", "3600")
+	assertEnv(t, env, "AUTH_OIDC_INTERACTION_TTL_SECONDS", "600")
+	assertEnv(t, env, "AUTH_OIDC_GRANT_TTL_SECONDS", "600")
+	assertEnv(t, env, "AUTH_OIDC_SESSION_TTL_SECONDS", "3600")
+	assertEnv(t, env, "AUTH_OIDC_ID_TOKEN_TTL_SECONDS", "900")
 	assertEnv(t, env, "DB_PROVIDER", "postgres")
 	assertEnv(t, env, "DB_PORT", "5432")
 	assertEnv(t, env, "DB_USE_SSL", "true")
@@ -166,32 +237,56 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	assertEnv(t, env, "NATS_ENABLED", "true")
 	assertEnv(t, env, "VAULT_ENABLED", "true")
 	assertEnv(t, env, "VAULT_HASHICORP_ADDRESS", "http://vault:8200")
-	assertEnv(t, env, "SSL_BASE64_CERT", cert)
-	assertEnv(t, env, "SSL_BASE64_KEY", key)
+	assertEnv(t, env, "TLS_BASE64_CERT", cert)
+	assertEnv(t, env, "TLS_BASE64_KEY", key)
 }
 
-func TestBuildControllerEnv_HTTPSPathFilenames(t *testing.T) {
+func TestBuildControllerEnv_EmbeddedBootstrapProjection(t *testing.T) {
+	insecureAllowHTTP := true
+	doc := validControlPlaneDocForEnvTest()
+	doc.Spec.Auth.InsecureAllowHTTP = &insecureAllowHTTP
+
+	env, err := BuildControllerEnv(doc, "uuid-bootstrap")
+	if err != nil {
+		t.Fatalf("BuildControllerEnv: %v", err)
+	}
+	assertEnv(t, env, "AUTH_MODE", "embedded")
+	assertEnv(t, env, "AUTH_INSECURE_ALLOW_HTTP", "true")
+	assertEnv(t, env, "OIDC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+	assertEnv(t, env, "OIDC_BOOTSTRAP_ADMIN_PASSWORD", "AdminPass123!")
+}
+
+func TestBuildControllerEnv_TLSPathFilenames(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{models.ControlPlaneHTTPSCertFilename, models.ControlPlaneHTTPSKeyFilename, models.ControlPlaneHTTPSCAFilename} {
+	for _, name := range []string{
+		models.ControlPlaneTLSCertFilename,
+		models.ControlPlaneTLSKeyFilename,
+		models.ControlPlaneTLSCAFilename,
+	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	doc := &models.ControlPlaneManifest{}
-	doc.APIVersion = "edgelet.iofog.org/v1"
-	doc.Kind = "ControlPlane"
-	doc.Metadata.Name = "pot"
-	doc.Spec.Controller.Image = "ghcr.io/datasance/controller:3.7.0"
-	doc.Spec.HTTPS = &models.ControlPlaneHTTPSConfig{Path: dir}
+	doc := validControlPlaneDocForEnvTest()
+	doc.Spec.TLS = &models.ControlPlaneTLSConfig{Path: dir}
 
 	env, err := BuildControllerEnv(doc, "uuid-tls")
 	if err != nil {
 		t.Fatalf("BuildControllerEnv: %v", err)
 	}
-	assertEnv(t, env, "SSL_PATH_CERT", models.ControlPlaneHTTPSCertFilename)
-	assertEnv(t, env, "SSL_PATH_KEY", models.ControlPlaneHTTPSKeyFilename)
-	assertEnv(t, env, "SSL_PATH_INTERMEDIATE_CERT", models.ControlPlaneHTTPSCAFilename)
+	assertEnv(t, env, "TLS_PATH_CERT", models.ControlPlaneTLSCertFilename)
+	assertEnv(t, env, "TLS_PATH_KEY", models.ControlPlaneTLSKeyFilename)
+	assertEnv(t, env, "TLS_PATH_INTERMEDIATE_CERT", models.ControlPlaneTLSCAFilename)
+	assertEnv(t, env, "INTERMEDIATE_CERT", filepath.Join(ContainerCertMountPath, models.ControlPlaneTLSCAFilename))
+}
+
+func TestBuildControllerEnv_RequiresAuth(t *testing.T) {
+	doc := validControlPlaneDocForEnvTest()
+	doc.Spec.Auth = nil
+	if _, err := BuildControllerEnv(doc, "uuid-no-auth"); err == nil {
+		t.Fatal("expected auth validation error")
+	}
 }
 
 func assertEnv(t *testing.T, env map[string]string, key, want string) {

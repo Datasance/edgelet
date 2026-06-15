@@ -5,6 +5,36 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.3] — mid-June 2026
+
+Production hardening release paired with Controller **v3.8.0-beta.1**. Deploy Edgelet and Controller v3.8 together; greenfield ControlPlane YAML only.
+
+### Added
+
+- **Controller microservice register-once:** after provision and local ControlPlane deploy, Edgelet calls `POST /api/v3/agent/controller/register` once and retries until success; no re-register on spec drift.
+- **OTA controller semver:** `GET /api/v3/agent/version` `semver` field normalized to `vX.Y.Z` for `install.sh`; `provisionKey` and `expirationTime` (Unix ms) drive post-OTA reprovision (private key rotation only; stable `iofogUuid`).
+- **Per-OS install paths:** documented linux, darwin, and windows directory tables in README and `docs/edgelet/installation.md`; embedded `uninstall.sh` in the install monolith; linux `/usr/share/edgelet/` ships both scripts after curl-only install.
+
+### Changed
+
+- **ControlPlane manifest v3.8:** OIDC auth, EdgeOps Console, TLS, and `controller.publicUrl` / `trustProxy`; canonical env projection (`AUTH_*`, `OIDC_*`, `CONSOLE_*`, `TLS_*`, `INTERMEDIATE_CERT`); host ports **51121** (API) and **80** → console.
+- **Config hot-reload:** PATCH `/v1/config` and `edgelet system reload` apply log level without service restart; shared reload path for SIGHUP, PATCH, and POST reload; `logging.InstanceConfigUpdated` on hot reload.
+- **`edgelet system reload` UX:** human success output (spinner model) when not using structured `-o`.
+
+### Fixed
+
+- **Curl-only linux install:** `/usr/share/edgelet/uninstall.sh` now present after pipe-to-bash install (embedded in assemble pipeline).
+- **macOS install:** darwin uses `/var/run/edgelet` (not `/run`) and `/usr/local/share/edgelet/` for bundled scripts; avoids failures on default macOS layout.
+
+### Breaking
+
+- **Legacy ControlPlane YAML rejected:** keys such as `auth.url`, `ecnViewer*`, `spec.https`, Keycloak/viewer/ssl-era fields fail validation; use v3.8 schema and examples under `docs/edgelet/examples/controlplane.yaml`.
+
+### Known limitations (beta)
+
+- **Pre-release:** `v1.0.0-beta.3` is not production GA; pair with Controller **3.8.0-beta.1** or newer v3.8 line.
+- **Provisioned guard IT:** blocked `ms rm` / `controlplane delete` when provisioned deferred (requires live system fog); unprovisioned lifecycle covered in CP IT.
+
 ## [1.0.0-beta.2] — mid-June 2026
 
 ### Fixed

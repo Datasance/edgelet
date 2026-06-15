@@ -3,6 +3,8 @@
 #   edgelet.controller.svc.bridge.local
 #   controller.default.svc.bridge.local
 #   default.pot.svc.bridge.local
+#
+# Lima dev profile: HTTP + embedded OIDC (no spec.tls).
 apiVersion: edgelet.iofog.org/v1
 kind: ControlPlane
 metadata:
@@ -10,17 +12,21 @@ metadata:
   namespace: default
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0
+    image: emirhandurmus/controller:3.8.0-beta.1
     registry: 1
     port: 51121
+    # publicUrl: https://controller.example.com
+    publicUrl: http://localhost:51121
+    # trustProxy: true
+  console:
+    port: 8008
+    url: http://localhost
   auth:
-    url: https://auth-dt.datasance.com/
-    realm: datasance
-    realmKey: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjQuSwvTMSk/WP5MYi3kyx7t0RQmdaQuM22XvLC8lYtE1qf/ZYfQt+hVsgyEbpNOo2N7/EjuNbPa3GmKKW9P0TvgSz4U6uOE47i1uUPUe16eMw0TipG+cQ0rh+FRx4OXp3xMUrrYgAoO0zg4gmg8JJ3Y4wA/1Zx9l9HbNw3iUUkf9Q5QTo5rwGKWOOZPo7I9XKMnvbxOrLIDCNjoU5mGmNdcA6LMB/qs5W3Pn1mCJZs6B9FisIjmr484rs20ozp9ZbQnRopS7dNEqc66HrvtQe3X/pChu4ZXumQ6mu2xzPKyIUewcEQcj73WCzs43510zrwD9/b8THc00Wjz3L2UnhQIDAQAB
-    ssl: external
-    controllerClient: pot-controller
-    controllerSecret: vLGWKJlXIf8GQTe2GfdubPxXedodtCU8
-    viewerClient: ecn-viewer
+    mode: embedded
+    insecureAllowHttp: true
+    bootstrap:
+      username: admin
+      password: AdminPass123!
   events:
     auditEnabled: true
     retentionDays: 14
@@ -28,10 +34,10 @@ spec:
     captureIpAddress: true
   systemMicroservices:
     router:
-      amd64: ghcr.io/datasance/router:3.7.0
-      arm64: ghcr.io/datasance/router:3.7.0
-      riscv64: ghcr.io/datasance/router:3.7.0
-      arm: ghcr.io/datasance/router:3.7.0
+      amd64: ghcr.io/datasance/router:3.8.0-beta.0
+      arm64: ghcr.io/datasance/router:3.8.0-beta.0
+      riscv64: ghcr.io/datasance/router:3.8.0-beta.0
+      arm: ghcr.io/datasance/router:3.8.0-beta.0
     nats:
       amd64: ghcr.io/datasance/nats:2.12.4
       arm64: ghcr.io/datasance/nats:2.12.4

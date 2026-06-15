@@ -265,7 +265,6 @@ func asErrDelegation(err error, target **ErrDelegation) bool {
 }
 
 func TestMachineRootDelegationSatisfied(t *testing.T) {
-	t.Parallel()
 	const mount = "/sys/fs/cgroup"
 
 	tests := []struct {
@@ -313,7 +312,6 @@ func TestMachineRootDelegationSatisfied(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			prevRead := readFileFn
 			prevStat := statFn
 			t.Cleanup(func() {

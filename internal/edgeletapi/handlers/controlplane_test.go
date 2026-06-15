@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/store"
@@ -108,6 +109,7 @@ var _ engine.ContainerEngine = (*controlPlaneAPITestEngine)(nil)
 func setupControlPlaneAPITest(t *testing.T) (*EdgeletAPIHandler, *controlPlaneAPITestEngine) {
 	t.Helper()
 	ensureControlPlaneStoreDB(t)
+	fieldagent.GetInstance().SetControllerStatus(models.ControllerStatusNotProvisioned)
 	eng := &controlPlaneAPITestEngine{}
 	processmanager.ConfigureEngineForTest(eng)
 	return NewEdgeletAPIHandler(), eng
@@ -227,8 +229,8 @@ func TestControlPlaneHandlers_ApplyGetManifestDelete(t *testing.T) {
 	if !strings.Contains(manifestYAML, "***") {
 		t.Fatalf("expected masked secret marker, got %q", manifestYAML)
 	}
-	if strings.Contains(manifestYAML, "super-secret") {
-		t.Fatal("expected controllerSecret value to be redacted")
+	if strings.Contains(manifestYAML, "SuperSecret12!") {
+		t.Fatal("expected bootstrap password value to be redacted")
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/system/controlplane", nil)
@@ -409,8 +411,11 @@ metadata:
   namespace: default
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0
+    image: ghcr.io/datasance/controller:3.8.0-beta.0
   auth:
-    controllerSecret: super-secret
+    mode: embedded
+    bootstrap:
+      username: admin
+      password: SuperSecret12!
 `
 }

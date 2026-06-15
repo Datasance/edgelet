@@ -9,9 +9,32 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/controlplane"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/network"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/store"
 	"github.com/eclipse-iofog/edgelet/pkg/engine"
+	"github.com/eclipse-iofog/edgelet/pkg/imageref"
 )
+
+// SetControlPlanePullOnRecreate requests an image pull on the next control plane generation recreate.
+func (pm *ProcessManager) SetControlPlanePullOnRecreate(pull bool) {
+	if pm == nil {
+		return
+	}
+	pm.controlPlanePullOnRecreateMu.Lock()
+	defer pm.controlPlanePullOnRecreateMu.Unlock()
+	pm.controlPlanePullOnRecreate = pull
+}
+
+func (pm *ProcessManager) consumeControlPlanePullOnRecreate() bool {
+	if pm == nil {
+		return false
+	}
+	pm.controlPlanePullOnRecreateMu.Lock()
+	defer pm.controlPlanePullOnRecreateMu.Unlock()
+	pull := pm.controlPlanePullOnRecreate
+	pm.controlPlanePullOnRecreate = false
+	return pull
+}
 
 func (pm *ProcessManager) reconcileControlPlane() {
 	item, found, err := store.GetInstance().GetSystemControlPlane()
@@ -123,7 +146,8 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 	}
 
 	if item.Generation > item.ObservedGeneration {
-		if err := pm.recreateControlPlaneDeployment(item, false, now); err == nil {
+		pullImage := pm.consumeControlPlanePullOnRecreate()
+		if err := pm.recreateControlPlaneDeployment(item, pullImage, now); err == nil {
 			return
 		}
 	}
@@ -208,6 +232,8 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 			item.FailureCount = 0
 		}
 		_ = store.GetInstance().UpsertSystemControlPlane(item)
+		pm.mergeControlPlaneContainerStats(item, container, status)
+		pm.syncControlPlaneProcessManagerStatus(item, container, status)
 		return
 	case "failed", "unknown":
 		pm.bumpControlPlaneFailure(item, fmt.Errorf("runtime state=%s", runtime), runtime)
@@ -218,6 +244,76 @@ func (pm *ProcessManager) reconcileControlPlaneDesiredRunning(item *models.Contr
 	}
 
 	_ = store.GetInstance().UpsertSystemControlPlane(item)
+	pm.mergeControlPlaneContainerStats(item, container, status)
+	pm.syncControlPlaneProcessManagerStatus(item, container, status)
+}
+
+func (pm *ProcessManager) mergeControlPlaneContainerStats(
+	item *models.ControlPlaneDeployment,
+	container *engine.Container,
+	status *models.MicroserviceStatus,
+) {
+	if pm == nil || item == nil || container == nil || status == nil {
+		return
+	}
+	if !item.ControllerRegistered {
+		return
+	}
+	if status.Status != models.MicroserviceStateRunning {
+		return
+	}
+	if pm.engine == nil {
+		return
+	}
+	if stats, err := pm.engine.GetContainerStats(container.ID); err == nil {
+		status.CPUUsage = stats.CPUUsage
+		status.MemoryUsage = stats.MemoryUsage
+	}
+}
+
+func (pm *ProcessManager) syncControlPlaneProcessManagerStatus(
+	item *models.ControlPlaneDeployment,
+	container *engine.Container,
+	status *models.MicroserviceStatus,
+) {
+	if item == nil {
+		return
+	}
+	uuid := strings.TrimSpace(item.ControllerUUID)
+	if uuid == "" {
+		return
+	}
+	statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
+		if status != nil {
+			pmStatus.SetMicroservicesStatus(uuid, status)
+			return
+		}
+		state := controlPlaneRuntimeStateToMicroserviceState(item.RuntimeState)
+		pmStatus.SetMicroservicesState(uuid, state)
+		if container != nil {
+			if existing := pmStatus.GetMicroserviceStatus(uuid); existing != nil {
+				existing.ContainerID = container.ID
+				pmStatus.SetMicroservicesStatus(uuid, existing)
+			}
+		}
+	})
+}
+
+func controlPlaneRuntimeStateToMicroserviceState(runtimeState string) models.MicroserviceState {
+	switch strings.ToLower(strings.TrimSpace(runtimeState)) {
+	case "running":
+		return models.MicroserviceStateRunning
+	case "starting", "stopping", "deleting":
+		return models.MicroserviceStateUpdating
+	case "stopped", "created":
+		return models.MicroserviceStateCreated
+	case "failed", "stuck_in_restart":
+		return models.MicroserviceStateFailed
+	case "exiting":
+		return models.MicroserviceStateExiting
+	default:
+		return models.MicroserviceStateUnknown
+	}
 }
 
 func controlPlaneLaunchInFlight(item *models.ControlPlaneDeployment, now int64) bool {
@@ -326,6 +422,9 @@ func (pm *ProcessManager) recreateControlPlaneDeploymentWithProgress(item *model
 		pm.bumpControlPlaneFailure(item, err, "failed")
 		return err
 	}
+	if pullImage {
+		pm.pullControlPlaneImage(ms, registry)
+	}
 	if container, contErr := pm.containerForControlPlane(item.ControllerUUID, item.ContainerID); contErr == nil && container != nil {
 		_ = pm.removeLocalContainerByID(container.ID)
 	}
@@ -370,4 +469,18 @@ func (pm *ProcessManager) buildControlPlaneLaunchSpec(item *models.ControlPlaneD
 		}
 	}
 	return doc, ms, registry, nil
+}
+
+func (pm *ProcessManager) pullControlPlaneImage(ms *models.Microservice, registry *models.Registry) {
+	if pm == nil || pm.engine == nil || ms == nil || registry == nil {
+		return
+	}
+	fromCache := strings.EqualFold(strings.TrimSpace(registry.URL), "from_cache")
+	pullRef, _ := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	opts := &engine.PullImageOptions{Platform: msPlatform(ms)}
+	if err := pm.engine.PullImage(pullRef, registry, opts); err != nil {
+		pm.logger.Warnf("control plane recreate pull failed for %s, continuing with cache: %v", pullRef, err)
+		return
+	}
+	ms.ImageName = pullRef
 }

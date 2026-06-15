@@ -44,7 +44,7 @@ Runs ControlPlane IT:
   embedded CP apply  embedded (iofog-test)
   docker CP apply  docker (edgelet-engine-lifecycle)
   controller status API  /api/v3/status (in t12-embedded.sh / t12-docker.sh)
-  CP lifecycle guards  ms rm blocked; controlplane delete
+  CP lifecycle (unprovisioned)  ms rm allowed + reconcile; controlplane delete
   CP DNS resolution  DNS 3 FQDNs from fixture metadata (embedded only)
 
 Options:

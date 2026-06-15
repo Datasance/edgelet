@@ -10,8 +10,10 @@
 # Rules:
 #   - At most one ControlPlane per Edgelet node.
 #   - metadata.labels are forbidden.
+#   - spec.auth is required (mode embedded | external).
 #   - spec.siteCA / spec.localCA are forbidden (import via Controller REST after deploy).
-#   - spec.https.path and spec.https.base64 are mutually exclusive.
+#   - spec.tls.path and spec.tls.base64 are mutually exclusive.
+#   - Legacy keys (auth.url, ecnViewer*, spec.https, Keycloak fields) are rejected.
 # =============================================================================
 
 apiVersion: edgelet.iofog.org/v1 # required
@@ -24,18 +26,45 @@ metadata:
 
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.7.0 # required — controller container image
+    image: ghcr.io/datasance/controller:3.8.0-beta.0 # required — controller container image
     registry: 1                    # optional — local registry row ID for image pull
-    port: 51121                    # optional — controller API port (host + container); default 51121
+    port: 51121                    # optional — API port (host 51121 + container); default 51121
+    publicUrl: https://controller.example.com # recommended — CONTROLLER_PUBLIC_URL
+    trustProxy: true               # optional — honor X-Forwarded-* when TLS terminates at ingress
 
-  auth:                            # optional — Keycloak / auth configuration
-    url: https://auth.example.com/ # auth server URL
-    realm: example                 # realm name
-    realmKey: "<replace-with-realm-public-key-pem-or-base64>"
-    ssl: external                  # ssl mode (e.g. external)
-    controllerClient: pot-controller
-    controllerSecret: "<replace-me>"
-    viewerClient: ecn-viewer
+  console:                         # optional — EdgeOps Console (embedded in Controller image)
+    port: 8008                     # optional — container console port; host maps port 80
+    url: https://console.example.com # optional — CONSOLE_URL (defaults to publicUrl)
+
+  auth:                            # required — OIDC configuration (embedded or external IdP)
+    mode: embedded                 # required — embedded | external
+    insecureAllowHttp: false       # dev only — AUTH_INSECURE_ALLOW_HTTP
+    insecureAllowBootstrapLog: false # dev only — AUTH_INSECURE_ALLOW_BOOTSTRAP_LOG
+    bootstrap:                     # required when mode=embedded
+      username: admin              # OIDC_BOOTSTRAP_ADMIN_USERNAME
+      password: "<replace-me>"     # OIDC_BOOTSTRAP_ADMIN_PASSWORD (≥12 chars, 1 upper, 1 special)
+    # issuerUrl: https://auth.example.com/realms/myrealm  # required when mode=external
+    # client:                      # required when mode=external; optional overrides in embedded
+    #   id: controller
+    #   secret: "<replace-me>"
+    # consoleClient: ecn-viewer    # OIDC_CONSOLE_CLIENT_ID
+    # consoleClientEnabled: false  # AUTH_CONSOLE_CLIENT_ENABLED
+    # rateLimit:
+    #   enabled: true
+    #   maxRequestsPerWindow: 60
+    #   windowMs: 60000
+    # sessionStore:
+    #   type: memory                 # memory | database
+    #   ttlMs: 600000
+    #   secret: ""
+    # tokenTtl:
+    #   accessTokenTtlSeconds: 900
+    #   refreshTokenTtlSeconds: 3600
+    # oidcTtl:
+    #   interactionTtlSeconds:
+    #   grantTtlSeconds:
+    #   sessionTtlSeconds:
+    #   idTokenTtlSeconds:
 
   # database:                      # optional — external database (multi-controller setups)
   #   provider: postgres             # postgres or mysql
@@ -55,10 +84,10 @@ spec:
 
   systemMicroservices:             # optional — router/NATS images per CPU architecture
     router:
-      amd64: ghcr.io/datasance/router:3.7.0
-      arm64: ghcr.io/datasance/router:3.7.0
-      arm: ghcr.io/datasance/router:3.7.0
-      riscv64: ghcr.io/datasance/router:3.7.0
+      amd64: ghcr.io/datasance/router:3.8.0-beta.0
+      arm64: ghcr.io/datasance/router:3.8.0-beta.0
+      arm: ghcr.io/datasance/router:3.8.0-beta.0
+      riscv64: ghcr.io/datasance/router:3.8.0-beta.0
     nats:                          # required when spec.nats.enabled is true
       amd64: ghcr.io/datasance/nats:2.12.4
       arm64: ghcr.io/datasance/nats:2.12.4
@@ -68,15 +97,12 @@ spec:
   nats:                            # optional — deploy NATS system microservice (JetStream)
     enabled: false                 # set true to deploy NATS using systemMicroservices.nats images
 
-  # ecnViewerPort: 8008            # optional — container viewer port (host maps port 80)
-  # ecnViewerUrl: https://viewer.example.com
-
   # logLevel: info                 # optional — controller log level
 
-  # https:                           # optional — controller HTTPS (path OR base64, not both)
+  # tls:                             # optional — listener TLS (path OR base64, not both)
   #   path: /etc/edgelet/controller-tls   # absolute host dir with tls.crt + tls.key (+ optional ca.crt)
   #   base64:
-  #     ca: "<base64>"               # optional
+  #     ca: "<base64>"               # optional — TLS_BASE64_INTERMEDIATE_CERT
   #     cert: "<base64>"             # required when base64 block is used
   #     key: "<base64>"              # required when base64 block is used
 
@@ -100,4 +126,3 @@ spec:
   #   google:
   #     projectId: ""
   #     credentials: ""              # service account JSON or path
-
