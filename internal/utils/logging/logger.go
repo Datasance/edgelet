@@ -19,12 +19,27 @@ type Logger interface {
 	GetLevel() logrus.Level
 }
 
+const (
+	// BasenameControlPlane is the log file series for edgelet.service.
+	BasenameControlPlane = "edgelet"
+	// BasenameDataPlane is the log file series for edgelet-containerd.service.
+	BasenameDataPlane = "edgelet-containerd"
+)
+
 // LogrusLogger wraps logrus.Logger with module support
 type LogrusLogger struct {
 	logger        *logrus.Logger
 	logWriter     io.WriteCloser
+	basename      string
 	isInitialized bool
 	mu            sync.RWMutex
+}
+
+func resolveBasename(basename ...string) string {
+	if len(basename) > 0 && basename[0] != "" {
+		return basename[0]
+	}
+	return BasenameControlPlane
 }
 
 var (
@@ -42,31 +57,26 @@ func GetInstance() *LogrusLogger {
 	return instance
 }
 
-// SetupLogger sets up the logger with file rotation and console output
-func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel string) error {
+// SetupLogger sets up the logger with file rotation and console output.
+// Optional basename selects the log file series (default BasenameControlPlane).
+func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel string, basename ...string) error {
 	logger := GetInstance()
 	logger.mu.Lock()
 	defer logger.mu.Unlock()
+
+	logBasename := resolveBasename(basename...)
 
 	// Create log directory if it doesn't exist
 	if err := os.MkdirAll(logDir, 0750); err != nil {
 		return err
 	}
 
-	// Calculate max file size per file (int64 — arm32 int overflows at 2GiB).
-	maxFileSize := int64(maxFileSizeMB) * 1024 * 1024 / int64(logFileCount)
-	if maxFileSize < 1024*1024 {
-		maxFileSize = 1024 * 1024 // Minimum 1MB
-	}
-	const maxFileSizeCap = 2 * 1024 * 1024 * 1024 // Maximum 2GB
-	if maxFileSize > maxFileSizeCap {
-		maxFileSize = maxFileSizeCap
-	}
+	maxFileSize := computeMaxFileSize(maxFileSizeMB, logFileCount)
 
 	// Setup file rotation
 	// Only rotate on existing file if this is the first initialization (edgelet restart)
 	rotateOnExisting := !logger.isInitialized
-	logFile, err := NewRotatingWriter(logDir, "edgelet", maxFileSize, logFileCount, rotateOnExisting)
+	logFile, err := NewRotatingWriter(logDir, logBasename, maxFileSize, logFileCount, rotateOnExisting)
 	if err != nil {
 		return err
 	}
@@ -90,6 +100,7 @@ func SetupLogger(logDir string, maxFileSizeMB int, logFileCount int, logLevel st
 		_ = logger.logWriter.Close() // cannot use logger here (circular); best-effort close
 	}
 	logger.logWriter = logFile
+	logger.basename = logBasename
 
 	// Set log level (logrus expects lowercase, but config stores uppercase)
 	// Convert to lowercase before parsing
@@ -182,37 +193,46 @@ func (l *LogrusLogger) GetLevel() logrus.Level {
 	return l.logger.GetLevel()
 }
 
-// UpdateLoggerConfig updates logger configuration without recreating the writer
-// This prevents log rotation on config reloads
-func UpdateLoggerConfig(_ string, _ int, _ int, logLevel string) error {
+// UpdateLoggerConfig updates logger configuration without recreating the writer.
+// This prevents log rotation on config reloads. Optional basename is ignored.
+func UpdateLoggerConfig(_ string, maxFileSizeMB int, logFileCount int, logLevel string, _ ...string) error {
 	logger := GetInstance()
 	logger.mu.Lock()
 	defer logger.mu.Unlock()
 
-	// Only update log level and directory if changed, but don't recreate the writer
-	// This prevents log rotation on config reloads
 	logger.logger.WithField("module", "LoggingService").Debug("Updating logger configuration without rotation")
 
-	// Set log level (logrus expects lowercase, but config stores uppercase)
+	if rw, ok := logger.logWriter.(*RotatingWriter); ok {
+		rw.SetLimits(computeMaxFileSize(maxFileSizeMB, logFileCount), logFileCount)
+	}
+
 	level, err := logrus.ParseLevel(strings.ToLower(logLevel))
 	if err != nil {
-		// Default to InfoLevel if parsing fails
 		level = logrus.InfoLevel
 	}
 	logger.logger.SetLevel(level)
 
-	// Note: We don't recreate the RotatingWriter here to avoid rotation
-	// The existing writer will continue to write to the same file
-	// If directory or file size limits changed, they'll take effect on next rotation
-
 	return nil
+}
+
+// GetRotatingWriterLimits returns rotation caps for the daemon log writer, if present.
+func GetRotatingWriterLimits() (maxSize int64, maxBackups int, ok bool) {
+	logger := GetInstance()
+	logger.mu.RLock()
+	defer logger.mu.RUnlock()
+	rw, isRotating := logger.logWriter.(*RotatingWriter)
+	if !isRotating {
+		return 0, 0, false
+	}
+	size, backups := rw.Limits()
+	return size, backups, true
 }
 
 // InstanceConfigUpdated updates the logger with updated configuration
 // which reuses existing FileHandler
-func InstanceConfigUpdated(logDir string, maxFileSizeMB int, logFileCount int, logLevel string) error {
+func InstanceConfigUpdated(logDir string, maxFileSizeMB int, logFileCount int, logLevel string, basename ...string) error {
 	// Use UpdateLoggerConfig instead of SetupLogger to prevent rotation on config reload
-	return UpdateLoggerConfig(logDir, maxFileSizeMB, logFileCount, logLevel)
+	return UpdateLoggerConfig(logDir, maxFileSizeMB, logFileCount, logLevel, basename...)
 }
 
 // LogDebug is a convenience function for debug logging

@@ -38,7 +38,7 @@ func runRuntimeBootstrap() {
 	}
 
 	setupEnvironment()
-	startLoggingService()
+	startLoggingService(logging.BasenameDataPlane)
 
 	if _, err := cgroups.Bootstrap(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to bootstrap cgroups for embedded engine: %v\n", err)
@@ -52,19 +52,47 @@ func runRuntimeBootstrap() {
 	}
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
 	logging.LogInfo("RUNTIME_BOOTSTRAP", "Embedded containerd data plane running")
 
-	<-sigChan
-	logging.LogInfo("RUNTIME_BOOTSTRAP", "Stopping embedded containerd data plane")
+	for {
+		sig := <-sigChan
+		switch sig {
+		case syscall.SIGHUP:
+			reloadRuntimeBootstrapConfig()
+			continue
+		case syscall.SIGTERM, syscall.SIGINT:
+			logging.LogInfo("RUNTIME_BOOTSTRAP", "Stopping embedded containerd data plane")
 
-	if err := data.EnsureExtracted(); err != nil {
-		logging.LogWarn("RUNTIME_BOOTSTRAP", fmt.Sprintf("Runtime bundle refresh before drain skipped: %v", err))
+			if err := data.EnsureExtracted(); err != nil {
+				logging.LogWarn("RUNTIME_BOOTSTRAP", fmt.Sprintf("Runtime bundle refresh before drain skipped: %v", err))
+			}
+
+			drainSec := cfg.ShutdownDrainTimeout()
+			logging.LogInfo("RUNTIME_BOOTSTRAP", fmt.Sprintf("Data-plane stop grace: %ds", drainSec))
+			svc.Stop()
+			logging.LogInfo("RUNTIME_BOOTSTRAP", "Embedded containerd data plane stopped")
+			return
+		}
 	}
+}
 
-	drainSec := cfg.ShutdownDrainTimeout()
-	logging.LogInfo("RUNTIME_BOOTSTRAP", fmt.Sprintf("Data-plane stop grace: %ds", drainSec))
-	svc.Stop()
-	logging.LogInfo("RUNTIME_BOOTSTRAP", "Embedded containerd data plane stopped")
+func reloadRuntimeBootstrapConfig() {
+	logging.LogInfo("RUNTIME_BOOTSTRAP", "Reloading configuration due to SIGHUP")
+	if err := config.LoadConfig(utils.ConfigYAMLPath); err != nil {
+		logging.LogError("RUNTIME_BOOTSTRAP", "Failed to reload configuration", err)
+		return
+	}
+	cfg := config.GetInstance()
+	if err := config.ValidateConfig(cfg); err != nil {
+		logging.LogError("RUNTIME_BOOTSTRAP", "Configuration validation failed after reload", err)
+		return
+	}
+	budgetMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, logging.SeriesDataPlane, true)
+	if err := logging.InstanceConfigUpdated(cfg.LogDiskDirectory, budgetMB, cfg.LogFileCount, cfg.LogLevel, logging.BasenameDataPlane); err != nil {
+		logging.LogError("RUNTIME_BOOTSTRAP", "Failed to update logger configuration", err)
+		return
+	}
+	logging.LogInfo("RUNTIME_BOOTSTRAP", "Configuration reloaded successfully")
 }

@@ -62,16 +62,35 @@ Engine-level debug events: `engine.init`, `engine.cri.*`, `engine.container.*`, 
 
 Set via config or environment (`LOG_LEVEL=info`).
 
+## Log files (rotated)
+
+When `logDiskDirectory` is configured (default `/var/log/edgelet/`), control plane and data plane write **separate file series** in the same directory:
+
+| systemd unit | Basename | Active file |
+|--------------|----------|-------------|
+| `edgelet.service` | `edgelet` | `edgelet.0.log` |
+| `edgelet-containerd.service` | `edgelet-containerd` | `edgelet-containerd.0.log` |
+
+Each series rotates independently using `logFileCount` and a share of **`logLimit`** (combined daemon budget):
+
+| Mode | `edgelet` share | `edgelet-containerd` share |
+|------|-----------------|----------------------------|
+| Runtime split (`EDGELET_RUNTIME_SPLIT=1`, embedded engine) | 60% | 40% |
+| Monolithic embedded, docker, podman, desktop | 100% | (unit not used) |
+
+**Hot reload:** `logLevel`, `logLimit`, and `logFileCount` apply on config reload without rotating the active log file. Control plane reloads via SIGHUP / `edgelet system reload`; data plane reloads via `systemctl kill -s HUP edgelet-containerd`. Changing `logDiskDirectory` still requires a process restart.
+
+Microservice logs under `logDiskDirectory/containers/` use separate per-UUID series (not included in the daemon 60/40 split).
+
 ## journald
 
 On systemd hosts:
 
 ```bash
 sudo journalctl -u edgelet -f
+sudo journalctl -u edgelet-containerd -f
 sudo journalctl -u edgelet --since "30 min ago" | jq -r 'select(.event!=null) | .event'
 ```
-
-Rotated file logs (when configured): `/var/log/edgelet/edgelet.0.log`, `edgelet.1.log`, …
 
 ## Example queries
 

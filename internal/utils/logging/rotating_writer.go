@@ -87,6 +87,24 @@ func (w *RotatingWriter) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
+// SetLimits updates rotation caps without rotating or reopening the active file.
+func (w *RotatingWriter) SetLimits(maxSize int64, maxBackups int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.maxSize = maxSize
+	if maxBackups < 1 {
+		maxBackups = 1
+	}
+	w.maxBackups = maxBackups
+}
+
+// Limits returns the current rotation caps.
+func (w *RotatingWriter) Limits() (maxSize int64, maxBackups int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.maxSize, w.maxBackups
+}
+
 // Close closes the file
 func (w *RotatingWriter) Close() error {
 	w.mu.Lock()

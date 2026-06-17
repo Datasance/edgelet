@@ -160,7 +160,7 @@ func startLoggingService() {
 	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDiskDirectory)
 	_, _ = fmt.Print(logo)
 
-	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
+	logDiskLimitMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, logging.SeriesControlPlane, false)
 	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 		exitDaemon(1)
