@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
@@ -190,7 +191,7 @@ func buildHealthcheckCmd(hc *models.Healthcheck) []string {
 	case "CMD":
 		return hc.Test[1:]
 	case "CMD-SHELL":
-		return []string{"/bin/sh", "-c", hc.Test[1]}
+		return containerexec.ShellCommandForScript(hc.Test[1])
 	default:
 		return hc.Test
 	}

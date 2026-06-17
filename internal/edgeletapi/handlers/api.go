@@ -18,6 +18,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/auth"
 	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/network"
@@ -2081,16 +2082,10 @@ func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *ht
 		return
 	}
 	if len(req.Command) == 0 {
-		req.Command = []string{
-			"/bin/sh", "-lc",
-			"if [ -x /bin/bash ]; then exec /bin/bash; elif [ -x /bin/sh ]; then exec /bin/sh; else exec /busybox/sh; fi",
-		}
+		req.Command = containerexec.ShellCommandInteractive()
 	}
 	if len(req.Command) == 1 && strings.TrimSpace(req.Command[0]) == "" {
-		req.Command = []string{
-			"/bin/sh", "-lc",
-			"if [ -x /bin/bash ]; then exec /bin/bash; elif [ -x /bin/sh ]; then exec /bin/sh; else exec /busybox/sh; fi",
-		}
+		req.Command = containerexec.ShellCommandInteractive()
 	}
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
