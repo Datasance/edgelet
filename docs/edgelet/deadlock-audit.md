@@ -1,4 +1,4 @@
-# Deadlock audit — Plan 19
+# Deadlock audit
 
 Audit scope: `internal/volumemount/`, `internal/fieldagent/`, `internal/processmanager/` (DL-1).
 
@@ -130,7 +130,7 @@ Run on 2026-06-16 (darwin, Go toolchain from CI).
 | `thresholdPruningWorker` / `frequencyPruningWorker` | `pruning/manager.go` | No (out of scope) |
 | `healthcheck.Runner.run` | `healthcheck/runner.go` | No (optional, out of scope) |
 
-## Recommendations for future plans
+## Recommendations for future work
 
 1. **go-deadlock shim:** `internal/syncutil/deadlock.go` with `//go:build deadlock` re-exporting go-deadlock `RWMutex`/`Mutex`; use in `VolumeMountManager` tests or production structs under audit.
 2. **FA worker hardening:** Add `recover()` + stack log to `postStatusWorker` and rotation workers (mirror `pingControllerWorker`).
