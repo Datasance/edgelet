@@ -1,6 +1,7 @@
 package volumemount
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -142,6 +143,153 @@ func TestVolumeMountManager_ClearControllerArtifacts_PreservesDataDir(t *testing
 	}
 	if len(vmm.typeCache) != 0 {
 		t.Fatalf("expected type cache cleared, got %d entries", len(vmm.typeCache))
+	}
+}
+
+// TestUpdateVolumeMount_NoDeadlockWhenIndexLockHeld verifies LC-1: updateVolumeMount must not
+// re-acquire indexLock via syncMicroserviceSymlinks when called from ProcessVolumeMountChanges.
+func TestUpdateVolumeMount_NoDeadlockWhenIndexLockHeld(t *testing.T) {
+	baseDir := t.TempDir()
+	vmm := &VolumeMountManager{
+		baseDirectory: filepath.Join(baseDir, volumesDir),
+		mountIndex:    make(map[string]any),
+		typeCache:     make(map[string]VolumeMountType),
+	}
+	if err := os.MkdirAll(vmm.baseDirectory, internalDirMode); err != nil {
+		t.Fatalf("failed creating volumes base dir: %v", err)
+	}
+
+	const (
+		uuid   = "vm-config-deadlock"
+		name   = "test-config-deadlock"
+		msUUID = "ms-deadlock-1"
+	)
+
+	dataV1 := map[string]any{"key": base64.StdEncoding.EncodeToString([]byte("v1"))}
+	mountPath := filepath.Join(vmm.baseDirectory, configMapsDir, name)
+	if _, err := vmm.createMainStructureFromData(mountPath, dataV1, VolumeMountTypeConfigMap, false); err != nil {
+		t.Fatalf("failed creating v1 main structure: %v", err)
+	}
+
+	vmm.mountIndex[uuid] = map[string]any{
+		"name":          name,
+		"type":          "configMap",
+		"version":       float64(1),
+		"checksum":      "v1",
+		"data":          dataV1,
+		"microservices": []any{msUUID},
+	}
+
+	msMountPath := vmm.getMountPath(msUUID, name, VolumeMountTypeConfigMap)
+	if err := os.MkdirAll(msMountPath, bindMountDirMode); err != nil {
+		t.Fatalf("failed creating microservice mount dir: %v", err)
+	}
+
+	vmMapV2 := map[string]any{
+		"uuid":    uuid,
+		"name":    name,
+		"type":    "configMap",
+		"version": float64(2),
+		"data": map[string]any{
+			"key": base64.StdEncoding.EncodeToString([]byte("v2")),
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		vmm.indexLock.Lock()
+		defer vmm.indexLock.Unlock()
+		vmm.updateVolumeMount(vmMapV2)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("deadlock: updateVolumeMount blocked while indexLock held")
+	}
+}
+
+// TestClear_ConcurrentCleanupMicroserviceVolumes_NoDeadlock verifies LC-3: Clear filesystem
+// cleanup must not hold indexLock so PM CleanupMicroserviceVolumes can complete during deprovision.
+func TestClear_ConcurrentCleanupMicroserviceVolumes_NoDeadlock(t *testing.T) {
+	baseDir := t.TempDir()
+	db := store.GetInstance()
+	_ = db.Close()
+	if err := db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open sqlite DB: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	vmm := &VolumeMountManager{
+		baseDirectory: baseDir,
+		mountIndex: map[string]any{
+			"vm-1": map[string]any{
+				"name":          "secret-a",
+				"type":          "secret",
+				"microservices": []any{"ms-a", "ms-b"},
+			},
+		},
+		typeCache: map[string]VolumeMountType{
+			"secret-a": VolumeMountTypeSecret,
+		},
+	}
+
+	for _, msUUID := range []string{"ms-a", "ms-b", "ms-c"} {
+		msPath := filepath.Join(baseDir, microservicesDir, msUUID, "mount")
+		if err := os.MkdirAll(msPath, bindMountDirMode); err != nil {
+			t.Fatalf("failed creating microservice mount dir for %s: %v", msUUID, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, secretsDir, "secret-a"), internalDirMode); err != nil {
+		t.Fatalf("failed creating secret dir: %v", err)
+	}
+
+	if err := db.UpsertControllerVolumeMount(store.VolumeMountRecord{
+		UUID:          "vm-1",
+		Name:          "secret-a",
+		Version:       1,
+		Kind:          "SECRET",
+		Checksum:      "s",
+		Microservices: []string{"ms-a", "ms-b"},
+		Data:          map[string]any{"k": "v"},
+	}); err != nil {
+		t.Fatalf("failed inserting volume_mount row: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		if err := vmm.Clear(); err != nil {
+			t.Errorf("Clear returned error: %v", err)
+		}
+		close(done)
+	}()
+
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		for _, msUUID := range []string{"ms-a", "ms-b", "ms-c"} {
+			vmm.CleanupMicroserviceVolumes(msUUID)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: Clear blocked while CleanupMicroserviceVolumes running")
+	}
+	select {
+	case <-cleanupDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: CleanupMicroserviceVolumes blocked while Clear running")
+	}
+
+	records, err := db.LoadAllControllerVolumeMounts()
+	if err != nil {
+		t.Fatalf("failed loading volume mounts after concurrent clear: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected volume_mounts cleared, got %d rows", len(records))
 	}
 }
 

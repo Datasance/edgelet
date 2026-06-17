@@ -871,8 +871,9 @@ func (vmm *VolumeMountManager) updateVolumeMount(vmMap map[string]any) {
 	vmm.mountIndex[uuid] = mountData
 	vmm.persistToStore()
 
-	// Sync symlinks in per-microservice directories to reflect the update
-	vmm.syncMicroserviceSymlinks(name, vmType)
+	// Sync symlinks in per-microservice directories to reflect the update.
+	// ProcessVolumeMountChanges already holds indexLock; use Unsafe to avoid re-entrant deadlock.
+	vmm.syncMicroserviceSymlinksUnsafe(name, vmType)
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Volume mount updated successfully: %s", uuid))
 }
@@ -1162,8 +1163,27 @@ func (vmm *VolumeMountManager) GetVolumeMountByName(volumeName string) map[strin
 func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmType VolumeMountType) {
 	vmm.indexLock.Lock()
 	defer vmm.indexLock.Unlock()
+	vmm.syncMicroserviceSymlinksUnsafe(volumeName, vmType)
+}
 
-	volumeMountData := vmm.GetVolumeMountByName(volumeName)
+// syncMicroserviceSymlinksUnsafe is the lock-free variant of syncMicroserviceSymlinks.
+// Caller must already hold indexLock (read or write).
+func (vmm *VolumeMountManager) syncMicroserviceSymlinksUnsafe(volumeName string, vmType VolumeMountType) {
+	var volumeMountData map[string]any
+	for _, mountDataValue := range vmm.mountIndex {
+		mountData, ok := mountDataValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, ok := mountData["name"].(string)
+		if !ok {
+			name = ""
+		}
+		if name == volumeName {
+			volumeMountData = mountData
+			break
+		}
+	}
 	if volumeMountData == nil {
 		return
 	}
@@ -1245,19 +1265,9 @@ func (vmm *VolumeMountManager) syncMicroserviceSymlinks(volumeName string, vmTyp
 	}
 }
 
-// CleanupMicroserviceVolumes cleans up per-microservice volume mount directories
-func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID string) {
-	logging.LogDebug(moduleName, fmt.Sprintf("Cleaning up microservice volumes: %s", microserviceUUID))
-
-	microservicePath := filepath.Join(vmm.baseDirectory, microservicesDir, microserviceUUID)
-	if _, err := os.Stat(microservicePath); os.IsNotExist(err) {
-		return
-	}
-
-	// Find all volume mounts used by this microservice from index and remove tracking.
-	// trackMicroserviceUsageUnsafe is used here to avoid a deadlock: this block already
-	// holds indexLock, and trackMicroserviceUsage (the locking wrapper) would deadlock.
-	vmm.indexLock.Lock()
+// cleanupMicroserviceVolumesIndexUnsafe removes microserviceUUID from the mount index.
+// Caller must hold indexLock (write). Does not touch the filesystem.
+func (vmm *VolumeMountManager) cleanupMicroserviceVolumesIndexUnsafe(microserviceUUID string) {
 	for _, mountDataValue := range vmm.mountIndex {
 		mountData, ok := mountDataValue.(map[string]any)
 		if !ok {
@@ -1280,9 +1290,23 @@ func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID strin
 			}
 		}
 	}
+}
+
+// CleanupMicroserviceVolumes cleans up per-microservice volume mount directories.
+// Index updates are brief under indexLock; filesystem removal runs without the lock
+// so concurrent Clear() filesystem cleanup cannot stall the process manager.
+func (vmm *VolumeMountManager) CleanupMicroserviceVolumes(microserviceUUID string) {
+	logging.LogDebug(moduleName, fmt.Sprintf("Cleaning up microservice volumes: %s", microserviceUUID))
+
+	microservicePath := filepath.Join(vmm.baseDirectory, microservicesDir, microserviceUUID)
+	if _, err := os.Stat(microservicePath); os.IsNotExist(err) {
+		return
+	}
+
+	vmm.indexLock.Lock()
+	vmm.cleanupMicroserviceVolumesIndexUnsafe(microserviceUUID)
 	vmm.indexLock.Unlock()
 
-	// Delete per-microservice mount directory
 	if err := os.RemoveAll(microservicePath); err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("Error deleting microservice volume directory: %v", err))
 	}
@@ -1422,36 +1446,39 @@ func (vmm *VolumeMountManager) clearWalk(baseDir string) {
 	})
 }
 
-// Clear clears all volume mounts
-func (vmm *VolumeMountManager) Clear() error {
-	vmm.indexLock.Lock()
-	defer vmm.indexLock.Unlock()
-
-	logging.LogDebug(moduleName, "Start clearing volume mounts")
-
-	// Delete all volume mount directories (secrets, configMaps, microservices)
-	if _, err := os.Stat(vmm.baseDirectory); err == nil {
-		vmm.clearWalk(vmm.baseDirectory)
-		// Retry once after a short sleep to handle races with slow container unmounts
-		time.Sleep(100 * time.Millisecond)
-		vmm.clearWalk(vmm.baseDirectory)
-	}
-
-	// Clear SQLite volume mount records
+// clearVolumeMountStateLocked resets persisted and in-memory volume mount state.
+// Caller must hold indexLock (write). Does not touch the filesystem.
+func (vmm *VolumeMountManager) clearVolumeMountStateLocked() {
 	if db := store.GetInstance(); db.Conn() != nil {
 		if err := db.ClearAllControllerVolumeMounts(); err != nil {
 			logging.LogError(moduleName, "Error clearing volume mounts from SQLite", err)
 		}
 	}
 
-	// Clear index data and cache
 	vmm.mountIndex = make(map[string]any)
 	vmm.typeCacheLock.Lock()
 	vmm.typeCache = make(map[string]VolumeMountType)
 	vmm.typeCacheLock.Unlock()
 
-	// Update status reporter
 	statusreporter.GetInstance().UpdateVolumeMountManagerStatus(0, time.Now().UnixMilli())
+}
+
+// Clear clears all volume mounts
+func (vmm *VolumeMountManager) Clear() error {
+	logging.LogDebug(moduleName, "Start clearing volume mounts")
+
+	vmm.indexLock.Lock()
+	vmm.clearVolumeMountStateLocked()
+	vmm.indexLock.Unlock()
+
+	// Filesystem cleanup is intentionally outside indexLock so PM
+	// CleanupMicroserviceVolumes can update the index during deprovision.
+	if _, err := os.Stat(vmm.baseDirectory); err == nil {
+		vmm.clearWalk(vmm.baseDirectory)
+		// Retry once after a short sleep to handle races with slow container unmounts
+		time.Sleep(100 * time.Millisecond)
+		vmm.clearWalk(vmm.baseDirectory)
+	}
 
 	logging.LogDebug(moduleName, "Finished clearing volume mounts")
 	return nil
@@ -1460,33 +1487,23 @@ func (vmm *VolumeMountManager) Clear() error {
 // ClearControllerArtifacts clears only controller-origin volume mount artifacts
 // while preserving local data directories under volumes/data.
 func (vmm *VolumeMountManager) ClearControllerArtifacts() error {
-	vmm.indexLock.Lock()
-	defer vmm.indexLock.Unlock()
-
 	logging.LogDebug(moduleName, "Start clearing controller volume-mount artifacts")
 
-	// Remove controller mount source roots only.
+	artifactDirs := make([]string, 0, 2)
 	for _, dirName := range []string{secretsDir, configMapsDir} {
-		dirPath := filepath.Join(vmm.baseDirectory, dirName)
+		artifactDirs = append(artifactDirs, filepath.Join(vmm.baseDirectory, dirName))
+	}
+
+	vmm.indexLock.Lock()
+	vmm.clearVolumeMountStateLocked()
+	vmm.indexLock.Unlock()
+
+	for _, dirPath := range artifactDirs {
 		if err := os.RemoveAll(dirPath); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Error deleting controller artifact directory %s: %v", dirPath, err))
 		}
 	}
 
-	// Clear persisted volume_mounts records.
-	if db := store.GetInstance(); db.Conn() != nil {
-		if err := db.ClearAllControllerVolumeMounts(); err != nil {
-			logging.LogError(moduleName, "Error clearing controller volume mounts from SQLite", err)
-		}
-	}
-
-	// Reset in-memory index/cache to match persisted state.
-	vmm.mountIndex = make(map[string]any)
-	vmm.typeCacheLock.Lock()
-	vmm.typeCache = make(map[string]VolumeMountType)
-	vmm.typeCacheLock.Unlock()
-
-	statusreporter.GetInstance().UpdateVolumeMountManagerStatus(0, time.Now().UnixMilli())
 	logging.LogDebug(moduleName, "Finished clearing controller volume-mount artifacts")
 	return nil
 }
