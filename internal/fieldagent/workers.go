@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -34,9 +35,14 @@ func workerFreq(seconds int, defaultSeconds int) time.Duration {
 
 const (
 	pingBackoffMaxSeconds          = 300 // 5 min max backoff when controller offline
+	changesProcessTimeout          = 5 * time.Minute
 	localAPITokenRotationInterval  = 30 * time.Second
 	serviceAccountRotationInterval = 30 * time.Second
 )
+
+func changesWorkerFrequency() time.Duration {
+	return workerFreq(config.GetInstance().ChangeFrequency, 20)
+}
 
 // pingControllerWorker periodically pings the controller.
 // Uses exponential backoff when controller is unreachable (edge resilience:
@@ -96,8 +102,13 @@ func (fa *FieldAgent) pingControllerWorker() {
 // Uses a self-resetting timer so the interval is re-read from config on every tick.
 func (fa *FieldAgent) runChangesWorker() {
 	defer fa.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered in changes worker", fmt.Errorf("%v\n%s", r, debug.Stack()))
+		}
+	}()
 
-	timer := time.NewTimer(workerFreq(config.GetInstance().ChangeFrequency, 20))
+	timer := time.NewTimer(changesWorkerFrequency())
 	defer timer.Stop()
 
 	for {
@@ -105,63 +116,105 @@ func (fa *FieldAgent) runChangesWorker() {
 		case <-fa.ctx.Done():
 			return
 		case <-timer.C:
-			logging.LogDebug(moduleName, "Start get IOFog changes list from IOFog controller")
-
-			if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
-				logging.LogDebug(moduleName, "Cannot get change list due to controller status not provisioned or controller not connected")
-				timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
-				continue
-			}
-
-			// Get changes from controller
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			result, err := fa.apiClient.Request(ctx, "config/changes", GET, nil, nil)
-			cancel()
-
-			if err != nil {
-				if isCertificateError(err) {
-					fa.verificationFailed(err)
-					logging.LogError(moduleName, "Unable to get changes due to broken certificate", err)
-				} else {
-					logging.LogError(moduleName, "Unable to get changes", err)
-				}
-				timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
-				continue
-			}
-
-			// Update last command time
-			fa.state.SetLastCommandTime(fa.state.GetLastGetChangesList())
-
-			// Process changes
-			lastUpdated, ok := result["lastUpdated"].(string)
-			if !ok {
-				lastUpdated = ""
-			}
-			logging.LogDebug(moduleName, fmt.Sprintf("Processing changes with lastUpdated: %s", lastUpdated))
-
-			resetChanges := fa.processChanges(result)
-
-			// Reset changes flags if processing was successful
-			if lastUpdated != "" && resetChanges {
-				logging.LogDebug(moduleName, fmt.Sprintf("Resetting config changes flags with lastUpdated: %s", lastUpdated))
-				ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
-				err := fa.apiClient.PatchJSON(ctx2, "config/changes", map[string]any{
-					"lastUpdated": lastUpdated,
-				})
-				cancel2()
-
-				if err != nil {
-					logging.LogError(moduleName, "Resetting config changes has failed", err)
-				} else {
-					logging.LogDebug(moduleName, "Successfully reset config changes flags")
-				}
-			}
-
-			// Update initialization flag
-			fa.state.SetInitialization(fa.state.IsInitialization() && !resetChanges)
-			logging.LogDebug(moduleName, fmt.Sprintf("Finished getChangesList cycle with initialization: %v", fa.state.IsInitialization()))
-			timer.Reset(workerFreq(config.GetInstance().ChangeFrequency, 20))
+			fa.changesWorkerTick(timer)
 		}
+	}
+}
+
+func (fa *FieldAgent) changesWorkerTick(timer *time.Timer) {
+	defer timer.Reset(changesWorkerFrequency())
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered in changes worker tick", fmt.Errorf("%v\n%s", r, debug.Stack()))
+		}
+	}()
+
+	logging.LogDebug(moduleName, "Start get IOFog changes list from IOFog controller")
+
+	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
+		logging.LogDebug(moduleName, "Cannot get change list due to controller status not provisioned or controller not connected")
+		return
+	}
+
+	apiClient := fa.getAPIClient()
+	if apiClient == nil {
+		logging.LogError(moduleName, "Unable to get changes", errors.New("api client is not initialized"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	result, err := apiClient.Request(ctx, "config/changes", GET, nil, nil)
+	cancel()
+
+	if err != nil {
+		if isCertificateError(err) {
+			fa.verificationFailed(err)
+			logging.LogError(moduleName, "Unable to get changes due to broken certificate", err)
+		} else {
+			logging.LogError(moduleName, "Unable to get changes", err)
+		}
+		return
+	}
+
+	fa.state.SetLastCommandTime(fa.state.GetLastGetChangesList())
+
+	lastUpdated, ok := result["lastUpdated"].(string)
+	if !ok {
+		lastUpdated = ""
+	}
+	logging.LogDebug(moduleName, fmt.Sprintf("Processing changes with lastUpdated: %s", lastUpdated))
+
+	resetChanges := fa.processChangesInWorker(result)
+
+	if lastUpdated != "" && resetChanges {
+		logging.LogDebug(moduleName, fmt.Sprintf("Resetting config changes flags with lastUpdated: %s", lastUpdated))
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
+		err := apiClient.PatchJSON(ctx2, "config/changes", map[string]any{
+			"lastUpdated": lastUpdated,
+		})
+		cancel2()
+
+		if err != nil {
+			logging.LogError(moduleName, "Resetting config changes has failed", err)
+		} else {
+			logging.LogDebug(moduleName, "Successfully reset config changes flags")
+		}
+	}
+
+	fa.state.SetInitialization(fa.state.IsInitialization() && !resetChanges)
+	logging.LogDebug(moduleName, fmt.Sprintf("Finished getChangesList cycle with initialization: %v", fa.state.IsInitialization()))
+}
+
+func (fa *FieldAgent) processChangesInWorker(changes map[string]any) bool {
+	if fa.processChangesFn != nil {
+		return fa.processChangesFn(changes)
+	}
+	return fa.processChangesWithTimeout(changes)
+}
+
+func (fa *FieldAgent) processChangesWithTimeout(changes map[string]any) bool {
+	ctx, cancel := context.WithTimeout(fa.ctx, changesProcessTimeout)
+	defer cancel()
+
+	done := make(chan bool, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(moduleName, "Panic recovered in processChanges", fmt.Errorf("%v\n%s", r, debug.Stack()))
+				done <- false
+			}
+		}()
+		done <- fa.processChanges(changes)
+	}()
+
+	select {
+	case reset := <-done:
+		return reset
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			logging.LogError(moduleName, "processChanges exceeded time limit", ctx.Err())
+		}
+		return false
 	}
 }
 
@@ -233,10 +286,11 @@ func (fa *FieldAgent) putStatus(ctx context.Context, status map[string]any) erro
 	if fa.postStatusFn != nil {
 		return fa.postStatusFn(ctx, status)
 	}
-	if fa.apiClient == nil {
+	apiClient := fa.getAPIClient()
+	if apiClient == nil {
 		return errors.New("api client is not initialized")
 	}
-	return fa.apiClient.PutJSON(ctx, "status", status)
+	return apiClient.PutJSON(ctx, "status", status)
 }
 
 // getFogStatus creates the fog status report

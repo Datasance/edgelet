@@ -84,8 +84,8 @@ func (fa *FieldAgent) reconcileControllerMicroservice(microservices []*models.Mi
 			return
 		}
 		registry := resolveControllerReconcileRegistry(controllerMS.RegistryID, doc)
-		fromCache := strings.EqualFold(strings.TrimSpace(registry.URL), "from_cache")
-		imageChanged := !imageref.Match(potImage, cpImage, registry.URL, fromCache)
+		registryURL, fromCache := imageref.MatchParamsOptional(registry.URL)
+		imageChanged := !imageref.Match(potImage, cpImage, registryURL, fromCache)
 		registryChanged := controllerRegistryDrift(controllerMS.RegistryID, doc)
 		if imageChanged || registryChanged {
 			if imageChanged {

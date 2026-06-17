@@ -15,12 +15,13 @@ import (
 var otaReprovisionRetry atomic.Bool
 
 func (fa *FieldAgent) fetchControllerVersion() (map[string]any, error) {
-	if fa.apiClient == nil {
+	client := fa.getAPIClient()
+	if client == nil {
 		return nil, errors.New("api client not initialized")
 	}
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
-	return fa.apiClient.Request(ctx, "version", GET, nil, nil)
+	return client.Request(ctx, "version", GET, nil, nil)
 }
 
 func (fa *FieldAgent) maybeReprovisionAfterOTA() {

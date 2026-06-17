@@ -166,7 +166,7 @@ func (fa *FieldAgent) tryControllerRegister() {
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
 		return
 	}
-	if fa.apiClient == nil {
+	if fa.getAPIClient() == nil {
 		return
 	}
 
@@ -204,7 +204,12 @@ func (fa *FieldAgent) tryControllerRegister() {
 	}
 
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	result, reqErr := fa.apiClient.Request(ctx, "controller/register", POST, nil, body)
+	apiClient := fa.getAPIClient()
+	if apiClient == nil {
+		cancel()
+		return
+	}
+	result, reqErr := apiClient.Request(ctx, "controller/register", POST, nil, body)
 	cancel()
 	if reqErr != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("controller register request failed uuid=%s err=%v", controllerUUID, reqErr))
