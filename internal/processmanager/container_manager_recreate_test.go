@@ -107,7 +107,7 @@ type noImageTestEngine struct {
 	recreateTestEngine
 }
 
-func (e *noImageTestEngine) FindLocalImage(string) (bool, error) { return false, nil }
+func (e *noImageTestEngine) FindLocalImage(string, string, bool) (bool, error) { return false, nil }
 
 func TestRecreateContainer_ImageNotInCache(t *testing.T) {
 	openLocalReconcileTestDB(t)

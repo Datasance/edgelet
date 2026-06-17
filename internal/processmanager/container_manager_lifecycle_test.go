@@ -2,6 +2,7 @@ package processmanager
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
@@ -49,7 +50,7 @@ func (e *lifecycleTestEngine) GetContainerByID(id string) (*engine.Container, er
 
 func (e *lifecycleTestEngine) GetContainerSandboxID(string) (string, error) { return "sandbox-1", nil }
 
-func (e *lifecycleTestEngine) FindLocalImage(string) (bool, error) { return true, nil }
+func (e *lifecycleTestEngine) FindLocalImage(string, string, bool) (bool, error) { return true, nil }
 
 func (e *lifecycleTestEngine) PullImage(string, *models.Registry, *engine.PullImageOptions) error {
 	return nil
@@ -83,8 +84,11 @@ func newLifecycleCM(eng *lifecycleTestEngine, reg *models.Registry) *ContainerMa
 func captureEvents(t *testing.T) *[]runtimeops.RuntimeEvent {
 	t.Helper()
 	events := &[]runtimeops.RuntimeEvent{}
+	var mu sync.Mutex
 	runtimeops.SetTestSink(func(e runtimeops.RuntimeEvent) {
+		mu.Lock()
 		*events = append(*events, e)
+		mu.Unlock()
 	})
 	t.Cleanup(func() { runtimeops.SetTestSink(nil) })
 	return events

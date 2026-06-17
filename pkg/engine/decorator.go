@@ -97,8 +97,8 @@ func (l *loggingEngine) PullImage(imageRef string, registry *models.Registry, op
 	return err
 }
 
-func (l *loggingEngine) FindLocalImage(imageRef string) (bool, error) {
-	return l.inner.FindLocalImage(imageRef)
+func (l *loggingEngine) FindLocalImage(imageRef, registryURL string, fromCache bool) (bool, error) {
+	return l.inner.FindLocalImage(imageRef, registryURL, fromCache)
 }
 
 func (l *loggingEngine) RemoveImage(imageRef string) error {
@@ -197,8 +197,8 @@ func (l *loggingEngine) TailContainerLogs(containerID, sessionID, microserviceUU
 	return l.inner.TailContainerLogs(containerID, sessionID, microserviceUUID, handler, cfg)
 }
 
-func (l *loggingEngine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool {
-	return l.inner.AreMicroserviceAndContainerEqual(containerID, ms)
+func (l *loggingEngine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice, registry *models.Registry) bool {
+	return l.inner.AreMicroserviceAndContainerEqual(containerID, ms, registry)
 }
 
 func (l *loggingEngine) EnsureNetwork(name string) error {

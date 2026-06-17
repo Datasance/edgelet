@@ -475,12 +475,13 @@ func (pm *ProcessManager) pullControlPlaneImage(ms *models.Microservice, registr
 	if pm == nil || pm.engine == nil || ms == nil || registry == nil {
 		return
 	}
-	fromCache := strings.EqualFold(strings.TrimSpace(registry.URL), "from_cache")
-	pullRef, _ := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	pullRef, _, fromCache := imageref.ResolveForRegistry(ms.ImageName, registry.URL)
 	opts := &engine.PullImageOptions{Platform: msPlatform(ms)}
-	if err := pm.engine.PullImage(pullRef, registry, opts); err != nil {
-		pm.logger.Warnf("control plane recreate pull failed for %s, continuing with cache: %v", pullRef, err)
-		return
+	if !fromCache {
+		if err := pm.engine.PullImage(pullRef, registry, opts); err != nil {
+			pm.logger.Warnf("control plane recreate pull failed for %s, continuing with cache: %v", pullRef, err)
+			return
+		}
 	}
 	ms.ImageName = pullRef
 }

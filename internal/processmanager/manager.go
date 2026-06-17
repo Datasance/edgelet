@@ -1358,7 +1358,11 @@ func (pm *ProcessManager) shouldContainerBeUpdated(ms *models.Microservice, cont
 	}
 
 	isNotRunning := status.Status != models.MicroserviceStateRunning
-	areNotEqual := !pm.engine.AreMicroserviceAndContainerEqual(container.ID, ms)
+	registry, regErr := resolveRegistryForMicroservice(pm.microserviceManager, ms)
+	if regErr != nil {
+		pm.logger.Warnf("drift check: %v microservice=%s", regErr, ms.MicroserviceUUID)
+	}
+	areNotEqual := !pm.engine.AreMicroserviceAndContainerEqual(container.ID, ms, registry)
 	isRebuild := ms.Rebuild
 
 	result := isNotRunning || areNotEqual || isRebuild
@@ -1932,8 +1936,7 @@ func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.M
 	}
 	if registry != nil {
 		emitLocalDeployProgress(progress, "pulling", "resolving and preparing image")
-		fromCache := strings.EqualFold(strings.TrimSpace(registry.URL), "from_cache")
-		pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+		pullRef, lookupRefs, fromCache := imageref.ResolveForRegistry(ms.ImageName, registry.URL)
 		pullSucceeded := false
 		opts := &engine.PullImageOptions{Platform: msPlatform(ms)}
 		if !fromCache {
@@ -1943,9 +1946,10 @@ func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.M
 				pullSucceeded = true
 			}
 		}
+		registryURL, lookupFromCache := imageref.MatchParamsOptional(registry.URL)
 		matchedRef := ""
 		for _, ref := range lookupRefs {
-			exists, err := pm.engine.FindLocalImage(ref)
+			exists, err := pm.engine.FindLocalImage(ref, registryURL, lookupFromCache)
 			if err != nil {
 				return "", err
 			}

@@ -107,7 +107,7 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 	return e.client.PullImage(imageRef, "", platform, registry, cb)
 }
 
-func (e *Engine) FindLocalImage(imageRef string) (bool, error) {
+func (e *Engine) FindLocalImage(imageRef, _ string, _ bool) (bool, error) {
 	return e.client.FindLocalImage(imageRef)
 }
 
@@ -302,7 +302,7 @@ func (e *Engine) TailContainerLogs(containerID, sessionID, microserviceUUID stri
 
 // --- Configuration drift ---
 
-func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool {
+func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice, _ *models.Registry) bool {
 	return e.client.AreMicroserviceAndContainerEqual(containerID, ms)
 }
 

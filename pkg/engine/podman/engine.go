@@ -63,9 +63,11 @@ func (e *Engine) RemoveContainer(id string, v bool) error { return e.inner.Remov
 func (e *Engine) PullImage(ref string, reg *models.Registry, opts *engine.PullImageOptions) error {
 	return e.inner.PullImage(ref, reg, opts)
 }
-func (e *Engine) FindLocalImage(ref string) (bool, error) { return e.inner.FindLocalImage(ref) }
-func (e *Engine) RemoveImage(ref string) error            { return e.inner.RemoveImage(ref) }
-func (e *Engine) PruneImages() error                      { return e.inner.PruneImages() }
+func (e *Engine) FindLocalImage(ref, registryURL string, fromCache bool) (bool, error) {
+	return e.inner.FindLocalImage(ref, registryURL, fromCache)
+}
+func (e *Engine) RemoveImage(ref string) error { return e.inner.RemoveImage(ref) }
+func (e *Engine) PruneImages() error           { return e.inner.PruneImages() }
 func (e *Engine) GetContainerStatus(id, uuid string) (*models.MicroserviceStatus, error) {
 	return e.inner.GetContainerStatus(id, uuid)
 }
@@ -81,8 +83,8 @@ func (e *Engine) GetContainerStartedAt(id string) (int64, error) {
 func (e *Engine) TailContainerLogs(id, sid, uuid string, h engine.LogTailHandler, cfg *engine.TailConfig) error {
 	return e.inner.TailContainerLogs(id, sid, uuid, h, cfg)
 }
-func (e *Engine) AreMicroserviceAndContainerEqual(id string, ms *models.Microservice) bool {
-	return e.inner.AreMicroserviceAndContainerEqual(id, ms)
+func (e *Engine) AreMicroserviceAndContainerEqual(id string, ms *models.Microservice, registry *models.Registry) bool {
+	return e.inner.AreMicroserviceAndContainerEqual(id, ms, registry)
 }
 func (e *Engine) EnsureNetwork(name string) error { return e.inner.EnsureNetwork(name) }
 func (e *Engine) CreateExecSession(id string, cmd []string) (string, error) {

@@ -442,7 +442,7 @@ func (f *Facade) PullImage(imageRef string, registryID *int, platform string) (s
 			return "", fmt.Errorf("registryId %d cannot be used for pull (from_cache)", *registryID)
 		}
 		reg = item
-		resolvedImage, _ = imageref.Resolve(imageRef, item.URL, false)
+		resolvedImage, _, _ = imageref.ResolveForRegistry(imageRef, item.URL)
 	}
 	if p := strings.TrimSpace(platform); p != "" {
 		if !isValidOCIPlatform(p) {
@@ -475,7 +475,7 @@ func (f *Facade) PullImageWithProgress(imageRef string, registryID *int, platfor
 			return "", fmt.Errorf("registryId %d cannot be used for pull (from_cache)", *registryID)
 		}
 		reg = item
-		resolvedImage, _ = imageref.Resolve(imageRef, item.URL, false)
+		resolvedImage, _, _ = imageref.ResolveForRegistry(imageRef, item.URL)
 	}
 	if p := strings.TrimSpace(platform); p != "" {
 		if !isValidOCIPlatform(p) {
