@@ -99,7 +99,7 @@ Unified orchestrator:
 
 ### Nested Docker suite (`nested-docker`)
 
-Runs on the **Mac host** with Docker (no Lima). Builds root `Dockerfile`, then deploy + engine-switch smokes:
+Runs on the **Mac host** with Docker (no Lima). Builds root `Dockerfile`, then deploy + engine-switch smokes. Each smoke **prunes its named Docker volumes** at start so stale lib/etc state from a prior failed run cannot flake the suite.
 
 ```bash
 ./test/embedded/run-all-nested-docker.sh
