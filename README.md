@@ -17,6 +17,10 @@
 [![Container (Eclipse)](https://img.shields.io/badge/ghcr.io-eclipse--iofog%2Fedgelet-2496ED?style=flat&logo=docker&logoColor=white)](https://ghcr.io/eclipse-iofog/edgelet)
 [![Container (Datasance)](https://img.shields.io/badge/ghcr.io-datasance%2Fedgelet-2496ED?style=flat&logo=docker&logoColor=white)](https://ghcr.io/datasance/edgelet)
 
+[![macOS arm64](https://img.shields.io/badge/macos--arm64-supported-2ea44f?style=flat&logo=apple&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![macOS amd64](https://img.shields.io/badge/macos--amd64-supported-2ea44f?style=flat&logo=apple&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![Windows amd64](https://img.shields.io/badge/windows--amd64-supported-2ea44f?style=flat&logo=windows&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+
 **Upstream:** [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet) · **Datasance distribution:** [Datasance/edgelet](https://github.com/Datasance/edgelet)
 
 **Lightweight container runtime for far-edge devices and ioFog/PoT node agent.**
