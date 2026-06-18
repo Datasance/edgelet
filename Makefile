@@ -11,7 +11,7 @@ export PATH := $(GOBIN):$(PATH)
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT         := $(GOBIN)/golangci-lint
 
-# staticcheck — pinned; also enabled inside golangci-lint (explicit gate for CI clarity)
+# staticcheck — pinned standalone dev target; also enabled inside golangci-lint (not chained before lint in CI/pre-it)
 STATICCHECK_VERSION ?= v0.6.1
 STATICCHECK         := $(GOBIN)/staticcheck
 
