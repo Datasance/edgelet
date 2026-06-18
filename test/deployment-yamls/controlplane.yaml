@@ -44,12 +44,12 @@ spec:
   systemMicroservices:
     router:
       # amd64: ghcr.io/datasance/router:3.8.0-beta.0
-      arm64: emirhandurmus/router:3.8.0-beta.4
+      arm64: emirhandurmus/router:3.8.0-beta.5
       # riscv64: ghcr.io/datasance/router:3.8.0-beta.0
       # arm: ghcr.io/datasance/router:3.8.0-beta.0
-    # nats:   # when nats.enabled is true
-    #   amd64: ghcr.io/datasance/nats:2.12.4
-    #   arm64: ghcr.io/datasance/nats:2.12.4
+    nats:   # when nats.enabled is true
+      # amd64: ghcr.io/datasance/nats:2.14.2-rc.4
+      arm64: ghcr.io/datasance/nats:2.14.2-rc.4
     #   riscv64: ghcr.io/datasance/nats:2.12.4
     #   arm: ghcr.io/datasance/nats:2.12.4
   nats:  # optional; when present and enabled, NATS is deployed with JetStream
