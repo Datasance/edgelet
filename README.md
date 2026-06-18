@@ -10,6 +10,13 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13141/badge)](https://www.bestpractices.dev/en/projects/13141)
 [![codecov](https://img.shields.io/badge/codecov-post--beta-lightgrey)](https://codecov.io/gh/eclipse-iofog/edgelet)
 
+[![Linux amd64](https://img.shields.io/badge/linux--amd64-supported-2ea44f?style=flat&logo=linux&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![Linux arm64](https://img.shields.io/badge/linux--arm64-supported-2ea44f?style=flat&logo=linux&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![Linux armv7](https://img.shields.io/badge/linux--armv7-supported-2ea44f?style=flat&logo=linux&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![Linux riscv64](https://img.shields.io/badge/linux--riscv64-supported-2ea44f?style=flat&logo=linux&logoColor=white)](https://github.com/eclipse-iofog/edgelet/releases)
+[![Container (Eclipse)](https://img.shields.io/badge/ghcr.io-eclipse--iofog%2Fedgelet-2496ED?style=flat&logo=docker&logoColor=white)](https://ghcr.io/eclipse-iofog/edgelet)
+[![Container (Datasance)](https://img.shields.io/badge/ghcr.io-datasance%2Fedgelet-2496ED?style=flat&logo=docker&logoColor=white)](https://ghcr.io/datasance/edgelet)
+
 **Upstream:** [eclipse-iofog/edgelet](https://github.com/eclipse-iofog/edgelet) · **Datasance distribution:** [Datasance/edgelet](https://github.com/Datasance/edgelet)
 
 **Lightweight container runtime for far-edge devices and ioFog/PoT node agent.**
