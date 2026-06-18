@@ -5,6 +5,44 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.1] — mid-June 2026
+
+Release candidate after provision lifecycle hardening, runtime observability fixes, and supply-chain follow-up. Pair with Controller **v3.8.0-beta.1** or newer v3.8 line.
+
+### Added
+
+- **Lifecycle dev gates:** `make pre-it` (vet + lint + lifecycle unit tests); optional `make test-lifecycle-race` and `make test-deadlock` for concurrency audits.
+- **Deadlock audit doc:** operator-facing lock inventory and fixes in `docs/edgelet/deadlock-audit.md`.
+- **Healthcheck shell helper:** shared `ShellCommandForScript` (bash → sh → busybox) for `CMD-SHELL` healthchecks and default exec sessions on minimal images.
+
+### Changed
+
+- **Live reprovision:** `edgelet system provision` on a running daemon reloads registries, volume mounts, microservices, and config without restarting background workers.
+- **Split log basenames:** `edgelet.service` writes `edgelet.*.log`; `edgelet-containerd.service` writes `edgelet-containerd.*.log` under the same `logDiskDirectory` (60/40 rotation budget when runtime split is enabled). See `docs/edgelet/logging.md`.
+- **Disk usage metric:** `edgelet system status` `diskUsage` walks the full configured `diskDirectory` instead of legacy `messages/archive` + `volumes/` partial sums; automatic archive prune removed (greenfield).
+- **Image drift (embedded engine):** reconcile compares images with `imageref.Match` so controller short names (e.g. `user/repo:tag`) match runtime `docker.io/` prefixes without endless `config_drift` UPDATE loops.
+- **Deprovision cleanup:** volume-mount index cleanup no longer holds locks across slow filesystem work that blocked the process-manager monitor during background deprovision.
+- **Changes worker resilience:** panic recovery and per-cycle timeout so `config/changes` polling continues at `changeFrequency` after handler failures.
+- **Go dependencies:** minor bumps — `containerd/typeurl/v2` 2.3.0, `fsnotify` 1.10.1, `docker/go-connections` 0.7.0, `golang.org/x/crypto` 0.53.0, `pflag` 1.0.10.
+- **Supply-chain CI:** SHA-pinned GitHub Actions bumps (checkout v6, docker setup-buildx/qemu v4, action-gh-release v3, cosign-installer 4.1.2) across ci, release, codeql, govulncheck, and scorecard workflows.
+- **CI lint:** `quality-linux.sh` runs vet plus a single full golangci pass; CI lint job aligned (no redundant staticcheck chain).
+
+### Fixed
+
+- **Volume mount deadlock:** CONFIGMAP/SECRET version bumps during `config/changes` no longer re-acquire `indexLock` and freeze the changes worker.
+- **Live reprovision gap:** reprovision without daemon restart now loads controller microservices (same path as cold `Start()`).
+- **Deprovision monitor stall:** process-manager container monitoring continues through deprovision volume cleanup.
+- **False-positive image drift:** embedded-engine reconcile no longer recreates microservices when only the Docker Hub hostname prefix differs.
+- **Misleading disk metric:** status `diskUsage` now reflects deployed workload data under `/var/lib/edgelet/` when volumes and MS data are present.
+- **Log file confusion:** control-plane traffic lands in `edgelet.0.log` instead of being rotated into secondary files while `edgelet-containerd` bootstrap stays in its own series.
+- **`CMD-SHELL` healthchecks:** succeed on images with bash but no `/bin/sh` when bash is present.
+
+### Known limitations (rc)
+
+- **Pre-release:** `v1.0.0-rc.1` is a release candidate, not production GA.
+- **Host-network DNS:** `edgelet.default.svc.bridge.local` injection remains an accepted limitation for host-network microservices.
+- **Provisioned guard IT:** blocked `ms rm` / `controlplane delete` when provisioned still deferred (requires live system fog).
+
 ## [1.0.0-beta.3] — mid-June 2026
 
 Production hardening release paired with Controller **v3.8.0-beta.1**. Deploy Edgelet and Controller v3.8 together; greenfield ControlPlane YAML only.
@@ -19,6 +57,7 @@ Production hardening release paired with Controller **v3.8.0-beta.1**. Deploy Ed
 
 - **ControlPlane manifest v3.8:** OIDC auth, EdgeOps Console, TLS, and `controller.publicUrl` / `trustProxy`; canonical env projection (`AUTH_*`, `OIDC_*`, `CONSOLE_*`, `TLS_*`, `INTERMEDIATE_CERT`); host ports **51121** (API) and **80** → console.
 - **Config hot-reload:** PATCH `/v1/config` and `edgelet system reload` apply log level without service restart; shared reload path for SIGHUP, PATCH, and POST reload; `logging.InstanceConfigUpdated` on hot reload.
+- **Moby SDK (docker/podman engine):** replaced legacy `github.com/docker/docker` with `github.com/moby/moby/client@v0.4.1` and `github.com/moby/moby/api@v1.54.2`; removed govulncheck exceptions **GO-2026-4887** / **GO-2026-4883**.
 - **`edgelet system reload` UX:** human success output (spinner model) when not using structured `-o`.
 
 ### Fixed
