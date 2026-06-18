@@ -17,9 +17,15 @@ docker run --rm --platform "linux/${GOARCH}" \
 		go version
 		go mod download
 
+		echo '=== go vet ==='
+		go vet ./...
+
 		curl -sSfL https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH}.tar.gz \
 			| tar xz -C /tmp
-		/tmp/golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH}/golangci-lint run --config .golangci.yaml --timeout=10m0s
+		GOLANGCI=/tmp/golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH}/golangci-lint
+
+		echo '=== golangci-lint (full) ==='
+		\${GOLANGCI} run --config .golangci.yaml --timeout=10m0s
 
 		go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
 		chmod +x scripts/vulncheck.sh
@@ -30,4 +36,4 @@ docker run --rm --platform "linux/${GOARCH}" \
 		gosec -exclude-dir=build ./cmd/... ./internal/... ./pkg/...
 	"
 
-echo "quality-linux (linux/${GOARCH}): lint, vulncheck, and security-code passed"
+echo "quality-linux (linux/${GOARCH}): vet, lint, vulncheck, and security-code passed"

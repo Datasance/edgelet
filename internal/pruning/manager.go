@@ -442,9 +442,9 @@ func (m *Manager) ChangePruningFreqInterval() {
 		if runImmediate {
 			go m.triggerPruneOnFrequency()
 		}
-		logging.LogInfo(moduleName, fmt.Sprintf("Docker pruning frequency updated to: %d hours", pruningFrequency))
+		logging.LogInfo(moduleName, fmt.Sprintf("Edgelet pruning frequency updated to: %d hours", pruningFrequency))
 	} else {
-		logging.LogInfo(moduleName, "Docker pruning frequency set to 0 - frequency-based pruning disabled")
+		logging.LogInfo(moduleName, "Edgelet pruning frequency set to 0 - frequency-based pruning disabled")
 	}
 	m.setLastAppliedPruningFrequency(pruningFrequency)
 }

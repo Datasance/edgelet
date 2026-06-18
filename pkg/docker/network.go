@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 )
 
 const (
@@ -48,20 +46,20 @@ func (c *Client) ensureNamedNetworkLockFree(baseCtx context.Context, cli *client
 	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
 	defer cancel()
 
-	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", networkName)),
+	listResult, err := cli.NetworkList(ctx, client.NetworkListOptions{
+		Filters: make(client.Filters).Add("name", networkName),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
-	if len(networks) > 0 {
+	if len(listResult.Items) > 0 {
 		c.logger.Debugf("Edgelet network \"%s\" already exists", networkName)
 		return nil
 	}
 
 	c.logger.Infof("Creating Edgelet network \"%s\"", networkName)
-	_, err = cli.NetworkCreate(ctx, networkName, types.NetworkCreate{
+	_, err = cli.NetworkCreate(ctx, networkName, client.NetworkCreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{
 			"edgelet": "true",
@@ -88,15 +86,15 @@ func (c *Client) GetDockerBridgeName() (string, error) {
 	if cli == nil {
 		return "", errors.New("docker client not initialized")
 	}
-	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{})
+	listResult, err := cli.NetworkList(ctx, client.NetworkListOptions{})
 	if err != nil {
 		return "", err
 	}
 
-	for _, network := range networks {
-		if network.Options != nil {
-			if val, ok := network.Options["com.docker.network.bridge.default_bridge"]; ok && val == "true" {
-				if name, ok := network.Options["com.docker.network.bridge.name"]; ok {
+	for _, net := range listResult.Items {
+		if net.Options != nil {
+			if val, ok := net.Options["com.docker.network.bridge.default_bridge"]; ok && val == "true" {
+				if name, ok := net.Options["com.docker.network.bridge.name"]; ok {
 					return name, nil
 				}
 			}

@@ -73,7 +73,7 @@ type ContainerEngine interface {
 
 	// Image management
 	PullImage(imageRef string, registry *models.Registry, opts *PullImageOptions) error
-	FindLocalImage(imageRef string) (bool, error)
+	FindLocalImage(imageRef, registryURL string, fromCache bool) (bool, error)
 	RemoveImage(imageRef string) error
 	// PruneImages prunes images not referenced by running containers.
 	// Deprecated: prefer the unified ListImages/DeleteImage path via the pruning manager.
@@ -104,7 +104,7 @@ type ContainerEngine interface {
 	TailContainerLogs(containerID, sessionID, microserviceUUID string, handler LogTailHandler, cfg *TailConfig) error
 
 	// Configuration drift detection
-	AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool
+	AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice, registry *models.Registry) bool
 
 	// Network
 	EnsureNetwork(name string) error

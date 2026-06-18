@@ -2,6 +2,7 @@ package fieldagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -171,7 +172,13 @@ func (fa *FieldAgent) deleteNode() error {
 	logging.LogDebug(moduleName, "start deleting current fog node from controller and make it deprovision")
 
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	err := fa.apiClient.Delete(ctx, "delete-node")
+	client := fa.getAPIClient()
+	var err error
+	if client != nil {
+		err = client.Delete(ctx, "delete-node")
+	} else {
+		err = errors.New("api client is not initialized")
+	}
 	cancel()
 
 	if err != nil {
@@ -209,7 +216,12 @@ func (fa *FieldAgent) changeVersion() error {
 	}
 
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	result, err := fa.apiClient.Request(ctx, "version", GET, nil, nil)
+	client := fa.getAPIClient()
+	if client == nil {
+		cancel()
+		return errors.New("api client is not initialized")
+	}
+	result, err := client.Request(ctx, "version", GET, nil, nil)
 	cancel()
 
 	if err != nil {
@@ -270,7 +282,11 @@ func (fa *FieldAgent) getProxyConfig() (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	response, err := fa.apiClient.Request(ctx, "tunnel", GET, nil, nil)
+	client := fa.getAPIClient()
+	if client == nil {
+		return nil, errors.New("api client is not initialized")
+	}
+	response, err := client.Request(ctx, "tunnel", GET, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tunnel config: %w", err)
 	}
@@ -297,7 +313,12 @@ func (fa *FieldAgent) getFogConfig() error {
 	}
 
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-	configs, err := fa.apiClient.Request(ctx, "config", GET, nil, nil)
+	client := fa.getAPIClient()
+	if client == nil {
+		cancel()
+		return errors.New("api client is not initialized")
+	}
+	configs, err := client.Request(ctx, "config", GET, nil, nil)
 	cancel()
 
 	if err != nil {
@@ -442,8 +463,12 @@ func (fa *FieldAgent) postFogConfig() error {
 	}
 	defer cancel()
 
+	client := fa.getAPIClient()
+	if client == nil {
+		return errors.New("api client is not initialized")
+	}
 	// Post config using PATCH method
-	_, err := fa.apiClient.Request(ctx, "config", PATCH, nil, configData)
+	_, err := client.Request(ctx, "config", PATCH, nil, configData)
 	if err != nil {
 		logging.LogError(moduleName, "Failed to post fog config to controller", err)
 		return err
@@ -495,7 +520,11 @@ func (fa *FieldAgent) postGPSConfig() error {
 	}
 	defer cancel()
 
-	_, err := fa.apiClient.Request(ctx, "config/gps", PATCH, nil, body)
+	client := fa.getAPIClient()
+	if client == nil {
+		return errors.New("api client is not initialized")
+	}
+	_, err := client.Request(ctx, "config/gps", PATCH, nil, body)
 	if err != nil {
 		logging.LogError(moduleName, "Failed to post GPS config to controller", err)
 		return err

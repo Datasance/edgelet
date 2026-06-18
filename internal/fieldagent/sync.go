@@ -15,6 +15,64 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/volumemount"
 )
 
+// loadInitialControllerData reloads registries, volume mounts, microservices, and config
+// from the controller (or cache when isConnected is false). Matches the provisioned boot
+// path in Start() and live reprovision in Provision() without restarting background workers.
+func (fa *FieldAgent) loadInitialControllerData(isConnected bool) {
+	if fa.loadInitialControllerDataHook != nil {
+		fa.loadInitialControllerDataHook(isConnected)
+		return
+	}
+
+	logging.LogInfo(moduleName, "Agent is provisioned, loading initial data from controller")
+
+	fromFile := !isConnected
+
+	logging.LogDebug(moduleName, "Loading registries")
+	if err := fa.loadRegistries(fromFile); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Failed to load registries on startup: %v", err))
+	} else {
+		logging.LogDebug(moduleName, "Registries loaded successfully")
+	}
+
+	logging.LogDebug(moduleName, "Start loading volume mounts")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
+			}
+		}()
+		if err := fa.loadVolumeMounts(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("loadVolumeMounts returned error: %v", err))
+		}
+	}()
+	logging.LogInfo(moduleName, "Volume mounts processing completed, proceeding to load microservices")
+
+	logging.LogDebug(moduleName, "Start Loading microservices...")
+	microservices, err := fa.loadMicroservices(fromFile)
+	if err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Failed to load microservices on startup: %v", err))
+	} else {
+		logging.LogInfo(moduleName, fmt.Sprintf("Loaded %d microservices from controller/cache", len(microservices)))
+		logging.LogDebug(moduleName, "Start process microservice configuration")
+		if err := fa.processMicroserviceConfig(microservices); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Failed to process microservice config on startup: %v", err))
+		} else {
+			logging.LogInfo(moduleName, "Microservice config processed successfully")
+		}
+		logging.LogDebug(moduleName, "Finished process microservice configuration")
+	}
+
+	if fa.processManager != nil {
+		logging.LogDebug(moduleName, "Notifying ProcessManager to update")
+		fa.processManager.Update()
+	} else {
+		logging.LogWarn(moduleName, "ProcessManager not set, skipping update notification")
+	}
+
+	logging.LogInfo(moduleName, "Initial data loading completed")
+}
+
 // loadMicroservices loads microservices from SQLite store or from the controller.
 func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, error) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Start Loading microservices... (fromFile=%v)", fromFile))
@@ -40,7 +98,12 @@ func (fa *FieldAgent) loadMicroservices(fromFile bool) ([]*models.Microservice, 
 		// Load from controller
 		logging.LogDebug(moduleName, "Loading microservices from controller")
 		ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-		result, err := fa.apiClient.Request(ctx, "microservices", GET, nil, nil)
+		client := fa.getAPIClient()
+		if client == nil {
+			cancel()
+			return nil, errors.New("api client is not initialized")
+		}
+		result, err := client.Request(ctx, "microservices", GET, nil, nil)
 		cancel()
 
 		if err != nil {
@@ -477,7 +540,12 @@ func (fa *FieldAgent) loadRegistries(fromFile bool) error {
 	} else {
 		// Load from controller
 		ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
-		result, err := fa.apiClient.Request(ctx, "registries", GET, nil, nil)
+		client := fa.getAPIClient()
+		if client == nil {
+			cancel()
+			return errors.New("api client is not initialized")
+		}
+		result, err := client.Request(ctx, "registries", GET, nil, nil)
 		cancel()
 
 		if err != nil {
@@ -598,7 +666,11 @@ func (fa *FieldAgent) loadVolumeMounts() error {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	result, err := fa.apiClient.Request(ctx, "volumeMounts", GET, nil, nil)
+	client := fa.getAPIClient()
+	if client == nil {
+		return errors.New("api client is not initialized")
+	}
+	result, err := client.Request(ctx, "volumeMounts", GET, nil, nil)
 	if err != nil {
 		// Log error but don't fail startup
 		logging.LogError(moduleName, "Unable to process volume mount changes", err)

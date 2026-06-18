@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/moby/moby/client"
 )
 
 const (
@@ -25,18 +24,13 @@ func (c *Client) CreateExecSession(containerID string, command []string) (string
 
 	ctx := c.GetContext()
 
-	// Create exec configuration
-	execConfig := types.ExecConfig{
+	execResp, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		Cmd:          command,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true,
-		Detach:       false,
-	}
-
-	// Create exec session
-	execResp, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
+		TTY:          true,
+	})
 	if err != nil {
 		logging.LogError(execModuleName, "Error creating exec session", err)
 		return "", fmt.Errorf("failed to create exec session: %w", err)
@@ -58,14 +52,9 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 
 	ctx := c.GetContext()
 
-	// Start exec session
-	execStartCheck := types.ExecStartCheck{
-		Detach: false,
-		Tty:    true,
-	}
-
-	// Attach to exec session
-	execAttachResp, err := cli.ContainerExecAttach(ctx, execID, execStartCheck)
+	execAttachResp, err := cli.ExecAttach(ctx, execID, client.ExecAttachOptions{
+		TTY: true,
+	})
 	if err != nil {
 		logging.LogError(execModuleName, "Error starting exec session", err)
 		return fmt.Errorf("failed to start exec session: %w", err)
@@ -74,10 +63,8 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		execAttachResp.Close()
 	}()
 
-	// Handle I/O in goroutines
 	done := make(chan error, 3)
 
-	// Copy stdin to exec session
 	if stdin != nil {
 		go func() {
 			_, err := io.Copy(execAttachResp.Conn, stdin)
@@ -85,7 +72,6 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		}()
 	}
 
-	// Copy stdout from exec session
 	if stdout != nil {
 		go func() {
 			_, err := io.Copy(stdout, execAttachResp.Reader)
@@ -93,7 +79,6 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		}()
 	}
 
-	// Copy stderr from exec session (same reader as stdout for TTY)
 	if stderr != nil && stdout == nil {
 		go func() {
 			_, err := io.Copy(stderr, execAttachResp.Reader)
@@ -101,7 +86,6 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 		}()
 	}
 
-	// Wait for completion
 	err = <-done
 	if err != nil && !errors.Is(err, io.EOF) {
 		logging.LogError(execModuleName, "Error in exec session I/O", err)
@@ -113,7 +97,7 @@ func (c *Client) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 }
 
 // GetExecSessionStatus gets the status of an exec session
-func (c *Client) GetExecSessionStatus(execID string) (*types.ContainerExecInspect, error) {
+func (c *Client) GetExecSessionStatus(execID string) (*client.ExecInspectResult, error) {
 	logging.LogDebug(execModuleName, fmt.Sprintf("Getting exec session status: %s", execID))
 
 	cli := c.GetClient()
@@ -123,8 +107,7 @@ func (c *Client) GetExecSessionStatus(execID string) (*types.ContainerExecInspec
 
 	ctx := c.GetContext()
 
-	// Inspect exec session
-	execInspect, err := cli.ContainerExecInspect(ctx, execID)
+	execInspect, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 	if err != nil {
 		logging.LogError(execModuleName, "Error getting exec session status", err)
 		return nil, fmt.Errorf("failed to get exec session status: %w", err)
@@ -151,10 +134,11 @@ func (c *Client) ResizeExecSession(execID string, cols, rows uint32) error {
 	if cli == nil {
 		return errors.New("docker client not initialized")
 	}
-	return cli.ContainerExecResize(c.GetContext(), execID, container.ResizeOptions{
+	_, err := cli.ExecResize(c.GetContext(), execID, client.ExecResizeOptions{
 		Width:  uint(cols),
 		Height: uint(rows),
 	})
+	return err
 }
 
 // KillExecSession kills an exec session
@@ -168,14 +152,7 @@ func (c *Client) KillExecSession(execID string) error {
 
 	ctx := c.GetContext()
 
-	// Note: Docker API doesn't have a direct "kill exec" endpoint
-	// We can only inspect the exec session to check if it's running
-	// The exec session will terminate when the process exits
-	// For force termination, we would need to send a signal to the process
-	// This is typically handled by the exec session callback
-
-	// Inspect to verify exec session exists
-	_, err := cli.ContainerExecInspect(ctx, execID)
+	_, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 	if err != nil {
 		logging.LogError(execModuleName, "Error inspecting exec session for kill", err)
 		return fmt.Errorf("failed to inspect exec session: %w", err)

@@ -79,6 +79,12 @@ type FieldAgent struct {
 	// test hook: allows status POST override in unit tests.
 	postStatusFn func(ctx context.Context, status map[string]any) error
 
+	// test hook: replaces loadInitialControllerData in unit tests.
+	loadInitialControllerDataHook func(isConnected bool)
+
+	// test hook: replaces processChanges in the changes worker.
+	processChangesFn func(changes map[string]any) bool
+
 	controllerRegister *controllerRegisterState
 }
 
@@ -106,6 +112,30 @@ func GetInstance() *FieldAgent {
 	return instance
 }
 
+// getAPIClient returns the current controller API client for a single request chain.
+// Callers must not retain the pointer across goroutine boundaries without their own sync.
+func (fa *FieldAgent) getAPIClient() *APIClient {
+	fa.mu.RLock()
+	client := fa.apiClient
+	fa.mu.RUnlock()
+	return client
+}
+
+func (fa *FieldAgent) setAPIClient(client *APIClient) {
+	fa.mu.Lock()
+	fa.apiClient = client
+	fa.mu.Unlock()
+}
+
+func (fa *FieldAgent) replaceAPIClient(client *APIClient) {
+	fa.mu.Lock()
+	fa.apiClient = client
+	if fa.orchestrator != nil {
+		fa.orchestrator = NewOrchestrator(client)
+	}
+	fa.mu.Unlock()
+}
+
 // Start starts the FieldAgent and all background workers
 func (fa *FieldAgent) Start() error {
 	logging.LogDebug(moduleName, "Starting Field Agent")
@@ -116,7 +146,7 @@ func (fa *FieldAgent) Start() error {
 		logging.LogError(moduleName, "Failed to create API client", err)
 		return err
 	}
-	fa.apiClient = apiClient
+	fa.setAPIClient(apiClient)
 	logging.LogDebug(moduleName, "API client initialized")
 
 	version.GetInstance().SetVersionRefreshFunc(fa.fetchControllerVersion)
@@ -219,58 +249,7 @@ func (fa *FieldAgent) Start() error {
 
 	// If provisioned, load initial data
 	if !fa.NotProvisioned() {
-		logging.LogInfo(moduleName, "Agent is provisioned, loading initial data from controller")
-
-		// Load registries
-		logging.LogDebug(moduleName, "Loading registries")
-		if err := fa.loadRegistries(!isConnected); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to load registries on startup: %v", err))
-		} else {
-			logging.LogDebug(moduleName, "Registries loaded successfully")
-		}
-
-		// Load volume mounts
-		logging.LogDebug(moduleName, "Start loading volume mounts")
-		// Don't check error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
-				}
-			}()
-			if err := fa.loadVolumeMounts(); err != nil { // errors are caught by the surrounding recover
-				logging.LogWarn(moduleName, fmt.Sprintf("loadVolumeMounts returned error: %v", err))
-			}
-		}()
-		logging.LogInfo(moduleName, "Volume mounts processing completed, proceeding to load microservices")
-
-		// Load microservices
-		logging.LogDebug(moduleName, "Start Loading microservices...")
-		microservices, err := fa.loadMicroservices(!isConnected)
-		if err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to load microservices on startup: %v", err))
-		} else {
-			logging.LogInfo(moduleName, fmt.Sprintf("Loaded %d microservices from controller/cache", len(microservices)))
-			// Process microservice config
-			logging.LogDebug(moduleName, "Start process microservice configuration")
-			if err := fa.processMicroserviceConfig(microservices); err != nil {
-				logging.LogWarn(moduleName, fmt.Sprintf("Failed to process microservice config on startup: %v", err))
-			} else {
-				logging.LogInfo(moduleName, "Microservice config processed successfully")
-			}
-			logging.LogDebug(moduleName, "Finished process microservice configuration")
-		}
-
-		// Notify ProcessManager to immediately update
-		// This ensures containers are processed during initialization without waiting
-		if fa.processManager != nil {
-			logging.LogDebug(moduleName, "Notifying ProcessManager to update")
-			fa.processManager.Update()
-		} else {
-			logging.LogWarn(moduleName, "ProcessManager not set, skipping update notification")
-		}
-
-		logging.LogInfo(moduleName, "Initial data loading completed")
+		fa.loadInitialControllerData(isConnected)
 	} else {
 		logging.LogInfo(moduleName, "Agent not provisioned, skipping initial data load")
 	}
@@ -477,8 +456,13 @@ func (fa *FieldAgent) ping() bool {
 	ctx, cancel := context.WithTimeout(fa.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
+	client := fa.getAPIClient()
+	if client == nil {
+		logging.LogError(moduleName, "API client not initialized for ping", errors.New("api client is nil"))
+		return false
+	}
 	logging.LogDebug(moduleName, "Calling API client ping")
-	ok, err := fa.apiClient.Ping(ctx)
+	ok, err := client.Ping(ctx)
 	if err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Error pinging controller: %v", err), err)
 		fa.verificationFailed(err)
@@ -525,12 +509,12 @@ func (fa *FieldAgent) Provision(key string) error {
 	defer cancel()
 
 	// Initialize apiClient if nil (CLI mode - Start() hasn't been called)
-	if fa.apiClient == nil {
+	if fa.getAPIClient() == nil {
 		apiClient, err := NewAPIClient()
 		if err != nil {
 			return fmt.Errorf("failed to initialize API client: %w", err)
 		}
-		fa.apiClient = apiClient
+		fa.setAPIClient(apiClient)
 	}
 
 	body, err := buildProvisionRequestBody(key)
@@ -538,7 +522,11 @@ func (fa *FieldAgent) Provision(key string) error {
 		return err
 	}
 
-	result, err := fa.apiClient.Request(ctx, "provision", POST, nil, body)
+	apiClient := fa.getAPIClient()
+	if apiClient == nil {
+		return errors.New("api client is not initialized")
+	}
+	result, err := apiClient.Request(ctx, "provision", POST, nil, body)
 	if err != nil {
 		return fmt.Errorf("provisioning failed: %w", err)
 	}
@@ -602,20 +590,12 @@ func (fa *FieldAgent) Provision(key string) error {
 
 	// Recreate API client with new credentials
 	// This is critical because the API client was created before provisioning (without UUID/privateKey)
-	fa.mu.Lock()
-	apiClient, err := NewAPIClient()
+	newAPIClient, err := NewAPIClient()
 	if err != nil {
-		fa.mu.Unlock()
 		logging.LogError(moduleName, "Failed to recreate API client after provisioning", err)
 		return fmt.Errorf("provisioning succeeded but failed to recreate API client: %w", err)
 	}
-	fa.apiClient = apiClient
-
-	// Update orchestrator with new API client
-	if fa.orchestrator != nil {
-		fa.orchestrator = NewOrchestrator(apiClient)
-	}
-	fa.mu.Unlock()
+	fa.replaceAPIClient(newAPIClient)
 
 	// Test JWT generation to ensure it works
 	if _, testErr := auth.GetJWTManager().GenerateJWT(); testErr != nil {
@@ -627,14 +607,11 @@ func (fa *FieldAgent) Provision(key string) error {
 	fa.state.SetControllerVerified(true)
 	clearSupervisorWarningAfterProvision()
 
-	// If daemon is running (ctx is set), update the API client and post config
-	// This ensures the daemon's FieldAgent uses the new credentials
+	// If daemon is running (ctx is set), load controller data and post config.
+	// API client and JWT were already refreshed synchronously above; do not call Update()
+	// here — its async client swap races with postFogConfig and duplicates work.
 	if fa.ctx != nil {
-		// Update FieldAgent to reload config and recreate API client with new credentials
-		// This is critical: the daemon's FieldAgent was created before provisioning
-		if err := fa.Update(); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to update FieldAgent after provisioning: %v", err))
-		}
+		fa.loadInitialControllerData(fa.IsControllerConnected(false))
 
 		// Post fog config to controller
 		// This sends the agent configuration to the controller and establishes the connection
@@ -1072,12 +1049,7 @@ func (fa *FieldAgent) Update() error {
 			logging.LogError(moduleName, fmt.Sprintf("Failed to recreate API client: %v", err), err)
 			return
 		}
-		fa.mu.Lock()
-		fa.apiClient = apiClient
-		if fa.orchestrator != nil {
-			fa.orchestrator = NewOrchestrator(apiClient)
-		}
-		fa.mu.Unlock()
+		fa.replaceAPIClient(apiClient)
 
 		if !fa.shouldPostFogConfigAfterUpdate() {
 			logging.LogWarn(moduleName, "Skipping postFogConfig because last config reload was rejected")
@@ -1190,7 +1162,12 @@ func (fa *FieldAgent) SendUSBInfoFromHalToController() {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	err = fa.apiClient.PutJSON(ctx, "hal/usb", map[string]any{
+	client := fa.getAPIClient()
+	if client == nil {
+		logging.LogError(moduleName, "API client not initialized for HAL USB post", errors.New("api client is nil"))
+		return
+	}
+	err = client.PutJSON(ctx, "hal/usb", map[string]any{
 		"info": usbInfo,
 	})
 	if err != nil {
@@ -1226,7 +1203,12 @@ func (fa *FieldAgent) SendHWInfoFromHalToController() {
 	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
 	defer cancel()
 
-	err = fa.apiClient.PutJSON(ctx, "hal/hw", map[string]any{
+	client := fa.getAPIClient()
+	if client == nil {
+		logging.LogError(moduleName, "API client not initialized for HAL HW post", errors.New("api client is nil"))
+		return
+	}
+	err = client.PutJSON(ctx, "hal/hw", map[string]any{
 		"info": hwInfo,
 	})
 	if err != nil {

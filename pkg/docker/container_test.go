@@ -3,11 +3,11 @@ package docker
 import (
 	"testing"
 
-	"github.com/docker/docker/api/types"
+	"github.com/moby/moby/api/types/container"
 )
 
 func TestContainersFromDockerList_RunningOnly(t *testing.T) {
-	input := []types.Container{
+	input := []container.Summary{
 		{ID: "running-1", State: "running", Names: []string{"/edgelet_ms-a"}},
 		{ID: "exited-1", State: "exited", Names: []string{"/edgelet_ms-b"}},
 		{ID: "created-1", State: "created", Names: []string{"/edgelet_ms-c"}},
@@ -23,7 +23,7 @@ func TestContainersFromDockerList_RunningOnly(t *testing.T) {
 }
 
 func TestContainersFromDockerList_AllStates(t *testing.T) {
-	input := []types.Container{
+	input := []container.Summary{
 		{ID: "running-1", State: "running"},
 		{ID: "exited-1", State: "exited"},
 	}
@@ -35,7 +35,7 @@ func TestContainersFromDockerList_AllStates(t *testing.T) {
 }
 
 func TestContainersFromDockerList_AllVsRunningNotAlias(t *testing.T) {
-	input := []types.Container{
+	input := []container.Summary{
 		{ID: "running-1", State: "running"},
 		{ID: "exited-1", State: "exited"},
 	}

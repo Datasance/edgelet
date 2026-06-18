@@ -46,9 +46,11 @@ func (e *controlPlaneAPITestEngine) RemoveContainer(string, bool) error { return
 func (e *controlPlaneAPITestEngine) PullImage(string, *models.Registry, *engine.PullImageOptions) error {
 	return nil
 }
-func (e *controlPlaneAPITestEngine) FindLocalImage(string) (bool, error) { return true, nil }
-func (e *controlPlaneAPITestEngine) RemoveImage(string) error            { return nil }
-func (e *controlPlaneAPITestEngine) PruneImages() error                  { return nil }
+func (e *controlPlaneAPITestEngine) FindLocalImage(string, string, bool) (bool, error) {
+	return true, nil
+}
+func (e *controlPlaneAPITestEngine) RemoveImage(string) error { return nil }
+func (e *controlPlaneAPITestEngine) PruneImages() error       { return nil }
 func (e *controlPlaneAPITestEngine) ListImages(context.Context) ([]engine.ImageInfo, error) {
 	return nil, nil
 }
@@ -83,7 +85,7 @@ func (e *controlPlaneAPITestEngine) InspectContainerRaw(string) (map[string]any,
 func (e *controlPlaneAPITestEngine) TailContainerLogs(string, string, string, engine.LogTailHandler, *engine.TailConfig) error {
 	return nil
 }
-func (e *controlPlaneAPITestEngine) AreMicroserviceAndContainerEqual(string, *models.Microservice) bool {
+func (e *controlPlaneAPITestEngine) AreMicroserviceAndContainerEqual(string, *models.Microservice, *models.Registry) bool {
 	return false
 }
 func (e *controlPlaneAPITestEngine) EnsureNetwork(string) error { return nil }

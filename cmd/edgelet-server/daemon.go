@@ -187,7 +187,12 @@ func setupEnvironment() {
 	}
 }
 
-func startLoggingService() {
+func startLoggingService(basename ...string) {
+	logBasename := logging.BasenameControlPlane
+	if len(basename) > 0 && basename[0] != "" {
+		logBasename = basename[0]
+	}
+
 	logo := "\n" + branding.EdgeletANSIShadow + "\n" +
 		"  Edgelet v" + version + " (build: " + buildTime + ", commit: " + gitCommit + ")\n" +
 		"  Logging Service Started\n"
@@ -195,10 +200,17 @@ func startLoggingService() {
 	cfg := config.GetInstance()
 	logo += fmt.Sprintf("  Log Level: %s\n", cfg.LogLevel)
 	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDiskDirectory)
+	logo += fmt.Sprintf("  Log Basename: %s\n", logBasename)
 	_, _ = fmt.Print(logo)
 
-	logDiskLimitMB := int(cfg.LogDiskLimit * 1024)
-	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
+	runtimeSplit := os.Getenv("EDGELET_RUNTIME_SPLIT") == "1"
+	role := logging.SeriesControlPlane
+	if logBasename == logging.BasenameDataPlane {
+		role = logging.SeriesDataPlane
+		runtimeSplit = true
+	}
+	logDiskLimitMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, role, runtimeSplit)
+	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel, logBasename); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 		exitDaemon(1)
 	}

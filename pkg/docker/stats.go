@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 // ContainerStats represents container statistics
@@ -28,17 +29,17 @@ func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) 
 	defer cancel()
 
 	// Get stats stream
-	statsStream, err := cli.ContainerStats(ctx, containerID, false)
+	statsResult, err := cli.ContainerStats(ctx, containerID, client.ContainerStatsOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		_ = statsStream.Body.Close()
+		_ = statsResult.Body.Close()
 	}()
 
 	// Read first stats response
-	var stats types.StatsJSON
-	if err := json.NewDecoder(statsStream.Body).Decode(&stats); err != nil {
+	var stats container.StatsResponse
+	if err := json.NewDecoder(statsResult.Body).Decode(&stats); err != nil {
 		return nil, fmt.Errorf("failed to decode stats: %w", err)
 	}
 
@@ -56,7 +57,7 @@ func (c *Client) GetContainerStats(containerID string) (*ContainerStats, error) 
 }
 
 // calculateCPUUsage calculates CPU usage percentage from Docker stats
-func calculateCPUUsage(stats *types.StatsJSON) float32 {
+func calculateCPUUsage(stats *container.StatsResponse) float32 {
 	if stats.CPUStats.CPUUsage.TotalUsage == 0 {
 		return 0.0
 	}

@@ -106,15 +106,14 @@ func (cm *ContainerManager) UpdateContainer(ctx context.Context, ms *models.Micr
 
 	// Step 1: Pull new image while old container is still running
 	// This keeps the service available during the slow image pull operation
-	registry := cm.microserviceManager.GetRegistry(ms.RegistryID)
-	if registry == nil {
-		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
+	registry, err := resolveRegistryForMicroservice(cm.microserviceManager, ms)
+	if err != nil {
+		return err
 	}
-	fromCache := registry.URL == "from_cache"
-	pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	pullRef, lookupRefs, fromCache := imageref.ResolveForRegistry(ms.ImageName, registry.URL)
 	pullSucceeded := false
 
-	if registry.URL != "from_cache" {
+	if !fromCache {
 		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
 			Event:   runtimeops.EventContainerUpdatePhase,
 			MsUUID:  ms.MicroserviceUUID,
@@ -165,7 +164,7 @@ func (cm *ContainerManager) UpdateContainer(ctx context.Context, ms *models.Micr
 
 	// Verify image exists (either pulled or in cache) and pick the runtime reference
 	// that will be used for container creation.
-	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs)
+	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs, registry)
 	if err != nil {
 		return err
 	}
@@ -554,15 +553,14 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 		status.SetMicroservicesState(ms.MicroserviceUUID, models.MicroserviceStatePulling)
 	})
 
-	registry := cm.microserviceManager.GetRegistry(ms.RegistryID)
-	if registry == nil {
-		return fmt.Errorf("registry is not valid \"%d\"", ms.RegistryID)
+	registry, err := resolveRegistryForMicroservice(cm.microserviceManager, ms)
+	if err != nil {
+		return err
 	}
-	fromCache := registry.URL == "from_cache"
-	pullRef, lookupRefs := imageref.Resolve(ms.ImageName, registry.URL, fromCache)
+	pullRef, lookupRefs, fromCache := imageref.ResolveForRegistry(ms.ImageName, registry.URL)
 	pullSucceeded := false
 
-	if registry.URL != "from_cache" && pullImage {
+	if !fromCache && pullImage {
 		cm.emitFromCM(ctx, runtimeops.RuntimeEvent{
 			Event:   runtimeops.EventContainerPulling,
 			MsUUID:  ms.MicroserviceUUID,
@@ -622,7 +620,7 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 	}
 
 	// Verify image exists in local cache and pick the runtime image reference.
-	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs)
+	matchedRef, exists, err := cm.findFirstLocalImageRef(lookupRefs, registry)
 	if err != nil {
 		return err
 	}
@@ -789,9 +787,10 @@ func (cm *ContainerManager) platformForPull(ms *models.Microservice) string {
 	return *ms.Platform
 }
 
-func (cm *ContainerManager) findFirstLocalImageRef(refs []string) (string, bool, error) {
+func (cm *ContainerManager) findFirstLocalImageRef(refs []string, registry *models.Registry) (string, bool, error) {
+	registryURL, fromCache := imageref.MatchParamsOptional(registryURLFromRegistry(registry))
 	for _, ref := range refs {
-		exists, err := cm.engine.FindLocalImage(ref)
+		exists, err := cm.engine.FindLocalImage(ref, registryURL, fromCache)
 		if err != nil {
 			return "", false, err
 		}

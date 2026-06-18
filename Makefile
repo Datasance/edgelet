@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test test-linux lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test test-linux lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet static staticcheck staticcheck-standalone install-staticcheck help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check test-lifecycle test-lifecycle-race test-deadlock pre-it
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -10,6 +10,13 @@ export PATH := $(GOBIN):$(PATH)
 # golangci-lint — pinned version; override with GOLANGCI_LINT_VERSION=vX.Y.Z
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT         := $(GOBIN)/golangci-lint
+
+# staticcheck — pinned standalone dev target; also enabled inside golangci-lint (not chained before lint in CI/pre-it)
+STATICCHECK_VERSION ?= v0.6.1
+STATICCHECK         := $(GOBIN)/staticcheck
+
+# Provision/deprovision lifecycle packages (volumemount, fieldagent, processmanager)
+LIFECYCLE_PKGS := ./internal/volumemount/... ./internal/fieldagent/... ./internal/processmanager/...
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -234,6 +241,39 @@ fmt: ## Format code
 vet: ## Run go vet
 	@echo "Running go vet..."
 	@go vet ./...
+
+$(STATICCHECK):
+	@echo "⬇️  Installing staticcheck $(STATICCHECK_VERSION) → $(GOBIN)..."
+	@go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	@echo "✓ staticcheck $(STATICCHECK_VERSION) installed"
+
+.PHONY: install-staticcheck
+install-staticcheck: $(STATICCHECK) ## Install pinned staticcheck
+
+staticcheck: $(GOLANGCI_LINT) ## Run staticcheck (via golangci-lint; matches .golangci.yaml)
+	@echo "Running staticcheck (golangci-lint --enable-only=staticcheck)..."
+	@$(GOLANGCI_LINT) run --config .golangci.yaml --enable-only=staticcheck
+
+staticcheck-standalone: ## Run honnef staticcheck directly (stricter ST* rules; not CI gate)
+	@echo "Running staticcheck $(STATICCHECK_VERSION) standalone..."
+	@go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) -checks=all,-SA1019 ./cmd/... ./internal/... ./pkg/...
+
+static: vet staticcheck ## Fast static gate: go vet + staticcheck (no full golangci-lint)
+
+# Lifecycle / concurrency audit (volumemount, fieldagent, processmanager)
+test-lifecycle: ## Unit tests on lifecycle packages
+	@echo "Running lifecycle package tests..."
+	@go test -count=1 $(LIFECYCLE_PKGS)
+
+test-lifecycle-race: ## Race detector on lifecycle packages (slow; CGO may be required)
+	@echo "Running lifecycle package race detector..."
+	@CGO_ENABLED=1 go test -race -count=1 -timeout 15m $(LIFECYCLE_PKGS)
+
+test-deadlock: ## Deadlock-tagged tests on lifecycle packages (-tags deadlock)
+	@echo "Running deadlock-tagged lifecycle tests..."
+	@go test -tags deadlock -count=1 -timeout 5m $(LIFECYCLE_PKGS)
+
+pre-it: vet lint test-lifecycle ## Local gate before manual IT (optional: test-lifecycle-race, test-deadlock)
 
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."

@@ -23,7 +23,7 @@ func (noopEngine) StopContainer(string) error                                   
 func (noopEngine) KillContainer(string) error                                   { return nil }
 func (noopEngine) RemoveContainer(string, bool) error                           { return nil }
 func (noopEngine) PullImage(string, *models.Registry, *PullImageOptions) error  { return nil }
-func (noopEngine) FindLocalImage(string) (bool, error)                          { return false, nil }
+func (noopEngine) FindLocalImage(string, string, bool) (bool, error)            { return false, nil }
 func (noopEngine) RemoveImage(string) error                                     { return nil }
 func (noopEngine) PruneImages() error                                           { return nil }
 func (noopEngine) ListImages(context.Context) ([]ImageInfo, error)              { return nil, nil }
@@ -51,15 +51,17 @@ func (noopEngine) InspectContainerRaw(string) (map[string]any, error) {
 func (noopEngine) TailContainerLogs(string, string, string, LogTailHandler, *TailConfig) error {
 	return nil
 }
-func (noopEngine) AreMicroserviceAndContainerEqual(string, *models.Microservice) bool { return false }
-func (noopEngine) EnsureNetwork(string) error                                         { return nil }
-func (noopEngine) CreateExecSession(string, []string) (string, error)                 { return "", nil }
-func (noopEngine) StartExecSession(string, io.Reader, io.Writer, io.Writer) error     { return nil }
-func (noopEngine) GetExecSessionStatus(string) (bool, error)                          { return false, nil }
-func (noopEngine) GetExecSessionExitCode(string) (int, error)                         { return 0, nil }
-func (noopEngine) ResizeExecSession(string, uint32, uint32) error                     { return nil }
-func (noopEngine) StopExecSession(string) error                                       { return nil }
-func (noopEngine) GetContainerMicroserviceUUID(Container) string                      { return "" }
-func (noopEngine) GetContainerName(Container) string                                  { return "" }
+func (noopEngine) AreMicroserviceAndContainerEqual(string, *models.Microservice, *models.Registry) bool {
+	return false
+}
+func (noopEngine) EnsureNetwork(string) error                                     { return nil }
+func (noopEngine) CreateExecSession(string, []string) (string, error)             { return "", nil }
+func (noopEngine) StartExecSession(string, io.Reader, io.Writer, io.Writer) error { return nil }
+func (noopEngine) GetExecSessionStatus(string) (bool, error)                      { return false, nil }
+func (noopEngine) GetExecSessionExitCode(string) (int, error)                     { return 0, nil }
+func (noopEngine) ResizeExecSession(string, uint32, uint32) error                 { return nil }
+func (noopEngine) StopExecSession(string) error                                   { return nil }
+func (noopEngine) GetContainerMicroserviceUUID(Container) string                  { return "" }
+func (noopEngine) GetContainerName(Container) string                              { return "" }
 
 var _ ContainerEngine = noopEngine{}

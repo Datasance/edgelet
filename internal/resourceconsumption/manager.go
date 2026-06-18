@@ -1,13 +1,11 @@
 package resourceconsumption
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,15 +93,10 @@ func (rcm *Manager) collectUsageData() {
 	memoryUsage := rcm.getMemoryUsage()
 	cpuUsage := rcm.getCPUUsage()
 
-	// Calculate disk usage (directories may not exist yet, which is OK)
-	archivePath := filepath.Join(rcm.config.DiskDirectory, "messages", "archive")
-	volumesPath := filepath.Join(rcm.config.DiskDirectory, "volumes")
-	archiveDiskUsage := rcm.directorySize(archivePath)
-	volumesDiskUsage := rcm.directorySize(volumesPath)
-	diskUsage := archiveDiskUsage + volumesDiskUsage
+	// Calculate disk usage (directory may not exist yet, which is OK)
+	diskUsage := rcm.directorySize(rcm.config.DiskDirectory)
 
-	logging.LogDebug(moduleName, fmt.Sprintf("Disk usage: archive=%d bytes, volumes=%d bytes, total=%d bytes",
-		archiveDiskUsage, volumesDiskUsage, diskUsage))
+	logging.LogDebug(moduleName, fmt.Sprintf("Disk usage: diskDirectory=%d bytes", diskUsage))
 
 	availableMemory := rcm.getSystemAvailableMemory()
 	totalCPU := rcm.getTotalCPU()
@@ -129,12 +122,6 @@ func (rcm *Manager) collectUsageData() {
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Updated status: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB",
 		float64(memoryUsage)/1_000_000, cpuUsage, float64(diskUsage)/1_000_000_000))
-
-	// Prune archives if disk usage exceeds limit
-	if diskUsage > rcm.diskLimit {
-		amount := diskUsage - int64(float64(rcm.diskLimit)*0.75)
-		rcm.removeArchives(amount)
-	}
 
 	logging.LogDebug(moduleName, "Finished Get usage data")
 }
@@ -392,87 +379,4 @@ func (rcm *Manager) directorySize(path string) int64 {
 
 	logging.LogDebug(moduleName, fmt.Sprintf("Finished directory size: %d bytes for %s", size, path))
 	return size
-}
-
-// removeArchives removes old archive files to free up disk space
-func (rcm *Manager) removeArchives(amount int64) {
-	logging.LogDebug(moduleName, fmt.Sprintf("Start remove archives: %d", amount))
-
-	archivesDirectory := filepath.Join(rcm.config.DiskDirectory, "messages", "archive")
-
-	// Get all .idx files
-	files, err := filepath.Glob(filepath.Join(archivesDirectory, "*.idx"))
-	if err != nil {
-		logging.LogError(moduleName, "Error finding archive files", err)
-		return
-	}
-
-	// Sort files by timestamp in filename (format: prefix_timestamp.idx)
-	type fileInfo struct {
-		path      string
-		timestamp string
-	}
-	fileInfos := make([]fileInfo, 0, len(files))
-
-	for _, file := range files {
-		base := filepath.Base(file)
-		// Extract timestamp from filename (format: prefix_timestamp.idx)
-		ext := filepath.Ext(base)
-		nameWithoutExt := base[:len(base)-len(ext)]
-		parts := filepath.SplitList(nameWithoutExt)
-		if len(parts) > 0 {
-			lastPart := parts[len(parts)-1]
-			// Try to find timestamp (after last underscore)
-			idx := len(lastPart) - 1
-			for idx >= 0 && lastPart[idx] != '_' {
-				idx--
-			}
-			if idx >= 0 && idx < len(lastPart)-1 {
-				timestamp := lastPart[idx+1:]
-				fileInfos = append(fileInfos, fileInfo{
-					path:      file,
-					timestamp: timestamp,
-				})
-			}
-		}
-	}
-	// Sort by timestamp (oldest first)
-	slices.SortFunc(fileInfos, func(a, b fileInfo) int {
-		return cmp.Compare(a.timestamp, b.timestamp)
-	})
-
-	// Remove files until we've freed enough space
-	for _, fi := range fileInfos {
-		if amount <= 0 {
-			break
-		}
-
-		// Get file size
-		info, err := os.Stat(fi.path)
-		if err != nil {
-			continue
-		}
-		idxSize := info.Size()
-
-		// Remove .idx file
-		if err := os.Remove(fi.path); err != nil {
-			logging.LogError(moduleName, fmt.Sprintf("Error removing archive file %s", fi.path), err)
-			continue
-		}
-		amount -= idxSize
-
-		// Remove corresponding .iomsg file
-		dataFile := fi.path[:len(fi.path)-len(".idx")] + ".iomsg"
-		info, err = os.Stat(dataFile)
-		if err == nil {
-			dataSize := info.Size()
-			if err := os.Remove(dataFile); err != nil {
-				logging.LogError(moduleName, fmt.Sprintf("Error removing archive data file %s", dataFile), err)
-			} else {
-				amount -= dataSize
-			}
-		}
-	}
-
-	logging.LogDebug(moduleName, "Finished remove archives")
 }

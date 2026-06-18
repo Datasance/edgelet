@@ -50,9 +50,11 @@ func (e *Engine) RemoveContainer(_ string, _ bool) error { return errors.New("un
 func (e *Engine) PullImage(_ string, _ *models.Registry, _ *engine.PullImageOptions) error {
 	return errors.New("unsupported")
 }
-func (e *Engine) FindLocalImage(_ string) (bool, error) { return false, errors.New("unsupported") }
-func (e *Engine) RemoveImage(_ string) error            { return errors.New("unsupported") }
-func (e *Engine) PruneImages() error                    { return errors.New("unsupported") }
+func (e *Engine) FindLocalImage(_ string, _ string, _ bool) (bool, error) {
+	return false, errors.New("unsupported")
+}
+func (e *Engine) RemoveImage(_ string) error { return errors.New("unsupported") }
+func (e *Engine) PruneImages() error         { return errors.New("unsupported") }
 func (e *Engine) GetContainerStatus(_, _ string) (*models.MicroserviceStatus, error) {
 	return nil, errors.New("unsupported")
 }
@@ -66,7 +68,7 @@ func (e *Engine) GetContainerStartedAt(_ string) (int64, error) { return 0, erro
 func (e *Engine) TailContainerLogs(_, _, _ string, _ engine.LogTailHandler, _ *engine.TailConfig) error {
 	return errors.New("unsupported")
 }
-func (e *Engine) AreMicroserviceAndContainerEqual(_ string, _ *models.Microservice) bool {
+func (e *Engine) AreMicroserviceAndContainerEqual(_ string, _ *models.Microservice, _ *models.Registry) bool {
 	return false
 }
 func (e *Engine) EnsureNetwork(_ string) error { return errors.New("unsupported") }

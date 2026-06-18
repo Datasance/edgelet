@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/client"
 	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/moby/moby/client"
 )
 
 var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
@@ -18,14 +18,20 @@ var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 		return nil, errors.New("config is not initialized")
 	}
 
-	opts := []client.Opt{
-		client.WithHost(strings.TrimSpace(cfg.ContainerEngineURL)),
-		client.WithAPIVersionNegotiation(),
+	engineURL := strings.TrimSpace(cfg.ContainerEngineURL)
+	apiVersion := strings.TrimSpace(cfg.DockerAPIVersion)
+	var cli *client.Client
+	var err error
+	if apiVersion != "" {
+		cli, err = client.New(
+			client.WithHost(engineURL),
+			client.WithAPIVersion(apiVersion),
+		)
+	} else {
+		cli, err = client.New(
+			client.WithHost(engineURL),
+		)
 	}
-	if strings.TrimSpace(cfg.DockerAPIVersion) != "" {
-		opts = append(opts, client.WithVersion(strings.TrimSpace(cfg.DockerAPIVersion)))
-	}
-	cli, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -35,10 +41,11 @@ var listExternalRuntimesForStatus = func(_ string) ([]string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return nil, err
 	}
+	info := infoResult.Info
 	runtimes := make([]string, 0, len(info.Runtimes))
 	for runtimeName := range info.Runtimes {
 		runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))

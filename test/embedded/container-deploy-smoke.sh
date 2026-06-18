@@ -27,6 +27,10 @@ if ! command -v docker >/dev/null; then
     die "docker CLI required for nested deploy smoke"
 fi
 
+# Fresh lib/etc volumes avoid stale extract or DB from prior failed runs.
+docker rm -f "${NAME}" >/dev/null 2>&1 || true
+docker volume rm "${LIB_VOL}" "${ETC_VOL}" >/dev/null 2>&1 || true
+
 log_step "Starting privileged nested edgelet container (${IMAGE})"
 docker run -d --name "${NAME}" --privileged \
     -v "${LIB_VOL}:/var/lib/edgelet" \

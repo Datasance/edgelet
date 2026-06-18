@@ -10,17 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	nat "github.com/docker/go-connections/nat"
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/dnsresolver"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	mobyclient "github.com/moby/moby/client"
 )
 
 const (
@@ -47,14 +45,16 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 	}
 
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
+	listResult, err := cli.ContainerList(ctx, mobyclient.ContainerListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("name", utils.EdgeletDockerContainerNamePrefix+microserviceUUID)),
+		Filters: make(mobyclient.Filters).Add("name", utils.EdgeletDockerContainerNamePrefix+microserviceUUID),
 	})
 
 	if err != nil {
 		return nil, err
 	}
+
+	containers := listResult.Items
 
 	if len(containers) == 0 {
 		return nil, nil
@@ -66,7 +66,7 @@ func (c *Client) GetContainer(microserviceUUID string) (*Container, error) {
 		Names:  cont.Names,
 		Image:  cont.Image,
 		Status: cont.Status,
-		State:  cont.State,
+		State:  string(cont.State),
 		Labels: cont.Labels,
 	}, nil
 }
@@ -78,13 +78,14 @@ func (c *Client) GetContainerByID(containerID string) (*Container, error) {
 		return nil, errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
+	listResult, err := cli.ContainerList(ctx, mobyclient.ContainerListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("id", containerID)),
+		Filters: make(mobyclient.Filters).Add("id", containerID),
 	})
 	if err != nil {
 		return nil, err
 	}
+	containers := listResult.Items
 	if len(containers) == 0 {
 		return nil, nil
 	}
@@ -94,7 +95,7 @@ func (c *Client) GetContainerByID(containerID string) (*Container, error) {
 		Names:  cont.Names,
 		Image:  cont.Image,
 		Status: cont.Status,
-		State:  cont.State,
+		State:  string(cont.State),
 		Labels: cont.Labels,
 	}, nil
 }
@@ -106,17 +107,17 @@ func (c *Client) listContainers(all bool) ([]Container, error) {
 	}
 
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
+	listResult, err := cli.ContainerList(ctx, mobyclient.ContainerListOptions{
 		All: all,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return containersFromDockerList(all, containers), nil
+	return containersFromDockerList(all, listResult.Items), nil
 }
 
-func containersFromDockerList(all bool, containers []types.Container) []Container {
+func containersFromDockerList(all bool, containers []container.Summary) []Container {
 	result := make([]Container, 0, len(containers))
 	for _, cont := range containers {
 		if !all && cont.State != "running" {
@@ -127,7 +128,7 @@ func containersFromDockerList(all bool, containers []types.Container) []Containe
 			Names:  cont.Names,
 			Image:  cont.Image,
 			Status: cont.Status,
-			State:  cont.State,
+			State:  string(cont.State),
 			Labels: cont.Labels,
 		})
 	}
@@ -152,12 +153,13 @@ func (c *Client) GetContainerStatus(containerID string) (string, error) {
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return "", err
 	}
+	inspect := inspectResult.Container
 
-	return inspect.State.Status, nil
+	return string(inspect.State.Status), nil
 }
 
 // IsContainerRunning checks if a container is running
@@ -177,7 +179,8 @@ func (c *Client) StartContainer(containerID string) error {
 	}
 
 	ctx := c.GetContext()
-	return cli.ContainerStart(ctx, containerID, container.StartOptions{})
+	_, err := cli.ContainerStart(ctx, containerID, mobyclient.ContainerStartOptions{})
+	return err
 }
 
 // StopContainer stops a container
@@ -198,7 +201,8 @@ func (c *Client) StopContainer(containerID string) error {
 	}
 
 	ctx := c.GetContext()
-	return cli.ContainerStop(ctx, containerID, container.StopOptions{})
+	_, err = cli.ContainerStop(ctx, containerID, mobyclient.ContainerStopOptions{})
+	return err
 }
 
 // KillContainer sends SIGKILL to a container.
@@ -208,7 +212,8 @@ func (c *Client) KillContainer(containerID string) error {
 		return errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
-	return cli.ContainerKill(ctx, containerID, "SIGKILL")
+	_, err := cli.ContainerKill(ctx, containerID, mobyclient.ContainerKillOptions{Signal: "SIGKILL"})
+	return err
 }
 
 // RemoveContainer removes a container
@@ -219,10 +224,11 @@ func (c *Client) RemoveContainer(containerID string, removeVolumes bool) error {
 	}
 
 	ctx := c.GetContext()
-	return cli.ContainerRemove(ctx, containerID, container.RemoveOptions{
+	_, err := cli.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{
 		Force:         true,
 		RemoveVolumes: removeVolumes,
 	})
+	return err
 }
 
 // GetContainerIPAddress gets the IPv4 address of a container
@@ -233,10 +239,11 @@ func (c *Client) GetContainerIPAddress(containerID string) (string, error) {
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return "", err
 	}
+	inspect := inspectResult.Container
 
 	// Check if container is using host network mode
 	if inspect.HostConfig != nil && inspect.HostConfig.NetworkMode == "host" {
@@ -249,13 +256,13 @@ func (c *Client) GetContainerIPAddress(containerID string) (string, error) {
 	networks := inspect.NetworkSettings.Networks
 	if networks != nil {
 		// Try bridge network first
-		if bridge, ok := networks["bridge"]; ok && bridge.IPAddress != "" {
-			return bridge.IPAddress, nil
+		if bridge, ok := networks["bridge"]; ok && bridge.IPAddress.IsValid() {
+			return bridge.IPAddress.String(), nil
 		}
 		// Fallback to first available network
 		for _, network := range networks {
-			if network.IPAddress != "" {
-				return network.IPAddress, nil
+			if network.IPAddress.IsValid() {
+				return network.IPAddress.String(), nil
 			}
 		}
 	}
@@ -271,12 +278,11 @@ func (c *Client) GetContainerStartedAt(containerID string) (int64, error) {
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return 0, err
 	}
-
-	startedAt := inspect.State.StartedAt
+	startedAt := inspectResult.Container.State.StartedAt
 	if startedAt == "" {
 		return time.Now().UnixMilli(), nil
 	}
@@ -301,11 +307,11 @@ func (c *Client) GetContainerInspectRaw(containerID string) ([]byte, error) {
 		return nil, errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(inspect)
+	return inspectResult.Raw, nil
 }
 
 // GetRunningNonIofogContainers returns running containers not managed by ioFog
@@ -334,17 +340,15 @@ func (c *Client) GetRouterMicroserviceIP() (string, error) {
 		return "", errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
-		All: false,
-		Filters: filters.NewArgs(
-			filters.Arg("label", workloadmeta.LabelRole+"="+workloadmeta.RoleRouter),
-			filters.Arg("status", "running"),
-		),
+	listResult, err := cli.ContainerList(ctx, mobyclient.ContainerListOptions{
+		Filters: make(mobyclient.Filters).
+			Add("label", workloadmeta.LabelRole+"="+workloadmeta.RoleRouter).
+			Add("status", "running"),
 	})
 	if err != nil {
 		return "", err
 	}
-	for _, cont := range containers {
+	for _, cont := range listResult.Items {
 		ip, ipErr := c.GetContainerIPAddress(cont.ID)
 		if ipErr != nil || strings.TrimSpace(ip) == "" {
 			continue
@@ -361,17 +365,15 @@ func (c *Client) GetNatsMicroserviceIP() (string, error) {
 		return "", errors.New("docker client not initialized")
 	}
 	ctx := c.GetContext()
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
-		All: false,
-		Filters: filters.NewArgs(
-			filters.Arg("label", workloadmeta.LabelRole+"="+workloadmeta.RoleNats),
-			filters.Arg("status", "running"),
-		),
+	listResult, err := cli.ContainerList(ctx, mobyclient.ContainerListOptions{
+		Filters: make(mobyclient.Filters).
+			Add("label", workloadmeta.LabelRole+"="+workloadmeta.RoleNats).
+			Add("status", "running"),
 	})
 	if err != nil {
 		return "", err
 	}
-	for _, cont := range containers {
+	for _, cont := range listResult.Items {
 		ip, ipErr := c.GetContainerIPAddress(cont.ID)
 		if ipErr != nil || strings.TrimSpace(ip) == "" {
 			continue
@@ -447,12 +449,12 @@ func (c *Client) GetInspectContainersImage(containerID string) (string, error) {
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return "", err
 	}
 
-	return inspect.Config.Image, nil
+	return inspectResult.Container.Config.Image, nil
 }
 
 // GetMicroserviceStatus gets the microservice status from container inspection
@@ -463,16 +465,17 @@ func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.Microserv
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
+	inspect := inspectResult.Container
 
 	status := models.NewMicroserviceStatus()
 	status.ContainerID = containerID
 
 	// Map Docker state to microservice state
-	state := inspect.State.Status
+	state := string(inspect.State.Status)
 	switch state {
 	case "running":
 		status.Status = models.MicroserviceStateRunning
@@ -507,7 +510,7 @@ func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.Microserv
 
 	// Get health status if available (for all container states)
 	if inspect.State.Health != nil {
-		healthStatus := inspect.State.Health.Status
+		healthStatus := string(inspect.State.Health.Status)
 		status.HealthStatus = &healthStatus
 	}
 
@@ -535,10 +538,11 @@ func (c *Client) AreMicroserviceAndContainerEqual(containerID string, ms *models
 	}
 
 	ctx := c.GetContext()
-	inspect, err := cli.ContainerInspect(ctx, containerID)
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		return false
 	}
+	inspect := inspectResult.Container
 
 	// Check port mappings
 	if !c.isPortMappingEqual(inspect, ms) {
@@ -559,7 +563,7 @@ func (c *Client) AreMicroserviceAndContainerEqual(containerID string, ms *models
 }
 
 // isPortMappingEqual compares if microservice port mapping is equal to container port mapping
-func (c *Client) isPortMappingEqual(inspect types.ContainerJSON, ms *models.Microservice) bool {
+func (c *Client) isPortMappingEqual(inspect container.InspectResponse, ms *models.Microservice) bool {
 	// Get microservice ports
 	microservicePorts := c.getMicroservicePorts(ms)
 
@@ -587,7 +591,7 @@ func (c *Client) isPortMappingEqual(inspect types.ContainerJSON, ms *models.Micr
 // isNetworkModeEqual compares if microservice network mode matches container network mode.
 // host-network microservice → container must have NetworkMode "host"
 // non-host-network microservice → container must be on the "edgelet" user-defined bridge
-func (c *Client) isNetworkModeEqual(inspect types.ContainerJSON, ms *models.Microservice) bool {
+func (c *Client) isNetworkModeEqual(inspect container.InspectResponse, ms *models.Microservice) bool {
 	hostConfig := inspect.HostConfig
 	if hostConfig == nil {
 		return false
@@ -604,7 +608,7 @@ func (c *Client) isNetworkModeEqual(inspect types.ContainerJSON, ms *models.Micr
 }
 
 // isEnvVarsEqual compares if microservice environment variables are equal to container environment variables
-func (c *Client) isEnvVarsEqual(inspect types.ContainerJSON, ms *models.Microservice) bool {
+func (c *Client) isEnvVarsEqual(inspect container.InspectResponse, ms *models.Microservice) bool {
 	// Get microservice environment variables
 	microserviceEnvVars := ms.EnvVars
 	if microserviceEnvVars == nil {
@@ -650,7 +654,7 @@ func (c *Client) getMicroservicePorts(ms *models.Microservice) []*models.PortMap
 }
 
 // getContainerPorts extracts port mappings from container inspect info
-func (c *Client) getContainerPorts(inspect types.ContainerJSON) []*models.PortMapping {
+func (c *Client) getContainerPorts(inspect container.InspectResponse) []*models.PortMapping {
 	hostConfig := inspect.HostConfig
 	if hostConfig == nil || hostConfig.PortBindings == nil {
 		return make([]*models.PortMapping, 0)
@@ -663,8 +667,8 @@ func (c *Client) getContainerPorts(inspect types.ContainerJSON) []*models.PortMa
 		}
 
 		// Get protocol (tcp or udp)
-		isUDP := port.Proto() == "udp"
-		insidePort := port.Int()
+		isUDP := port.Proto() == network.UDP
+		insidePort := int(port.Num())
 
 		// Process each binding
 		for _, binding := range bindings {
@@ -987,7 +991,12 @@ func (c *Client) CreateContainer(ms *models.Microservice, hostName string) (stri
 	}
 
 	// Create container
-	createResp, err := cli.ContainerCreate(ctx, config, hostConfig, networkingConfig, nil, containerName)
+	createResp, err := cli.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
+		Config:           config,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+		Name:             containerName,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -1026,31 +1035,27 @@ func buildCanonicalContainerMetadata(ms *models.Microservice, cfg *config.Config
 	return workloadmeta.BuildLabels(in), workloadmeta.BuildEnv(in)
 }
 
-func buildPortBindings(portMappings []*models.PortMapping) (nat.PortMap, error) {
+func buildPortBindings(portMappings []*models.PortMapping) (network.PortMap, error) {
 	if len(portMappings) == 0 {
 		return nil, nil
 	}
 
-	bindings := make(nat.PortMap)
+	bindings := make(network.PortMap)
 	for _, pm := range portMappings {
-		proto := "tcp"
+		proto := network.TCP
 		if pm.UDP {
-			proto = "udp"
+			proto = network.UDP
 		}
 
-		port, err := nat.NewPort(proto, fmt.Sprintf("%d", pm.Inside))
-		if err != nil {
-			return nil, err
+		port, ok := network.PortFrom(uint16(pm.Inside), proto) // #nosec G115 -- port numbers are validated upstream
+		if !ok {
+			return nil, fmt.Errorf("invalid container port %d", pm.Inside)
 		}
 
-		binding := nat.PortBinding{
-			HostIP:   "0.0.0.0",
+		binding := network.PortBinding{
 			HostPort: fmt.Sprintf("%d", pm.Outside),
 		}
 
-		if bindings[port] == nil {
-			bindings[port] = make([]nat.PortBinding, 0)
-		}
 		bindings[port] = append(bindings[port], binding)
 	}
 

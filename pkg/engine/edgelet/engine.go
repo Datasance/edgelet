@@ -31,7 +31,6 @@ import (
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/errdefs"
 	tuypeurl "github.com/containerd/typeurl/v2"
 	"github.com/eclipse-iofog/edgelet/internal/dnsresolver"
@@ -841,8 +840,8 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 	return nil
 }
 
-func (e *Engine) FindLocalImage(imageRef string) (bool, error) {
-	_, aliases := imageref.Resolve(imageRef, "", true)
+func (e *Engine) FindLocalImage(imageRef, registryURL string, fromCache bool) (bool, error) {
+	_, aliases := imageref.Resolve(imageRef, strings.TrimSpace(registryURL), fromCache)
 	imgs, err := e.client.ListImages(e.ctx())
 	if err != nil {
 		return false, err
@@ -1814,7 +1813,7 @@ func readLastPlainLines(logPath string, nLines int) ([][]byte, error) {
 //  2. Environment variables (set equality)
 //  3. Port mappings (from persisted label vs desired) — skipped for host-network mode
 //  4. Network mode (host vs bridge)
-func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice) bool {
+func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models.Microservice, registry *models.Registry) bool {
 	ctx := e.ctx()
 	shortID := containerID
 	if len(shortID) > 12 {
@@ -1838,12 +1837,12 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 		return false
 	}
 
-	// 1. Image
-	imgRef, _ := reference.Parse(ms.ImageName)
-	expectedName := imgRef.String()
-	if info.Image != expectedName && info.Image != ms.ImageName {
-		log.Debugf("AreMicroserviceAndContainerEqual %s: image mismatch: got %q want %q/%q",
-			shortID, info.Image, expectedName, ms.ImageName)
+	// 1. Image — containerd stores qualified refs (e.g. docker.io/, quay.io/); controller
+	// often sends hostless names. imageref.Match uses the same registry context as pull.
+	registryURL, fromCache := imageref.MatchParamsOptional(registryURLFromRegistry(registry))
+	if !microserviceImageMatches(info.Image, ms.ImageName, registryURL, fromCache) {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: image mismatch: got %q want %q",
+			shortID, info.Image, ms.ImageName)
 		return false
 	}
 
@@ -1880,6 +1879,20 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 	}
 
 	return true
+}
+
+// registryURLFromRegistry returns the registry URL for imageref helpers.
+func registryURLFromRegistry(registry *models.Registry) string {
+	if registry == nil {
+		return ""
+	}
+	return registry.URL
+}
+
+// microserviceImageMatches reports whether containerImage matches the desired microservice
+// image ref for drift detection using the same imageref rules as pull/cache lookup.
+func microserviceImageMatches(containerImage, desiredImage, registryURL string, fromCache bool) bool {
+	return imageref.Match(containerImage, desiredImage, registryURL, fromCache)
 }
 
 // envSetsEqual returns true if actual and desired contain the same KEY=VALUE pairs.

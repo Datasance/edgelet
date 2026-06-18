@@ -31,6 +31,10 @@ if ! command -v docker >/dev/null || ! command -v jq >/dev/null; then
     die "docker and jq required"
 fi
 
+# Fresh lib/etc volumes avoid stale extract or DB from prior failed runs.
+docker rm -f "${NAME}" >/dev/null 2>&1 || true
+docker volume rm "${LIB_VOL}" "${ETC_VOL}" >/dev/null 2>&1 || true
+
 log_step "Starting privileged nested edgelet (${IMAGE}) with host docker.sock"
 docker run -d --name "${NAME}" --privileged --net=host \
     -v "${LIB_VOL}:/var/lib/edgelet" \
@@ -41,11 +45,18 @@ docker run -d --name "${NAME}" --privileged --net=host \
 wait_ready() {
     local i
     for i in $(seq 1 30); do
+        if ! docker inspect -f '{{.State.Running}}' "${NAME}" 2>/dev/null | grep -q true; then
+            log_fail "container ${NAME} exited before ready"
+            docker logs "${NAME}" 2>&1 | tail -40 >&2 || true
+            return 1
+        fi
         if docker exec "${NAME}" edgelet system status -o json 2>/dev/null | jq -e '.["runtime.engine"]' >/dev/null; then
             return 0
         fi
         sleep 2
     done
+    log_fail "daemon not ready after 60s"
+    docker logs "${NAME}" 2>&1 | tail -40 >&2 || true
     return 1
 }
 
