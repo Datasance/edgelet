@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/api/types/events"
 	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
+	"github.com/moby/moby/api/types/events"
 )
 
 func captureRuntimeEvents(t *testing.T) *[]runtimeops.RuntimeEvent {
@@ -32,10 +32,8 @@ func TestDockerEventHandler_EmitsForLabeledContainer(t *testing.T) {
 	c := &Client{logger: nil}
 
 	c.handleDockerEvent(events.Message{
-		Type:   "container",
-		Status: "die",
+		Type:   events.ContainerEventType,
 		Action: events.ActionDie,
-		ID:     "cid-managed",
 		Actor: events.Actor{
 			ID:         "cid-managed",
 			Attributes: managedEventAttributes("ms-managed"),
@@ -73,10 +71,9 @@ func TestDockerEventHandler_IgnoresUnlabeled(t *testing.T) {
 	c := &Client{logger: logging.NewModuleLogger(ModuleName)}
 
 	c.handleDockerEvent(events.Message{
-		Type:   "container",
-		Status: "die",
-		ID:     "cid-other",
+		Type: events.ContainerEventType,
 		Actor: events.Actor{
+			ID: "cid-other",
 			Attributes: map[string]string{
 				"label." + workloadmeta.LabelMicroserviceUID: "ms-other",
 			},

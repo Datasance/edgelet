@@ -5,11 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/volumemount"
+	"github.com/moby/moby/client"
 )
 
 // ResolveVolumeMountPath resolves volume mount paths for VOLUME_MOUNT type
@@ -67,16 +66,13 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 			if cli != nil {
 				ctx := dockerClient.GetContext()
 				// Check if edgelet-directory volume exists
-				volumes, err := cli.VolumeList(ctx, volume.ListOptions{
-					Filters: filters.NewArgs(),
-				})
+				listResult, err := cli.VolumeList(ctx, client.VolumeListOptions{})
 				if err == nil {
-					for _, vol := range volumes.Volumes {
+					for _, vol := range listResult.Items {
 						if vol.Name == "edgelet-directory" {
-							// Volume exists - inspect it to get mount point
-							volumeInfo, err := cli.VolumeInspect(ctx, "edgelet-directory")
+							volumeInfo, err := cli.VolumeInspect(ctx, "edgelet-directory", client.VolumeInspectOptions{})
 							if err == nil {
-								mountPoint := volumeInfo.Mountpoint
+								mountPoint := volumeInfo.Volume.Mountpoint
 								cfg := config.GetInstance()
 								diskDir := cfg.DiskDirectory
 								// Convert absolute path to relative path within volume

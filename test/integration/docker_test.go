@@ -7,6 +7,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/pkg/docker"
+	mobyclient "github.com/moby/moby/client"
 )
 
 // TestDockerConnection tests basic Docker connectivity
@@ -34,13 +35,13 @@ func TestDockerConnection(t *testing.T) {
 	}
 
 	ctx := client.GetContext()
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, mobyclient.InfoOptions{})
 	if err != nil {
 		t.Logf("Docker info failed (expected if Docker not running): %v", err)
 		return
 	}
 
-	t.Logf("Docker version: %s", info.ServerVersion)
+	t.Logf("Docker version: %s", infoResult.Info.ServerVersion)
 }
 
 // TestDockerImagePull tests Docker image pulling capability

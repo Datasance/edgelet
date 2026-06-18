@@ -5,10 +5,11 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/docker/docker/api/types/events"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 	"github.com/eclipse-iofog/edgelet/internal/workloadmeta"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 )
 
 const dockerEngineName = "docker"
@@ -24,7 +25,9 @@ func (c *Client) addDockerEventHandler() {
 	}
 
 	ctx := c.GetContext()
-	eventCh, errCh := cli.Events(ctx, events.ListOptions{})
+	eventsResult := cli.Events(ctx, client.EventsListOptions{})
+	eventCh := eventsResult.Messages
+	errCh := eventsResult.Err
 
 	go func() {
 		for {
@@ -61,8 +64,8 @@ func (c *Client) handleDockerEvent(event events.Message) {
 		return
 	}
 
-	state := models.MicroserviceStateFromText(event.Status)
-	c.logger.Debugf("Docker event: Type=%s, Status=%s, ID=%s, State=%s", event.Type, event.Status, containerIDFromEvent(event), state)
+	state := models.MicroserviceStateFromText(string(event.Action))
+	c.logger.Debugf("Docker event: Type=%s, Action=%s, ID=%s, State=%s", event.Type, event.Action, containerIDFromEvent(event), state)
 }
 
 func (c *Client) emitManagedContainerRuntimeEvent(event events.Message, labels map[string]string) {
@@ -130,15 +133,9 @@ func labelsFromDockerEventAttributes(attrs map[string]string) map[string]string 
 }
 
 func containerIDFromEvent(event events.Message) string {
-	if id := strings.TrimSpace(event.ID); id != "" {
-		return id
-	}
 	return strings.TrimSpace(event.Actor.ID)
 }
 
 func runtimeStatusFromDockerEvent(event events.Message) string {
-	if action := strings.TrimSpace(string(event.Action)); action != "" {
-		return strings.ToLower(action)
-	}
-	return strings.ToLower(strings.TrimSpace(event.Status))
+	return strings.ToLower(strings.TrimSpace(string(event.Action)))
 }

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 )
 
 // TailConfig represents configuration for log tailing
@@ -64,7 +64,7 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 	}
 
 	// Build log options
-	options := container.LogsOptions{
+	options := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     follow,

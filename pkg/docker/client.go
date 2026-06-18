@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/docker/docker/client"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
+	"github.com/moby/moby/client"
 )
 
 const (
@@ -59,19 +59,19 @@ func (c *Client) initDockerClient() error {
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	// Build client options
-	opts := []client.Opt{
-		client.WithHost(c.dockerURL),
-		client.WithAPIVersionNegotiation(),
-	}
-
-	// Set API version if specified
+	// Create Docker client (API version negotiation is default; WithAPIVersion pins floor)
+	var cli *client.Client
+	var err error
 	if c.apiVersion != "" {
-		opts = append(opts, client.WithVersion(c.apiVersion))
+		cli, err = client.New(
+			client.WithHost(c.dockerURL),
+			client.WithAPIVersion(c.apiVersion),
+		)
+	} else {
+		cli, err = client.New(
+			client.WithHost(c.dockerURL),
+		)
 	}
-
-	// Create Docker client
-	cli, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		c.logger.Errorf("Docker client initialization failed: %v", err)
 		return err
