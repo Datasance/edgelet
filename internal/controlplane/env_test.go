@@ -47,6 +47,9 @@ func TestBuildControllerEnv_MinimalRemoteIdentity(t *testing.T) {
 	if _, ok := env["API_PORT"]; ok {
 		t.Fatal("expected API_PORT omitted when port unset")
 	}
+	if _, ok := env["SERVER_DEV_MODE"]; ok {
+		t.Fatal("expected SERVER_DEV_MODE omitted when TLS unset")
+	}
 }
 
 func TestBuildControllerEnv_FullProjection(t *testing.T) {
@@ -239,6 +242,7 @@ func TestBuildControllerEnv_FullProjection(t *testing.T) {
 	assertEnv(t, env, "VAULT_HASHICORP_ADDRESS", "http://vault:8200")
 	assertEnv(t, env, "TLS_BASE64_CERT", cert)
 	assertEnv(t, env, "TLS_BASE64_KEY", key)
+	assertEnv(t, env, "SERVER_DEV_MODE", "false")
 }
 
 func TestBuildControllerEnv_EmbeddedBootstrapProjection(t *testing.T) {
@@ -279,6 +283,7 @@ func TestBuildControllerEnv_TLSPathFilenames(t *testing.T) {
 	assertEnv(t, env, "TLS_PATH_KEY", models.ControlPlaneTLSKeyFilename)
 	assertEnv(t, env, "TLS_PATH_INTERMEDIATE_CERT", models.ControlPlaneTLSCAFilename)
 	assertEnv(t, env, "INTERMEDIATE_CERT", filepath.Join(ContainerCertMountPath, models.ControlPlaneTLSCAFilename))
+	assertEnv(t, env, "SERVER_DEV_MODE", "false")
 }
 
 func TestBuildControllerEnv_RequiresAuth(t *testing.T) {

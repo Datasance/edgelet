@@ -215,6 +215,7 @@ func projectTLSEnv(env map[string]string, tls *models.ControlPlaneTLSConfig) {
 		return
 	}
 	if path := strings.TrimSpace(tls.Path); path != "" {
+		setEnv(env, "SERVER_DEV_MODE", "false")
 		setEnv(env, "TLS_PATH_CERT", models.ControlPlaneTLSCertFilename)
 		setEnv(env, "TLS_PATH_KEY", models.ControlPlaneTLSKeyFilename)
 		if _, err := models.StatControlPlaneTLSFile(path, models.ControlPlaneTLSCAFilename); err == nil {
@@ -226,6 +227,7 @@ func projectTLSEnv(env map[string]string, tls *models.ControlPlaneTLSConfig) {
 	if tls.Base64 == nil {
 		return
 	}
+	setEnv(env, "SERVER_DEV_MODE", "false")
 	setEnvIfNonEmpty(env, "TLS_BASE64_CERT", tls.Base64.Cert)
 	setEnvIfNonEmpty(env, "TLS_BASE64_KEY", tls.Base64.Key)
 	setEnvIfNonEmpty(env, "TLS_BASE64_INTERMEDIATE_CERT", tls.Base64.CA)
