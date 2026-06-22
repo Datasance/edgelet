@@ -10,7 +10,7 @@ var statusOutputOrder = []string{
 	"connectionToController",
 	"cpuUsage",
 	"diskUsage",
-	"iofogDaemon",
+	"edgeletDaemon",
 	"memoryUsage",
 	"runningMicroservices",
 	"systemAvailableDisk",

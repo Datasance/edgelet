@@ -9,7 +9,7 @@ import (
 
 // documentedTopLevelKeys mirrors docs/cli/output-schemas.md golden fixtures.
 var documentedTopLevelKeys = map[string][]string{
-	"system_status.json": {"connectionToController", "cpuUsage", "iofogDaemon"},
+	"system_status.json": {"connectionToController", "cpuUsage", "edgeletDaemon"},
 	"ms_ls.json":         {"items"},
 }
 

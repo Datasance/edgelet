@@ -119,7 +119,7 @@ func TestSystemStatusJSONJqFriendly(t *testing.T) {
 		running: true,
 		gets: map[string]map[string]any{
 			"GET /v1/system/status": {
-				"iofogDaemon":            "running",
+				"edgeletDaemon":          "running",
 				"connectionToController": "ok",
 				"cpuUsage":               float64(12),
 			},
@@ -133,7 +133,7 @@ func TestSystemStatusJSONJqFriendly(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if decoded["iofogDaemon"] != "running" {
+	if decoded["edgeletDaemon"] != "running" {
 		t.Fatalf("unexpected payload: %#v", decoded)
 	}
 }

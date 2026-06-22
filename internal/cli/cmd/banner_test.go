@@ -66,7 +66,7 @@ func TestBanner_CommandNoBanner(t *testing.T) {
 	client := &fakeClient{
 		running: true,
 		gets: map[string]map[string]any{
-			"GET /v1/system/status": {"iofogDaemon": "running"},
+			"GET /v1/system/status": {"edgeletDaemon": "running"},
 		},
 	}
 	_, stderr, code := runCLI(t, client, "system", "status")

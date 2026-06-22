@@ -42,7 +42,7 @@ _timeout="${API_WAIT_SEC:-180}"
 while [ "${_elapsed}" -lt "${_timeout}" ]; do
   if { [ -S /run/edgelet/containerd.sock ] || [ -S /var/run/edgelet/containerd.sock ]; } && \
      { [ -S /run/edgelet/edgelet.sock ] || [ -S /var/run/edgelet/edgelet.sock ]; } && \
-     edgelet system status 2>/dev/null | grep -q iofogDaemon && \
+     edgelet system status 2>/dev/null | grep -q edgeletDaemon && \
      edgelet system status -o json 2>/dev/null | jq -e ".[\"runtime.engineReady\"] == \"true\"" >/dev/null; then
     exit 0
   fi

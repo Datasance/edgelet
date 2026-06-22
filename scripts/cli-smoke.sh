@@ -24,7 +24,7 @@ if ! edgelet system status -o json >/tmp/iofog-cli-smoke-status.json 2>/dev/null
   exit "$code"
 fi
 
-jq -e '.iofogDaemon' /tmp/iofog-cli-smoke-status.json >/dev/null
+jq -e '.edgeletDaemon' /tmp/iofog-cli-smoke-status.json >/dev/null
 edgelet ms ls -o json | jq -e '.items | type == "array"' >/dev/null
 
 expect_fail edgelet status

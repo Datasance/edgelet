@@ -60,7 +60,7 @@ func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 		running: true,
 		gets: map[string]map[string]any{
 			"GET /v1/system/status": {
-				"iofogDaemon":            "running",
+				"edgeletDaemon":          "running",
 				"connectionToController": "ok",
 			},
 		},
@@ -76,7 +76,7 @@ func TestSystemStatusJSONStdoutOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v (%q)", err, stdout)
 	}
-	if decoded["iofogDaemon"] != "running" {
+	if decoded["edgeletDaemon"] != "running" {
 		t.Fatalf("unexpected payload: %#v", decoded)
 	}
 }

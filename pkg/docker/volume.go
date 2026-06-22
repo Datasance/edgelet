@@ -56,8 +56,8 @@ func ResolveVolumeMountPath(hostDestination string, volumeMappingType models.Vol
 		}
 
 		// Check if agent is running in container
-		iofogDaemon := os.Getenv("EDGELET_DAEMON")
-		isContainer := strings.ToLower(iofogDaemon) == "container"
+		edgeletDaemon := os.Getenv("EDGELET_DAEMON")
+		isContainer := strings.ToLower(edgeletDaemon) == "container"
 
 		if isContainer {
 			// Agent running in container - need to check volume mounting
