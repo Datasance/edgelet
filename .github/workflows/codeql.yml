@@ -43,3 +43,7 @@ jobs:
         uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         with:
           category: "/language:go"
+          # Fork PRs (e.g. Datasance/edgelet → eclipse-iofog/edgelet) get a read-only
+          # GITHUB_TOKEN; upload fails with "Resource not accessible by integration".
+          # Analysis still runs; SARIF uploads on same-repo push/PR and post-merge push.
+          upload: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
