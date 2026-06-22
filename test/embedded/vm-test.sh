@@ -100,7 +100,7 @@ assert_ok "edgelet-containerd service active (runtime split)" \
 assert_ok "edgelet service is active with EdgeletAPI unix socket" \
     R "systemctl is-active --quiet edgelet && test -S /run/edgelet/edgelet.sock"
 
-assert_contains "system status endpoint is reachable" "iofogDaemon" \
+assert_contains "system status endpoint is reachable" "edgeletDaemon" \
     R "edgelet system status"
 
 assert_contains "status exposes cgroup mode" "cgroupMode" \

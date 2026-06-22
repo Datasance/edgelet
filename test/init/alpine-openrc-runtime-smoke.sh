@@ -104,7 +104,7 @@ run_remote "${EMBED_RUNTIME_ASSERT_STATIC_SNIPPET}"
 log_step "EdgeletAPI and cgroupfs driver on non-systemd"
 run_remote "
     set -e
-    edgelet system status | grep -q iofogDaemon
+    edgelet system status | grep -q edgeletDaemon
     driver=\$(edgelet system status -o json | jq -r '.cgroupDriver')
     test \"\${driver}\" = cgroupfs
     grep -q '/run/edgelet/containerd.sock' /var/lib/edgelet-containerd/config.toml

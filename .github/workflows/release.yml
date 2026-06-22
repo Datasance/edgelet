@@ -216,6 +216,7 @@ jobs:
           DEBUGGER_IMAGE: ${{ vars.DEBUGGER_CONTAINER_IMAGE }}
         run: |
           set -euo pipefail
+          CONTAINER_TAG="${REF_NAME#v}"
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f tag_name="${REF_NAME}" \
             -f target_commitish="${GITHUB_SHA}" \
@@ -233,8 +234,8 @@ jobs:
             '' \
             '### Container images' \
             '```bash' \
-            "docker pull ${IMAGE}:${REF_NAME}" \
-            "docker pull ${DEBUGGER_IMAGE}:${REF_NAME}" \
+            "docker pull ${IMAGE}:${CONTAINER_TAG}" \
+            "docker pull ${DEBUGGER_IMAGE}:${CONTAINER_TAG}" \
             '```' \
             >> release_notes.md
 
@@ -263,6 +264,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set container image tag
+        run: echo "CONTAINER_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -273,10 +277,10 @@ jobs:
             VERSION=${{ github.ref_name }}
             GIT_COMMIT=${{ github.sha }}
           tags: |
-            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:${{ env.CONTAINER_TAG }}
             ${{ env.IMAGE }}:latest
           labels: |
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ env.CONTAINER_TAG }}
             org.opencontainers.image.revision=${{ github.sha }}
 
   container-debugger:
@@ -297,6 +301,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set container image tag
+        run: echo "CONTAINER_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -304,8 +311,8 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
           push: true
           tags: |
-            ${{ env.DEBUGGER_IMAGE }}:${{ github.ref_name }}
+            ${{ env.DEBUGGER_IMAGE }}:${{ env.CONTAINER_TAG }}
             ${{ env.DEBUGGER_IMAGE }}:latest
           labels: |
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ env.CONTAINER_TAG }}
             org.opencontainers.image.revision=${{ github.sha }}

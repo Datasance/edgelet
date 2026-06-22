@@ -9,7 +9,7 @@ import (
 
 func TestGoldenSystemStatusJSON(t *testing.T) {
 	input := map[string]any{
-		"iofogDaemon":            "running",
+		"edgeletDaemon":          "running",
 		"connectionToController": "ok",
 		"cpuUsage":               float64(12),
 	}

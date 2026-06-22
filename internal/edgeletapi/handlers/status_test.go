@@ -13,7 +13,7 @@ import (
 
 func TestAugmentWithDNSStatusAddsKeys(t *testing.T) {
 	m := map[string]string{
-		"iofogDaemon": "running",
+		"edgeletDaemon": "running",
 	}
 	augmentWithDNSStatus(m)
 

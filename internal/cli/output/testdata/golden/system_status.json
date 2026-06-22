@@ -1,5 +1,5 @@
 {
   "connectionToController": "ok",
   "cpuUsage": 12,
-  "iofogDaemon": "running"
+  "edgeletDaemon": "running"
 }

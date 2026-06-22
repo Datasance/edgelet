@@ -10,7 +10,7 @@ Route: `GET /v1/system/status`
 |-------|------|-------------|
 | `connectionToController` | string | Controller connectivity summary |
 | `cpuUsage` | number | Host CPU usage snapshot |
-| `iofogDaemon` | string | Daemon lifecycle state (e.g. `running`) |
+| `edgeletDaemon` | string | Daemon lifecycle state (e.g. `running`) |
 | `memoryUsage` | string | Optional memory summary |
 | `diskUsage` | string | Optional disk summary |
 | `runningMicroservices` | number | Optional running MS count |
@@ -27,7 +27,7 @@ Golden fixture (minimal subset):
 {
   "connectionToController": "ok",
   "cpuUsage": 12,
-  "iofogDaemon": "running"
+  "edgeletDaemon": "running"
 }
 ```
 

@@ -20,6 +20,8 @@ LIFECYCLE_PKGS := ./internal/volumemount/... ./internal/fieldagent/... ./interna
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Container image tags omit the git "v" prefix (e.g. 1.0.0-rc.3 not v1.0.0-rc.3).
+CONTAINER_TAG := $(patsubst v%,%,$(VERSION))
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -283,8 +285,9 @@ clean: ## Clean build artifacts
 
 docker-build: ## Build production Docker image (ghcr.io/eclipse-iofog/edgelet)
 	@echo "Building production Docker image..."
-	@docker build -t ghcr.io/eclipse-iofog/edgelet:latest -t ghcr.io/eclipse-iofog/edgelet:$(VERSION) -f Dockerfile .
-	@echo "Docker image built: ghcr.io/eclipse-iofog/edgelet:latest, ghcr.io/eclipse-iofog/edgelet:$(VERSION)"
+	@docker build --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		-t ghcr.io/eclipse-iofog/edgelet:latest -t ghcr.io/eclipse-iofog/edgelet:$(CONTAINER_TAG) -f Dockerfile .
+	@echo "Docker image built: ghcr.io/eclipse-iofog/edgelet:latest, ghcr.io/eclipse-iofog/edgelet:$(CONTAINER_TAG)"
 
 install: build ## Install edgelet binary to system
 	@echo "Installing edgelet..."

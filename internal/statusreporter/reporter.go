@@ -188,7 +188,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 		// Default to RUNNING if not set (shouldn't happen, but safety check)
 		daemonStatus = "RUNNING"
 	}
-	result += fmt.Sprintf("ioFog daemon                : %s\n", daemonStatus)
+	result += fmt.Sprintf("Edgelet daemon                : %s\n", daemonStatus)
 	result += fmt.Sprintf("Memory Usage                : about %.2f MiB\n", memoryUsage)
 	if diskUsage < 1 {
 		result += fmt.Sprintf("Disk Usage                  : about %.2f MiB\n", diskUsage*1024)
