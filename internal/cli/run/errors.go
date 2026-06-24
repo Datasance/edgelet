@@ -17,6 +17,8 @@ const (
 	CodeConflict          = "CONFLICT"
 	CodeNotImplemented    = "NOT_IMPLEMENTED"
 	CodeDaemonUnavailable = "DAEMON_UNAVAILABLE"
+	CodeLocalAPIStarting  = "LOCAL_API_STARTING"
+	CodeControllerOffline = "CONTROLLER_OFFLINE"
 	CodeInternal          = "INTERNAL"
 )
 

@@ -25,6 +25,13 @@ import (
 
 const (
 	localAPIBaseURL = "https://localhost:54321"
+
+	// ErrCodeLocalAPIStarting is returned when the daemon is up but the unix API listener is not ready.
+	ErrCodeLocalAPIStarting = "LOCAL_API_STARTING"
+	// ErrCodeDaemonUnavailable is returned when no edgelet daemon process is running.
+	ErrCodeDaemonUnavailable = "DAEMON_UNAVAILABLE"
+	// ErrCodeControllerOffline is returned when the local API is up but the controller is unreachable.
+	ErrCodeControllerOffline = "CONTROLLER_OFFLINE"
 )
 
 // Client is a client for communicating with the Edgelet API
@@ -192,11 +199,15 @@ func (c *Client) Request(method, path string, requestBody any) (map[string]any, 
 			if utils.IsAnotherInstanceRunning() || isDaemonProcessPresent() {
 				return nil, &EdgeletAPIError{
 					StatusCode: http.StatusServiceUnavailable,
-					Code:       "DAEMON_STARTING",
-					Message:    "Edgelet API is still initializing. Daemon process is running; retry shortly.",
+					Code:       ErrCodeLocalAPIStarting,
+					Message:    "Local API is starting. The daemon is running; retry within ~15 seconds.",
 				}
 			}
-			return nil, fmt.Errorf("edgelet API is not accessible. The daemon may be starting up or the Edgelet API service is not running. Error: %w", err)
+			return nil, &EdgeletAPIError{
+				StatusCode: http.StatusServiceUnavailable,
+				Code:       ErrCodeDaemonUnavailable,
+				Message:    "Edgelet daemon is not running. Start it with `edgelet daemon` or `systemctl start edgelet`.",
+			}
 		}
 		return nil, fmt.Errorf("failed to send Edgelet API request: %w", err)
 	}
@@ -220,10 +231,14 @@ func (c *Client) Request(method, path string, requestBody any) (map[string]any, 
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &envelope); err == nil && (envelope.Success || envelope.Error.Code != "" || envelope.Error.Message != "") {
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 || !envelope.Success {
+				code, message := envelope.Error.Code, envelope.Error.Message
+				if code == "" {
+					code, message = normalizeAPIError(resp.StatusCode, string(raw), message)
+				}
 				return nil, &EdgeletAPIError{
 					StatusCode: resp.StatusCode,
-					Code:       envelope.Error.Code,
-					Message:    envelope.Error.Message,
+					Code:       code,
+					Message:    message,
 				}
 			}
 			if envelope.Data == nil {
@@ -235,10 +250,11 @@ func (c *Client) Request(method, path string, requestBody any) (map[string]any, 
 
 	// Backward-compatible fallback for legacy/non-enveloped responses.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		code, message := normalizeAPIError(resp.StatusCode, string(raw), string(raw))
 		return nil, &EdgeletAPIError{
 			StatusCode: resp.StatusCode,
-			Code:       "HTTP_ERROR",
-			Message:    string(raw),
+			Code:       code,
+			Message:    message,
 		}
 	}
 	if len(raw) == 0 {
@@ -439,6 +455,30 @@ func (c *Client) doViaUnixSocket(req *http.Request, socketPath string) (*http.Re
 		},
 	}
 	return httpClient.Do(clone)
+}
+
+func normalizeAPIError(statusCode int, body, fallbackMessage string) (code, message string) {
+	message = strings.TrimSpace(fallbackMessage)
+	if message == "" {
+		message = strings.TrimSpace(body)
+	}
+	switch statusCode {
+	case http.StatusServiceUnavailable:
+		lower := strings.ToLower(body)
+		switch {
+		case strings.Contains(lower, "local_api_listener_not_ready"), strings.Contains(lower, "local_api_start_failed"), strings.Contains(lower, "daemon_not_running"):
+			return ErrCodeLocalAPIStarting, "Local API is starting. The daemon is running; retry within ~15 seconds."
+		case strings.Contains(lower, "controller"):
+			return ErrCodeControllerOffline, "Controller is unreachable. Local Edgelet API is up; retry controller operations later."
+		default:
+			return ErrCodeLocalAPIStarting, "Local API is not ready yet."
+		}
+	default:
+		if message == "" {
+			message = "request failed"
+		}
+		return "HTTP_ERROR", message
+	}
 }
 
 // readAccessToken reads the access token from file
