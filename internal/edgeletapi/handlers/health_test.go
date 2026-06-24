@@ -5,6 +5,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 )
 
 func TestHealthReadyWhenListenerNotReady(t *testing.T) {
@@ -58,5 +62,28 @@ func TestHealthLiveIncludesStartupPhase(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "\"localApiPhase\":\"listening\"") {
 		t.Fatalf("expected localApiPhase in response, got body=%s", body)
+	}
+}
+
+func TestHealthReadyWhenDaemonRunningUnprovisioned(t *testing.T) {
+	SetEdgeletAPIStartupState(EdgeletAPIStartupListening, "")
+	defer SetEdgeletAPIStartupState(EdgeletAPIStartupInitializing, "local_api_initializing")
+
+	cfg := config.GetInstance()
+	originalUUID := cfg.IOFogUUID
+	cfg.IOFogUUID = ""
+	t.Cleanup(func() { cfg.IOFogUUID = originalUUID })
+
+	sr := statusreporter.GetInstance()
+	sr.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
+		status.SetDaemonStatus(models.ModuleStatusRunning)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	w := httptest.NewRecorder()
+	HealthReadyHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, w.Code, w.Body.String())
 	}
 }

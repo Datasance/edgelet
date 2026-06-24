@@ -57,8 +57,8 @@ func HealthLiveHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HealthReadyHandler handles /health/ready — readiness probe.
-// Returns 200 if the agent is provisioned and ready to serve (e.g. modules started).
-// Returns 503 if not yet ready (e.g. still starting, not provisioned).
+// Returns 200 when the local API is listening and the supervisor has finished engine wiring.
+// Controller connectivity is reported separately in status; it does not gate local readiness.
 func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
 	state := getEdgeletAPIStartupState()
 	if state.phase == EdgeletAPIStartupFailed {
@@ -82,23 +82,20 @@ func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	// Provisioned and daemon running = ready
-	if cfg.IOFogUUID != "" {
-		sr := statusreporter.GetInstance()
-		if sr != nil {
-			ss := sr.GetSupervisorStatus()
-			if ss != nil && ss.DaemonStatus == models.ModuleStatusRunning {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"status":"ready"}`))
-				return
-			}
+	sr := statusreporter.GetInstance()
+	if sr != nil {
+		ss := sr.GetSupervisorStatus()
+		if ss != nil && (ss.DaemonStatus == models.ModuleStatusRunning || ss.DaemonStatus == models.ModuleStatusWarning) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+			return
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_, _ = w.Write([]byte(`{"status":"not_ready","reason":"daemon_not_running_or_not_provisioned"}`))
+	_, _ = w.Write([]byte(`{"status":"not_ready","reason":"daemon_not_running"}`))
 }
 
 // MetricsStartTime returns agent start time for metrics.
