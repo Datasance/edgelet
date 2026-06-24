@@ -49,6 +49,7 @@ func TestRunChangesWorker_ContinuesAfterProcessChangesPanic(t *testing.T) {
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	fa.wg.Add(1)
 	go fa.runChangesWorker()

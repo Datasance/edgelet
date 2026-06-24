@@ -268,6 +268,7 @@ func (lsm *LogSessionManager) startLogSessionLocked(session *LogSession) {
 	// Set LogSessionManager reference in handler so it can start tailing when ready
 	wsHandler.SetLogSessionManager(lsm)
 
+	wsHandler.Reset()
 	// Connect WebSocket
 	err := wsHandler.Connect()
 	if err != nil {

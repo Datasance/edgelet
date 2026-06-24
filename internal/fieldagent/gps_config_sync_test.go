@@ -55,6 +55,7 @@ func TestPostGPSConfig_SendsConfigGPSPayload(t *testing.T) {
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	if err := fa.postGPSConfig(); err != nil {
 		t.Fatalf("postGPSConfig returned error: %v", err)
@@ -93,6 +94,7 @@ func TestPostGPSConfig_SkipsInvalidCoordinates(t *testing.T) {
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	if err := fa.postGPSConfig(); err != nil {
 		t.Fatalf("expected nil error for invalid coordinates skip, got %v", err)
@@ -129,6 +131,7 @@ func TestInstanceGPSConfigUpdated_InvokesPostGPSConfig(t *testing.T) {
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	if err := fa.InstanceGPSConfigUpdated(); err != nil {
 		t.Fatalf("InstanceGPSConfigUpdated returned error: %v", err)

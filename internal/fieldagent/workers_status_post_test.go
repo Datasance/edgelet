@@ -40,6 +40,7 @@ func TestPostStatusHelper_SuccessfulPostSendsAndClearsTerminalStates(t *testing.
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	fa.PostStatusHelper()
 
@@ -78,6 +79,7 @@ func TestPostStatusHelper_FailedPostRetainsTerminalStatesForRetry(t *testing.T) 
 		},
 	}
 	fa.state.SetControllerStatus(models.ControllerStatusOK)
+	fa.state.SetControllerVerified(true)
 
 	fa.PostStatusHelper()
 

@@ -5,6 +5,42 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.4] — June 2026
+
+Release candidate fixing controller exec/log WebSocket pairing after failed or timed-out sessions, and decoupling local API startup from Pot controller reachability. Pair with Controller **v3.8** (exec teardown raises `execSessions: true` on all disable paths).
+
+### Changed
+
+- **Exec WebSocket lifecycle:** each new exec session calls `Reset()` then a fresh dial to `GET /api/v3/agent/exec/{microserviceUuid}`; stale `Pending`/`Active` handler state no longer skips `Connect()`.
+- **Log WebSocket lifecycle:** same reset-and-reconnect hygiene for log session handlers (`Reset()` before `Connect()` on session start; `Disconnect()` fully clears state).
+- **Exec session reconcile:** `HandleExecSessions` treats a finished shell (`GetExecSessionStatus` → `false`) as not running; recreates exec when the process is gone or the controller WebSocket is disconnected.
+- **Boot controller sync:** provisioned startup loads registries, volume mounts, and microservices from SQLite first via async `bootstrapControllerSync()`; live Pot refresh runs after ping succeeds without blocking supervisor startup.
+- **Supervisor startup order:** Edgelet API starts after container engine and process-manager wire so `edgelet ms ls` and local status work before optional modules finish; `OnProcessManagerReady()` notifies PM when cache bootstrap completes before PM exists.
+- **`IsControllerConnected`:** live paths use cached reachability from ping workers only (no inline controller ping from worker or sync code); cache reads (`fromFile=true`) unchanged.
+- **JWT vs controller status:** valid credentials at boot set `NOT_CONNECTED` / `controllerVerified=false` until a successful ping; JWT success alone no longer implies Pot is reachable.
+- **`/health/ready`:** ready when the local API is listening and daemon status is RUNNING or WARNING; not gated on provisioned state or controller connectivity.
+- **CLI startup errors:** distinguish `LOCAL_API_STARTING` (daemon up, API not ready), `DAEMON_UNAVAILABLE` (no daemon), and `CONTROLLER_OFFLINE` (local API up, Pot unreachable); replaces the generic “still initializing” message for connection-refused cases.
+- **Offline volume mounts at boot:** cache bootstrap skips live `loadVolumeMounts()` when the controller is unreachable; uses SQLite-backed volume-mount state instead.
+
+### Fixed
+
+- **Stale exec WebSocket after failed pairing:** after user timeout or controller cleanup, retrying exec without restarting edgelet no longer logs “skipping Connect (state=3)” while the controller sees no agent upgrade.
+- **`Disconnect()` state leak:** exec and log handlers force `Disconnected` on teardown instead of leaving `Pending`/`Active` in memory (cached per-UUID handler map).
+- **Orphan exec cleanup:** `execEnabled=false` always stops local exec and resets the WebSocket handler, even when session maps are empty.
+- **Cancelled context on reconnect:** handler `ctx` is recreated on `Reset()` so ping/read workers survive a second connect.
+- **Slow CLI after restart with Pot down:** `edgelet system info` and `edgelet ms ls` no longer wait on multi-minute sync controller I/O (ping, fog config, live volume mounts) before the local unix socket accepts connections.
+- **Misleading “API still initializing”:** connection refused on `/run/edgelet/edgelet.sock` while the daemon process exists now reports local API startup (`LOCAL_API_STARTING`) instead of implying controller sync is in progress.
+- **False controller-up at boot:** JWT initialization no longer sets `ControllerStatusOK` before the first successful ping, avoiding live Pot fetches during unreachable-controller startup.
+
+### Known limitations (rc)
+
+- **Pre-release:** `v1.0.0-rc.3` is a release candidate, not production GA.
+- **Re-init on live socket:** controller supports init-frame reuse on an open agent socket; edgelet defaults to a fresh dial per new `execId` (optional optimization deferred).
+- **Controller sync SLA:** local API target ≤15s with containerd up and Pot down; full microservice reconcile after Pot returns remains best-effort (no hard SLA).
+- **Boot vs getChanges init:** SQLite-first bootstrap runs in parallel with the existing `initialization` / `config/changes` handshake; duplicate reconcile when Pot comes back may occur (follow-up).
+- **Runtime restart order (split):** manual `systemctl restart edgelet && restart edgelet-containerd` can race attach; restart `edgelet-containerd` first, then `edgelet`.
+- **Follow-up (not in this rc):** network manager unbounded retry on total IPv4 failure; automated stale containerd shim/task-dir cleanup; Pot REST / getChanges semantics unchanged.
+
 ## [1.0.0-rc.1] — mid-June 2026
 
 Release candidate after provision lifecycle hardening, runtime observability fixes, and supply-chain follow-up. Pair with Controller **v3.8.0-beta.1** or newer v3.8 line.

@@ -12,7 +12,7 @@ import (
 )
 
 // TestControllerDown verifies agent remains running when controller is unreachable.
-// Agent should not crash; workers should skip API calls and use exponential backoff for ping.
+// Supervisor Start must not block on controller ping; bootstrap sync runs in background.
 func TestControllerDown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping chaos test in short mode")

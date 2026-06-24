@@ -70,6 +70,7 @@ type ExecSessionWebSocketHandler struct {
 	config           *config.Config
 	jwtManager       *auth.JWTManager
 	controllerCert   *x509.Certificate
+	lifecycleMu      sync.Mutex
 }
 
 var (
@@ -147,110 +148,130 @@ func convertToWebSocketURL(httpURL string) string {
 	return httpURL
 }
 
-// Connect establishes the WebSocket connection to the controller
+// Reset tears down transport state and prepares the handler for a fresh Connect().
+func (h *ExecSessionWebSocketHandler) Reset() {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+	h.resetLocked()
+}
+
+func (h *ExecSessionWebSocketHandler) resetLocked() {
+	if h.cancel != nil {
+		h.cancel()
+	}
+
+	closeWebSocketConn(&h.connMu, &h.conn)
+	stopSessionPingTicker(&h.pingTicker)
+
+	h.wg.Wait()
+
+	h.isConnected.Store(false)
+	h.isActive.Store(false)
+	h.state.Store(StateDisconnected)
+	drainExecOutputBuffer(h)
+	recreateHandlerContext(&h.ctx, &h.cancel)
+}
+
+// GetConnectionState returns the current connection state (for tests and diagnostics).
+func (h *ExecSessionWebSocketHandler) GetConnectionState() ConnectionState {
+	state, ok := h.state.Load().(ConnectionState)
+	if !ok {
+		return StateDisconnected
+	}
+	return state
+}
+
+// Connect establishes the WebSocket connection to the controller.
+// Call Reset() before Connect() when starting a new exec session.
 func (h *ExecSessionWebSocketHandler) Connect() error {
-	h.connMu.Lock()
-
-	// Idempotency check: if already connected or connecting, do nothing
-	if h.isConnected.Load() {
-		h.connMu.Unlock()
-		logging.LogDebug(execWebSocketModuleName, "Connection already established, skipping Connect")
-		return nil
-	}
-
-	currentState, ok := h.state.Load().(ConnectionState)
-	if ok && (currentState == StateConnecting || currentState == StatePending || currentState == StateActive) {
-		h.connMu.Unlock()
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Connection in progress or established (state=%v), skipping Connect", currentState))
-		return nil
-	}
-
-	// Scoped lock for connection establishment
-	err := func() error {
-		defer h.connMu.Unlock()
-
-		if !h.transitionState(StateDisconnected, StateConnecting) {
-			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Cannot transition from %v to CONNECTING", currentState))
-			return errors.New("cannot connect: invalid state transition")
-		}
-
-		// Generate JWT token
-		token, err := h.jwtManager.GenerateJWT()
-		if err != nil {
-			h.transitionState(StateConnecting, StateDisconnected)
-			return fmt.Errorf("failed to generate JWT: %w", err)
-		}
-
-		// Create WebSocket dialer
-		dialer := websocket.Dialer{
-			HandshakeTimeout: handshakeTimeout,
-			TLSClientConfig: &tls.Config{
-				MinVersion:         tls.VersionTLS12,
-				InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-			},
-		}
-
-		// Add certificate to TLS config only if using WSS and certificate is available
-		if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
-			certPool := x509.NewCertPool()
-			certPool.AddCert(h.controllerCert)
-			dialer.TLSClientConfig = &tls.Config{
-				MinVersion:         tls.VersionTLS12,
-				RootCAs:            certPool,
-				InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-			}
-		}
-
-		// Set headers with JWT token
-		headers := http.Header{}
-		headers.Set("Authorization", "Bearer "+token)
-
-		// Connect
-		conn, resp, err := dialer.Dial(h.controllerWsURL, headers)
-		if err != nil {
-			h.transitionState(StateConnecting, StateDisconnected)
-			if resp != nil {
-				if cerr := resp.Body.Close(); cerr != nil {
-					logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
-				}
-			}
-			return fmt.Errorf("failed to connect: %w", err)
-		}
-		if resp != nil {
-			if cerr := resp.Body.Close(); cerr != nil {
-				logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
-			}
-		}
-
-		h.conn = conn
-		h.isConnected.Store(true)
-		return nil
-	}()
-
-	if err != nil {
+	if err := h.connectTransport(); err != nil {
 		return err
 	}
 
-	// Lock is released here, proceeding with post-connection setup
-
-	// Transition to PENDING state after handshake
-	// PENDING means connected but waiting for user activation
-	if h.transitionState(StateConnecting, StatePending) {
-		logging.LogInfo(execWebSocketModuleName, "Connection is now pending user activation")
-	}
-
-	// Start ping ticker
 	h.pingTicker = time.NewTicker(pingInterval)
 	h.wg.Add(2)
 	go h.pingWorker()
 	go h.readWorker()
 
-	// Send initial message
-	// Send immediately - execId should already be stored before Connect() is called
-	// Safe to call now as we released the lock
 	h.sendInitialMessage()
 
 	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket connection established for microservice: %s", h.microserviceUUID))
+	return nil
+}
+
+func (h *ExecSessionWebSocketHandler) connectTransport() error {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+
+	if h.isConnected.Load() {
+		return errors.New("already connected; call Reset() before Connect()")
+	}
+
+	// Clear stale state left when isConnected was cleared without resetting state (legacy bug).
+	h.state.Store(StateDisconnected)
+
+	if !h.transitionState(StateDisconnected, StateConnecting) {
+		return fmt.Errorf("cannot connect: invalid state transition from %v", h.GetConnectionState())
+	}
+
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
+
+	// Generate JWT token
+	token, err := h.jwtManager.GenerateJWT()
+	if err != nil {
+		h.transitionState(StateConnecting, StateDisconnected)
+		return fmt.Errorf("failed to generate JWT: %w", err)
+	}
+
+	// Create WebSocket dialer
+	dialer := websocket.Dialer{
+		HandshakeTimeout: handshakeTimeout,
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
+		},
+	}
+
+	// Add certificate to TLS config only if using WSS and certificate is available
+	if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
+		certPool := x509.NewCertPool()
+		certPool.AddCert(h.controllerCert)
+		dialer.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			RootCAs:            certPool,
+			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
+		}
+	}
+
+	// Set headers with JWT token
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+token)
+
+	// Connect
+	conn, resp, err := dialer.Dial(h.controllerWsURL, headers)
+	if err != nil {
+		h.transitionState(StateConnecting, StateDisconnected)
+		if resp != nil {
+			if cerr := resp.Body.Close(); cerr != nil {
+				logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+			}
+		}
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	if resp != nil {
+		if cerr := resp.Body.Close(); cerr != nil {
+			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close response body: %v", cerr))
+		}
+	}
+
+	h.conn = conn
+	h.isConnected.Store(true)
+
+	if h.transitionState(StateConnecting, StatePending) {
+		logging.LogInfo(execWebSocketModuleName, "Connection is now pending user activation")
+	}
+
 	return nil
 }
 
@@ -755,29 +776,9 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 	}
 }
 
-// Disconnect closes the WebSocket connection
+// Disconnect closes the WebSocket connection and resets handler state for reuse.
 func (h *ExecSessionWebSocketHandler) Disconnect() {
-	h.cancel()
-
-	h.connMu.Lock()
-	if h.conn != nil {
-		if err := h.conn.Close(); err != nil {
-			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close connection on disconnect: %v", err))
-		}
-		h.conn = nil
-	}
-	h.connMu.Unlock()
-
-	h.isConnected.Store(false)
-	h.isActive.Store(false)
-	h.transitionState(StateConnected, StateDisconnected)
-
-	h.wg.Wait()
-
-	if h.pingTicker != nil {
-		h.pingTicker.Stop()
-	}
-
+	h.Reset()
 	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for microservice: %s", h.microserviceUUID))
 }
 
@@ -822,8 +823,7 @@ func (h *ExecSessionWebSocketHandler) handleClose() {
 
 	if !hasOtherActiveSessions {
 		logging.LogDebug(execWebSocketModuleName, "No other active sessions found, proceeding with cleanup")
-		// Cleanup connection
-		h.Disconnect()
+		h.Reset()
 	} else {
 		logging.LogInfo(execWebSocketModuleName, "Skipping cleanup due to other active sessions")
 	}
