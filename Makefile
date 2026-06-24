@@ -20,7 +20,7 @@ LIFECYCLE_PKGS := ./internal/volumemount/... ./internal/fieldagent/... ./interna
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-# Container image tags omit the git "v" prefix (e.g. 1.0.0-rc.3 not v1.0.0-rc.3).
+# Container image tags omit the git "v" prefix (e.g. 1.0.0-rc.4 not v1.0.0-rc.4).
 CONTAINER_TAG := $(patsubst v%,%,$(VERSION))
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -346,7 +346,7 @@ install-dev: build-edgelet-local ## Install edgelet and setup local dev environm
 			'    logFileCount: "10"' \
 			'    logLevel: "DEBUG"' \
 			'    statusFrequency: "30"' \
-			'    getChangesFreq: "60"' \
+			'    changeFrequency: "60"' \
 			'    scanDevicesFreq: "60"' \
 			'    gps: "auto"' \
 			'    gpsCoordinates: "0,0"' \
