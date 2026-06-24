@@ -73,6 +73,10 @@ type FieldAgent struct {
 	containerConfigMap map[string]string // microserviceUUID -> config JSON string
 	containerConfigMu  sync.RWMutex
 
+	// bootstrapMu guards bootstrapCacheLoaded (SQLite-first boot sync).
+	bootstrapMu          sync.RWMutex
+	bootstrapCacheLoaded bool
+
 	// Provisioning lock
 	provisioningMu sync.Mutex
 
@@ -202,14 +206,14 @@ func (fa *FieldAgent) Start() error {
 					status.ControllerVerified = false
 				})
 			} else {
-				fa.state.SetControllerStatus(models.ControllerStatusOK)
-				fa.state.SetControllerVerified(true)
-				// Update StatusReporter
+				// Credentials are valid; controller reachability is established by ping workers only.
+				fa.state.SetControllerStatus(models.ControllerStatusNotConnected)
+				fa.state.SetControllerVerified(false)
 				statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
-					status.ControllerStatus = models.ControllerStatusOK
-					status.ControllerVerified = true
+					status.ControllerStatus = models.ControllerStatusNotConnected
+					status.ControllerVerified = false
 				})
-				logging.LogInfo(moduleName, "JWT Manager initialized successfully, setting status to OK")
+				logging.LogInfo(moduleName, "JWT Manager initialized successfully (credentials valid; controller reachability pending)")
 			}
 		}
 	} else {
@@ -228,35 +232,10 @@ func (fa *FieldAgent) Start() error {
 		return fmt.Errorf("failed to reconcile edgelet-api JWT token: %w", err)
 	}
 
-	fa.maybeReprovisionAfterOTA()
-
-	// Ping controller
-	logging.LogDebug(moduleName, "Pinging controller to verify connectivity")
-	isConnected := fa.ping()
-	logging.LogInfo(moduleName, fmt.Sprintf("Controller ping result: connected=%v", isConnected))
-
-	currentStatus := fa.state.GetControllerStatus()
-	logging.LogDebug(moduleName, fmt.Sprintf("Controller status after ping: %s", currentStatus))
-
-	// Get fog config
-	logging.LogDebug(moduleName, "Fetching fog configuration from controller")
-	if err := fa.getFogConfig(); err != nil {
-		logging.LogWarn(moduleName, fmt.Sprintf("Failed to get fog config on startup: %v", err))
-		// Don't fail startup for this
-	} else {
-		logging.LogDebug(moduleName, "Fog configuration fetched successfully")
-	}
-
-	// If provisioned, load initial data
-	if !fa.NotProvisioned() {
-		fa.loadInitialControllerData(isConnected)
-	} else {
-		logging.LogInfo(moduleName, "Agent not provisioned, skipping initial data load")
-	}
-
 	// Start background workers
 	logging.LogDebug(moduleName, "Starting background workers")
-	fa.wg.Add(7)
+	fa.wg.Add(8)
+	go fa.bootstrapControllerSync()
 	go fa.pingControllerWorker()
 	go fa.runChangesWorker()
 	go fa.postStatusWorker()
@@ -366,37 +345,20 @@ func (fa *FieldAgent) hydratePrivateKeyFromDB() error {
 	return nil
 }
 
-// IsControllerConnected checks if the controller is connected
+// IsControllerConnected reports whether live controller I/O should proceed.
+// Cache reads pass fromFile=true; live paths use cached reachability from ping workers.
 func (fa *FieldAgent) IsControllerConnected(fromFile bool) bool {
-	logging.LogDebug(moduleName, "check is Controller Connected")
-
-	isConnected := false
-	status := fa.state.GetControllerStatus()
-
-	if status != models.ControllerStatusOK && !fromFile {
-		if !fa.ping() {
-			fa.handleBadControllerStatus()
-		} else {
-			isConnected = true
-		}
-	} else {
-		isConnected = true
+	if fromFile {
+		logging.LogDebug(moduleName, "checked is Controller Connected: true (cache read)")
+		return true
 	}
-
+	if fa.NotProvisioned() {
+		logging.LogDebug(moduleName, "checked is Controller Connected: false (not provisioned)")
+		return false
+	}
+	isConnected := fa.state.IsControllerVerified() && fa.state.GetControllerStatus() == models.ControllerStatusOK
 	logging.LogDebug(moduleName, fmt.Sprintf("checked is Controller Connected: %v", isConnected))
 	return isConnected
-}
-
-// handleBadControllerStatus handles bad controller status
-func (fa *FieldAgent) handleBadControllerStatus() {
-	logging.LogDebug(moduleName, "Start handle Bad Controller Status")
-	errMsg := "Connection to controller has broken"
-	if fa.state.IsControllerVerified() {
-		logging.LogWarn(moduleName, errMsg)
-	} else {
-		fa.verificationFailed(fmt.Errorf("%s", errMsg))
-	}
-	logging.LogDebug(moduleName, "Finished handling Bad Controller Status")
 }
 
 // verificationFailed handles controller verification failure
@@ -492,6 +454,14 @@ func (fa *FieldAgent) ping() bool {
 	}
 
 	logging.LogWarn(moduleName, "Controller ping returned false (no status in response)")
+	fa.state.SetControllerVerified(false)
+	if !fa.NotProvisioned() {
+		fa.state.SetControllerStatus(models.ControllerStatusNotConnected)
+		statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
+			status.ControllerStatus = models.ControllerStatusNotConnected
+			status.ControllerVerified = false
+		})
+	}
 	logging.LogDebug(moduleName, "Finished Ping: false")
 	return false
 }
@@ -611,7 +581,7 @@ func (fa *FieldAgent) Provision(key string) error {
 	// API client and JWT were already refreshed synchronously above; do not call Update()
 	// here — its async client swap races with postFogConfig and duplicates work.
 	if fa.ctx != nil {
-		fa.loadInitialControllerData(fa.IsControllerConnected(false))
+		fa.loadInitialControllerData(true)
 
 		// Post fog config to controller
 		// This sends the agent configuration to the controller and establishes the connection
@@ -1095,6 +1065,17 @@ func (fa *FieldAgent) RemoveActiveExecSession(microserviceUUID string) {
 	logging.LogDebug(moduleName, fmt.Sprintf("Removed active exec session: microservice=%s", microserviceUUID))
 }
 
+// resetExecWebSocketHandler tears down the cached exec WebSocket handler for a microservice.
+func (fa *FieldAgent) resetExecWebSocketHandler(microserviceUUID string) {
+	fa.execSessionsMu.Lock()
+	delete(fa.activeWebSockets, microserviceUUID)
+	fa.execSessionsMu.Unlock()
+
+	if handler := GetExecSessionWebSocketHandler(microserviceUUID); handler != nil {
+		handler.Reset()
+	}
+}
+
 // HandleExecSessionClose handles closing an exec session
 func (fa *FieldAgent) HandleExecSessionClose(microserviceUUID, execID string) error {
 	logging.LogInfo(moduleName, fmt.Sprintf("Handling exec session close: microservice=%s, execID=%s", microserviceUUID, execID))
@@ -1118,21 +1099,7 @@ func (fa *FieldAgent) HandleExecSessionClose(microserviceUUID, execID string) er
 	}
 	fa.execSessionsMu.Unlock()
 
-	// Disconnect WebSocket if no other sessions
-	fa.execSessionsMu.Lock()
-	hasOtherSessions := fa.activeExecSessions[microserviceUUID] != ""
-	if !hasOtherSessions {
-		logging.LogDebug(moduleName, "No other active sessions, cleaning up WebSocket")
-		handler := fa.activeWebSockets[microserviceUUID]
-		if handler != nil {
-			delete(fa.activeWebSockets, microserviceUUID)
-			fa.execSessionsMu.Unlock()
-			handler.Disconnect()
-			return nil
-		}
-	}
-	fa.execSessionsMu.Unlock()
-
+	fa.resetExecWebSocketHandler(microserviceUUID)
 	return nil
 }
 
@@ -1291,7 +1258,6 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 		execEnabled := ms.ExecEnabled
 
 		if !execEnabled {
-			// Exec is disabled - cleanup existing session
 			fa.execSessionsMu.RLock()
 			existingExecID := fa.activeExecSessions[microserviceUUID]
 			fa.execSessionsMu.RUnlock()
@@ -1301,6 +1267,8 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 				if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
 					logging.LogWarn(moduleName, fmt.Sprintf("Failed to close exec session: %v", err))
 				}
+			} else {
+				fa.resetExecWebSocketHandler(microserviceUUID)
 			}
 			continue
 		}
@@ -1311,19 +1279,25 @@ func (fa *FieldAgent) HandleExecSessions(microservices []*models.Microservice) {
 		fa.execSessionsMu.RUnlock()
 
 		if existingExecID != "" {
-			// Check if session is still running
+			// Check if session is still running with a live controller WebSocket.
 			if fa.processManager != nil {
 				status, err := fa.processManager.GetExecSessionStatus(existingExecID)
-				if err != nil || status == nil {
-					// Session is not running, clean it up and create a new one
+				if err != nil || !execSessionRunning(status) {
 					logging.LogDebug(moduleName, fmt.Sprintf("Exec session %s is not running, cleaning up and creating new one", existingExecID))
 					if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
 						logging.LogWarn(moduleName, fmt.Sprintf("Failed to close stale exec session: %v", err))
 					}
 					// Continue to create new session below
 				} else {
-					logging.LogDebug(moduleName, fmt.Sprintf("Exec session already exists and is running for microservice: %s, execID: %s", microserviceUUID, existingExecID))
-					continue
+					wsHandler := GetExecSessionWebSocketHandler(microserviceUUID)
+					if wsHandler != nil && wsHandler.IsConnected() {
+						logging.LogDebug(moduleName, fmt.Sprintf("Exec session already exists and is running for microservice: %s, execID: %s", microserviceUUID, existingExecID))
+						continue
+					}
+					logging.LogDebug(moduleName, fmt.Sprintf("Exec process running but WebSocket disconnected for microservice: %s, recreating session", microserviceUUID))
+					if err := fa.HandleExecSessionClose(microserviceUUID, existingExecID); err != nil {
+						logging.LogWarn(moduleName, fmt.Sprintf("Failed to close stale exec session: %v", err))
+					}
 				}
 			} else {
 				// ProcessManager not available, assume session is running
@@ -1408,28 +1382,14 @@ func (fa *FieldAgent) createExecSessionForMicroservice(microserviceUUID string, 
 	if handler == nil {
 		logging.LogError(moduleName, "WebSocket handler not created (controller URL empty), exec session will run without WebSocket", fmt.Errorf("microserviceUUID: %s", microserviceUUID))
 	} else {
-		// Check if existing handler exists
-		fa.execSessionsMu.Lock()
-		if existingHandler, exists := fa.activeWebSockets[microserviceUUID]; exists {
-			logging.LogDebug(moduleName, "Found existing WebSocket handler, cleaning up before creating new one")
-			existingHandler.Disconnect()
-			delete(fa.activeWebSockets, microserviceUUID)
-		}
-		fa.execSessionsMu.Unlock()
-
-		// Disconnect existing handler if any
-		if handler.IsConnected() {
-			handler.Disconnect()
-		}
-		// Connect the WebSocket handler
+		handler.Reset()
 		if err := handler.Connect(); err != nil {
 			logging.LogError(moduleName, fmt.Sprintf("Failed to connect WebSocket handler for exec session: %s", microserviceUUID), err)
 		} else {
-			// Store handler in activeWebSockets map
 			fa.execSessionsMu.Lock()
 			fa.activeWebSockets[microserviceUUID] = handler
 			fa.execSessionsMu.Unlock()
-			logging.LogDebug(moduleName, "Successfully created and connected WebSocket handler for exec session")
+			logging.LogDebug(moduleName, "Successfully connected WebSocket handler for exec session")
 		}
 	}
 

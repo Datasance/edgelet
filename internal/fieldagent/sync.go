@@ -35,18 +35,23 @@ func (fa *FieldAgent) loadInitialControllerData(isConnected bool) {
 		logging.LogDebug(moduleName, "Registries loaded successfully")
 	}
 
-	logging.LogDebug(moduleName, "Start loading volume mounts")
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
+	if isConnected {
+		logging.LogDebug(moduleName, "Start loading volume mounts")
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.LogError(moduleName, fmt.Sprintf("Panic in loadVolumeMounts: %v", r), fmt.Errorf("%v", r))
+				}
+			}()
+			if err := fa.loadVolumeMounts(); err != nil {
+				logging.LogWarn(moduleName, fmt.Sprintf("loadVolumeMounts returned error: %v", err))
 			}
 		}()
-		if err := fa.loadVolumeMounts(); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("loadVolumeMounts returned error: %v", err))
-		}
-	}()
-	logging.LogInfo(moduleName, "Volume mounts processing completed, proceeding to load microservices")
+		logging.LogInfo(moduleName, "Volume mounts processing completed, proceeding to load microservices")
+	} else {
+		logging.LogDebug(moduleName, "Skipping controller volume mount fetch; using SQLite cache")
+		volumemount.GetInstance()
+	}
 
 	logging.LogDebug(moduleName, "Start Loading microservices...")
 	microservices, err := fa.loadMicroservices(fromFile)

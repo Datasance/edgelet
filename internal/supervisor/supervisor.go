@@ -235,29 +235,14 @@ func (s *Supervisor) Start() error {
 		}
 	}
 
-	// Start Resource Manager
-	s.resourceManager = resourcemanager.GetInstance()
-	if err := s.startModule(s.resourceManager); err != nil {
-		return err
-	}
-
-	// Start GPS Manager
-	s.gpsManager = gps.GetInstance()
-	if err := s.startModule(s.gpsManager); err != nil {
-		return err
-	}
-
-	// Start Edgelet API Server and wait until listeners are ready.
+	// Start Edgelet API early so local CLI works before optional modules finish starting.
 	s.localAPI = edgeletapi.GetInstance()
-	// Register full disk reload (validate, logger, supervisor) as the config reload callback.
 	s.config.SetReloadCallback(s.ReloadFromDisk)
-	// Register FieldAgent GPS callback for dedicated config/gps controller sync.
 	s.config.SetGPSConfigCallback(s.fieldAgent.InstanceGPSConfigUpdated)
 	if err := s.localAPI.Start(); err != nil {
 		return fmt.Errorf("failed to start Edgelet API server: %w", err)
 	}
 
-	// Monitor Edgelet API status (check every 10 seconds)
 	s.localAPIMonitorTicker = time.NewTicker(10 * time.Second)
 	s.wg.Add(1)
 	go s.monitorLocalAPI()
@@ -270,6 +255,18 @@ func (s *Supervisor) Start() error {
 		s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
 			status.SetDaemonStatus(models.ModuleStatusRunning)
 		})
+	}
+
+	// Start Resource Manager
+	s.resourceManager = resourcemanager.GetInstance()
+	if err := s.startModule(s.resourceManager); err != nil {
+		return err
+	}
+
+	// Start GPS Manager
+	s.gpsManager = gps.GetInstance()
+	if err := s.startModule(s.gpsManager); err != nil {
+		return err
 	}
 
 	// Start Pruning Manager — inject engine so non-Docker engines (iofog/containerd) are pruned correctly.
@@ -419,6 +416,7 @@ func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
 		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
 	})
 	s.fieldAgent.SetProcessManager(s.processManager)
+	s.fieldAgent.OnProcessManagerReady()
 	fieldagent.GetLogSessionManager().SetProcessManager(s.processManager)
 	fieldagent.GetLogSessionManager().SetEngine(eng)
 	if s.dockerPruningManager != nil {
