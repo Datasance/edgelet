@@ -81,6 +81,7 @@ type LogSessionWebSocketHandler struct {
 	jwtManager        *auth.JWTManager
 	controllerCert    *x509.Certificate
 	logSessionManager *LogSessionManager // Reference to start tailing when ready
+	lifecycleMu       sync.Mutex
 }
 
 var (
@@ -156,18 +157,71 @@ func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string
 	return handler
 }
 
-// Connect establishes the WebSocket connection to the controller
+// Reset tears down transport state and prepares the handler for a fresh Connect().
+func (h *LogSessionWebSocketHandler) Reset() {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+	h.resetLocked()
+}
+
+func (h *LogSessionWebSocketHandler) resetLocked() {
+	if h.cancel != nil {
+		h.cancel()
+	}
+
+	closeWebSocketConn(&h.connMu, &h.conn)
+	stopSessionPingTicker(&h.pingTicker)
+
+	h.wg.Wait()
+
+	h.isConnected.Store(false)
+	h.isActive.Store(false)
+	h.state.Store(LogStateDisconnected)
+	drainLogOutputBuffer(h)
+	recreateHandlerContext(&h.ctx, &h.cancel)
+}
+
+// GetConnectionState returns the current connection state (for tests and diagnostics).
+func (h *LogSessionWebSocketHandler) GetConnectionState() LogConnectionState {
+	state, ok := h.state.Load().(LogConnectionState)
+	if !ok {
+		return LogStateDisconnected
+	}
+	return state
+}
+
+// Connect establishes the WebSocket connection to the controller.
+// Call Reset() before Connect() when reusing a handler for a new session.
 func (h *LogSessionWebSocketHandler) Connect() error {
-	h.connMu.Lock()
-	defer h.connMu.Unlock()
+	if err := h.connectTransport(); err != nil {
+		return err
+	}
+
+	h.pingTicker = time.NewTicker(logPingInterval)
+	h.wg.Add(2)
+	go h.pingWorker()
+	go h.readWorker()
+
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket connection established for log session: %s", h.sessionID))
+	return nil
+}
+
+func (h *LogSessionWebSocketHandler) connectTransport() error {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
 
 	if h.isConnected.Load() {
-		return nil
+		return errors.New("already connected; call Reset() before Connect()")
 	}
 
+	h.state.Store(LogStateDisconnected)
+
 	if !h.transitionState(LogStateDisconnected, LogStateConnecting) {
-		return errors.New("cannot connect: invalid state transition")
+		return fmt.Errorf("cannot connect: invalid state transition from %v", h.GetConnectionState())
 	}
+
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
 
 	// Generate JWT token
 	token, err := h.jwtManager.GenerateJWT()
@@ -219,21 +273,11 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 
 	h.conn = conn
 	h.isConnected.Store(true)
-	// Transition to PENDING state after handshake
-	// PENDING means connected but waiting for LOG_START message
+
 	if h.transitionState(LogStateConnecting, LogStatePending) {
 		logging.LogInfo(logWebSocketModuleName, "Connection is now pending LOG_START message")
 	}
 
-	// Start ping ticker
-	h.pingTicker = time.NewTicker(logPingInterval)
-	h.wg.Add(2)
-	go h.pingWorker()
-	go h.readWorker()
-
-	// NO initial message for log sessions - wait for LOG_START from controller
-
-	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket connection established for log session: %s", h.sessionID))
 	return nil
 }
 
@@ -641,29 +685,9 @@ func (h *LogSessionWebSocketHandler) flushBuffer() {
 	}
 }
 
-// Disconnect closes the WebSocket connection
+// Disconnect closes the WebSocket connection and resets handler state for reuse.
 func (h *LogSessionWebSocketHandler) Disconnect() {
-	h.cancel()
-
-	h.connMu.Lock()
-	if h.conn != nil {
-		if err := h.conn.Close(); err != nil {
-			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to close connection on disconnect: %v", err))
-		}
-		h.conn = nil
-	}
-	h.connMu.Unlock()
-
-	h.isConnected.Store(false)
-	h.isActive.Store(false)
-	h.transitionState(LogStateConnected, LogStateDisconnected)
-
-	h.wg.Wait()
-
-	if h.pingTicker != nil {
-		h.pingTicker.Stop()
-	}
-
+	h.Reset()
 	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for log session: %s", h.sessionID))
 }
 
@@ -690,8 +714,7 @@ func (h *LogSessionWebSocketHandler) handleClose() {
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
 	h.state.Store(LogStateDisconnected)
-	// Cleanup connection
-	h.Disconnect()
+	h.Reset()
 
 	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Close handling completed for session: %s", h.sessionID))
 }
