@@ -3,7 +3,6 @@ package fieldagent
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -118,20 +117,7 @@ func newExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSock
 
 	// Load controller certificate only if using WSS (secure WebSocket)
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
-		if cfg.ControllerCert != "" {
-			cert, err := auth.LoadCertificateFromBase64(cfg.ControllerCert)
-			if err != nil {
-				// Try loading as PEM string directly
-				cert, err = auth.LoadCertificateFromPEM([]byte(cfg.ControllerCert))
-				if err != nil {
-					logging.LogError(execWebSocketModuleName, "Failed to load controller certificate", err)
-				} else {
-					handler.controllerCert = cert
-				}
-			} else {
-				handler.controllerCert = cert
-			}
-		}
+		handler.controllerCert = loadControllerCert(cfg.ControllerCert, execWebSocketModuleName)
 	}
 
 	return handler
@@ -227,21 +213,7 @@ func (h *ExecSessionWebSocketHandler) connectTransport() error {
 	// Create WebSocket dialer
 	dialer := websocket.Dialer{
 		HandshakeTimeout: handshakeTimeout,
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-		},
-	}
-
-	// Add certificate to TLS config only if using WSS and certificate is available
-	if strings.HasPrefix(strings.ToLower(h.controllerWsURL), "wss://") && h.controllerCert != nil {
-		certPool := x509.NewCertPool()
-		certPool.AddCert(h.controllerCert)
-		dialer.TLSClientConfig = &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			RootCAs:            certPool,
-			InsecureSkipVerify: !h.config.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-		}
+		TLSClientConfig:  controllerDialTLSConfig(h.config.SecureMode, h.controllerCert),
 	}
 
 	// Set headers with JWT token

@@ -352,8 +352,8 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 		}
 
 	case "secureMode":
-		c.SecureMode = strings.ToLower(value) != "off"
-		if err := c.setYamlProperty("secureMode", value); err != nil {
+		c.SecureMode = ParseSecureMode(value)
+		if err := c.setYamlProperty("secureMode", normalizeSecureModeYAML(value)); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 

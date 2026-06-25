@@ -24,6 +24,8 @@ Release candidate fixing controller exec/log WebSocket pairing after failed or t
 
 ### Fixed
 
+- **Controller TLS for log/exec WebSocket sessions:** WSS dials load `controllerCert` from file paths (same as HTTPS), fixing `failed to decode PEM block` and `certificate signed by unknown authority` when `controllerCert` points at a PEM file.
+- **`secureMode` config parsing:** values `false`, `0`, and `no` (including from `edgelet config --sec off`) now correctly disable secure mode instead of being treated as enabled.
 - **Stale exec WebSocket after failed pairing:** after user timeout or controller cleanup, retrying exec without restarting edgelet no longer logs “skipping Connect (state=3)” while the controller sees no agent upgrade.
 - **`Disconnect()` state leak:** exec and log handlers force `Disconnected` on teardown instead of leaving `Pending`/`Active` in memory (cached per-UUID handler map).
 - **Orphan exec cleanup:** `execEnabled=false` always stops local exec and resets the WebSocket handler, even when session maps are empty.
