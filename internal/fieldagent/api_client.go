@@ -61,45 +61,10 @@ func NewAPIClient() (*APIClient, error) {
 	}
 
 	// Load controller certificate if configured
-	var controllerCert *x509.Certificate
-	if cfg.ControllerCert != "" {
-		var cert *x509.Certificate
-		var err error
-
-		// Check if it's a file path (starts with /)
-		if strings.HasPrefix(cfg.ControllerCert, "/") || strings.HasPrefix(cfg.ControllerCert, "./") {
-			// Load from file
-			certs, err := auth.LoadCertificatesFromFile(cfg.ControllerCert)
-			if err != nil {
-				// If file doesn't exist or can't be read, log warning but continue
-				logging.LogError("Field Agent", fmt.Sprintf("Could not load certificate from file %s: %v. Continuing without certificate.", cfg.ControllerCert, err), err)
-			} else if len(certs) > 0 {
-				cert = certs[0]
-			}
-		} else {
-			// Try loading as base64 first
-			cert, err = auth.LoadCertificateFromBase64(cfg.ControllerCert)
-			if err != nil {
-				// Try loading as PEM string directly
-				cert, err = auth.LoadCertificateFromPEM([]byte(cfg.ControllerCert))
-				if err != nil {
-					logging.LogError("Field Agent", fmt.Sprintf("Could not load certificate: %v. Continuing without certificate.", err), err)
-				}
-			}
-		}
-
-		if cert != nil {
-			controllerCert = cert
-
-			// Update transport with certificate
-			certPool := x509.NewCertPool()
-			certPool.AddCert(cert)
-			httpClient.Transport = &http.Transport{
-				TLSClientConfig: &tls.Config{
-					MinVersion: tls.VersionTLS12,
-					RootCAs:    certPool,
-				},
-			}
+	controllerCert := loadControllerCert(cfg.ControllerCert, "Field Agent")
+	if controllerCert != nil {
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: controllerDialTLSConfig(cfg.SecureMode, controllerCert),
 		}
 	}
 

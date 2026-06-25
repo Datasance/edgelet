@@ -188,7 +188,7 @@ func loadConfigValues(cfg *Config) {
 		cfg.EdgeGuardFrequency = 0
 	}
 	cfg.GPSScanFrequency = parseInt64("gpsScanFrequency", "60")
-	cfg.SecureMode = getProp("secureMode", "off") != "off"
+	cfg.SecureMode = ParseSecureMode(getProp("secureMode", "off"))
 	cfg.PruningFrequency = parseInt64("pruningFrequency", "0")
 	cfg.AvailableDiskThreshold = parseInt64("availableDiskThreshold", "20")
 	cfg.UpgradeScanFrequency = parseInt("upgradeScanFrequency", "24")
