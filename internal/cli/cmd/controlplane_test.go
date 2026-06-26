@@ -78,6 +78,76 @@ func TestControlPlaneGetHumanShowsNamespaceAndName(t *testing.T) {
 	}
 }
 
+func TestControlPlaneRestartHumanShowsSpinnerAndSuccessMarker(t *testing.T) {
+	client := &fakeClient{
+		running: true,
+		gets: map[string]map[string]any{
+			"POST /v1/system/controlplane/restart": {
+				"status":         "ok",
+				"controllerUuid": "cp-uuid-1",
+				"runtimeState":   "running",
+			},
+		},
+	}
+	stdout, stderr, code := runCLI(t, client, "controlplane", "restart")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "Restarting control plane deployment...") {
+		t.Fatalf("expected spinner message on stderr, got stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "✔ control plane restarted successfully") {
+		t.Fatalf("expected success marker on stderr, got stderr=%q", stderr)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected empty stdout for single-line restart success, got stdout=%q", stdout)
+	}
+}
+
+func TestControlPlaneRestartPullQueryInRequestPath(t *testing.T) {
+	client := &fakeClient{
+		running: true,
+		gets: map[string]map[string]any{
+			"POST /v1/system/controlplane/restart?pull=true": {
+				"status":         "ok",
+				"controllerUuid": "cp-uuid-1",
+				"runtimeState":   "running",
+			},
+		},
+	}
+	_, _, code := runCLI(t, client, "controlplane", "restart", "--pull")
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+}
+
+func TestControlPlaneRestartJSONStdoutOnly(t *testing.T) {
+	client := &fakeClient{
+		running: true,
+		gets: map[string]map[string]any{
+			"POST /v1/system/controlplane/restart": {
+				"status":         "ok",
+				"controllerUuid": "cp-uuid-1",
+				"runtimeState":   "running",
+			},
+		},
+	}
+	stdout, stderr, code := runCLI(t, client, "-o", "json", "controlplane", "restart")
+	if code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected no stderr UX for json output, got %q", stderr)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &decoded); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if decoded["controllerUuid"] != "cp-uuid-1" || decoded["runtimeState"] != "running" {
+		t.Fatalf("unexpected payload: %#v", decoded)
+	}
+}
+
 func TestControlPlaneDeleteHuman(t *testing.T) {
 	client := &fakeClient{
 		running: true,
@@ -102,6 +172,9 @@ func TestControlPlaneHelpAndRootListing(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "controlplane get") || !strings.Contains(stdout, "--manifest") {
 		t.Fatalf("expected get/--manifest in help, got stdout=%q", stdout)
+	}
+	if !strings.Contains(stdout, "controlplane restart") {
+		t.Fatalf("expected restart in help, got stdout=%q", stdout)
 	}
 	if !strings.Contains(stdout, "deploy -f") {
 		t.Fatalf("expected deploy -f hint in Long, got stdout=%q", stdout)

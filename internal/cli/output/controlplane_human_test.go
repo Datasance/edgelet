@@ -26,6 +26,18 @@ func TestFormatEdgeletAPIHuman_ControlPlaneDelete(t *testing.T) {
 	}
 }
 
+func TestFormatEdgeletAPIHuman_ControlPlaneRestart(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/system/controlplane/restart", map[string]any{
+		"status":         "ok",
+		"controllerUuid": "uuid-1",
+		"runtimeState":   "running",
+	})
+	want := "control plane restarted successfully (controllerUuid=uuid-1, runtimeState=running)"
+	if out != want {
+		t.Fatalf("unexpected restart output: %q", out)
+	}
+}
+
 func TestFormatEdgeletAPIHuman_ControlPlaneManifest(t *testing.T) {
 	out := FormatEdgeletAPIHuman("/v1/system/controlplane/manifest", map[string]any{
 		"manifestYaml": "kind: ControlPlane",
