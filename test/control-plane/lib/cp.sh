@@ -173,6 +173,37 @@ cp_assert_status_api() {
         "
 }
 
+# cp_restart VM [PULL=false] — edgelet controlplane restart [--pull], wait running, status API.
+cp_restart() {
+    local _vm="$1"
+    local _pull="${2:-false}"
+    local _label="edgelet controlplane restart"
+    local _remote_cmd="edgelet controlplane restart"
+    if [[ "${_pull}" == "true" ]]; then
+        _label="${_label} --pull"
+        _remote_cmd="${_remote_cmd} --pull"
+    fi
+    assert_ok "${_label} exits 0" \
+        cp_remote "${_vm}" "
+            set -e
+            ${_remote_cmd}
+        "
+    cp_wait_running "${_vm}"
+    cp_assert_status_api "${_vm}"
+}
+
+# cp_assert_restart_count_min VM [MIN=1] — restartCount in controlplane get -o json.
+cp_assert_restart_count_min() {
+    local _vm="$1"
+    local _min="${2:-1}"
+    assert_ok "restartCount >= ${_min} in edgelet controlplane get -o json" \
+        cp_remote "${_vm}" "
+            set -e
+            count=\$(edgelet controlplane get -o json | jq -r '.restartCount // 0')
+            test \"\${count}\" -ge ${_min}
+        "
+}
+
 # cp_assert_lifecycle VM — CP lifecycle when unprovisioned (leaves CP deleted).
 # ms rm is allowed; reconciler recreates the container while the DB row exists.
 # Provisioned guard tests (ms rm + controlplane delete blocked) require provision IT.
