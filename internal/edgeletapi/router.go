@@ -96,6 +96,7 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("/v1/system/config/switch", chainMiddleware(withRoute("/v1/system/config/switch", r.apiHandler.HandleSystemConfigSwitch), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/controlplane", chainMiddleware(withRoute("/v1/system/controlplane", r.apiHandler.HandleSystemControlPlane), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/controlplane/manifest", chainMiddleware(withRoute("/v1/system/controlplane/manifest", r.apiHandler.HandleSystemControlPlane), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
+	r.mux.HandleFunc("/v1/system/controlplane/restart", chainMiddleware(withRoute("/v1/system/controlplane/restart", r.apiHandler.HandleSystemControlPlaneRestart), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/controller", chainMiddleware(withRoute("/v1/system/controller", r.apiHandler.HandleSystemControllerStatus), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/images", chainMiddleware(withRoute("/v1/images", r.apiHandler.HandleImages), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/images:pull", chainMiddleware(withRoute("/v1/images:pull", r.apiHandler.HandleImagePull), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))

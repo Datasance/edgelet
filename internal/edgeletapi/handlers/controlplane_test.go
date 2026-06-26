@@ -381,6 +381,69 @@ func TestControlPlaneHandlers_NotFound(t *testing.T) {
 	}
 }
 
+func TestControlPlaneHandlers_Restart(t *testing.T) {
+	handler, _ := setupControlPlaneAPITest(t)
+
+	applyReq := newControlPlaneManifestRequest(t, "/v1/deploy/controlplane:apply", minimalControlPlaneManifestYAMLForAPI(), nil)
+	applyRec := httptest.NewRecorder()
+	handler.HandleDeployControlPlaneApply(applyRec, applyReq)
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("apply status=%d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+	applyData := decodeSuccessData(t, applyRec.Body.Bytes())
+	operationID, ok := applyData["operationId"].(string)
+	if !ok {
+		t.Fatal("type assertion failed for operationID")
+	}
+	final := pollControlPlaneApplyUntilTerminal(t, handler, operationID)
+	if final["status"] != "succeeded" {
+		t.Fatalf("expected succeeded apply, got %#v", final)
+	}
+	controllerUUID, ok := final["controllerUuid"].(string)
+	if !ok || strings.TrimSpace(controllerUUID) == "" {
+		t.Fatalf("expected controllerUuid, got %#v", final["controllerUuid"])
+	}
+
+	restartReq := httptest.NewRequest(http.MethodPost, "/v1/system/controlplane/restart", nil)
+	restartRec := httptest.NewRecorder()
+	handler.HandleSystemControlPlaneRestart(restartRec, restartReq)
+	if restartRec.Code != http.StatusOK {
+		t.Fatalf("restart status=%d body=%s", restartRec.Code, restartRec.Body.String())
+	}
+	restartData := decodeSuccessData(t, restartRec.Body.Bytes())
+	if restartData["status"] != "ok" {
+		t.Fatalf("expected status ok, got %#v", restartData["status"])
+	}
+	if restartData["controllerUuid"] != controllerUUID {
+		t.Fatalf("expected controllerUuid %q, got %#v", controllerUUID, restartData["controllerUuid"])
+	}
+	if restartData["runtimeState"] != "running" {
+		t.Fatalf("expected runtimeState=running, got %#v", restartData["runtimeState"])
+	}
+}
+
+func TestControlPlaneHandlers_RestartMethodNotAllowed(t *testing.T) {
+	handler, _ := setupControlPlaneAPITest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/system/controlplane/restart", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleSystemControlPlaneRestart(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestControlPlaneHandlers_RestartNotFound(t *testing.T) {
+	handler, _ := setupControlPlaneAPITest(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/system/controlplane/restart", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleSystemControlPlaneRestart(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func newControlPlaneManifestRequest(t *testing.T, path, manifest string, fields map[string]string) *http.Request {
 	t.Helper()
 	body := &bytes.Buffer{}

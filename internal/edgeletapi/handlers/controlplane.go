@@ -91,6 +91,41 @@ func (h *EdgeletAPIHandler) handleSystemControlPlaneManifest(w http.ResponseWrit
 	})
 }
 
+// HandleSystemControlPlaneRestart handles POST /v1/system/controlplane/restart.
+func (h *EdgeletAPIHandler) HandleSystemControlPlaneRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	pull, err := parseBooleanFormValue(r.URL.Query().Get("pull"), "pull")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	if activeID, busy := h.activeControlPlaneApply(); busy {
+		writeAPIError(w, http.StatusConflict, ErrCodeApplyInProgress, "control plane apply already in progress", map[string]any{
+			"activeOperationId": activeID,
+		})
+		return
+	}
+	item, err := h.facade.RestartControlPlane(pull)
+	if err != nil {
+		if errors.Is(err, runtimeapi.ErrControlPlaneNotFound) {
+			writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "control plane deployment not found", nil)
+			return
+		}
+		if runtimeapi.IsControlPlaneRestartBlocked(err) {
+			writeAPIError(w, http.StatusConflict, ErrCodeApplyInProgress, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
+		return
+	}
+	payload := runtimeapi.ControlPlaneStatusMap(item)
+	payload["status"] = "ok"
+	writeSuccess(w, http.StatusOK, payload)
+}
+
 func (h *EdgeletAPIHandler) handleSystemControlPlaneDelete(w http.ResponseWriter) {
 	if err := h.facade.DeleteControlPlane(); err != nil {
 		if runtimeapi.IsControlPlaneDeleteBlocked(err) {

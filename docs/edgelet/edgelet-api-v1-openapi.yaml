@@ -507,6 +507,41 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/system/controlplane/restart:
+    post:
+      tags: [System]
+      summary: Restart local ControlPlane controller container
+      description: Admin-only. Bounces the singleton controller container without deprovisioning. Allowed when the agent is provisioned.
+      parameters:
+        - name: pull
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When true, recreate the container and pull the image.
+      responses:
+        "200":
+          description: ControlPlane restarted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ControlPlaneStatus"
+                  - type: object
+                    required: [status]
+                    properties:
+                      status:
+                        type: string
+                        example: ok
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/system/controller:
     get:
       tags: [System]
