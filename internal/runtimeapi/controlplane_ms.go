@@ -18,6 +18,9 @@ func (e *ErrControlPlaneLifecycleBlocked) Error() string {
 	if op == "" {
 		op = "mutation"
 	}
+	if op == "restart" {
+		return "controller microservice cannot be restarted via ms restart while agent is provisioned; use edgelet controlplane restart"
+	}
 	return fmt.Sprintf(
 		"controller microservice cannot be %s while agent is provisioned; deprovision the agent or use edgelet controlplane delete when unprovisioned",
 		op,
@@ -97,4 +100,9 @@ func IsControlPlaneDeleteBlocked(err error) bool {
 func IsControlPlaneLifecycleBlocked(err error) bool {
 	var blocked *ErrControlPlaneLifecycleBlocked
 	return errors.As(err, &blocked)
+}
+
+// IsControlPlaneRestartBlocked reports whether err blocks operator control-plane restart.
+func IsControlPlaneRestartBlocked(err error) bool {
+	return errors.Is(err, ErrControlPlaneRestartBlocked)
 }
