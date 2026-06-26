@@ -57,15 +57,30 @@ edgelet ms inspect <uuid|namespace.name>   # engine container inspect (raw.engin
 
 Use **controlplane get** for deployment status and manifest; **ms inspect** returns the runtime container inspect (same as other microservices), not the SQLite manifest row.
 
+## Restart
+
+Bounce the controller container without removing the deployment or volumes.
+Allowed while the agent is provisioned (unlike `controlplane delete`).
+
+```bash
+edgelet controlplane restart
+edgelet controlplane restart --pull   # recreate and pull image
+edgelet controlplane get
+```
+
+- **Restart** — process/container bounce; same UUID, volumes, and manifest row.
+- **Deploy** — spec/image/env changes: `edgelet deploy -f controlplane.yaml`
+- **`ms restart`** on the controller UUID is rejected when provisioned; use `controlplane restart`.
+
 ## Delete
 
 ```bash
 edgelet controlplane delete
 ```
 
-This is the **only** supported way to remove the controller deployment while the agent is **unprovisioned**. `edgelet ms rm` on the controller UUID is rejected when provisioned; Edgelet will reconcile the container back if the ControlPlane record still exists.
+This is the **only** supported way to remove the controller deployment. It remains **provisioned-guarded**: rejected while the agent is provisioned — deprovision the agent first. While unprovisioned, `edgelet ms rm` on the controller UUID is also rejected; Edgelet will reconcile the container back if the ControlPlane record still exists.
 
-While the agent is **provisioned**, `edgelet controlplane delete` is also rejected — deprovision the agent first.
+Use **Restart** (above) to bounce the container without deleting the deployment.
 
 ## Controller registration (system fog)
 

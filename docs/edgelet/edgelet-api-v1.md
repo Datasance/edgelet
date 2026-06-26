@@ -191,13 +191,14 @@ When RuntimeClass endpoints are called outside supported mode (`full` build flav
 
 ### `/v1/system/*`
 
-Daemon administration: status, info, version, provision/deprovision, config get/patch/switch, reload, stop, prune, GPS, controller certificate upload, controller connection status, ControlPlane get/delete, daemon logs (HTTP and `:stream` WebSocket).
+Daemon administration: status, info, version, provision/deprovision, config get/patch/switch, reload, stop, prune, GPS, controller certificate upload, controller connection status, ControlPlane get/restart/delete, daemon logs (HTTP and `:stream` WebSocket).
 
 Notable behaviors:
 
 - `POST /v1/system/reload` — SIGHUP-style config reload; rejected changes do not mutate on-disk config
 - `POST /v1/system/provision` / `DELETE /v1/system/provision` — agent lifecycle; affects JWT mode
 - `GET /v1/system/controlplane` — local Datasance Controller deployment status (see [control-plane.md](control-plane.md))
+- `POST /v1/system/controlplane/restart` — bounce the controller container; optional `?pull=true`; allowed when provisioned (see [control-plane.md](control-plane.md#restart))
 
 ### `/v1/ms/*`
 

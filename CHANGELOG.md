@@ -5,6 +5,12 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **ControlPlane restart:** `edgelet controlplane restart [--pull]` and `POST /v1/system/controlplane/restart` bounce the local controller container while provisioned; preserves UUID and volumes.
+
 ## [1.0.0-rc.4] — June 2026
 
 Release candidate fixing controller exec/log WebSocket pairing after failed or timed-out sessions, and decoupling local API startup from Pot controller reachability. Pair with Controller **v3.8** (exec teardown raises `execSessions: true` on all disable paths).

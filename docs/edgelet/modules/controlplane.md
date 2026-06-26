@@ -69,6 +69,7 @@ At most **one** CP deployment per node (SQLite `id=1` check).
 | `POST /v1/deploy/controlplane:apply` | Start async apply |
 | `GET /v1/deploy/controlplane:apply/{operationId}` | Poll status |
 | `GET /v1/system/controlplane` | Deployment status |
+| `POST /v1/system/controlplane/restart` | Bounce container; optional `?pull=true` |
 | `DELETE /v1/system/controlplane` | Remove deployment + volumes |
 
 ## Failure modes
@@ -77,6 +78,8 @@ At most **one** CP deployment per node (SQLite `id=1` check).
 |---------|-------|
 | Reconcile recreates container | Row exists; external `docker rm` |
 | `ms rm` rejected on CP UUID | Must use `controlplane delete` |
+| `ms restart` rejected when provisioned | Use `controlplane restart` instead |
+| Need image/env change | Redeploy: `edgelet deploy -f controlplane.yaml` (not restart) |
 | Second apply 409 | Apply in progress |
 
 ## Code map
