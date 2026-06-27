@@ -19,6 +19,7 @@ const (
 	CodeDaemonUnavailable = "DAEMON_UNAVAILABLE"
 	CodeLocalAPIStarting  = "LOCAL_API_STARTING"
 	CodeControllerOffline = "CONTROLLER_OFFLINE"
+	CodeExecStartTimeout  = "EXEC_START_TIMEOUT"
 	CodeInternal          = "INTERNAL"
 )
 
