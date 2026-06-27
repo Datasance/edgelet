@@ -157,9 +157,8 @@ func (h *ExecSessionWebSocketHandler) resetLocked() {
 	}
 
 	closeWebSocketConn(&h.connMu, &h.conn)
-	stopSessionPingTicker(&h.pingTicker)
-
 	h.wg.Wait()
+	stopSessionPingTicker(&h.pingTicker)
 
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
@@ -180,7 +179,10 @@ func (h *ExecSessionWebSocketHandler) GetConnectionState() ConnectionState {
 // Connect establishes the WebSocket connection to the controller.
 // Call Reset() before Connect() when starting a new exec session. No init pairing frame is sent.
 func (h *ExecSessionWebSocketHandler) Connect() error {
-	if err := h.connectTransport(); err != nil {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+
+	if err := h.connectTransportLocked(); err != nil {
 		return err
 	}
 
@@ -193,10 +195,7 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 	return nil
 }
 
-func (h *ExecSessionWebSocketHandler) connectTransport() error {
-	h.lifecycleMu.Lock()
-	defer h.lifecycleMu.Unlock()
-
+func (h *ExecSessionWebSocketHandler) connectTransportLocked() error {
 	if h.isConnected.Load() {
 		return errors.New("already connected; call Reset() before Connect()")
 	}
@@ -655,12 +654,10 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 	for {
 		select {
 		case frame := <-h.outputBuffer:
-			err := h.SendMessage(frame.msgType, frame.data)
-			if err != nil {
+			h.bufferedFrames.Add(-1)
+			h.bufferedSize.Add(-int64(len(frame.data)))
+			if err := h.writeOutboundMessage(frame.msgType, frame.data); err != nil {
 				logging.LogError(execWebSocketModuleName, "Failed to send buffered message", err)
-			} else {
-				h.bufferedFrames.Add(-1)
-				h.bufferedSize.Add(-int64(len(frame.data)))
 			}
 		default:
 			return
