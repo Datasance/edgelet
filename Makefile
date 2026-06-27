@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test test-linux lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet static staticcheck staticcheck-standalone install-staticcheck help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check test-lifecycle test-lifecycle-race test-deadlock pre-it
+.PHONY: build build-cli build-daemon build-daemon-embedded build-edgelet build-edgelet-linux build-edgelet-local deps test test-linux test-linux-race test-linux-race-arm64 test-linux-race-amd64 test-race lint lint-fix clean docker-build install install-dev start-dev stop-dev setup-dev-env export-dev-env fmt vet static staticcheck staticcheck-standalone install-staticcheck help build-all-archs build-release-matrix build-linux-amd64 build-linux-arm64 build-linux-arm build-linux-riscv64 release-binaries build-desktop-darwin build-desktop-windows test-embedded test-embedded-ci cli-docs cli-docs-check cli-help-check cli-completion test-embedded-docker ci-docker quality-linux quality-linux-arm64 quality-linux-amd64 install-scripts install-scripts-check test-lifecycle test-lifecycle-race test-deadlock pre-it
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -17,6 +17,10 @@ STATICCHECK         := $(GOBIN)/staticcheck
 
 # Provision/deprovision lifecycle packages (volumemount, fieldagent, processmanager)
 LIFECYCLE_PKGS := ./internal/volumemount/... ./internal/fieldagent/... ./internal/processmanager/...
+
+# Unit-test package set (matches make test-unit / scripts/test-linux.sh / CI Test job)
+UNIT_TEST_PKGS := ./cmd/... ./internal/... ./pkg/... ./test/...
+RACE_TEST_FLAGS  ?= -race -short -count=1 -timeout 30m
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -174,17 +178,27 @@ ci-docker: ## Run linux CI gate inside Docker (macOS-friendly)
 
 test: ## Run unit tests (excludes build/src and build/gopath)
 	@echo "Running tests..."
-	@go test -v -tags '!linux' ./cmd/... ./internal/... ./pkg/... ./test/...
+	@go test -v -tags '!linux' $(UNIT_TEST_PKGS)
 	@if [ "$$(uname -s)" = Linux ]; then \
-		go test -v -tags linux ./cmd/... ./internal/... ./pkg/... ./test/...; \
+		go test -v -tags linux $(UNIT_TEST_PKGS); \
 	fi
 
 test-unit: ## Run unit tests only (skip integration tests)
 	@echo "Running unit tests..."
-	@go test -v -short -tags '!linux' ./cmd/... ./internal/... ./pkg/... ./test/...
+	@go test -v -short -tags '!linux' $(UNIT_TEST_PKGS)
 	@if [ "$$(uname -s)" = Linux ]; then \
-		go test -v -short -tags linux ./cmd/... ./internal/... ./pkg/... ./test/...; \
-		CGO_ENABLED=1 go test -v -short -tags 'linux,cgo' ./cmd/... ./internal/... ./pkg/... ./test/...; \
+		go test -v -short -tags linux $(UNIT_TEST_PKGS); \
+		CGO_ENABLED=1 go test -v -short -tags 'linux,cgo' $(UNIT_TEST_PKGS); \
+	fi
+
+test-race: ## Race detector on full unit-test tree (CGO required; slow; Linux passes need test-linux-race on desktop)
+	@echo "Running race detector (!linux pass)..."
+	@CGO_ENABLED=1 go test $(RACE_TEST_FLAGS) -tags '!linux' $(UNIT_TEST_PKGS)
+	@if [ "$$(uname -s)" = Linux ]; then \
+		echo "Running race detector (linux pass)..."; \
+		CGO_ENABLED=1 go test $(RACE_TEST_FLAGS) -tags linux $(UNIT_TEST_PKGS); \
+		echo "Running race detector (linux,cgo pass)..."; \
+		CGO_ENABLED=1 go test $(RACE_TEST_FLAGS) -tags 'linux,cgo' $(UNIT_TEST_PKGS); \
 	fi
 
 test-integration: ## Run integration tests
@@ -194,6 +208,18 @@ test-integration: ## Run integration tests
 test-linux: ## Run make test-unit in Linux Docker (CI Test job parity; GOARCH=host arch)
 	@chmod +x scripts/test-linux.sh
 	@GOARCH=$${GOARCH:-$$(go env GOARCH)} scripts/test-linux.sh
+
+test-linux-race: ## Full unit-test race detector in Linux Docker (GOARCH=host arch; slow)
+	@chmod +x scripts/test-linux.sh
+	@TEST_FLAGS="$(RACE_TEST_FLAGS)" GOARCH=$${GOARCH:-$$(go env GOARCH)} scripts/test-linux.sh
+
+test-linux-race-arm64: ## Full unit-test race detector in linux/arm64 Docker
+	@chmod +x scripts/test-linux.sh
+	@TEST_FLAGS="$(RACE_TEST_FLAGS)" GOARCH=arm64 scripts/test-linux.sh
+
+test-linux-race-amd64: ## Full unit-test race detector in linux/amd64 Docker
+	@chmod +x scripts/test-linux.sh
+	@TEST_FLAGS="$(RACE_TEST_FLAGS)" GOARCH=amd64 scripts/test-linux.sh
 
 test-embedded: ## Run embedded-containerd integration tests in a Lima VM (macOS only)
 	@echo "Running embedded containerd integration tests..."
@@ -267,15 +293,15 @@ test-lifecycle: ## Unit tests on lifecycle packages
 	@echo "Running lifecycle package tests..."
 	@go test -count=1 $(LIFECYCLE_PKGS)
 
-test-lifecycle-race: ## Race detector on lifecycle packages (slow; CGO may be required)
+test-lifecycle-race: ## Race detector on lifecycle packages only (fast subset; use test-race for full tree)
 	@echo "Running lifecycle package race detector..."
-	@CGO_ENABLED=1 go test -race -count=1 -timeout 15m $(LIFECYCLE_PKGS)
+	@CGO_ENABLED=1 go test -race -short -count=1 -timeout 15m $(LIFECYCLE_PKGS)
 
 test-deadlock: ## Deadlock-tagged tests on lifecycle packages (-tags deadlock)
 	@echo "Running deadlock-tagged lifecycle tests..."
 	@go test -tags deadlock -count=1 -timeout 5m $(LIFECYCLE_PKGS)
 
-pre-it: vet lint test-lifecycle ## Local gate before manual IT (optional: test-lifecycle-race, test-deadlock)
+pre-it: vet lint test-lifecycle ## Local gate before manual IT (optional: test-race, test-linux-race, test-lifecycle-race, test-deadlock)
 
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."

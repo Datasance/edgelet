@@ -9,7 +9,11 @@ GO_IMAGE="${GO_IMAGE:-golang:1.26.4}"
 GOARCH="${GOARCH:-$(go env GOARCH)}"
 TEST_FLAGS="${TEST_FLAGS:-}"
 
-echo "=== test-linux (linux/${GOARCH}, same as CI make test-unit) ==="
+if [[ "${TEST_FLAGS}" == *"-race"* ]]; then
+	echo "=== test-linux (linux/${GOARCH}, race detector; TEST_FLAGS=${TEST_FLAGS}) ==="
+else
+	echo "=== test-linux (linux/${GOARCH}, same as CI make test-unit) ==="
+fi
 
 docker run --rm --platform "linux/${GOARCH}" \
 	-e "TEST_FLAGS=${TEST_FLAGS}" \
@@ -24,4 +28,8 @@ docker run --rm --platform "linux/${GOARCH}" \
 		CGO_ENABLED=1 go test \${TEST_FLAGS} -v -short -tags 'linux,cgo' \${_TEST_PKGS}
 	"
 
-echo "test-linux (linux/${GOARCH}): passed (test-unit parity)"
+if [[ "${TEST_FLAGS}" == *"-race"* ]]; then
+	echo "test-linux (linux/${GOARCH}): passed (race detector)"
+else
+	echo "test-linux (linux/${GOARCH}): passed (test-unit parity)"
+fi
