@@ -35,7 +35,7 @@ func (d *DB) LoadControllerMicroservices() ([]*models.Microservice, error) {
 	rows, err := d.Conn().Query(`SELECT
 		uuid, image_name, container_id, registry_id,
 		rebuild, host_network_mode, is_privileged, log_size,
-		is_router, exec_enabled, microservice_name, application_name,
+		is_router, microservice_name, application_name,
 		is_nats, schedule, delete_flag, delete_with_cleanup,
 		is_stuck_in_restart, is_updating,
 		config, run_as_user, platform, runtime, container_ip,
@@ -90,7 +90,7 @@ func insertMicroservice(tx *sql.Tx, ms *models.Microservice) error {
 	_, err := tx.Exec(`INSERT OR REPLACE INTO controller_microservices (
 		uuid, image_name, container_id, registry_id,
 		rebuild, host_network_mode, is_privileged, log_size,
-		is_router, exec_enabled, microservice_name, application_name,
+		is_router, microservice_name, application_name,
 		is_nats, schedule, delete_flag, delete_with_cleanup,
 		is_stuck_in_restart, is_updating,
 		config, run_as_user, platform, runtime, container_ip,
@@ -99,11 +99,11 @@ func insertMicroservice(tx *sql.Tx, ms *models.Microservice) error {
 		cdi_devs, cap_add, cap_drop, extra_hosts, healthcheck,
 		updated_at
 	) VALUES (
-		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
 	)`,
 		ms.MicroserviceUUID, ms.ImageName, ms.ContainerID, ms.RegistryID,
 		boolToInt(ms.Rebuild), boolToInt(ms.HostNetworkMode), boolToInt(ms.IsPrivileged), ms.LogSize,
-		boolToInt(ms.IsRouter), boolToInt(ms.ExecEnabled), ms.MicroserviceName, ms.ApplicationName,
+		boolToInt(ms.IsRouter), ms.MicroserviceName, ms.ApplicationName,
 		boolToInt(ms.IsNats), ms.Schedule, boolToInt(ms.Delete), boolToInt(ms.DeleteWithCleanup),
 		boolToInt(ms.IsStuckInRestart), boolToInt(ms.GetIsUpdating()),
 		ms.Config, ms.RunAsUser, ms.Platform, ms.Runtime, ms.ContainerIPAddress,
@@ -120,19 +120,19 @@ func scanMicroservice(rows *sql.Rows) (*models.Microservice, error) {
 	ms := &models.Microservice{}
 
 	var (
-		rebuild, hostNetworkMode, isPrivileged, isRouter   int
-		execEnabled, isNats, deleteFlag, deleteWithCleanup int
-		isStuckInRestart, isUpdating                       int
-		portMappingsJSON, volumeMappingsJSON, envVarsJSON  string
-		argsJSON, cdiDevsJSON, capAddJSON, capDropJSON     string
-		extraHostsJSON                                     string
-		healthcheckJSON                                    *string
+		rebuild, hostNetworkMode, isPrivileged, isRouter  int
+		isNats, deleteFlag, deleteWithCleanup             int
+		isStuckInRestart, isUpdating                      int
+		portMappingsJSON, volumeMappingsJSON, envVarsJSON string
+		argsJSON, cdiDevsJSON, capAddJSON, capDropJSON    string
+		extraHostsJSON                                    string
+		healthcheckJSON                                   *string
 	)
 
 	err := rows.Scan(
 		&ms.MicroserviceUUID, &ms.ImageName, &ms.ContainerID, &ms.RegistryID,
 		&rebuild, &hostNetworkMode, &isPrivileged, &ms.LogSize,
-		&isRouter, &execEnabled, &ms.MicroserviceName, &ms.ApplicationName,
+		&isRouter, &ms.MicroserviceName, &ms.ApplicationName,
 		&isNats, &ms.Schedule, &deleteFlag, &deleteWithCleanup,
 		&isStuckInRestart, &isUpdating,
 		&ms.Config, &ms.RunAsUser, &ms.Platform, &ms.Runtime, &ms.ContainerIPAddress,
@@ -148,7 +148,6 @@ func scanMicroservice(rows *sql.Rows) (*models.Microservice, error) {
 	ms.HostNetworkMode = intToBool(hostNetworkMode)
 	ms.IsPrivileged = intToBool(isPrivileged)
 	ms.IsRouter = intToBool(isRouter)
-	ms.ExecEnabled = intToBool(execEnabled)
 	ms.IsNats = intToBool(isNats)
 	ms.Delete = intToBool(deleteFlag)
 	ms.DeleteWithCleanup = intToBool(deleteWithCleanup)

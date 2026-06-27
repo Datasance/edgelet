@@ -272,9 +272,6 @@ func parseMicroservice(data map[string]any) (*models.Microservice, error) {
 			cfg.SetRouterInterior(microservice.HostNetworkMode)
 		}
 	}
-	if execEnabled, ok := data["execEnabled"].(bool); ok {
-		microservice.ExecEnabled = execEnabled
-	}
 	if name, ok := data["name"].(string); ok {
 		microservice.MicroserviceName = name
 	}
