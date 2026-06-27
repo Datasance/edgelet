@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -460,5 +461,104 @@ func TestSpawnChildSurfacesRuntimeResolutionError(t *testing.T) {
 	_, err := svc.spawnChild()
 	if err == nil || !strings.Contains(err.Error(), "resolve fat runtime") {
 		t.Fatalf("expected resolution error, got %v", err)
+	}
+}
+
+func withTempCleanupDirs(t *testing.T) (stateDir, runDir string) {
+	stateDir = t.TempDir()
+	runDir = t.TempDir()
+
+	prevState := containerdStateDirForCleanup
+	prevArtifactState := runtimeArtifactCleanupStateDir
+	prevRun := runtimeArtifactCleanupRunDir
+	prevSocket := runtimeArtifactCleanupSocket
+	containerdStateDirForCleanup = stateDir
+	runtimeArtifactCleanupStateDir = stateDir
+	runtimeArtifactCleanupRunDir = runDir
+	runtimeArtifactCleanupSocket = filepath.Join(runDir, "containerd.sock")
+	t.Cleanup(func() {
+		containerdStateDirForCleanup = prevState
+		runtimeArtifactCleanupStateDir = prevArtifactState
+		runtimeArtifactCleanupRunDir = prevRun
+		runtimeArtifactCleanupSocket = prevSocket
+	})
+	return stateDir, runDir
+}
+
+func TestCleanupStaleRuntimeTasks_RemovesMissingAddress(t *testing.T) {
+	stateDir, _ := withTempCleanupDirs(t)
+	taskBase := filepath.Join(stateDir, runtimeV2TaskDirName)
+	staleTask := filepath.Join(taskBase, "stale-task-id")
+	if err := os.MkdirAll(staleTask, 0o755); err != nil {
+		t.Fatalf("mkdir stale task: %v", err)
+	}
+
+	if err := CleanupStaleRuntimeTasks(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if _, err := os.Stat(staleTask); !os.IsNotExist(err) {
+		t.Fatalf("expected stale task dir removed, stat err=%v", err)
+	}
+}
+
+func TestCleanupStaleRuntimeTasks_PreservesValidTask(t *testing.T) {
+	stateDir, _ := withTempCleanupDirs(t)
+	taskBase := filepath.Join(stateDir, runtimeV2TaskDirName)
+	validTask := filepath.Join(taskBase, "valid-task-id")
+	if err := os.MkdirAll(validTask, 0o755); err != nil {
+		t.Fatalf("mkdir valid task: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validTask, "address"), []byte("unix:///run/shim.sock"), 0o600); err != nil {
+		t.Fatalf("write address file: %v", err)
+	}
+
+	if err := CleanupStaleRuntimeTasks(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if _, err := os.Stat(validTask); err != nil {
+		t.Fatalf("expected valid task dir preserved, stat err=%v", err)
+	}
+}
+
+func TestCleanupStaleRuntimeTasks_PreservesRootDir(t *testing.T) {
+	stateDir, _ := withTempCleanupDirs(t)
+	rootDir := t.TempDir()
+	rootMarker := filepath.Join(rootDir, "image-cache-marker")
+	if err := os.WriteFile(rootMarker, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("write root marker: %v", err)
+	}
+
+	taskBase := filepath.Join(stateDir, runtimeV2TaskDirName)
+	staleTask := filepath.Join(taskBase, "orphan-task")
+	if err := os.MkdirAll(staleTask, 0o755); err != nil {
+		t.Fatalf("mkdir stale task: %v", err)
+	}
+
+	if err := CleanupStaleRuntimeTasks(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if _, err := os.Stat(rootMarker); err != nil {
+		t.Fatalf("expected root dir untouched, stat err=%v", err)
+	}
+}
+
+func TestCleanupRuntimeArtifacts_StillOnRetry(t *testing.T) {
+	stateDir, runDir := withTempCleanupDirs(t)
+	stateMarker := filepath.Join(stateDir, "stale-state-marker")
+	if err := os.WriteFile(stateMarker, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write state marker: %v", err)
+	}
+
+	if err := CleanupRuntimeArtifacts(); err != nil {
+		t.Fatalf("artifact cleanup failed: %v", err)
+	}
+	if _, err := os.Stat(stateMarker); !os.IsNotExist(err) {
+		t.Fatalf("expected state marker removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(stateDir); err != nil {
+		t.Fatalf("expected state dir recreated, stat err=%v", err)
+	}
+	if _, err := os.Stat(runDir); err != nil {
+		t.Fatalf("expected run dir recreated, stat err=%v", err)
 	}
 }

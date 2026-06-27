@@ -10,6 +10,7 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/controlplane"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 var ErrControlPlaneNotFound = errors.New("control plane deployment not found")
@@ -56,6 +57,87 @@ func (pm *ProcessManager) SyncApplyControlPlaneDeployment(item *models.ControlPl
 		}
 		return errors.New("control plane launch failed")
 	}
+	return nil
+}
+
+// RestartControlPlaneDeployment bounces the singleton control plane container without
+// deleting the system_control_plane row or re-registering with Pot.
+func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlaneDeployment, pullImage bool) error {
+	if item == nil {
+		return errors.New("control plane deployment is nil")
+	}
+	if pm.containerManager == nil {
+		return errors.New("process manager is not initialized")
+	}
+
+	nowSec := time.Now().Unix()
+
+	container, contErr := pm.containerForControlPlane(item.ControllerUUID, item.ContainerID)
+	if contErr != nil {
+		return contErr
+	}
+
+	if container == nil {
+		pm.launchControlPlaneWithHook(item, nowSec)
+		got, found, err := store.GetInstance().GetSystemControlPlane()
+		if err != nil {
+			return err
+		}
+		if !found || got == nil {
+			return errors.New("control plane deployment missing after launch")
+		}
+		if strings.EqualFold(strings.TrimSpace(got.RuntimeState), "failed") {
+			if msg := strings.TrimSpace(got.LastError); msg != "" {
+				return fmt.Errorf("%s", msg)
+			}
+			return errors.New("control plane launch failed")
+		}
+		return nil
+	}
+
+	if pullImage || !engine.SupportsInPlaceRestart(pm.engineName) {
+		return pm.recreateControlPlaneDeployment(item, pullImage, nowSec)
+	}
+
+	if err := pm.StopMicroservice(item.ControllerUUID); err != nil {
+		item.LastError = err.Error()
+		item.RuntimeState = "failed"
+		item.State = item.RuntimeState
+		item.LastTransitionAt = nowSec
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
+		return err
+	}
+	if err := pm.startLocalMicroservice(item.ControllerUUID); err != nil {
+		item.LastError = err.Error()
+		item.RuntimeState = "failed"
+		item.State = item.RuntimeState
+		item.LastTransitionAt = nowSec
+		_ = store.GetInstance().UpsertSystemControlPlane(item)
+		return err
+	}
+
+	container, contErr = pm.containerForControlPlane(item.ControllerUUID, item.ContainerID)
+	if contErr != nil {
+		return contErr
+	}
+	if container != nil {
+		item.ContainerID = container.ID
+	}
+
+	item.RuntimeState = "running"
+	item.State = item.RuntimeState
+	item.LastError = ""
+	item.LastTransitionAt = nowSec
+	if err := store.GetInstance().UpsertSystemControlPlane(item); err != nil {
+		return err
+	}
+	pm.syncControlPlaneDNS(item, true)
+
+	var status *models.MicroserviceStatus
+	if container != nil {
+		status, _ = pm.getLocalContainerStatus(container.ID, item.ControllerUUID)
+	}
+	pm.syncControlPlaneProcessManagerStatus(item, container, status)
 	return nil
 }
 

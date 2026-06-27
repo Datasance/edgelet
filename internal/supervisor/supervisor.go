@@ -419,6 +419,7 @@ func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
 	s.fieldAgent.OnProcessManagerReady()
 	fieldagent.GetLogSessionManager().SetProcessManager(s.processManager)
 	fieldagent.GetLogSessionManager().SetEngine(eng)
+	fieldagent.GetExecSessionManager().SetProcessManager(s.processManager)
 	if s.dockerPruningManager != nil {
 		s.dockerPruningManager.SetEngine(eng)
 	}

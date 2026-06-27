@@ -76,6 +76,8 @@ address = "/run/edgelet/containerd.sock"
 
 CNI conflist: `/var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist`
 
+On data-plane bootstrap (`edgelet runtime-bootstrap` or monolithic embedded start), Edgelet runs **stale runtime task cleanup** under the state directory (`io.containerd.runtime.v2.task/`). Orphaned task directories missing a valid `address` file are removed. Image cache under `/var/lib/edgelet-containerd/root` is preserved. Full state wipe (`CleanupRuntimeArtifacts`) runs only when embedded containerd fails to start and bootstrap retries.
+
 ---
 
 ## Docker and Podman (linux + desktop)

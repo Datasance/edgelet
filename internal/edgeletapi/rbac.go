@@ -49,6 +49,8 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/gps", Verb: verb}, true
 	case path == "/v1/system/controlplane" || path == "/v1/system/controlplane/manifest":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controlplane", Verb: verb}, true
+	case path == "/v1/system/controlplane/restart":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controlplane", Verb: "create"}, true
 	case path == "/v1/system/controller":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/controller", Verb: verb}, true
 	case path == "/v1/images":

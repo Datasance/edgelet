@@ -31,7 +31,8 @@ func MapAPIError(err error) error {
 		if code == "" {
 			code = "HTTP_ERROR"
 		}
-		return NewCLIError(code, apiErr.Message, err)
+		message := output.FormatEdgeletAPIErrorMessage(code, apiErr.Message)
+		return NewCLIError(code, message, err)
 	}
 	return NewCLIError(CodeInternal, err.Error(), err)
 }

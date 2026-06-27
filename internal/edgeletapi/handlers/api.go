@@ -419,6 +419,7 @@ func (h *EdgeletAPIHandler) HandleImagePull(w http.ResponseWriter, r *http.Reque
 		h.pullMu.Unlock()
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull operation started operationId=%s image=%s engine=%s", op.OperationID, op.Image, op.Engine))
 
+		accepted := snapshotImagePullOperation(op)
 		go func(operationID string) {
 			resolvedImage, err := h.facade.PullImageWithProgress(req.Image, req.RegistryID, req.Platform, func(progress float32) {
 				h.pullMu.Lock()
@@ -457,16 +458,7 @@ func (h *EdgeletAPIHandler) HandleImagePull(w http.ResponseWriter, r *http.Reque
 			logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local image pull succeeded operationId=%s image=%s resolvedImage=%s", operationID, strings.TrimSpace(req.Image), current.ResolvedImage))
 		}(op.OperationID)
 
-		writeSuccess(w, http.StatusAccepted, map[string]any{
-			"operationId": op.OperationID,
-			"status":      op.Status,
-			"progress":    op.Progress,
-			"image":       op.Image,
-			"registryId":  op.RegistryID,
-			"platform":    op.Platform,
-			"engine":      op.Engine,
-			"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-		})
+		writeSuccess(w, http.StatusAccepted, accepted)
 		return
 	}
 
@@ -506,30 +498,13 @@ func (h *EdgeletAPIHandler) HandleImagePullStatus(w http.ResponseWriter, r *http
 	}
 	h.pullMu.RLock()
 	op, ok := h.pullOps[operationID]
-	h.pullMu.RUnlock()
 	if !ok {
+		h.pullMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "pull operation not found", nil)
 		return
 	}
-	response := map[string]any{
-		"operationId":   op.OperationID,
-		"status":        op.Status,
-		"progress":      op.Progress,
-		"image":         op.Image,
-		"resolvedImage": op.ResolvedImage,
-		"platform":      op.Platform,
-		"engine":        op.Engine,
-		"startedAt":     op.StartedAt.Format(time.RFC3339Nano),
-	}
-	if op.RegistryID != nil {
-		response["registryId"] = *op.RegistryID
-	}
-	if op.Error != "" {
-		response["error"] = op.Error
-	}
-	if op.EndedAt != nil {
-		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
-	}
+	response := snapshotImagePullOperation(op)
+	h.pullMu.RUnlock()
 	writeSuccess(w, http.StatusOK, response)
 }
 
@@ -565,6 +540,7 @@ func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Reque
 	h.loadMu.Unlock()
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("image load operation started operationId=%s path=%s engine=%s", op.OperationID, path, engineName))
 
+	accepted := snapshotImageLoadOperation(op)
 	go func(operationID, loadPath string) {
 		loaded, err := h.facade.LoadImageFromPath(loadPath)
 		h.loadMu.Lock()
@@ -594,13 +570,7 @@ func (h *EdgeletAPIHandler) HandleImageLoad(w http.ResponseWriter, r *http.Reque
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("image load succeeded operationId=%s path=%s count=%d", operationID, loadPath, current.Count))
 	}(op.OperationID, path)
 
-	writeSuccess(w, http.StatusAccepted, map[string]any{
-		"operationId": op.OperationID,
-		"status":      op.Status,
-		"path":        op.Path,
-		"engine":      op.Engine,
-		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-	})
+	writeSuccess(w, http.StatusAccepted, accepted)
 }
 
 func (h *EdgeletAPIHandler) HandleImageLoadStatus(w http.ResponseWriter, r *http.Request) {
@@ -615,28 +585,13 @@ func (h *EdgeletAPIHandler) HandleImageLoadStatus(w http.ResponseWriter, r *http
 	}
 	h.loadMu.RLock()
 	op, ok := h.loadOps[operationID]
-	h.loadMu.RUnlock()
 	if !ok {
+		h.loadMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "image load operation not found", nil)
 		return
 	}
-	response := map[string]any{
-		"operationId": op.OperationID,
-		"status":      op.Status,
-		"path":        op.Path,
-		"engine":      op.Engine,
-		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-	}
-	if len(op.Loaded) > 0 {
-		response["loaded"] = op.Loaded
-		response["count"] = op.Count
-	}
-	if op.EndedAt != nil {
-		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
-	}
-	if strings.TrimSpace(op.Error) != "" {
-		response["error"] = op.Error
-	}
+	response := snapshotImageLoadOperation(op)
+	h.loadMu.RUnlock()
 	writeSuccess(w, http.StatusOK, response)
 }
 
@@ -1276,6 +1231,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApply(w http.ResponseWriter
 	h.deployMu.Unlock()
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local deploy apply operation started operationId=%s source=%s dryRun=%v name=%s image=%s", op.OperationID, strings.TrimSpace(sourceName), dryRun, op.Name, op.Image))
 
+	accepted := snapshotDeployApplyAccepted(op)
 	go func(operationID string, manifestText string, source string, applyDryRun bool) {
 		deploymentID, _, applyErr := h.facade.ApplyLocalManifest(manifestText, source, applyDryRun, func(stage string, _ string) {
 			normalized := strings.TrimSpace(strings.ToLower(stage))
@@ -1312,14 +1268,7 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApply(w http.ResponseWriter
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local deploy apply succeeded operationId=%s deploymentId=%s stage=%s", operationID, current.DeploymentID, current.Stage))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
-	writeSuccess(w, http.StatusAccepted, map[string]any{
-		"operationId": op.OperationID,
-		"status":      op.Status,
-		"kind":        op.Kind,
-		"name":        op.Name,
-		"image":       op.Image,
-		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-	})
+	writeSuccess(w, http.StatusAccepted, accepted)
 }
 
 func (h *EdgeletAPIHandler) HandleDeployMicroservicesApplyStatus(w http.ResponseWriter, r *http.Request) {
@@ -1334,44 +1283,13 @@ func (h *EdgeletAPIHandler) HandleDeployMicroservicesApplyStatus(w http.Response
 	}
 	h.deployMu.RLock()
 	op, ok := h.deployOps[operationID]
-	h.deployMu.RUnlock()
 	if !ok {
+		h.deployMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "deploy apply operation not found", nil)
 		return
 	}
-	response := map[string]any{
-		"operationId": op.OperationID,
-		"status":      op.Status,
-		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-	}
-	if strings.TrimSpace(op.Stage) != "" {
-		response["stage"] = op.Stage
-	}
-	if strings.TrimSpace(op.Kind) != "" {
-		response["kind"] = op.Kind
-	}
-	if strings.TrimSpace(op.Name) != "" {
-		response["name"] = op.Name
-	}
-	if strings.TrimSpace(op.Image) != "" {
-		response["image"] = op.Image
-	}
-	if strings.TrimSpace(op.DeploymentID) != "" {
-		response["deploymentId"] = op.DeploymentID
-	}
-	if op.EndedAt != nil {
-		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
-	}
-	if strings.TrimSpace(op.ErrorMessage) != "" {
-		code := strings.TrimSpace(op.ErrorCode)
-		if code == "" {
-			code = ErrCodeInternal
-		}
-		response["error"] = map[string]any{
-			"code":    code,
-			"message": op.ErrorMessage,
-		}
-	}
+	response := snapshotDeployApplyOperation(op)
+	h.deployMu.RUnlock()
 	writeSuccess(w, http.StatusOK, response)
 }
 
@@ -1575,6 +1493,9 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 	h.runtimeClassApplyOps[op.OperationID] = op
 	h.runtimeClassApplyMu.Unlock()
 
+	accepted := snapshotRuntimeClassApplyOperation(op)
+	applyRunner := runtimeClassApplyRunner
+	syncWaitTimeout := runtimeClassApplySyncWaitTimeout
 	done := make(chan struct{})
 	go func(operationID string, manifestText string, applyDryRun bool) {
 		h.runtimeClassApplyMu.Lock()
@@ -1585,7 +1506,7 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 		}
 		h.runtimeClassApplyMu.Unlock()
 
-		item, applyErr := runtimeClassApplyRunner(h.facade, manifestText, applyDryRun)
+		item, applyErr := applyRunner(h.facade, manifestText, applyDryRun)
 
 		h.runtimeClassApplyMu.Lock()
 		defer h.runtimeClassApplyMu.Unlock()
@@ -1615,7 +1536,7 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 	}(op.OperationID, manifest, dryRun)
 
 	if async {
-		writeSuccess(w, http.StatusAccepted, runtimeClassApplyOperationResponse(op))
+		writeSuccess(w, http.StatusAccepted, accepted)
 		return
 	}
 
@@ -1623,8 +1544,8 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 	case <-done:
 		h.runtimeClassApplyMu.RLock()
 		current, ok := h.runtimeClassApplyOps[op.OperationID]
-		h.runtimeClassApplyMu.RUnlock()
 		if !ok {
+			h.runtimeClassApplyMu.RUnlock()
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, "runtimeclass apply operation missing", nil)
 			return
 		}
@@ -1641,20 +1562,36 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApply(w http.ResponseWrite
 				details["stage"] = current.Stage
 			}
 			details["operationId"] = current.OperationID
-			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, map[string]any{
-				"operationId": current.OperationID,
-				"stage":       current.Stage,
+			errCode := current.ErrorCode
+			errMsg := current.ErrorMessage
+			stage := current.Stage
+			operationID := current.OperationID
+			h.runtimeClassApplyMu.RUnlock()
+			writeAPIError(w, statusCode, errCode, errMsg, map[string]any{
+				"operationId": operationID,
+				"stage":       stage,
 				"error": map[string]any{
-					"code":    current.ErrorCode,
-					"message": current.ErrorMessage,
+					"code":    errCode,
+					"message": errMsg,
 					"details": details,
 				},
 			})
 			return
 		}
-		writeSuccess(w, http.StatusOK, runtimeClassApplyOperationResponse(current))
-	case <-time.After(runtimeClassApplySyncWaitTimeout):
-		writeSuccess(w, http.StatusAccepted, runtimeClassApplyOperationResponse(op))
+		response := snapshotRuntimeClassApplyOperation(current)
+		h.runtimeClassApplyMu.RUnlock()
+		writeSuccess(w, http.StatusOK, response)
+	case <-time.After(syncWaitTimeout):
+		h.runtimeClassApplyMu.RLock()
+		current, ok := h.runtimeClassApplyOps[op.OperationID]
+		var response map[string]any
+		if ok {
+			response = snapshotRuntimeClassApplyOperation(current)
+		} else {
+			response = accepted
+		}
+		h.runtimeClassApplyMu.RUnlock()
+		writeSuccess(w, http.StatusAccepted, response)
 	}
 }
 
@@ -1670,12 +1607,14 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesApplyStatus(w http.Respons
 	}
 	h.runtimeClassApplyMu.RLock()
 	op, ok := h.runtimeClassApplyOps[operationID]
-	h.runtimeClassApplyMu.RUnlock()
 	if !ok {
+		h.runtimeClassApplyMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "runtimeclass apply operation not found", nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, runtimeClassApplyOperationResponse(op))
+	response := snapshotRuntimeClassApplyOperation(op)
+	h.runtimeClassApplyMu.RUnlock()
+	writeSuccess(w, http.StatusOK, response)
 }
 
 func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesValidate(w http.ResponseWriter, r *http.Request) {
@@ -1767,12 +1706,14 @@ func (h *EdgeletAPIHandler) HandleDeployRuntimeClassesDeleteStatus(w http.Respon
 	}
 	h.runtimeClassDeleteMu.RLock()
 	op, ok := h.runtimeClassDeleteOps[operationID]
-	h.runtimeClassDeleteMu.RUnlock()
 	if !ok {
+		h.runtimeClassDeleteMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "runtimeclass delete operation not found", nil)
 		return
 	}
-	writeSuccess(w, http.StatusOK, runtimeClassDeleteOperationResponse(op))
+	response := snapshotRuntimeClassDeleteOperation(op)
+	h.runtimeClassDeleteMu.RUnlock()
+	writeSuccess(w, http.StatusOK, response)
 }
 
 func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter, r *http.Request, name string) {
@@ -1802,6 +1743,9 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 	h.runtimeClassDeleteOps[op.OperationID] = op
 	h.runtimeClassDeleteMu.Unlock()
 
+	accepted := snapshotRuntimeClassDeleteOperation(op)
+	deleteRunner := runtimeClassDeleteRunner
+	syncWaitTimeout := runtimeClassDeleteSyncWaitTimeout
 	done := make(chan struct{})
 	go func(operationID, runtimeClassName string) {
 		h.runtimeClassDeleteMu.Lock()
@@ -1812,7 +1756,7 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 		}
 		h.runtimeClassDeleteMu.Unlock()
 
-		deleteErr := runtimeClassDeleteRunner(h.facade, runtimeClassName)
+		deleteErr := deleteRunner(h.facade, runtimeClassName)
 
 		h.runtimeClassDeleteMu.Lock()
 		defer h.runtimeClassDeleteMu.Unlock()
@@ -1838,7 +1782,7 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 	}(op.OperationID, name)
 
 	if async {
-		writeSuccess(w, http.StatusAccepted, runtimeClassDeleteOperationResponse(op))
+		writeSuccess(w, http.StatusAccepted, accepted)
 		return
 	}
 
@@ -1846,8 +1790,8 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 	case <-done:
 		h.runtimeClassDeleteMu.RLock()
 		current, ok := h.runtimeClassDeleteOps[op.OperationID]
-		h.runtimeClassDeleteMu.RUnlock()
 		if !ok {
+			h.runtimeClassDeleteMu.RUnlock()
 			writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, "runtimeclass delete operation missing", nil)
 			return
 		}
@@ -1867,12 +1811,26 @@ func (h *EdgeletAPIHandler) handleDeployRuntimeClassDelete(w http.ResponseWriter
 				details["stage"] = current.Stage
 			}
 			details["operationId"] = current.OperationID
-			writeAPIError(w, statusCode, current.ErrorCode, current.ErrorMessage, details)
+			errCode := current.ErrorCode
+			errMsg := current.ErrorMessage
+			h.runtimeClassDeleteMu.RUnlock()
+			writeAPIError(w, statusCode, errCode, errMsg, details)
 			return
 		}
-		writeSuccess(w, http.StatusOK, runtimeClassDeleteOperationResponse(current))
-	case <-time.After(runtimeClassDeleteSyncWaitTimeout):
-		writeSuccess(w, http.StatusAccepted, runtimeClassDeleteOperationResponse(op))
+		response := snapshotRuntimeClassDeleteOperation(current)
+		h.runtimeClassDeleteMu.RUnlock()
+		writeSuccess(w, http.StatusOK, response)
+	case <-time.After(syncWaitTimeout):
+		h.runtimeClassDeleteMu.RLock()
+		current, ok := h.runtimeClassDeleteOps[op.OperationID]
+		var response map[string]any
+		if ok {
+			response = snapshotRuntimeClassDeleteOperation(current)
+		} else {
+			response = accepted
+		}
+		h.runtimeClassDeleteMu.RUnlock()
+		writeSuccess(w, http.StatusAccepted, response)
 	}
 }
 
@@ -2087,28 +2045,37 @@ func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *ht
 	if len(req.Command) == 1 && strings.TrimSpace(req.Command[0]) == "" {
 		req.Command = containerexec.ShellCommandInteractive()
 	}
-	uuid, err := h.facade.ResolveMicroserviceID(selector)
+	msUUID, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
+	sessionID := uuid.NewString()
 	callback := newLocalExecCallback()
-	execID, err := processmanager.GetInstance().CreateExecSession(uuid, req.Command, callback)
-	if err != nil {
+	pm := processmanager.GetInstance()
+	if err := pm.CreateLocalExecSession(sessionID, msUUID, req.Command, callback); err != nil {
+		if errors.Is(err, processmanager.ErrExecStartTimeout) {
+			writeAPIError(w, http.StatusGatewayTimeout, ErrCodeExecStartTimeout, err.Error(), nil)
+			return
+		}
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
+	status := "PENDING"
+	if rec, ok := pm.GetSession(sessionID); ok && rec.Started {
+		status = "ACTIVE"
+	}
 	h.execMu.Lock()
-	h.execSessions[execID] = &localExecSession{
-		SessionID:        execID,
-		MicroserviceUUID: uuid,
+	h.execSessions[sessionID] = &localExecSession{
+		SessionID:        sessionID,
+		MicroserviceUUID: msUUID,
 		callback:         callback,
 		createdAt:        time.Now().UTC(),
 	}
 	h.execMu.Unlock()
 	writeSuccess(w, http.StatusOK, map[string]any{
-		"sessionId": execID,
-		"wsUrl":     fmt.Sprintf("/v1/ms/%s/exec/sessions/%s:attach", selector, execID),
+		"sessionId": sessionID,
+		"status":    status,
 	})
 }
 
@@ -2118,14 +2085,13 @@ func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, se
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	h.execMu.RLock()
-	session, ok := h.execSessions[sessionID]
-	h.execMu.RUnlock()
-	if !ok || session.MicroserviceUUID != uuid {
+	rec, ok := h.lookupLocalExecSession(uuid, sessionID)
+	if !ok {
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
 		return
 	}
-	running, err := processmanager.GetInstance().GetExecSessionStatus(sessionID)
+	pm := processmanager.GetInstance()
+	running, err := pm.GetExecSessionStatus(rec.RuntimeExecID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
@@ -2135,7 +2101,7 @@ func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, se
 		"microserviceUuid": uuid,
 		"running":          running,
 		"exitCode": func() any {
-			code, codeErr := processmanager.GetInstance().GetExecSessionExitCode(sessionID)
+			code, codeErr := pm.GetExecSessionExitCode(rec.RuntimeExecID)
 			if codeErr != nil {
 				return nil
 			}
@@ -2150,7 +2116,11 @@ func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selecto
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	if err := processmanager.GetInstance().StopExecSession(uuid, sessionID); err != nil {
+	if _, ok := h.lookupLocalExecSession(uuid, sessionID); !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
+		return
+	}
+	if err := processmanager.GetInstance().ReleaseExecSession(sessionID, processmanager.ExecOwnerLocal); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
@@ -2160,10 +2130,23 @@ func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selecto
 	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok", "sessionId": sessionID})
 }
 
+func (h *EdgeletAPIHandler) lookupLocalExecSession(msUUID, sessionID string) (*processmanager.ExecSessionRecord, bool) {
+	rec, ok := processmanager.GetInstance().GetSession(sessionID)
+	if !ok || rec.Owner != processmanager.ExecOwnerLocal || rec.MSUUID != msUUID {
+		return nil, false
+	}
+	return rec, true
+}
+
 func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Request, selector, sessionID string) {
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	rec, ok := h.lookupLocalExecSession(uuid, sessionID)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
 		return
 	}
 	h.execMu.RLock()
@@ -2178,6 +2161,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 		return
 	}
 
+	pm := processmanager.GetInstance()
 	var wg sync.WaitGroup
 	var writeMu sync.Mutex
 	wg.Add(3)
@@ -2231,7 +2215,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 				Rows uint32 `json:"rows"`
 			}
 			if json.Unmarshal(msg, &ctrl) == nil && strings.EqualFold(strings.TrimSpace(ctrl.Type), "resize") {
-				_ = processmanager.GetInstance().ResizeExecSession(sessionID, ctrl.Cols, ctrl.Rows)
+				_ = pm.ResizeExecSession(rec.RuntimeExecID, ctrl.Cols, ctrl.Rows)
 				continue
 			}
 			_, _ = session.callback.stdinW.Write(msg)
@@ -2241,8 +2225,8 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 	case <-session.callback.done:
 	case <-time.After(10 * time.Minute):
 	}
-	exitCode, _ := processmanager.GetInstance().GetExecSessionExitCode(sessionID)
-	_ = processmanager.GetInstance().StopExecSession(uuid, sessionID)
+	exitCode, _ := pm.GetExecSessionExitCode(rec.RuntimeExecID)
+	_ = pm.ReleaseExecSession(sessionID, processmanager.ExecOwnerLocal)
 	h.execMu.Lock()
 	delete(h.execSessions, sessionID)
 	h.execMu.Unlock()

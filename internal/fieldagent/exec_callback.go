@@ -57,7 +57,7 @@ func NewExecSessionCallback(microserviceUUID, execID string) *ExecSessionCallbac
 	callback := &ExecSessionCallback{
 		microserviceUUID: microserviceUUID,
 		execID:           execID,
-		webSocketHandler: GetExecSessionWebSocketHandler(microserviceUUID),
+		webSocketHandler: GetExecSessionWebSocketHandler(execID, microserviceUUID),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -213,13 +213,13 @@ func (c *ExecSessionCallback) readStderr() {
 	}
 }
 
-// forwardToWebSocket forwards data to the WebSocket handler
+// forwardToWebSocket forwards data to the WebSocket handler (buffers when not connected/active).
 func (c *ExecSessionCallback) forwardToWebSocket(msgType byte, data []byte) {
-	if c.webSocketHandler != nil && c.webSocketHandler.IsConnected() {
-		err := c.webSocketHandler.SendMessage(msgType, data)
-		if err != nil {
-			logging.LogError(execCallbackModuleName, "Error forwarding to WebSocket", err)
-		}
+	if c.webSocketHandler == nil {
+		return
+	}
+	if err := c.webSocketHandler.SendMessage(msgType, data); err != nil {
+		logging.LogError(execCallbackModuleName, "Error forwarding to WebSocket", err)
 	}
 
 	// Also call handlers if set

@@ -27,6 +27,7 @@ type bootstrapDeps struct {
 	ensureDependencies func() error
 	newService         func() containerdStarter
 	cleanupRuntime     func() error
+	cleanupStaleTasks  func() error
 	sleep              func(time.Duration)
 }
 
@@ -36,8 +37,9 @@ func startEmbeddedContainerdWithRetry() (*containerd.Service, error) {
 		newService: func() containerdStarter {
 			return containerd.NewService()
 		},
-		cleanupRuntime: containerd.CleanupRuntimeArtifacts,
-		sleep:          time.Sleep,
+		cleanupRuntime:    containerd.CleanupRuntimeArtifacts,
+		cleanupStaleTasks: containerd.CleanupStaleRuntimeTasks,
+		sleep:             time.Sleep,
 	}
 
 	svc, err := startEmbeddedContainerdWithRetryDeps(deps)
@@ -56,8 +58,10 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 	var lastErr error
 	backoff := containerdBootstrapBaseBackoff
 
-	if err := deps.cleanupRuntime(); err != nil {
-		logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("Embedded containerd pre-start runtime cleanup failed: %v", err))
+	if deps.cleanupStaleTasks != nil {
+		if err := deps.cleanupStaleTasks(); err != nil {
+			logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("stale runtime task cleanup failed: %v", err))
+		}
 	}
 
 	for attempt := 1; attempt <= containerdBootstrapMaxAttempts; attempt++ {

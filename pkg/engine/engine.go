@@ -110,9 +110,10 @@ type ContainerEngine interface {
 	EnsureNetwork(name string) error
 
 	// Exec session
-	// CreateExecSession registers an exec spec for the given container and returns an execID.
-	// The process is NOT started yet; call StartExecSession to attach I/O and launch it.
-	CreateExecSession(containerID string, cmd []string) (string, error)
+	// CreateExecSession registers an exec spec for the given container using runtimeExecID
+	// (edgelet engine) or returns a daemon-assigned id (docker/podman). The process is NOT
+	// started yet; call StartExecSession to attach I/O and launch it.
+	CreateExecSession(containerID string, runtimeExecID string, cmd []string) (string, error)
 	// StartExecSession attaches the given stdin/stdout/stderr pipes to the exec process
 	// identified by execID and starts it. Must be called after CreateExecSession.
 	StartExecSession(execID string, stdin io.Reader, stdout, stderr io.Writer) error
@@ -132,6 +133,13 @@ type ContainerEngine interface {
 
 	// Close releases any resources held by the engine.
 	Close() error
+}
+
+// ExecOrphanSweeper is optionally implemented by engines that assign stable containerd exec ids.
+type ExecOrphanSweeper interface {
+	// SweepOrphanExecSessions stops and deletes tracked interactive exec processes for
+	// containerID that are not listed in keepRuntimeExecIDs.
+	SweepOrphanExecSessions(containerID string, keepRuntimeExecIDs map[string]struct{}) error
 }
 
 // PullImageOptions allows optional progress reporting. If nil, no progress is reported.

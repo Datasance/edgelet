@@ -40,7 +40,6 @@ type Microservice struct {
 	IsSystem           bool              `json:"isSystem" yaml:"isSystem"`
 	PidMode            *string           `json:"pidMode,omitempty" yaml:"pidMode,omitempty"`
 	IpcMode            *string           `json:"ipcMode,omitempty" yaml:"ipcMode,omitempty"`
-	ExecEnabled        bool              `json:"execEnabled" yaml:"execEnabled"`
 	MicroserviceName   string            `json:"name" yaml:"name"`
 	ApplicationName    string            `json:"application" yaml:"application"`
 	Labels             map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`

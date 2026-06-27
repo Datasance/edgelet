@@ -72,7 +72,7 @@ func (e *Engine) AreMicroserviceAndContainerEqual(_ string, _ *models.Microservi
 	return false
 }
 func (e *Engine) EnsureNetwork(_ string) error { return errors.New("unsupported") }
-func (e *Engine) CreateExecSession(_ string, _ []string) (string, error) {
+func (e *Engine) CreateExecSession(_ string, _ string, _ []string) (string, error) {
 	return "", errors.New("unsupported")
 }
 func (e *Engine) StartExecSession(_ string, _ io.Reader, _, _ io.Writer) error {

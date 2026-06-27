@@ -156,9 +156,8 @@ func (h *LogSessionWebSocketHandler) resetLocked() {
 	}
 
 	closeWebSocketConn(&h.connMu, &h.conn)
-	stopSessionPingTicker(&h.pingTicker)
-
 	h.wg.Wait()
+	stopSessionPingTicker(&h.pingTicker)
 
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
@@ -179,7 +178,10 @@ func (h *LogSessionWebSocketHandler) GetConnectionState() LogConnectionState {
 // Connect establishes the WebSocket connection to the controller.
 // Call Reset() before Connect() when reusing a handler for a new session.
 func (h *LogSessionWebSocketHandler) Connect() error {
-	if err := h.connectTransport(); err != nil {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+
+	if err := h.connectTransportLocked(); err != nil {
 		return err
 	}
 
@@ -192,10 +194,7 @@ func (h *LogSessionWebSocketHandler) Connect() error {
 	return nil
 }
 
-func (h *LogSessionWebSocketHandler) connectTransport() error {
-	h.lifecycleMu.Lock()
-	defer h.lifecycleMu.Unlock()
-
+func (h *LogSessionWebSocketHandler) connectTransportLocked() error {
 	if h.isConnected.Load() {
 		return errors.New("already connected; call Reset() before Connect()")
 	}

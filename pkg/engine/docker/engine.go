@@ -315,8 +315,8 @@ func (e *Engine) EnsureNetwork(_ string) error {
 
 // --- Exec ---
 
-func (e *Engine) CreateExecSession(containerID string, cmd []string) (string, error) {
-	return e.client.CreateExecSession(containerID, cmd)
+func (e *Engine) CreateExecSession(containerID string, runtimeExecID string, cmd []string) (string, error) {
+	return e.client.CreateExecSession(containerID, runtimeExecID, cmd)
 }
 
 // StartExecSession attaches stdin/stdout/stderr to a previously created Docker exec session
@@ -325,9 +325,9 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 	return e.client.StartExecSession(execID, stdin, stdout, stderr)
 }
 
-// StopExecSession is a no-op for Docker; exec lifecycle is managed by the daemon.
-func (e *Engine) StopExecSession(_ string) error {
-	return nil
+// StopExecSession best-effort stops a Docker exec session.
+func (e *Engine) StopExecSession(execID string) error {
+	return e.client.StopExecSession(execID)
 }
 
 // GetExecSessionStatus reports whether the Docker exec process is still running.

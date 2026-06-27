@@ -13,6 +13,8 @@ No additional re-entrant mutex deadlocks were found in the audit packages. Lock 
 
 **19-D (LC-4):** `runChangesWorker` has top-level and per-tick `recover()` plus a 5-minute `processChanges` timeout so the worker resumes polling after panic or slow work.
 
+**22-C (BR-C7):** `controllerReconcile` holds `reconcileMu` for the full Pot reload chain (registries → volume mounts → microservices). The ping worker starts reconcile in a background goroutine with `recover()` so the ping timer is not blocked. `runChangesWorker` / `processChanges` do not acquire `reconcileMu`; init-path dedup uses `shouldSkipInitReload()` (reads `reconnect.mu` + `state.IsInitialization()` without holding `reconcileMu`). Volume mount LC-1: reconcile calls the same `loadVolumeMounts` → `ProcessVolumeMountChanges` path as getChanges; no new nested `indexLock` pattern. Lock order when both are touched: `reconcileMu` → short `reconnect.mu` write at reconcile completion; never `reconnect.mu` → `reconcileMu`.
+
 ## Mutex inventory
 
 ### `internal/volumemount/`
@@ -43,7 +45,10 @@ No additional re-entrant mutex deadlocks were found in the audit packages. Lock 
 | `microservicesMu` | `agent.go`, `microservice_manager.go` | MS list CRUD / reads | PM reconcile reads via `GetLatestMicroservices`; no FA lock during PM `microserviceManager` internal locks |
 | `containerConfigMu` | `agent.go`, `sync.go` | Config push paths | Independent of volumemount locks |
 | `execSessionsMu` | `agent.go`, exec paths | Exec session map | Independent |
-| `state.mu` | `state.go` | Controller status / init flags | Used without holding other FA mutexes |
+| `bootstrapMu` | `bootstrap_sync.go` | Cache-loaded flag | Independent |
+| `reconcileMu` | `reconnect_reconcile.go` | `controllerReconcile` single-flight | Does not nest `state.mu`; see Plan 22-C section |
+| `reconnect.mu` | `reconnect_reconcile.go` | Connect generation + last reconcile metadata | Independent of `reconcileMu`; lock order: `reconcileMu` then brief `reconnect.mu` at end of reconcile |
+| `state.mu` | `state.go` | Controller status / init flags | `shouldSkipInitReload` reads init under `reconnect.mu` only; reconcile reads init without holding `reconcileMu` across Pot HTTP |
 | `controllerRegister.mu` | `controller_register.go` | Register retry state | Independent |
 
 WebSocket / log-session mutexes (`connMu`, `writeMu`, `lsm.mu`, `exec_callback.mu`) are per-handler; documented deadlock avoidance in `log_session_manager.go` (async stream start).
@@ -89,7 +94,9 @@ Run on 2026-06-16 (darwin, Go toolchain from CI).
 |---------|--------|
 | `make pre-it` | **PASS** — vet, golangci-lint, unit tests (`volumemount`, `fieldagent`, `processmanager`) |
 | `make test-deadlock` | **PASS** — `-tags deadlock` (same packages; see note below) |
-| `make test-lifecycle-race` | **PASS** (2026-06-16) — after 19-E race fixes: `getAPIClient()` + Provision path; `captureEvents` mutex |
+| `make test-lifecycle-race` | **PASS** (2026-06-16) — fast subset (`volumemount`, `fieldagent`, `processmanager`) |
+| `make test-race` | Full unit-test tree (`./cmd`, `./internal`, `./pkg`, `./test`); `-short`; host-native |
+| `make test-linux-race` | Same as `test-race` inside Linux Docker (all three build-tag passes; use on macOS) |
 
 ### `test-deadlock` note
 

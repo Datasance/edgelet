@@ -1239,10 +1239,6 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 		status.IPAddress = &ip
 	}
 
-	if v, ok := e.execSessions.Load(containerID); ok {
-		status.ExecSessionIDs = append([]string(nil), v.([]string)...)
-	}
-
 	return status, nil
 }
 
@@ -1961,7 +1957,9 @@ func (e *Engine) EnsureNetwork(_ string) error {
 	return nil
 }
 
-// --- Exec ---
+const (
+	execStopWaitTimeout = 5 * time.Second
+)
 
 func (e *Engine) addExecSession(containerID, execID string) {
 	e.execToCont.Store(execID, containerID)
@@ -2003,11 +2001,13 @@ func (e *Engine) removeExecSession(execID string) {
 }
 
 // CreateExecSession validates the container, builds the exec process spec, and stores
-// it as a pending exec. The exec ID (containerID+"-exec") is returned; the process is
-// NOT started yet. Call StartExecSession with the real I/O pipes to attach and launch.
-// The controller allows at most one exec session per container at a time, so we use a
-// deterministic execID without a random suffix.
-func (e *Engine) CreateExecSession(containerID string, cmd []string) (string, error) {
+// it as a pending exec. runtimeExecID must be unique per container (e.g. {cid[:12]}-exec-{session[:8]}).
+// The process is NOT started yet — call StartExecSession to attach I/O and launch.
+func (e *Engine) CreateExecSession(containerID string, runtimeExecID string, cmd []string) (string, error) {
+	execID := strings.TrimSpace(runtimeExecID)
+	if execID == "" {
+		return "", errors.New("runtime exec id is required")
+	}
 	ctx := e.ctx()
 	c, err := e.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -2019,8 +2019,6 @@ func (e *Engine) CreateExecSession(containerID string, cmd []string) (string, er
 		return "", fmt.Errorf("get spec for %s: %w", containerID, err)
 	}
 
-	// Build exec process spec inheriting the container's environment and working directory.
-	// Use plain pipes; non-interactive commands work correctly.
 	execSpec := &specs.Process{
 		Args:     cmd,
 		Cwd:      "/",
@@ -2030,8 +2028,6 @@ func (e *Engine) CreateExecSession(containerID string, cmd []string) (string, er
 	if spec.Process.Cwd != "" {
 		execSpec.Cwd = spec.Process.Cwd
 	}
-
-	execID := containerID + "-exec"
 
 	e.execMu.Lock()
 	e.pendingExecs[execID] = &pendingExec{
@@ -2081,6 +2077,12 @@ func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr
 	)
 
 	proc, err := task.Exec(ctx, execID, pending.spec, creator)
+	if err != nil && errdefs.IsAlreadyExists(err) {
+		if sweepErr := e.stopAndDeleteExecProcess(execID, pending.containerID); sweepErr != nil {
+			return fmt.Errorf("exec in %s: %w (orphan sweep: %w)", pending.containerID, err, sweepErr)
+		}
+		proc, err = task.Exec(ctx, execID, pending.spec, creator)
+	}
 	if err != nil {
 		return fmt.Errorf("exec in %s: %w", pending.containerID, err)
 	}
@@ -2180,28 +2182,121 @@ func (e *Engine) ExecWithExitCode(containerID string, cmd []string, timeout time
 	}
 }
 
-// StopExecSession kills the running exec process and deregisters it from containerd.
-// Called when the controller closes the WebSocket so the exec ID can be reused.
+// StopExecSession kills the running exec process, waits for exit, and deregisters it from containerd.
 func (e *Engine) StopExecSession(execID string) error {
+	return e.stopAndDeleteExecProcess(execID, "")
+}
+
+// SweepOrphanExecSessions stops interactive exec processes tracked for containerID that are not in keepRuntimeExecIDs.
+func (e *Engine) SweepOrphanExecSessions(containerID string, keepRuntimeExecIDs map[string]struct{}) error {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return nil
+	}
+	var tracked []string
+	if v, ok := e.execSessions.Load(containerID); ok {
+		if ids, ok := v.([]string); ok {
+			tracked = append(tracked, ids...)
+		}
+	}
+	for _, execID := range tracked {
+		if _, keep := keepRuntimeExecIDs[execID]; keep {
+			continue
+		}
+		if !isInteractiveExecID(execID) {
+			continue
+		}
+		if err := e.stopAndDeleteExecProcess(execID, containerID); err != nil {
+			log.Warnf("orphan exec sweep %s on %s: %v", execID, containerID, err)
+		}
+	}
+	return nil
+}
+
+func isInteractiveExecID(execID string) bool {
+	return strings.Contains(execID, "-exec-") || strings.Contains(execID, "-local-")
+}
+
+func (e *Engine) stopAndDeleteExecProcess(execID, containerIDHint string) error {
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return nil
+	}
+
+	ctx := e.ctx()
+	var proc client.Process
+
 	e.execMu.Lock()
-	proc := e.runningProcs[execID]
-	if proc != nil {
+	if p := e.runningProcs[execID]; p != nil {
+		proc = p
 		delete(e.runningProcs, execID)
 	}
 	e.execMu.Unlock()
 
 	if proc == nil {
-		return nil // nothing to stop
+		if containerIDHint == "" {
+			if v, ok := e.execToCont.Load(execID); ok {
+				if hint, ok := v.(string); ok {
+					containerIDHint = hint
+				}
+			}
+		}
+		if containerIDHint == "" {
+			return nil
+		}
+		c, err := e.client.LoadContainer(ctx, containerIDHint)
+		if err != nil {
+			if errdefs.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		task, err := c.Task(ctx, nil)
+		if err != nil {
+			if errdefs.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		proc, err = task.LoadProcess(ctx, execID, nil)
+		if err != nil {
+			if errdefs.IsNotFound(err) {
+				e.removeExecSession(execID)
+				return nil
+			}
+			return err
+		}
 	}
 
-	ctx := e.ctx()
-	if err := proc.Kill(ctx, syscall.SIGTERM); err != nil {
-		log.Warnf("exec %s kill: %v", execID, err)
+	if err := proc.Kill(ctx, syscall.SIGTERM); err != nil && !errdefs.IsNotFound(err) {
+		log.Warnf("exec %s SIGTERM: %v", execID, err)
 	}
-	if _, err := proc.Delete(ctx); err != nil {
+
+	waitCtx, cancel := context.WithTimeout(ctx, execStopWaitTimeout)
+	defer cancel()
+	if exitCh, err := proc.Wait(waitCtx); err == nil {
+		select {
+		case <-exitCh:
+		case <-waitCtx.Done():
+			if killErr := proc.Kill(ctx, syscall.SIGKILL); killErr != nil && !errdefs.IsNotFound(killErr) {
+				log.Warnf("exec %s SIGKILL: %v", execID, killErr)
+			}
+		}
+	} else if !errdefs.IsNotFound(err) {
+		if killErr := proc.Kill(ctx, syscall.SIGKILL); killErr != nil && !errdefs.IsNotFound(killErr) {
+			log.Warnf("exec %s SIGKILL: %v", execID, killErr)
+		}
+	}
+
+	if _, err := proc.Delete(ctx); err != nil && !errdefs.IsNotFound(err) {
 		log.Warnf("exec %s delete: %v", execID, err)
 	}
 
+	e.removeExecSession(execID)
+	e.execMu.Lock()
+	delete(e.execExitCode, execID)
+	delete(e.pendingExecs, execID)
+	e.execMu.Unlock()
 	return nil
 }
 

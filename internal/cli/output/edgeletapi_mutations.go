@@ -29,6 +29,8 @@ func formatMutationRoute(routePath string, result map[string]any) string {
 		return formatDeployValidateResult(result)
 	case "/v1/deploy/microservices:apply", "/v1/deploy/registries:apply", "/v1/deploy/runtimeclasses:apply", "/v1/deploy/controlplane:apply":
 		return formatDeployApplyResult(result)
+	case "/v1/system/controlplane/restart":
+		return formatControlPlaneRestartResult(result)
 	default:
 		if strings.HasPrefix(routePath, "/v1/ms/") {
 			if strings.HasSuffix(routePath, "/start") || strings.HasSuffix(routePath, "/stop") ||
@@ -274,6 +276,12 @@ func formatRuntimeClassRemoveResult(result map[string]any) string {
 		return fmt.Sprintf("runtimeclass removed successfully (name=%s)", name)
 	}
 	return "runtimeclass removed successfully"
+}
+
+func formatControlPlaneRestartResult(result map[string]any) string {
+	uuid := MapValueAsString(result, "controllerUuid")
+	runtimeState := MapValueAsString(result, "runtimeState")
+	return fmt.Sprintf("control plane restarted successfully (controllerUuid=%s, runtimeState=%s)", uuid, runtimeState)
 }
 
 func formatMSLifecycleResult(path string, result map[string]any) string {

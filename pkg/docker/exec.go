@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/moby/moby/client"
@@ -13,8 +14,9 @@ const (
 	execModuleName = "Docker Exec"
 )
 
-// CreateExecSession creates an exec session in a container
-func (c *Client) CreateExecSession(containerID string, command []string) (string, error) {
+// CreateExecSession creates an exec session in a container.
+// runtimeExecID is ignored — Docker assigns exec ids.
+func (c *Client) CreateExecSession(containerID string, _ string, command []string) (string, error) {
 	logging.LogInfo(execModuleName, fmt.Sprintf("Creating exec session for container: %s, command: %v", containerID, command))
 
 	cli := c.GetClient()
@@ -141,23 +143,26 @@ func (c *Client) ResizeExecSession(execID string, cols, rows uint32) error {
 	return err
 }
 
-// KillExecSession kills an exec session
-func (c *Client) KillExecSession(execID string) error {
-	logging.LogInfo(execModuleName, fmt.Sprintf("Killing exec session: %s", execID))
-
-	cli := c.GetClient()
-	if cli == nil {
-		return errors.New("docker client not initialized")
-	}
-
-	ctx := c.GetContext()
-
-	_, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
+// StopExecSession best-effort stops a Docker exec session. Missing or completed exec is idempotent.
+func (c *Client) StopExecSession(execID string) error {
+	info, err := c.GetExecSessionStatus(execID)
 	if err != nil {
-		logging.LogError(execModuleName, "Error inspecting exec session for kill", err)
-		return fmt.Errorf("failed to inspect exec session: %w", err)
+		if isDockerNotFound(err) {
+			return nil
+		}
+		return err
 	}
-
-	logging.LogInfo(execModuleName, fmt.Sprintf("Exec session kill requested: %s", execID))
+	if info == nil || !info.Running {
+		return nil
+	}
+	// Docker exec lifecycle is attach-driven; no separate kill API in our client version.
 	return nil
+}
+
+func isDockerNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such exec") || strings.Contains(msg, "not found")
 }

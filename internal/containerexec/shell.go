@@ -11,6 +11,23 @@ func ShellCommandInteractive() []string {
 	}
 }
 
+// IsInteractiveShellCommand reports argv used for local ms exec without an explicit command.
+func IsInteractiveShellCommand(command []string) bool {
+	if len(command) == 0 {
+		return true
+	}
+	interactive := ShellCommandInteractive()
+	if len(command) != len(interactive) {
+		return false
+	}
+	for i := range command {
+		if command[i] != interactive[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // ShellCommandForScript runs script inside the container using the best available
 // shell (bash → sh → busybox). For interactive exec default, use ShellCommandInteractive.
 func ShellCommandForScript(script string) []string {

@@ -62,10 +62,14 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 
 		// Process registries change
 		if registries, ok := changes["registries"].(bool); ok && (registries || initialization) {
-			logging.LogDebug(moduleName, "Processing registries change")
-			if err := fa.loadRegistries(false); err != nil {
-				logging.LogError(moduleName, "Unable to update registries", err)
-				resetChanges = false
+			if initialization && fa.shouldSkipInitReload() {
+				logging.LogDebug(moduleName, "skipping init registries reload; reconnect reconcile already completed")
+			} else {
+				logging.LogDebug(moduleName, "Processing registries change")
+				if err := fa.loadRegistries(false); err != nil {
+					logging.LogError(moduleName, "Unable to update registries", err)
+					resetChanges = false
+				}
 			}
 		}
 
@@ -79,10 +83,14 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 
 		// Process volumeMounts change
 		if volumeMounts, ok := changes["volumeMounts"].(bool); ok && (volumeMounts || initialization) {
-			logging.LogDebug(moduleName, "Processing volumeMounts change")
-			if err := fa.loadVolumeMounts(); err != nil {
-				logging.LogError(moduleName, "Unable to load volume mounts", err)
-				resetChanges = false
+			if initialization && fa.shouldSkipInitReload() {
+				logging.LogDebug(moduleName, "skipping init volume mounts reload; reconnect reconcile already completed")
+			} else {
+				logging.LogDebug(moduleName, "Processing volumeMounts change")
+				if err := fa.loadVolumeMounts(); err != nil {
+					logging.LogError(moduleName, "Unable to load volume mounts", err)
+					resetChanges = false
+				}
 			}
 		}
 
@@ -100,32 +108,45 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 			execSessions = false
 		}
 
-		if microserviceConfig || microserviceList || execSessions || initialization {
-			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v, execSessions: %v",
-				microserviceConfig, microserviceList, execSessions))
-
-			// Load microservices
-			microservices, err := fa.loadMicroservices(false)
-			if err != nil {
-				logging.LogError(moduleName, "Unable to get microservices list", err)
-				resetChanges = false
+		if microserviceConfig || microserviceList || initialization {
+			if initialization && fa.shouldSkipInitReload() {
+				logging.LogDebug(moduleName, "skipping init microservices reload; reconnect reconcile already completed")
 			} else {
-				logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d microservices", len(microservices)))
+				logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v",
+					microserviceConfig, microserviceList))
 
-				// Process microservice config changes
-				if microserviceConfig {
-					logging.LogDebug(moduleName, "Processing microservice config changes")
-					if err := fa.processMicroserviceConfig(microservices); err != nil {
-						logging.LogError(moduleName, "Unable to update microservices config", err)
-						resetChanges = false
+				// Load microservices
+				microservices, err := fa.loadMicroservices(false)
+				if err != nil {
+					logging.LogError(moduleName, "Unable to get microservices list", err)
+					resetChanges = false
+				} else {
+					logging.LogDebug(moduleName, fmt.Sprintf("Loaded %d microservices", len(microservices)))
+
+					// Process microservice config changes
+					if microserviceConfig {
+						logging.LogDebug(moduleName, "Processing microservice config changes")
+						if err := fa.processMicroserviceConfig(microservices); err != nil {
+							logging.LogError(moduleName, "Unable to update microservices config", err)
+							resetChanges = false
+						}
 					}
 				}
+			}
+		}
 
-				// Process exec sessions changes
-				if execSessions {
-					logging.LogDebug(moduleName, "Processing exec sessions changes")
-					fa.HandleExecSessions(fa.GetLatestMicroservices())
-				}
+		// Process exec sessions changes
+		if execSessions {
+			logging.LogDebug(moduleName, "Processing exec sessions changes")
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			execSessionManager := GetExecSessionManager()
+			sessions, err := execSessionManager.FetchExecSessions(ctx)
+			cancel()
+			if err != nil {
+				logging.LogError(moduleName, "Unable to handle exec sessions", err)
+				resetChanges = false
+			} else {
+				execSessionManager.HandleExecSessions(sessions)
 			}
 		}
 

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
@@ -18,6 +19,17 @@ import (
 
 const (
 	moduleName = "Network Interface Manager"
+
+	networkSyncMaxAttempts  = 5
+	networkSyncRetrySpacing = 200 * time.Millisecond
+
+	networkAsyncMaxLoops    = 10
+	networkAsyncBaseBackoff = 30 * time.Second
+	networkAsyncBackoffCap  = 8 * time.Minute
+	networkTotalMaxAttempts = networkSyncMaxAttempts + networkAsyncMaxLoops
+
+	networkPeriodicIntervalEmpty = 60 * time.Second
+	networkPeriodicIntervalSet   = 30 * time.Minute
 )
 
 // NetworkInterfaceInfo contains information about a network interface
@@ -31,14 +43,26 @@ type NetworkInterfaceInfo struct {
 
 // Manager manages network interface detection and IP address management
 type Manager struct {
-	currentIPAddress string
-	networkInterface *NetworkInterfaceInfo
-	hostName         string
-	pid              int
-	mu               sync.RWMutex
-	config           *config.Config
-	ctx              context.Context
-	cancel           context.CancelFunc
+	currentIPAddress  string
+	networkInterface  *NetworkInterfaceInfo
+	hostName          string
+	pid               int
+	mu                sync.RWMutex
+	config            *config.Config
+	ctx               context.Context
+	cancel            context.CancelFunc
+	asyncRecoveryOnce sync.Once
+
+	resolveNetworkInterfaceHook func(controllerURL, networkInterfaceConfig string) (*NetworkInterfaceInfo, error)
+	getAnyIPv4AddressHook       func() (string, error)
+
+	testSyncRetrySpacing time.Duration
+	testAsyncBaseBackoff time.Duration
+	testAsyncBackoffCap  time.Duration
+	testPeriodicEmpty    time.Duration
+	testPeriodicSet      time.Duration
+
+	periodicUpdateActive int32
 }
 
 var (
@@ -61,18 +85,94 @@ func GetInstance() *Manager {
 func (m *Manager) Start() error {
 	logging.LogInfo(moduleName, "Start IoFog NetworkInterface")
 
-	// Initial update
-	if err := m.UpdateNetworkInterface(); err != nil {
-		logging.LogError(moduleName, "Error in updating IOFogNetworkInterface", err)
-		// Retry on error
-		return m.Start()
+	syncFailed := true
+	for attempt := 1; attempt <= networkSyncMaxAttempts; attempt++ {
+		err := m.UpdateNetworkInterface()
+		if err == nil && m.GetCurrentIPAddress() != "" {
+			syncFailed = false
+			break
+		}
+		if err != nil {
+			logging.LogError(moduleName, fmt.Sprintf("Error updating network interface (sync attempt %d/%d)", attempt, networkTotalMaxAttempts), err)
+		} else {
+			logging.LogWarn(moduleName, fmt.Sprintf("No IP address detected (sync attempt %d/%d)", attempt, networkTotalMaxAttempts))
+		}
+		if attempt < networkSyncMaxAttempts {
+			m.sleep(m.syncRetrySpacing())
+		}
 	}
 
-	// Start periodic updates (every 30 minutes)
+	if syncFailed {
+		logging.LogWarn(moduleName, fmt.Sprintf("Unable to determine IP address after %d sync attempts; continuing in degraded mode", networkSyncMaxAttempts))
+		m.startAsyncRecovery()
+	}
+
 	go m.periodicUpdate()
 
 	logging.LogInfo(moduleName, "Started IoFog NetworkInterface")
 	return nil
+}
+
+func (m *Manager) syncRetrySpacing() time.Duration {
+	if m.testSyncRetrySpacing > 0 {
+		return m.testSyncRetrySpacing
+	}
+	return networkSyncRetrySpacing
+}
+
+func (m *Manager) asyncBaseBackoff() time.Duration {
+	if m.testAsyncBaseBackoff > 0 {
+		return m.testAsyncBaseBackoff
+	}
+	return networkAsyncBaseBackoff
+}
+
+func (m *Manager) asyncBackoffCap() time.Duration {
+	if m.testAsyncBackoffCap > 0 {
+		return m.testAsyncBackoffCap
+	}
+	return networkAsyncBackoffCap
+}
+
+func (m *Manager) sleep(d time.Duration) {
+	time.Sleep(d)
+}
+
+func (m *Manager) startAsyncRecovery() {
+	m.asyncRecoveryOnce.Do(func() {
+		go m.asyncRecovery()
+	})
+}
+
+func (m *Manager) asyncRecovery() {
+	backoff := m.asyncBaseBackoff()
+	for loop := 1; loop <= networkAsyncMaxLoops; loop++ {
+		attempt := networkSyncMaxAttempts + loop
+		logging.LogInfo(moduleName, fmt.Sprintf("Async network recovery attempt %d/%d, next retry in %s", attempt, networkTotalMaxAttempts, backoff))
+
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+
+		err := m.UpdateNetworkInterface()
+		if err != nil {
+			logging.LogError(moduleName, fmt.Sprintf("Error updating network interface (async attempt %d/%d)", attempt, networkTotalMaxAttempts), err)
+		}
+		if m.GetCurrentIPAddress() != "" {
+			logging.LogInfo(moduleName, fmt.Sprintf("Network IP detected on async recovery (attempt %d/%d)", attempt, networkTotalMaxAttempts))
+			return
+		}
+
+		nextBackoff := backoff * 2
+		if nextBackoff > m.asyncBackoffCap() {
+			nextBackoff = m.asyncBackoffCap()
+		}
+		logging.LogWarn(moduleName, fmt.Sprintf("No IP address after attempt %d/%d, next retry in %s", attempt, networkTotalMaxAttempts, nextBackoff))
+		backoff = nextBackoff
+	}
+	logging.LogWarn(moduleName, fmt.Sprintf("Async network recovery exhausted after %d total attempts", networkTotalMaxAttempts))
 }
 
 // Stop stops the Network Interface Manager
@@ -84,9 +184,13 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-// periodicUpdate periodically updates network interface information (every 30 minutes)
+// periodicUpdate periodically updates network interface information.
 func (m *Manager) periodicUpdate() {
-	ticker := time.NewTicker(30 * time.Minute)
+	atomic.AddInt32(&m.periodicUpdateActive, 1)
+	defer atomic.AddInt32(&m.periodicUpdateActive, -1)
+
+	interval := m.periodicInterval()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -96,12 +200,29 @@ func (m *Manager) periodicUpdate() {
 		case <-ticker.C:
 			if err := m.UpdateNetworkInterface(); err != nil {
 				logging.LogError(moduleName, "Error updating network interface", err)
-				// Restart the periodic update on error
-				go m.periodicUpdate()
-				return
+			}
+			newInterval := m.periodicInterval()
+			if newInterval != interval {
+				interval = newInterval
+				ticker.Reset(interval)
 			}
 		}
 	}
+}
+
+func (m *Manager) periodicInterval() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.currentIPAddress == "" {
+		if m.testPeriodicEmpty > 0 {
+			return m.testPeriodicEmpty
+		}
+		return networkPeriodicIntervalEmpty
+	}
+	if m.testPeriodicSet > 0 {
+		return m.testPeriodicSet
+	}
+	return networkPeriodicIntervalSet
 }
 
 // UpdateNetworkInterface updates the network interface information
@@ -179,6 +300,9 @@ func (m *Manager) UpdateNetworkInterface() error {
 
 // getAnyIPv4Address gets any non-loopback IPv4 address as fallback
 func (m *Manager) getAnyIPv4Address() (string, error) {
+	if m.getAnyIPv4AddressHook != nil {
+		return m.getAnyIPv4AddressHook()
+	}
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return "", fmt.Errorf("failed to get network interfaces: %w", err)
@@ -268,6 +392,9 @@ func (m *Manager) GetAvailableNetworkInterfaces() []string {
 }
 
 func (m *Manager) resolveNetworkInterface(controllerURL, networkInterfaceConfig string) (*NetworkInterfaceInfo, error) {
+	if m.resolveNetworkInterfaceHook != nil {
+		return m.resolveNetworkInterfaceHook(controllerURL, networkInterfaceConfig)
+	}
 	if strings.TrimSpace(controllerURL) == "" {
 		return nil, errors.New("controller URL not configured")
 	}

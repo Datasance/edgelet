@@ -94,6 +94,12 @@ func TestFacadeGuardControlPlaneMicroserviceMutation_BlocksLifecycle(t *testing.
 			if !errors.As(err, &blocked) {
 				t.Fatalf("expected ErrControlPlaneLifecycleBlocked, got %v", err)
 			}
+			if op.name == "restart" {
+				if !strings.Contains(err.Error(), "use edgelet controlplane restart") {
+					t.Fatalf("unexpected restart message: %v", err)
+				}
+				return
+			}
 			if !strings.Contains(err.Error(), "while agent is provisioned") {
 				t.Fatalf("unexpected message: %v", err)
 			}

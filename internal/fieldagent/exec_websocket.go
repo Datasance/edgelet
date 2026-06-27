@@ -23,6 +23,7 @@ const (
 	execWebSocketModuleName = "Exec Session WebSocket Handler"
 	pingInterval            = 30 * time.Second
 	handshakeTimeout        = 10 * time.Second
+	activeReadTimeout       = 30 * time.Minute // matches exec session idle timeout
 	maxFrameSize            = 65536
 	maxBufferSize           = 1024 * 1024 // 1MB
 	maxBufferedFrames       = 1000
@@ -49,36 +50,43 @@ const (
 	StateActive  // Connected and paired with user
 )
 
+type execFrame struct {
+	msgType byte
+	data    []byte
+}
+
 // ExecSessionWebSocketHandler manages the WebSocket connection for exec sessions
 type ExecSessionWebSocketHandler struct {
-	controllerWsURL  string
-	microserviceUUID string
-	conn             *websocket.Conn
-	connMu           sync.RWMutex
-	writeMu          sync.Mutex // Protects concurrent writes to websocket
-	isConnected      atomic.Bool
-	isActive         atomic.Bool
-	state            atomic.Value // ConnectionState
-	outputBuffer     chan []byte
-	bufferedSize     atomic.Int64
-	bufferedFrames   atomic.Int32
-	ctx              context.Context
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	pingTicker       *time.Ticker
-	config           *config.Config
-	jwtManager       *auth.JWTManager
-	controllerCert   *x509.Certificate
-	lifecycleMu      sync.Mutex
+	controllerWsURL    string
+	sessionID          string
+	microserviceUUID   string
+	conn               *websocket.Conn
+	connMu             sync.RWMutex
+	writeMu            sync.Mutex // Protects concurrent writes to websocket
+	isConnected        atomic.Bool
+	isActive           atomic.Bool
+	state              atomic.Value // ConnectionState
+	outputBuffer       chan execFrame
+	bufferedSize       atomic.Int64
+	bufferedFrames     atomic.Int32
+	ctx                context.Context
+	cancel             context.CancelFunc
+	wg                 sync.WaitGroup
+	pingTicker         *time.Ticker
+	config             *config.Config
+	jwtManager         *auth.JWTManager
+	controllerCert     *x509.Certificate
+	execSessionManager *ExecSessionManager
+	lifecycleMu        sync.Mutex
 }
 
 var (
-	activeExecHandlers sync.Map // map[string]*ExecSessionWebSocketHandler
+	activeExecHandlers sync.Map // map[string]*ExecSessionWebSocketHandler keyed by sessionId
 )
 
-// GetExecSessionWebSocketHandler gets or creates an ExecSessionWebSocketHandler for a microservice
-func GetExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSocketHandler {
-	handler, _ := activeExecHandlers.LoadOrStore(microserviceUUID, newExecSessionWebSocketHandler(microserviceUUID))
+// GetExecSessionWebSocketHandler gets or creates an ExecSessionWebSocketHandler for a session.
+func GetExecSessionWebSocketHandler(sessionID, microserviceUUID string) *ExecSessionWebSocketHandler {
+	handler, _ := activeExecHandlers.LoadOrStore(sessionID, newExecSessionWebSocketHandler(sessionID, microserviceUUID))
 	h, ok := handler.(*ExecSessionWebSocketHandler)
 	if !ok {
 		return nil
@@ -86,8 +94,12 @@ func GetExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSock
 	return h
 }
 
-// newExecSessionWebSocketHandler creates a new ExecSessionWebSocketHandler
-func newExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSocketHandler {
+// SetExecSessionManager sets the manager reference for session lifecycle callbacks.
+func (h *ExecSessionWebSocketHandler) SetExecSessionManager(esm *ExecSessionManager) {
+	h.execSessionManager = esm
+}
+
+func newExecSessionWebSocketHandler(sessionID, microserviceUUID string) *ExecSessionWebSocketHandler {
 	cfg := config.GetInstance()
 	controllerURL := cfg.ControllerURL
 	if controllerURL == "" {
@@ -95,16 +107,16 @@ func newExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSock
 		return nil
 	}
 
-	// Convert HTTP/HTTPS URL to WebSocket URL
 	wsURL := convertToWebSocketURL(controllerURL)
-	controllerWsURL := wsURL + "/agent/exec/" + microserviceUUID
+	controllerWsURL := wsURL + "/agent/exec/microservice/" + microserviceUUID + "/" + sessionID
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := &ExecSessionWebSocketHandler{
 		controllerWsURL:  controllerWsURL,
+		sessionID:        sessionID,
 		microserviceUUID: microserviceUUID,
-		outputBuffer:     make(chan []byte, maxBufferedFrames),
+		outputBuffer:     make(chan execFrame, maxBufferedFrames),
 		ctx:              ctx,
 		cancel:           cancel,
 		config:           cfg,
@@ -115,7 +127,6 @@ func newExecSessionWebSocketHandler(microserviceUUID string) *ExecSessionWebSock
 	handler.isConnected.Store(false)
 	handler.isActive.Store(false)
 
-	// Load controller certificate only if using WSS (secure WebSocket)
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
 		handler.controllerCert = loadControllerCert(cfg.ControllerCert, execWebSocketModuleName)
 	}
@@ -130,7 +141,6 @@ func convertToWebSocketURL(httpURL string) string {
 	} else if strings.HasPrefix(httpURL, "https://") {
 		return "wss://" + httpURL[8:]
 	}
-	// If already a WebSocket URL, return as is
 	return httpURL
 }
 
@@ -147,9 +157,8 @@ func (h *ExecSessionWebSocketHandler) resetLocked() {
 	}
 
 	closeWebSocketConn(&h.connMu, &h.conn)
-	stopSessionPingTicker(&h.pingTicker)
-
 	h.wg.Wait()
+	stopSessionPingTicker(&h.pingTicker)
 
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
@@ -168,9 +177,12 @@ func (h *ExecSessionWebSocketHandler) GetConnectionState() ConnectionState {
 }
 
 // Connect establishes the WebSocket connection to the controller.
-// Call Reset() before Connect() when starting a new exec session.
+// Call Reset() before Connect() when starting a new exec session. No init pairing frame is sent.
 func (h *ExecSessionWebSocketHandler) Connect() error {
-	if err := h.connectTransport(); err != nil {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+
+	if err := h.connectTransportLocked(); err != nil {
 		return err
 	}
 
@@ -179,21 +191,15 @@ func (h *ExecSessionWebSocketHandler) Connect() error {
 	go h.pingWorker()
 	go h.readWorker()
 
-	h.sendInitialMessage()
-
-	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket connection established for microservice: %s", h.microserviceUUID))
+	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket connection established for exec session: sessionId=%s, microserviceUuid=%s", h.sessionID, h.microserviceUUID))
 	return nil
 }
 
-func (h *ExecSessionWebSocketHandler) connectTransport() error {
-	h.lifecycleMu.Lock()
-	defer h.lifecycleMu.Unlock()
-
+func (h *ExecSessionWebSocketHandler) connectTransportLocked() error {
 	if h.isConnected.Load() {
 		return errors.New("already connected; call Reset() before Connect()")
 	}
 
-	// Clear stale state left when isConnected was cleared without resetting state (legacy bug).
 	h.state.Store(StateDisconnected)
 
 	if !h.transitionState(StateDisconnected, StateConnecting) {
@@ -203,24 +209,20 @@ func (h *ExecSessionWebSocketHandler) connectTransport() error {
 	h.connMu.Lock()
 	defer h.connMu.Unlock()
 
-	// Generate JWT token
 	token, err := h.jwtManager.GenerateJWT()
 	if err != nil {
 		h.transitionState(StateConnecting, StateDisconnected)
 		return fmt.Errorf("failed to generate JWT: %w", err)
 	}
 
-	// Create WebSocket dialer
 	dialer := websocket.Dialer{
 		HandshakeTimeout: handshakeTimeout,
 		TLSClientConfig:  controllerDialTLSConfig(h.config.SecureMode, h.controllerCert),
 	}
 
-	// Set headers with JWT token
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+token)
 
-	// Connect
 	conn, resp, err := dialer.Dial(h.controllerWsURL, headers)
 	if err != nil {
 		h.transitionState(StateConnecting, StateDisconnected)
@@ -239,6 +241,7 @@ func (h *ExecSessionWebSocketHandler) connectTransport() error {
 
 	h.conn = conn
 	h.isConnected.Store(true)
+	h.configureReadKeepalive(conn)
 
 	if h.transitionState(StateConnecting, StatePending) {
 		logging.LogInfo(execWebSocketModuleName, "Connection is now pending user activation")
@@ -247,7 +250,6 @@ func (h *ExecSessionWebSocketHandler) connectTransport() error {
 	return nil
 }
 
-// transitionState safely transitions connection state
 func (h *ExecSessionWebSocketHandler) transitionState(from, to ConnectionState) bool {
 	current, ok := h.state.Load().(ConnectionState)
 	if !ok {
@@ -261,153 +263,61 @@ func (h *ExecSessionWebSocketHandler) transitionState(from, to ConnectionState) 
 	return false
 }
 
-// sendInitialMessage sends the initial message with execId and microserviceUuid
-func (h *ExecSessionWebSocketHandler) sendInitialMessage() {
-	if !h.isConnected.Load() {
-		logging.LogWarn(execWebSocketModuleName, "Cannot send initial message - not connected")
-		return
+// needsResetBeforeConnect reports whether stale transport state must be torn down before Connect().
+func (h *ExecSessionWebSocketHandler) needsResetBeforeConnect() bool {
+	if h == nil {
+		return false
 	}
-
-	// Get execId from FieldAgent
-	fa := GetInstance()
-	execID := fa.GetActiveExecSession(h.microserviceUUID)
-	if execID == "" {
-		logging.LogError(execWebSocketModuleName, fmt.Sprintf("No execId found for microservice: %s - this may be a timing issue, will retry", h.microserviceUUID), errors.New("execId not found"))
-		// Retry after a short delay (execId might not be stored yet)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logging.LogError(execWebSocketModuleName, "Panic recovered", fmt.Errorf("%v", r))
-				}
-			}()
-			time.Sleep(500 * time.Millisecond)
-			if h.isConnected.Load() {
-				retryExecID := fa.GetActiveExecSession(h.microserviceUUID)
-				if retryExecID != "" {
-					logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Retrying initial message send with execId: %s", retryExecID))
-					h.sendInitialMessageWithExecID(retryExecID)
-				} else {
-					logging.LogError(execWebSocketModuleName, fmt.Sprintf("Still no execId found after retry for microservice: %s", h.microserviceUUID), errors.New("execId not found"))
-				}
-			}
-		}()
-		return
+	if h.IsConnected() {
+		return true
 	}
-
-	h.sendInitialMessageWithExecID(execID)
+	return h.GetConnectionState() != StateDisconnected
 }
 
-// sendInitialMessageWithExecID sends the initial message with a specific execId
-func (h *ExecSessionWebSocketHandler) sendInitialMessageWithExecID(execID string) {
-	// Pack message using MessagePack
-	var buf bytes.Buffer
-	enc := msgpack.NewEncoder(&buf)
-
-	// Pack as map with 2 key-value pairs
-	err := enc.EncodeMapLen(2)
-	if err != nil {
-		logging.LogError(execWebSocketModuleName, "Failed to encode map length", err)
-		return
-	}
-
-	// Pack execId
-	err = enc.EncodeString("execId")
-	if err != nil {
-		logging.LogError(execWebSocketModuleName, "Failed to encode execId key", err)
-		return
-	}
-	err = enc.EncodeString(execID)
-	if err != nil {
-		logging.LogError(execWebSocketModuleName, "Failed to encode execId value", err)
-		return
-	}
-
-	// Pack microserviceUuid
-	err = enc.EncodeString("microserviceUuid")
-	if err != nil {
-		logging.LogError(execWebSocketModuleName, "Failed to encode microserviceUuid key", err)
-		return
-	}
-	err = enc.EncodeString(h.microserviceUUID)
-	if err != nil {
-		logging.LogError(execWebSocketModuleName, "Failed to encode microserviceUuid value", err)
-		return
-	}
-
-	// Send as binary WebSocket frame
-	h.connMu.RLock()
-	conn := h.conn
-	h.connMu.RUnlock()
-
-	if conn != nil {
-		h.writeMu.Lock()
-		defer h.writeMu.Unlock()
-		msgBytes := buf.Bytes()
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Sending initial message: execId=%s, microserviceUuid=%s, messageLength=%d", execID, h.microserviceUUID, len(msgBytes)))
-		err = conn.WriteMessage(websocket.BinaryMessage, msgBytes)
-		if err != nil {
-			logging.LogError(execWebSocketModuleName, "Failed to send initial message", err)
-		} else {
-			logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Sent initial message successfully for microservice: %s", h.microserviceUUID))
-		}
-	}
-}
-
-// SendMessage sends a message to the controller
+// SendMessage sends a message to the controller with execId = sessionId.
+// Output is buffered while disconnected or pending activation.
 func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) error {
-	if !h.isConnected.Load() {
-		logging.LogWarn(execWebSocketModuleName, "Cannot send message - not connected")
-		return errors.New("not connected")
+	if !h.isConnected.Load() || !h.isActive.Load() {
+		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Buffering output while connection is not active: connected=%v active=%v type=%d length=%d",
+			h.isConnected.Load(), h.isActive.Load(), msgType, len(data)))
+		return h.bufferOutput(msgType, data)
+	}
+	return h.writeOutboundMessage(msgType, data)
+}
+
+func (h *ExecSessionWebSocketHandler) bufferOutput(msgType byte, data []byte) error {
+	if h.bufferedFrames.Load() >= maxBufferedFrames {
+		logging.LogWarn(execWebSocketModuleName, "Buffer full, dropping frame")
+		return errors.New("buffer full")
+	}
+	if h.bufferedSize.Load()+int64(len(data)) > maxBufferSize {
+		logging.LogWarn(execWebSocketModuleName, "Buffer size limit reached, dropping frame")
+		return errors.New("buffer size limit reached")
 	}
 
-	// If not active, buffer the output
-	if !h.isActive.Load() {
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Buffering output while connection is not active: type=%d, length=%d", msgType, len(data)))
+	bufferedData := make([]byte, len(data))
+	copy(bufferedData, data)
 
-		// Check buffer limits
-		if h.bufferedFrames.Load() >= maxBufferedFrames {
-			logging.LogWarn(execWebSocketModuleName, "Buffer full, dropping frame")
-			return errors.New("buffer full")
-		}
-		if h.bufferedSize.Load()+int64(len(data)) > maxBufferSize {
-			logging.LogWarn(execWebSocketModuleName, "Buffer size limit reached, dropping frame")
-			return errors.New("buffer size limit reached")
-		}
-
-		// Create a copy of data for buffering
-		bufferedData := make([]byte, len(data))
-		copy(bufferedData, data)
-
-		select {
-		case h.outputBuffer <- bufferedData:
-			h.bufferedFrames.Add(1)
-			h.bufferedSize.Add(int64(len(data)))
-		default:
-			logging.LogWarn(execWebSocketModuleName, "Buffer channel full, dropping frame")
-			return errors.New("buffer channel full")
-		}
-		return nil
+	select {
+	case h.outputBuffer <- execFrame{msgType: msgType, data: bufferedData}:
+		h.bufferedFrames.Add(1)
+		h.bufferedSize.Add(int64(len(data)))
+	default:
+		logging.LogWarn(execWebSocketModuleName, "Buffer channel full, dropping frame")
+		return errors.New("buffer channel full")
 	}
+	return nil
+}
 
-	// Get execId from FieldAgent
-	fa := GetInstance()
-	execID := fa.GetActiveExecSession(h.microserviceUUID)
-	if execID == "" {
-		logging.LogError(execWebSocketModuleName, fmt.Sprintf("No execId found for microservice: %s", h.microserviceUUID), errors.New("execId not found"))
-		return errors.New("execId not found")
-	}
-
-	// Pack message using MessagePack
+func (h *ExecSessionWebSocketHandler) writeOutboundMessage(msgType byte, data []byte) error {
 	var buf bytes.Buffer
 	enc := msgpack.NewEncoder(&buf)
 
-	// Pack as map with 5 key-value pairs
 	err := enc.EncodeMapLen(5)
 	if err != nil {
 		return fmt.Errorf("failed to encode map length: %w", err)
 	}
 
-	// Type
 	err = enc.EncodeString("type")
 	if err != nil {
 		return fmt.Errorf("failed to encode type key: %w", err)
@@ -417,7 +327,6 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 		return fmt.Errorf("failed to encode type value: %w", err)
 	}
 
-	// Data
 	err = enc.EncodeString("data")
 	if err != nil {
 		return fmt.Errorf("failed to encode data key: %w", err)
@@ -427,7 +336,6 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 		return fmt.Errorf("failed to encode data value: %w", err)
 	}
 
-	// Microservice UUID
 	err = enc.EncodeString("microserviceUuid")
 	if err != nil {
 		return fmt.Errorf("failed to encode microserviceUuid key: %w", err)
@@ -437,17 +345,15 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 		return fmt.Errorf("failed to encode microserviceUuid value: %w", err)
 	}
 
-	// Exec ID
 	err = enc.EncodeString("execId")
 	if err != nil {
 		return fmt.Errorf("failed to encode execId key: %w", err)
 	}
-	err = enc.EncodeString(execID)
+	err = enc.EncodeString(h.sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to encode execId value: %w", err)
 	}
 
-	// Timestamp
 	err = enc.EncodeString("timestamp")
 	if err != nil {
 		return fmt.Errorf("failed to encode timestamp key: %w", err)
@@ -457,7 +363,6 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 		return fmt.Errorf("failed to encode timestamp value: %w", err)
 	}
 
-	// Send as binary WebSocket frame
 	h.connMu.RLock()
 	conn := h.conn
 	h.connMu.RUnlock()
@@ -474,7 +379,41 @@ func (h *ExecSessionWebSocketHandler) SendMessage(msgType byte, data []byte) err
 	return nil
 }
 
-// pingWorker sends ping frames periodically
+func (h *ExecSessionWebSocketHandler) readWaitDuration() time.Duration {
+	if h.isActive.Load() {
+		return activeReadTimeout
+	}
+	return pingInterval * 2
+}
+
+func (h *ExecSessionWebSocketHandler) extendReadDeadline(conn *websocket.Conn) error {
+	if conn == nil {
+		return nil
+	}
+	return conn.SetReadDeadline(time.Now().Add(h.readWaitDuration()))
+}
+
+func (h *ExecSessionWebSocketHandler) configureReadKeepalive(conn *websocket.Conn) {
+	if conn == nil {
+		return
+	}
+	extend := func() error {
+		return h.extendReadDeadline(conn)
+	}
+	if err := extend(); err != nil {
+		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
+	}
+	conn.SetPongHandler(func(string) error {
+		return extend()
+	})
+	conn.SetPingHandler(func(appData string) error {
+		if err := extend(); err != nil {
+			return err
+		}
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+	})
+}
+
 func (h *ExecSessionWebSocketHandler) pingWorker() {
 	defer h.wg.Done()
 	defer func() {
@@ -504,7 +443,7 @@ func (h *ExecSessionWebSocketHandler) pingWorker() {
 					h.writeMu.Unlock()
 					if err != nil {
 						logging.LogError(execWebSocketModuleName, "Failed to send ping", err)
-						go h.handleClose()
+						go h.handleTransportClose()
 					}
 				}
 			}
@@ -512,7 +451,6 @@ func (h *ExecSessionWebSocketHandler) pingWorker() {
 	}
 }
 
-// readWorker reads messages from the WebSocket
 func (h *ExecSessionWebSocketHandler) readWorker() {
 	defer h.wg.Done()
 	defer func() {
@@ -534,40 +472,25 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 				return
 			}
 
-			// Set read deadline
-			if err := conn.SetReadDeadline(time.Now().Add(pingInterval * 2)); err != nil {
+			if err := h.extendReadDeadline(conn); err != nil {
 				logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
 			}
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
-				// Unified error handling: any error → close session, no reconnect.
-				// Log appropriately: info for normal close (1000, 1001, 1005), error for others.
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005) {
 					logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket closed: %v", err))
 				} else {
 					logging.LogError(execWebSocketModuleName, "WebSocket read error", err)
 				}
-				go h.handleClose()
+				go h.handleTransportClose()
 				return
-			}
-
-			// Add verbose logging for received messages
-			logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("ReadMessage returned: type=%d, len=%d", messageType, len(data)))
-			if len(data) > 0 {
-				limit := 16
-				if len(data) < limit {
-					limit = len(data)
-				}
-				logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Raw data header: %x", data[:limit]))
 			}
 
 			switch messageType {
 			case websocket.BinaryMessage:
-				logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Received binary message from controller: length=%d", len(data)))
 				h.handleMessage(data)
 			case websocket.PongMessage:
-				// Handle pong
 				logging.LogDebug(execWebSocketModuleName, "Received pong")
 			default:
 				logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Received message type: %d", messageType))
@@ -576,27 +499,20 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 	}
 }
 
-// handleMessage processes incoming messages
 func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
-	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Received binary message: length=%d", len(data)))
-
 	dec := msgpack.NewDecoder(bytes.NewReader(data))
 
-	// Decode map
 	mapLen, err := dec.DecodeMapLen()
 	if err != nil {
 		logging.LogError(execWebSocketModuleName, "Failed to decode map length", err)
 		return
 	}
 
-	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Unpacked map size: %d", mapLen))
-
 	var msgType byte
 	var msgData []byte
 	var msgMicroserviceUUID string
 	var msgExecID string
 
-	// Decode all fields
 	for i := 0; i < mapLen; i++ {
 		key, err := dec.DecodeString()
 		if err != nil {
@@ -612,7 +528,6 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 				return
 			}
 			msgType = val
-			logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Unpacking key: %s, value: %d", key, msgType))
 		case "data":
 			val, err := dec.DecodeBytes()
 			if err != nil {
@@ -635,14 +550,12 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 			}
 			msgExecID = val
 		case "timestamp":
-			// Skip timestamp (not needed for processing)
 			err = dec.Skip()
 			if err != nil {
 				logging.LogError(execWebSocketModuleName, "Failed to skip timestamp", err)
 				return
 			}
 		default:
-			// Skip unknown keys
 			err = dec.Skip()
 			if err != nil {
 				logging.LogError(execWebSocketModuleName, "Failed to skip value", err)
@@ -651,96 +564,100 @@ func (h *ExecSessionWebSocketHandler) handleMessage(data []byte) {
 		}
 	}
 
-	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Successfully unpacked message: type=%d, execId=%s, microserviceUuid=%s",
-		msgType, msgExecID, msgMicroserviceUUID))
+	if msgExecID != "" && msgExecID != h.sessionID {
+		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Ignoring message for other exec session: got=%s want=%s", msgExecID, h.sessionID))
+		return
+	}
+	if msgMicroserviceUUID != "" && msgMicroserviceUUID != h.microserviceUUID {
+		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Ignoring message for other microservice: got=%s want=%s", msgMicroserviceUUID, h.microserviceUUID))
+		return
+	}
 
-	// Handle message based on type
 	switch msgType {
 	case ExecTypeStdin:
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Handling STDIN message: length=%d", len(msgData)))
 		h.handleStdin(msgData)
 	case ExecTypeControl:
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Handling CONTROL message: length=%d", len(msgData)))
 		h.handleControl(msgData)
 	case ExecTypeActivation:
-		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Handling ACTIVATION message: execId=%s, microserviceUuid=%s", msgExecID, msgMicroserviceUUID))
-		h.handleActivation(msgMicroserviceUUID, msgExecID)
+		h.handleActivation(msgExecID)
 	case ExecTypeClose:
-		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received close message for exec session: %s", msgExecID))
-		h.handleClose()
+		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received close message for exec session: %s", h.sessionID))
+		h.handleSessionClose()
 	default:
 		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Unknown message type: %d", msgType))
 	}
 }
 
-// handleStdin handles STDIN messages
 func (h *ExecSessionWebSocketHandler) handleStdin(data []byte) {
 	if data == nil {
 		return
 	}
 
-	fa := GetInstance()
-	callback := fa.GetExecCallback(h.microserviceUUID)
+	esm := h.execSessionManager
+	if esm == nil {
+		esm = GetExecSessionManager()
+	}
+	callback := esm.GetCallback(h.sessionID)
 	if callback == nil {
-		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("No active callback found for microservice: %s", h.microserviceUUID))
+		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("No active callback found for exec session: %s", h.sessionID))
 		return
 	}
 
-	err := callback.WriteInput(data)
-	if err != nil {
+	h.activateIfPending()
+
+	if err := callback.WriteInput(data); err != nil {
 		logging.LogError(execWebSocketModuleName, "Error writing input to exec callback", err)
 	}
 }
 
-// handleControl handles CONTROL messages
 func (h *ExecSessionWebSocketHandler) handleControl(data []byte) {
 	if data == nil {
 		return
 	}
 
 	controlCmd := string(data)
-	logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Handling CONTROL message: command=%s, length=%d, microserviceUuid=%s", controlCmd, len(data), h.microserviceUUID))
-
 	if controlCmd == "close" {
-		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received close control command for microservice: %s", h.microserviceUUID))
-		h.handleClose()
+		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received close control command for exec session: %s", h.sessionID))
+		h.handleSessionClose()
 	} else {
 		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Unknown control command: %s", controlCmd))
 	}
 }
 
-// handleActivation handles ACTIVATION messages
-func (h *ExecSessionWebSocketHandler) handleActivation(microserviceUUID, execID string) {
-	fa := GetInstance()
-	currentExecID := fa.GetActiveExecSession(microserviceUUID)
+func (h *ExecSessionWebSocketHandler) handleActivation(execID string) {
+	if execID != "" && execID != h.sessionID {
+		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Received activation for other exec session: got=%s want=%s", execID, h.sessionID))
+		return
+	}
 
-	if currentExecID != "" && currentExecID == execID {
-		logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Received activation message for exec session: %s", execID))
-		// Transition from PENDING to ACTIVE
-		if h.transitionState(StatePending, StateActive) {
-			h.isActive.Store(true)
-			// Flush buffered output
-			go h.flushBuffer()
+	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Handling ACTIVATION for exec session: %s", h.sessionID))
+	h.activateIfPending()
+}
+
+func (h *ExecSessionWebSocketHandler) activateIfPending() {
+	if h.isActive.Load() {
+		return
+	}
+	if h.transitionState(StatePending, StateActive) || h.transitionState(StateConnected, StateActive) {
+		h.isActive.Store(true)
+		h.connMu.RLock()
+		conn := h.conn
+		h.connMu.RUnlock()
+		if err := h.extendReadDeadline(conn); err != nil {
+			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to extend read deadline on activation: %v", err))
 		}
-	} else {
-		logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Received activation message for unknown exec session: %s, current: %s", execID, currentExecID))
+		go h.flushBuffer()
 	}
 }
 
-// flushBuffer sends all buffered messages
 func (h *ExecSessionWebSocketHandler) flushBuffer() {
 	for {
 		select {
-		case data := <-h.outputBuffer:
-			// Determine message type from data (this is a simplification)
-			// In practice, we'd need to track the type when buffering
-			msgType := ExecTypeStdout // Default to stdout
-			err := h.SendMessage(msgType, data)
-			if err != nil {
+		case frame := <-h.outputBuffer:
+			h.bufferedFrames.Add(-1)
+			h.bufferedSize.Add(-int64(len(frame.data)))
+			if err := h.writeOutboundMessage(frame.msgType, frame.data); err != nil {
 				logging.LogError(execWebSocketModuleName, "Failed to send buffered message", err)
-			} else {
-				h.bufferedFrames.Add(-1)
-				h.bufferedSize.Add(-int64(len(data)))
 			}
 		default:
 			return
@@ -751,7 +668,7 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 // Disconnect closes the WebSocket connection and resets handler state for reuse.
 func (h *ExecSessionWebSocketHandler) Disconnect() {
 	h.Reset()
-	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for microservice: %s", h.microserviceUUID))
+	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for exec session: %s", h.sessionID))
 }
 
 // IsConnected returns whether the WebSocket is connected
@@ -764,41 +681,23 @@ func (h *ExecSessionWebSocketHandler) IsActive() bool {
 	return h.isActive.Load()
 }
 
-// handleClose handles WebSocket close
-func (h *ExecSessionWebSocketHandler) handleClose() {
+func (h *ExecSessionWebSocketHandler) handleTransportClose() {
 	if !h.isConnected.Load() {
-		logging.LogDebug(execWebSocketModuleName, fmt.Sprintf("Already disconnected for microservice: %s", h.microserviceUUID))
 		return
 	}
 
-	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Handling close for microservice: %s, connectionState=%v",
-		h.microserviceUUID, h.state.Load()))
-
+	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Transport closed for exec session: %s (shell retained for reconnect)", h.sessionID))
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
 	h.state.Store(StateDisconnected)
+	h.Reset()
+}
 
-	// Get current exec session ID before cleanup
-	fa := GetInstance()
-	execID := fa.GetActiveExecSession(h.microserviceUUID)
-	if execID != "" {
-		// Coordinate with FieldAgent for exec session cleanup
-		if err := fa.HandleExecSessionClose(h.microserviceUUID, execID); err != nil {
-			logging.LogWarn(execWebSocketModuleName, fmt.Sprintf("Failed to close exec session: %v", err))
-		}
+func (h *ExecSessionWebSocketHandler) handleSessionClose() {
+	esm := h.execSessionManager
+	if esm == nil {
+		esm = GetExecSessionManager()
 	}
-
-	// Check if there are other active exec sessions before cleanup
-	fa.execSessionsMu.RLock()
-	hasOtherActiveSessions := fa.activeExecSessions[h.microserviceUUID] != ""
-	fa.execSessionsMu.RUnlock()
-
-	if !hasOtherActiveSessions {
-		logging.LogDebug(execWebSocketModuleName, "No other active sessions found, proceeding with cleanup")
-		h.Reset()
-	} else {
-		logging.LogInfo(execWebSocketModuleName, "Skipping cleanup due to other active sessions")
-	}
-
-	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Close handling completed for microservice: %s", h.microserviceUUID))
+	sessionID := h.sessionID
+	go esm.StopExecSession(sessionID)
 }

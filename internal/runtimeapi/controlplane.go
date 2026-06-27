@@ -6,13 +6,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/google/uuid"
 )
 
-var ErrControlPlaneNotFound = errors.New("control plane deployment not found")
+var (
+	ErrControlPlaneNotFound       = errors.New("control plane deployment not found")
+	ErrControlPlaneRestartBlocked = errors.New("control plane restart blocked: apply in progress")
+)
+
+const controlPlaneLaunchInFlightStaleTimeout = 30 * time.Minute
 
 // ErrControlPlaneIdentityImmutable indicates metadata.name or metadata.namespace changed on patch.
 type ErrControlPlaneIdentityImmutable struct {
@@ -91,6 +97,69 @@ func (f *Facade) GetControlPlaneManifestMasked() (string, error) {
 		return "", err
 	}
 	return models.MaskedControlPlaneManifestYAML(item.ManifestYAML)
+}
+
+// RestartControlPlane bounces the singleton controller container without deprovisioning
+// or deleting the system_control_plane row.
+func (f *Facade) RestartControlPlane(pull bool) (*models.ControlPlaneDeployment, error) {
+	item, err := f.GetControlPlaneDeployment()
+	if err != nil {
+		return nil, err
+	}
+	nowSec := time.Now().Unix()
+	if controlPlaneLaunchInFlight(item, nowSec) {
+		return nil, ErrControlPlaneRestartBlocked
+	}
+
+	item, err = f.GetControlPlaneDeployment()
+	if err != nil {
+		return nil, err
+	}
+	item.RestartCount++
+	item.RuntimeState = "restarting"
+	item.LastTransitionAt = nowSec
+	item.LastStartAttemptAt = nowSec
+	if err := f.db.UpsertSystemControlPlane(item); err != nil {
+		return nil, err
+	}
+
+	f.stopControlPlaneExecSessions(item.ControllerUUID)
+
+	if err := processmanager.GetInstance().RestartControlPlaneDeployment(item, pull); err != nil {
+		return nil, err
+	}
+	return f.GetControlPlaneDeployment()
+}
+
+func controlPlaneLaunchInFlight(item *models.ControlPlaneDeployment, now int64) bool {
+	if item == nil {
+		return false
+	}
+	if strings.ToLower(strings.TrimSpace(item.RuntimeState)) != "starting" {
+		return false
+	}
+	if item.Generation <= item.ObservedGeneration {
+		return false
+	}
+	startedAt := item.LastStartAttemptAt
+	if startedAt <= 0 {
+		startedAt = item.LastTransitionAt
+	}
+	if startedAt > 0 && now-startedAt > int64(controlPlaneLaunchInFlightStaleTimeout.Seconds()) {
+		return false
+	}
+	return true
+}
+
+func (f *Facade) stopControlPlaneExecSessions(controllerUUID string) {
+	if f == nil {
+		return
+	}
+	uuid := strings.TrimSpace(controllerUUID)
+	if uuid == "" {
+		return
+	}
+	fieldagent.GetExecSessionManager().StopAllInteractiveForMicroservice(uuid)
 }
 
 // DeleteControlPlane removes the controller deployment, container, and volumes.

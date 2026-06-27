@@ -30,6 +30,14 @@ Full CI parity on macOS (Linux embed tests inside Docker):
 make ci-docker
 ```
 
+Optional concurrency audit (slow; requires CGO on host):
+
+```bash
+make test-race              # !linux pass on desktop; all three passes on Linux host
+make test-linux-race        # full tree in Linux Docker (recommended on macOS)
+make test-linux-race-amd64  # explicit arch
+```
+
 Embedded integration tests (Lima VM): [test/embedded/README.md](test/embedded/README.md).
 
 ## macOS and the embed pipeline

@@ -35,9 +35,9 @@ func stopSessionPingTicker(ticker **time.Ticker) {
 func drainExecOutputBuffer(h *ExecSessionWebSocketHandler) {
 	for {
 		select {
-		case data := <-h.outputBuffer:
+		case frame := <-h.outputBuffer:
 			h.bufferedFrames.Add(-1)
-			h.bufferedSize.Add(-int64(len(data)))
+			h.bufferedSize.Add(-int64(len(frame.data)))
 		default:
 			h.bufferedFrames.Store(0)
 			h.bufferedSize.Store(0)

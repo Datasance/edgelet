@@ -32,6 +32,15 @@ cp_assert_deployed "${VM_NAME}"
 log_step "controller status API controller /api/v3/status"
 cp_assert_status_api "${VM_NAME}"
 
+log_step "CP restart T21-1 edgelet controlplane restart"
+cp_restart "${VM_NAME}" false
+
+log_step "CP restart T21-2 edgelet controlplane restart --pull"
+cp_restart "${VM_NAME}" true
+
+log_step "CP restart T21-3 restartCount >= 1"
+cp_assert_restart_count_min "${VM_NAME}" 1
+
 log_step "CP lifecycle (unprovisioned) ms rm + reconcile + controlplane delete"
 cp_deploy "${VM_NAME}" "${FIXTURE}"
 cp_wait_running "${VM_NAME}"

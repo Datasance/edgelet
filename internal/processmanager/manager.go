@@ -41,6 +41,7 @@ const (
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
 	engine                       engine.ContainerEngine
+	engineMu                     sync.RWMutex
 	engineName                   string
 	microserviceManager          MicroserviceManagerInterface
 	containerManager             *ContainerManager
@@ -61,6 +62,7 @@ type ProcessManager struct {
 	localLaunchLocks             sync.Map // microservice UUID -> *sync.Mutex
 	controlPlanePullOnRecreate   bool
 	controlPlanePullOnRecreateMu sync.Mutex
+	execRegistry                 *ExecSessionRegistry
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -81,8 +83,9 @@ var (
 func GetInstance() *ProcessManager {
 	once.Do(func() {
 		instance = &ProcessManager{
-			logger:     logging.NewModuleLogger(ProcessManagerModuleName),
-			updateChan: make(chan struct{}, 1),
+			logger:       logging.NewModuleLogger(ProcessManagerModuleName),
+			updateChan:   make(chan struct{}, 1),
+			execRegistry: NewExecSessionRegistry(),
 		}
 	})
 	return instance
@@ -92,7 +95,9 @@ func GetInstance() *ProcessManager {
 func (pm *ProcessManager) Start(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) error {
 	pm.logger.Info("Starting Process Manager")
 
+	pm.engineMu.Lock()
 	pm.engine = eng
+	pm.engineMu.Unlock()
 	pm.microserviceManager = microserviceManager
 	if cfg := config.GetInstance(); cfg != nil {
 		pm.engineName = cfg.ContainerEngine
@@ -2094,9 +2099,8 @@ func (h *collectLogTailHandler) OnError(_ string, err error) {
 }
 
 // CreateExecSession creates and starts an exec session for a microservice.
-// It calls engine.CreateExecSession to register the exec spec, then
-// engine.StartExecSession to attach the callback's I/O pipes and launch the process.
-// This two-phase: createExecSession + startExecSession.
+// Legacy field-agent path — returns the runtime exec id (not wire sessionId).
+// Prefer CreateControllerExecSession / CreateLocalExecSession for Plan 23 multi-session exec.
 func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []string, callback ExecSessionCallbackInterface) (string, error) {
 	pm.logger.Infof("Creating exec session for microservice: %s", microserviceUUID)
 
@@ -2108,35 +2112,15 @@ func (pm *ProcessManager) CreateExecSession(microserviceUUID string, command []s
 		return "", fmt.Errorf("container not found for microservice: %s", microserviceUUID)
 	}
 
-	execID, err := pm.engine.CreateExecSession(container.ID, command)
+	sessionID := uuid.NewString()
+	execIDHint := runtimeExecIDController(container.ID, sessionID)
+	engineExecID, err := pm.prepareAndCreateExec(container.ID, execIDHint, command)
 	if err != nil {
-		return "", fmt.Errorf("failed to create exec session: %w", err)
+		return "", err
 	}
-
-	// Attach the callback's I/O pipes and start the exec process.
-	// StartExecSession blocks until the process exits; run it in a goroutine so the
-	// caller can proceed to connect the WebSocket while the process is running.
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.LogError(ProcessManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
-			}
-		}()
-		if err := pm.engine.StartExecSession(
-			execID,
-			callback.GetStdinReader(),
-			callback.GetStdoutWriter(),
-			callback.GetStderrWriter(),
-		); err != nil {
-			pm.logger.Errorf("Exec session %s I/O error: %v", execID, err)
-			callback.OnError(err)
-		} else {
-			callback.OnComplete()
-		}
-	}()
-
-	pm.logger.Infof("Exec session started: %s for microservice: %s", execID, microserviceUUID)
-	return execID, nil
+	pm.launchExecSessionIO(engineExecID, callback)
+	pm.logger.Infof("Exec session started: %s for microservice: %s", engineExecID, microserviceUUID)
+	return engineExecID, nil
 }
 
 // GetExecSessionStatus reports whether the exec process identified by execID is running.

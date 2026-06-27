@@ -74,6 +74,7 @@ func TestMapRequestToPermission_ControlPlaneRoutes(t *testing.T) {
 		{method: http.MethodGet, path: "/v1/system/controlplane", resource: "system/controlplane", verb: "get"},
 		{method: http.MethodGet, path: "/v1/system/controlplane/manifest", resource: "system/controlplane", verb: "get"},
 		{method: http.MethodDelete, path: "/v1/system/controlplane", resource: "system/controlplane", verb: "delete"},
+		{method: http.MethodPost, path: "/v1/system/controlplane/restart", resource: "system/controlplane", verb: "create"},
 		{method: http.MethodGet, path: "/v1/system/controller", resource: "system/controller", verb: "get"},
 		{method: http.MethodPost, path: "/v1/deploy/controlplane:apply", resource: "deploy/controlplane", verb: "create"},
 		{method: http.MethodGet, path: "/v1/deploy/controlplane:apply/op-123", resource: "deploy/controlplane/apply/status", verb: "get"},

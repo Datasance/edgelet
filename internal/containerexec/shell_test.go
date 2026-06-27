@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestIsInteractiveShellCommand(t *testing.T) {
+	if !IsInteractiveShellCommand(nil) {
+		t.Fatal("empty command should be interactive")
+	}
+	if !IsInteractiveShellCommand(ShellCommandInteractive()) {
+		t.Fatal("default interactive argv should match")
+	}
+	if IsInteractiveShellCommand([]string{"nslookup", "edgelet.local-dns-b"}) {
+		t.Fatal("one-shot argv should not be interactive")
+	}
+	if IsInteractiveShellCommand([]string{"/bin/sh", "-lc", "echo hi"}) {
+		t.Fatal("custom shell script should not be interactive")
+	}
+}
+
 func TestShellCommandInteractive(t *testing.T) {
 	cmd := ShellCommandInteractive()
 	if len(cmd) != 3 || cmd[0] != "/bin/sh" || cmd[1] != "-lc" {

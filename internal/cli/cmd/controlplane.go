@@ -14,7 +14,7 @@ func newControlPlaneCommand() *cobra.Command {
 		Example: controlplane.CommandExamples(),
 	}
 
-	cmd.AddCommand(newControlPlaneGetCommand(), newControlPlaneDeleteCommand())
+	cmd.AddCommand(newControlPlaneGetCommand(), newControlPlaneRestartCommand(), newControlPlaneDeleteCommand())
 	return cmd
 }
 
@@ -43,6 +43,35 @@ func newControlPlaneGetCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&manifest, "manifest", false, "Return secrets-masked ControlPlane manifest YAML")
 	registerControlPlaneManifestCompletion(cmd)
+	return cmd
+}
+
+func newControlPlaneRestartCommand() *cobra.Command {
+	var pull bool
+	cmd := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the control plane controller container",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appCtx == nil {
+				return run.NewCLIError(run.CodeInternal, "cli context is nil", nil)
+			}
+			if err := run.RequireDaemon(appCtx.Client); err != nil {
+				return err
+			}
+			var result *controlplane.RestartResult
+			err := run.WithSpinner(appCtx, "Restarting control plane deployment...", func() error {
+				var reqErr error
+				result, reqErr = controlplane.Restart(appCtx.Client, pull)
+				return reqErr
+			})
+			if err != nil {
+				return err
+			}
+			return writeHumanMutationOrRoute(appCtx, result.Path, result.Human, result.Data)
+		},
+	}
+	cmd.Flags().BoolVar(&pull, "pull", false, "Recreate the controller container and pull the image")
 	return cmd
 }
 

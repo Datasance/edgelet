@@ -4,9 +4,9 @@ Control plane controller operations
 
 ### Synopsis
 
-Inspect or remove the singleton ControlPlane controller deployment on this node.
+Inspect, restart, or remove the singleton ControlPlane controller deployment on this node.
 
-Deploy with edgelet deploy -f <controlplane.yaml> (kind: ControlPlane). There is no controlplane apply subcommand.
+Deploy or upgrade with edgelet deploy -f <controlplane.yaml> (kind: ControlPlane). Use restart to bounce the controller container without a full redeploy. There is no controlplane apply subcommand.
 
 ### Examples
 
@@ -14,6 +14,8 @@ Deploy with edgelet deploy -f <controlplane.yaml> (kind: ControlPlane). There is
 edgelet controlplane get
   edgelet controlplane get --manifest
   edgelet controlplane get -o json
+  edgelet controlplane restart
+  edgelet controlplane restart --pull
   edgelet controlplane delete
 ```
 
@@ -40,5 +42,6 @@ edgelet controlplane get
 * [edgelet](edgelet.md)	 - Local CLI for the Edgelet daemon
 * [edgelet controlplane delete](edgelet_controlplane_delete.md)	 - Remove the control plane deployment
 * [edgelet controlplane get](edgelet_controlplane_get.md)	 - Show control plane deployment status or masked manifest
+* [edgelet controlplane restart](edgelet_controlplane_restart.md)	 - Restart the control plane controller container
 
 

@@ -9,7 +9,7 @@ The network interface manager detects the **host IP and primary interface** used
 - Select IOFog/Edgelet network interface per config rules
 - Track current IP address and hostname
 - Provide gateway IP helpers for DNS resolver scopes
-- Periodic refresh (30 minutes) of interface state
+- Periodic refresh (60s while IP unset, 30 minutes when IP is known)
 
 ## Dependencies
 
@@ -28,13 +28,15 @@ The network interface manager detects the **host IP and primary interface** used
 
 ### Start
 
-1. `UpdateNetworkInterface()` — immediate detection
-2. On failure, `Start()` retries recursively (logs error)
-3. `periodicUpdate()` goroutine every **30 minutes**
+1. **Sync tier** — up to **5** `UpdateNetworkInterface()` attempts with **200ms** spacing (≤~3s blocking)
+2. On IP found: start periodic refresh goroutine; return nil
+3. On sync failure: log WARN, leave empty IP, **return nil** (degraded continue — supervisor and Field Agent proceed)
+4. **Async recovery** — when sync tier leaves IP empty, a background goroutine runs up to **10** more attempts (15 total) with exponential backoff (30s base, double each loop, 8 min cap)
+5. **Periodic refresh** — **60s** while IP empty; **30 min** when IP is set; errors are logged and the same goroutine continues (no respawn)
 
 ### Stop
 
-Cancel context.
+Cancel context (stops periodic update and async recovery).
 
 ## Key APIs
 
@@ -61,7 +63,8 @@ No dedicated EdgeletAPI routes; IP/interface appear in system status/info payloa
 
 | Symptom | Typical cause |
 |---------|----------------|
-| Start loop / stack risk | Repeated `UpdateNetworkInterface` failure (recursive retry) |
+| Empty IP at boot (`unable to retrieve ip address`) | No usable IPv4 during sync tier; agent continues in degraded mode and retries async + periodic |
+| IP appears after boot delay | Far-edge link or DHCP late; async recovery or 60s periodic picks up address |
 | Wrong agent IP on controller | Interface selection mismatch on multi-homed host |
 | DNS bind failures | Gateway IP not available for scope |
 

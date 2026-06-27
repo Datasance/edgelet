@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,7 +51,15 @@ var containerdReconfigureStabilityWindow = 3 * time.Second
 var containerdReconfigureRetryDelay = 500 * time.Millisecond
 var containerdReconfigureMaxAttempts = 2
 
-var findManagedShimPIDs = findManagedShimPIDsFromProc
+const runtimeV2TaskDirName = "io.containerd.runtime.v2.task"
+
+var (
+	findManagedShimPIDs            = findManagedShimPIDsFromProc
+	containerdStateDirForCleanup   = constants.EdgeletContainerdStateDir
+	runtimeArtifactCleanupSocket   = constants.EdgeletContainerdSocket
+	runtimeArtifactCleanupRunDir   = constants.EdgeletRunDir
+	runtimeArtifactCleanupStateDir = constants.EdgeletContainerdStateDir
+)
 var resolveChildExecutable = data.RuntimeBinary
 var signalPID = syscall.Kill
 var writeConfigForService = writeConfigFile
@@ -220,6 +229,7 @@ func (s *Service) Run() error {
 			if err != nil {
 				runErr = fmt.Errorf("%w: %w", ErrContainerdReadiness, err)
 				logger.Errorf("Embedded containerd readiness failed: %v", err)
+				logStaleTaskMetadataHintIfPresent(err)
 				s.cancel()
 				_ = s.signalProcess(syscall.SIGTERM)
 			} else {
@@ -793,6 +803,57 @@ func findManagedShimPIDsFromProc(socketPath string) ([]int, error) {
 	return pids, nil
 }
 
+// CleanupStaleRuntimeTasks removes orphaned runtime task directories under
+// EdgeletContainerdStateDir. Preserves EdgeletContainerdRootDir (images/layers).
+func CleanupStaleRuntimeTasks() error {
+	base := filepath.Join(containerdStateDirForCleanup, runtimeV2TaskDirName)
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read runtime task directory %s: %w", base, err)
+	}
+
+	var errs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		taskDir := filepath.Join(base, entry.Name())
+		addressPath := filepath.Join(taskDir, "address")
+		_, statErr := os.Stat(addressPath)
+		if statErr == nil {
+			continue
+		}
+		if os.IsNotExist(statErr) {
+			logger.Warnf("Removing stale runtime task directory without address file: %s", taskDir)
+		} else {
+			logger.Warnf("Removing stale runtime task directory with unreadable address file %s: %v", addressPath, statErr)
+		}
+		if removeErr := os.RemoveAll(taskDir); removeErr != nil && !os.IsNotExist(removeErr) {
+			errs = append(errs, fmt.Sprintf("%s: %v", taskDir, removeErr))
+			continue
+		}
+		logger.Infof("Removed stale runtime task directory: %s", taskDir)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("stale runtime task cleanup failed: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func logStaleTaskMetadataHintIfPresent(err error) {
+	if err == nil {
+		return
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "shim") || strings.Contains(msg, "address") {
+		logger.Warn("containerd reported stale shim/task metadata; stale task cleanup runs on next data-plane bootstrap")
+	}
+}
+
 // CleanupRuntimeArtifacts removes stale runtime artifacts used by embedded containerd.
 // It intentionally preserves persistent image/layer data under EdgeletContainerdRootDir.
 func CleanupRuntimeArtifacts() error {
@@ -801,9 +862,9 @@ func CleanupRuntimeArtifacts() error {
 	}
 
 	paths := []string{
-		constants.EdgeletContainerdSocket,
-		constants.EdgeletRunDir,
-		constants.EdgeletContainerdStateDir,
+		runtimeArtifactCleanupSocket,
+		runtimeArtifactCleanupRunDir,
+		runtimeArtifactCleanupStateDir,
 	}
 
 	var errs []string
@@ -813,7 +874,7 @@ func CleanupRuntimeArtifacts() error {
 		}
 	}
 
-	for _, dir := range []string{constants.EdgeletRunDir, constants.EdgeletContainerdStateDir} {
+	for _, dir := range []string{runtimeArtifactCleanupRunDir, runtimeArtifactCleanupStateDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- runtime dirs under /run/edgelet require containerd socket access
 			errs = append(errs, fmt.Sprintf("mkdir %s: %v", dir, err))
 		}

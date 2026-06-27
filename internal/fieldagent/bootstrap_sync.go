@@ -30,11 +30,10 @@ func (fa *FieldAgent) bootstrapControllerSync() {
 	fa.maybeReprovisionAfterOTA()
 
 	if fa.ping() {
-		logging.LogInfo(moduleName, "Controller reachable at boot; refreshing controller data")
-		if err := fa.getFogConfig(); err != nil {
-			logging.LogWarn(moduleName, fmt.Sprintf("Failed to get fog config during boot sync: %v", err))
+		logging.LogInfo(moduleName, "Controller reachable at boot; reconciling controller data")
+		if err := fa.controllerReconcile(); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("Controller reconcile during boot sync failed: %v", err))
 		}
-		fa.loadInitialControllerData(true)
 	} else {
 		logging.LogWarn(moduleName, "Controller unreachable at boot; continuing with cached data")
 	}

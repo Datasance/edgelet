@@ -145,6 +145,7 @@ Stable error codes for API and CLI consumers:
 | `CONFLICT` | State conflict prevents the operation (e.g. apply already in progress) |
 | `NOT_IMPLEMENTED` | Endpoint or operation not implemented |
 | `METHOD_NOT_ALLOWED` | HTTP method not supported for route |
+| `EXEC_START_TIMEOUT` | Local exec session shell did not start within 15s (HTTP 504) |
 | `INTERNAL` | Unexpected server-side failure |
 
 ### CLI exit mapping
@@ -191,13 +192,14 @@ When RuntimeClass endpoints are called outside supported mode (`full` build flav
 
 ### `/v1/system/*`
 
-Daemon administration: status, info, version, provision/deprovision, config get/patch/switch, reload, stop, prune, GPS, controller certificate upload, controller connection status, ControlPlane get/delete, daemon logs (HTTP and `:stream` WebSocket).
+Daemon administration: status, info, version, provision/deprovision, config get/patch/switch, reload, stop, prune, GPS, controller certificate upload, controller connection status, ControlPlane get/restart/delete, daemon logs (HTTP and `:stream` WebSocket).
 
 Notable behaviors:
 
 - `POST /v1/system/reload` — SIGHUP-style config reload; rejected changes do not mutate on-disk config
 - `POST /v1/system/provision` / `DELETE /v1/system/provision` — agent lifecycle; affects JWT mode
 - `GET /v1/system/controlplane` — local Datasance Controller deployment status (see [control-plane.md](control-plane.md))
+- `POST /v1/system/controlplane/restart` — bounce the controller container; optional `?pull=true`; allowed when provisioned (see [control-plane.md](control-plane.md#restart))
 
 ### `/v1/ms/*`
 
@@ -207,7 +209,7 @@ Runtime view and lifecycle for workloads (managed, local, and control-plane sour
 - `GET /v1/ms/{id}` — inspect (UUID or `namespace.name`)
 - Lifecycle: `start`, `stop`, `restart`, `kill`
 - Logs: `GET .../logs` (HTTP); `GET .../logs:stream` (WebSocket follow)
-- Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket)
+- Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket). See [exec-sessions.md](exec-sessions.md) for multi-session behavior, the 15s start wait, and `EXEC_START_TIMEOUT`.
 
 ### `/v1/deploy/*`
 

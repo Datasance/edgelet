@@ -65,5 +65,8 @@ func (s *Service) IsHealthy() bool { return false }
 // CleanupRuntimeArtifacts is a no-op on non-Linux platforms.
 func CleanupRuntimeArtifacts() error { return nil }
 
+// CleanupStaleRuntimeTasks is a no-op on non-Linux platforms.
+func CleanupStaleRuntimeTasks() error { return nil }
+
 // MaybeRunChildProcess is a no-op on non-Linux platforms.
 func MaybeRunChildProcess(_ []string) (bool, error) { return false, nil }
