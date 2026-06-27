@@ -319,6 +319,10 @@ func (fa *FieldAgent) getFogStatus() map[string]any {
 	if microserviceStatusJSON == "" {
 		microserviceStatusJSON = "[]"
 	}
+	microserviceStatusJSON = enrichMicroserviceStatusExecSessionIDs(
+		microserviceStatusJSON,
+		GetExecSessionManager().ListActiveControllerSessionIDs,
+	)
 	microserviceStatusJSON = annotateMicroserviceStatusForControlRestart(microserviceStatusJSON)
 
 	// Get repository status JSON

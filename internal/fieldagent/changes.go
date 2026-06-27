@@ -100,9 +100,9 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 			execSessions = false
 		}
 
-		if microserviceConfig || microserviceList || execSessions || initialization {
-			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v, execSessions: %v",
-				microserviceConfig, microserviceList, execSessions))
+		if microserviceConfig || microserviceList || initialization {
+			logging.LogDebug(moduleName, fmt.Sprintf("Processing microservice related changes - microserviceConfig: %v, microserviceList: %v",
+				microserviceConfig, microserviceList))
 
 			// Load microservices
 			microservices, err := fa.loadMicroservices(false)
@@ -120,12 +120,21 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 						resetChanges = false
 					}
 				}
+			}
+		}
 
-				// Process exec sessions changes
-				if execSessions {
-					logging.LogDebug(moduleName, "Processing exec sessions changes")
-					fa.HandleExecSessions(fa.GetLatestMicroservices())
-				}
+		// Process exec sessions changes
+		if execSessions {
+			logging.LogDebug(moduleName, "Processing exec sessions changes")
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			execSessionManager := GetExecSessionManager()
+			sessions, err := execSessionManager.FetchExecSessions(ctx)
+			cancel()
+			if err != nil {
+				logging.LogError(moduleName, "Unable to handle exec sessions", err)
+				resetChanges = false
+			} else {
+				execSessionManager.HandleExecSessions(sessions)
 			}
 		}
 

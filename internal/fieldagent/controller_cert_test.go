@@ -80,7 +80,7 @@ func TestExecHandler_LoadsControllerCertFromFilePath(t *testing.T) {
 	cfg.ControllerURL = "https://192.168.1.1:51121/api/v3"
 	cfg.ControllerCert = certPath
 
-	handler := newExecSessionWebSocketHandler("ms-uuid")
+	handler := newExecSessionWebSocketHandler("sess-1", "ms-uuid")
 	if handler == nil {
 		t.Fatal("expected handler")
 	}

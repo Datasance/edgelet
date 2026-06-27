@@ -20,6 +20,10 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+func websocketUpgrader() websocket.Upgrader {
+	return websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+}
+
 func TestConvertToWebSocketURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -86,12 +90,13 @@ func setupExecTestJWT(t *testing.T) {
 	auth.GetJWTManager().Reset()
 }
 
-func newTestExecHandler(wsURL, microserviceUUID string) *ExecSessionWebSocketHandler {
+func newTestExecHandler(wsURL, sessionID, microserviceUUID string) *ExecSessionWebSocketHandler {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &ExecSessionWebSocketHandler{
 		controllerWsURL:  wsURL,
+		sessionID:        sessionID,
 		microserviceUUID: microserviceUUID,
-		outputBuffer:     make(chan []byte, maxBufferedFrames),
+		outputBuffer:     make(chan execFrame, maxBufferedFrames),
 		ctx:              ctx,
 		cancel:           cancel,
 		config:           config.GetInstance(),
@@ -104,7 +109,7 @@ func newTestExecHandler(wsURL, microserviceUUID string) *ExecSessionWebSocketHan
 }
 
 func TestExecHandler_ResetClearsStalePendingState(t *testing.T) {
-	h := newTestExecHandler("ws://unused", "ms-stale")
+	h := newTestExecHandler("ws://unused", "sess-reset", "ms-stale")
 	h.isConnected.Store(false)
 	h.state.Store(StatePending)
 
@@ -122,7 +127,7 @@ func TestExecHandler_ResetClearsStalePendingState(t *testing.T) {
 }
 
 func TestExecHandler_DisconnectClearsStalePendingState(t *testing.T) {
-	h := newTestExecHandler("ws://unused", "ms-disconnect")
+	h := newTestExecHandler("ws://unused", "sess-disconnect", "ms-disconnect")
 	h.isConnected.Store(false)
 	h.state.Store(StatePending)
 
@@ -137,7 +142,7 @@ func TestExecHandler_ConnectAfterStalePendingState(t *testing.T) {
 	setupExecTestJWT(t)
 
 	var upgrades atomic.Int32
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	upgrader := websocketUpgrader()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrades.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -150,8 +155,10 @@ func TestExecHandler_ConnectAfterStalePendingState(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/ms-connect"
-	h := newTestExecHandler(wsURL, "ms-connect")
+	sessionID := "sess-connect"
+	msUUID := "ms-connect"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/microservice/" + msUUID + "/" + sessionID
+	h := newTestExecHandler(wsURL, sessionID, msUUID)
 	h.isConnected.Store(false)
 	h.state.Store(StatePending)
 
@@ -177,11 +184,48 @@ func TestExecHandler_ConnectAfterStalePendingState(t *testing.T) {
 	h.Reset()
 }
 
-func TestExecHandler_ConnectSendsInitMessage(t *testing.T) {
+func TestExecHandler_ConnectDoesNotSendInitMessage(t *testing.T) {
 	setupExecTestJWT(t)
 
-	initCh := make(chan map[string]string, 1)
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	initCh := make(chan struct{}, 1)
+	upgrader := websocketUpgrader()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		if _, _, err := conn.ReadMessage(); err == nil {
+			initCh <- struct{}{}
+		}
+		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	}))
+	t.Cleanup(srv.Close)
+
+	sessionID := "sess-no-init"
+	msUUID := "ms-init"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/microservice/" + msUUID + "/" + sessionID
+	h := newTestExecHandler(wsURL, sessionID, msUUID)
+
+	if err := h.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	select {
+	case <-initCh:
+		t.Fatal("unexpected init/pairing frame on connect")
+	case <-time.After(600 * time.Millisecond):
+	}
+
+	h.Reset()
+}
+
+func TestExecHandler_SendMessageUsesSessionIDAsExecID(t *testing.T) {
+	setupExecTestJWT(t)
+
+	var received atomic.Bool
+	upgrader := websocketUpgrader()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -197,69 +241,206 @@ func TestExecHandler_ConnectSendsInitMessage(t *testing.T) {
 		if err != nil {
 			return
 		}
-		msg := make(map[string]string)
 		for i := 0; i < n; i++ {
 			key, err := dec.DecodeString()
 			if err != nil {
 				return
 			}
-			val, err := dec.DecodeString()
-			if err != nil {
+			if key == "execId" {
+				val, err := dec.DecodeString()
+				if err != nil {
+					return
+				}
+				if val == "sess-send" {
+					received.Store(true)
+				}
 				return
 			}
-			msg[key] = val
+			if err := dec.Skip(); err != nil {
+				return
+			}
 		}
-		initCh <- msg
-		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	}))
 	t.Cleanup(srv.Close)
 
-	msUUID := "ms-init"
-	execID := "exec-test-id"
-	fa := &FieldAgent{
-		activeExecSessions: map[string]string{msUUID: execID},
-		execCallbacks:      map[string]*ExecSessionCallback{},
-		activeWebSockets:   map[string]*ExecSessionWebSocketHandler{},
-	}
-	// Override singleton for test
-	prev := instance
-	instance = fa
-	t.Cleanup(func() { instance = prev })
-
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/" + msUUID
-	h := newTestExecHandler(wsURL, msUUID)
-
+	sessionID := "sess-send"
+	msUUID := "ms-send"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/microservice/" + msUUID + "/" + sessionID
+	h := newTestExecHandler(wsURL, sessionID, msUUID)
 	if err := h.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
+	h.isActive.Store(true)
+	h.state.Store(StateActive)
 
-	select {
-	case msg := <-initCh:
-		if msg["execId"] != execID {
-			t.Fatalf("init execId = %q, want %q", msg["execId"], execID)
+	if err := h.SendMessage(ExecTypeStdout, []byte("hello")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !received.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for outbound frame with execId=sessionId")
 		}
-		if msg["microserviceUuid"] != msUUID {
-			t.Fatalf("init microserviceUuid = %q, want %q", msg["microserviceUuid"], msUUID)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for init message")
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	h.Reset()
 }
 
-func TestExecHandler_ResetIsolationBetweenMicroservices(t *testing.T) {
-	hA := newTestExecHandler("ws://unused/a", "ms-a")
-	hB := newTestExecHandler("ws://unused/b", "ms-b")
+func TestExecHandler_ResetIsolationBetweenSessions(t *testing.T) {
+	hA := newTestExecHandler("ws://unused/a", "sess-a", "ms-a")
+	hB := newTestExecHandler("ws://unused/b", "sess-b", "ms-b")
 
 	hA.isConnected.Store(false)
 	hA.state.Store(StatePending)
 	hA.Reset()
 
 	if hB.GetConnectionState() != StateDisconnected {
-		t.Fatalf("ms-b state changed unexpectedly: %v", hB.GetConnectionState())
+		t.Fatalf("sess-b state changed unexpectedly: %v", hB.GetConnectionState())
 	}
 
 	hB.state.Store(StateActive)
 	hB.isConnected.Store(true)
+}
+
+func TestExecHandler_needsResetBeforeConnect(t *testing.T) {
+	h := newTestExecHandler("ws://unused", "sess-needs-reset", "ms-1")
+	if h.needsResetBeforeConnect() {
+		t.Fatal("fresh handler should not need reset")
+	}
+	h.state.Store(StatePending)
+	if !h.needsResetBeforeConnect() {
+		t.Fatal("pending handler should need reset")
+	}
+	h.state.Store(StateDisconnected)
+	h.isConnected.Store(true)
+	if !h.needsResetBeforeConnect() {
+		t.Fatal("connected handler should need reset")
+	}
+}
+
+func TestExecHandler_SendMessageBuffersWhilePending(t *testing.T) {
+	h := newTestExecHandler("ws://unused", "sess-buffer", "ms-buffer")
+	h.isConnected.Store(true)
+	h.state.Store(StatePending)
+
+	if err := h.SendMessage(ExecTypeStdout, []byte("early")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if h.bufferedFrames.Load() != 1 {
+		t.Fatalf("bufferedFrames = %d, want 1", h.bufferedFrames.Load())
+	}
+}
+
+func TestExecHandler_SendMessageBuffersWhileDisconnected(t *testing.T) {
+	h := newTestExecHandler("ws://unused", "sess-disc", "ms-disc")
+	h.isActive.Store(true)
+	h.state.Store(StateActive)
+
+	if err := h.SendMessage(ExecTypeStdout, []byte("offline")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if h.bufferedFrames.Load() != 1 {
+		t.Fatalf("bufferedFrames = %d, want 1", h.bufferedFrames.Load())
+	}
+}
+
+func TestExecHandler_ActivationFlushesBufferedStdout(t *testing.T) {
+	setupExecTestJWT(t)
+
+	received := make(chan []byte, 1)
+	upgrader := websocketUpgrader()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			dec := msgpack.NewDecoder(bytes.NewReader(data))
+			n, err := dec.DecodeMapLen()
+			if err != nil {
+				continue
+			}
+			var msgType byte
+			var payload []byte
+			for i := 0; i < n; i++ {
+				key, err := dec.DecodeString()
+				if err != nil {
+					break
+				}
+				switch key {
+				case "type":
+					v, err := dec.DecodeUint8()
+					if err == nil {
+						msgType = v
+					}
+				case "data":
+					payload, _ = dec.DecodeBytes()
+				default:
+					_ = dec.Skip()
+				}
+			}
+			if msgType == ExecTypeStdout && len(payload) > 0 {
+				select {
+				case received <- payload:
+				default:
+				}
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	sessionID := "sess-flush"
+	msUUID := "ms-flush"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/agent/exec/microservice/" + msUUID + "/" + sessionID
+	h := newTestExecHandler(wsURL, sessionID, msUUID)
+	if err := h.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if err := h.SendMessage(ExecTypeStdout, []byte("buffered-prompt")); err != nil {
+		t.Fatalf("SendMessage before activation: %v", err)
+	}
+	if h.bufferedFrames.Load() != 1 {
+		t.Fatalf("expected 1 buffered frame before activation, got %d", h.bufferedFrames.Load())
+	}
+
+	h.handleActivation(sessionID)
+
+	select {
+	case payload := <-received:
+		if string(payload) != "buffered-prompt" {
+			t.Fatalf("payload = %q, want buffered-prompt", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for flushed stdout after activation")
+	}
+	if h.bufferedFrames.Load() != 0 {
+		t.Fatalf("bufferedFrames = %d after flush, want 0", h.bufferedFrames.Load())
+	}
+
+	h.Reset()
+}
+
+func TestExecCallback_ForwardBuffersBeforeConnect(t *testing.T) {
+	sessionID := "sess-callback"
+	msUUID := "ms-callback"
+	handler := newTestExecHandler("ws://unused", sessionID, msUUID)
+	callback := &ExecSessionCallback{
+		microserviceUUID: msUUID,
+		execID:           sessionID,
+		webSocketHandler: handler,
+	}
+	callback.isRunning.Store(true)
+
+	callback.forwardToWebSocket(ExecTypeStdout, []byte("pre-connect"))
+	if handler.bufferedFrames.Load() != 1 {
+		t.Fatalf("bufferedFrames = %d, want 1", handler.bufferedFrames.Load())
+	}
 }
