@@ -514,15 +514,6 @@ func (c *Client) GetMicroserviceStatus(containerID, _ string) (*models.Microserv
 		status.HealthStatus = &healthStatus
 	}
 
-	// Get exec session IDs if container is running
-	if state == "running" {
-		if len(inspect.ExecIDs) > 0 {
-			status.ExecSessionIDs = inspect.ExecIDs
-		} else {
-			status.ExecSessionIDs = []string{}
-		}
-	}
-
 	// Note: RestartStuckChecker integration will be handled in ProcessManager
 	// to avoid circular dependencies. The checker will be called after getting status
 	// to determine if status should be STUCK_IN_RESTART

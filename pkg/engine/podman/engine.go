@@ -87,8 +87,8 @@ func (e *Engine) AreMicroserviceAndContainerEqual(id string, ms *models.Microser
 	return e.inner.AreMicroserviceAndContainerEqual(id, ms, registry)
 }
 func (e *Engine) EnsureNetwork(name string) error { return e.inner.EnsureNetwork(name) }
-func (e *Engine) CreateExecSession(id string, cmd []string) (string, error) {
-	return e.inner.CreateExecSession(id, cmd)
+func (e *Engine) CreateExecSession(id string, runtimeExecID string, cmd []string) (string, error) {
+	return e.inner.CreateExecSession(id, runtimeExecID, cmd)
 }
 func (e *Engine) StartExecSession(execID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	return e.inner.StartExecSession(execID, stdin, stdout, stderr)

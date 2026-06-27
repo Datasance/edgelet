@@ -208,9 +208,9 @@ func (l *loggingEngine) EnsureNetwork(name string) error {
 	return err
 }
 
-func (l *loggingEngine) CreateExecSession(containerID string, cmd []string) (string, error) {
+func (l *loggingEngine) CreateExecSession(containerID string, runtimeExecID string, cmd []string) (string, error) {
 	start := time.Now()
-	execID, err := l.inner.CreateExecSession(containerID, cmd)
+	execID, err := l.inner.CreateExecSession(containerID, runtimeExecID, cmd)
 	l.emitMutating(runtimeops.EventEnginePrune, containerID, "", "", "exec create failed", "exec created", start, err, false, map[string]any{"operation": "createExec", "execId": execID})
 	return execID, err
 }

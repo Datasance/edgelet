@@ -55,7 +55,7 @@ func (noopEngine) AreMicroserviceAndContainerEqual(string, *models.Microservice,
 	return false
 }
 func (noopEngine) EnsureNetwork(string) error                                     { return nil }
-func (noopEngine) CreateExecSession(string, []string) (string, error)             { return "", nil }
+func (noopEngine) CreateExecSession(string, string, []string) (string, error)     { return "", nil }
 func (noopEngine) StartExecSession(string, io.Reader, io.Writer, io.Writer) error { return nil }
 func (noopEngine) GetExecSessionStatus(string) (bool, error)                      { return false, nil }
 func (noopEngine) GetExecSessionExitCode(string) (int, error)                     { return 0, nil }
