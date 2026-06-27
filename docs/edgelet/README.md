@@ -24,6 +24,7 @@ Operator and developer documentation for the Edgelet edge agent.
 | [workload-continuity.md](workload-continuity.md) | Reconcile behavior across restarts and engine changes |
 | [edgeguard.md](edgeguard.md) | Hardware attestation (`edgeGuardFrequency`) |
 | [control-plane.md](control-plane.md) | Local Datasance Controller deployment |
+| [exec-sessions.md](exec-sessions.md) | Multi-session exec (local CLI and controller-initiated) |
 | [manifest-reference.md](manifest-reference.md) | Deploy YAML (`Microservice`, `Registry`, `RuntimeClass`, `ControlPlane`) |
 | [examples/](examples/) | Reference manifest YAML samples |
 

@@ -250,6 +250,45 @@ See [../../test/embedded/README.md](../../test/embedded/README.md).
 
 ---
 
+## Microservice exec
+
+**Symptoms:** `Error[EXEC_START_TIMEOUT]`; attach fails with `Error[NOT_FOUND]`; controller exec works but local `ms exec` fails (or vice versa).
+
+**Checks:**
+
+1. Confirm the microservice container is running:
+
+   ```bash
+   edgelet ms inspect <uuid|namespace.name>
+   edgelet ms ls
+   ```
+
+2. Retry after a start timeout — POST waits up to **15 seconds** for the shell:
+
+   ```bash
+   edgelet ms exec <uuid> -- /bin/sh
+   ```
+
+   See [exec-sessions.md](exec-sessions.md) for the multi-session model and local vs controller limits.
+
+3. **Concurrent sessions:** local CLI exec is unlimited per microservice; controller exec is capped at **3** per microservice on Pot. Multiple local sessions should not block each other after v1.0.0-rc.6.
+
+4. **Orphan containerd exec** (embedded engine): if a prior exec crashed without cleanup, retry after the process manager orphan sweep or restart the microservice:
+
+   ```bash
+   edgelet ms restart <uuid>
+   ```
+
+5. **Controller exec only:** verify agent connectivity and that Controller **v3.8.x + Plan 17** is deployed. Status should list active controller session ids:
+
+   ```bash
+   edgelet system status -o json | jq '.connectionToController'
+   ```
+
+6. **`execEnabled`:** edgelet no longer gates exec on this flag — session poll drives controller exec. Do not expect toggling `execEnabled` to fix attach issues.
+
+---
+
 ## Collecting diagnostics
 
 ```bash

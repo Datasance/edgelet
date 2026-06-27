@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] — June 2026
+
+Release candidate introducing multi-session exec (Controller Plan 17 parity), local concurrent `edgelet ms exec`, and control-plane restart. Pair with Controller **v3.8.x** including Plan 17 multi-exec sessions.
+
 ### Added
 
+- **Multi-exec session model:** field agent polls `GET /api/v3/agent/exec/sessions` and attaches per `sessionId` over session-scoped agent WebSocket; MessagePack `execId` equals `sessionId`.
+- **Local concurrent exec:** unlimited concurrent `edgelet ms exec` sessions per microservice with owner-safe runtime ids and attach teardown.
+- **Exec start gate:** `POST /v1/ms/{id}/exec/sessions` blocks up to 15s; timeout returns **`EXEC_START_TIMEOUT`** (CLI maps to a retry hint).
+- **Status `execSessionIds[]`:** reports local controller attachment session ids per microservice (not local CLI sessions).
 - **ControlPlane restart:** `edgelet controlplane restart [--pull]` and `POST /v1/system/controlplane/restart` bounce the local controller container while provisioned; preserves UUID and volumes.
+
+### Changed
+
+- **Removed legacy agent exec WebSocket path** (`WS /agent/exec/{microserviceUuid}`) and init MessagePack pairing; exec is no longer gated on `execEnabled`.
+- **ProcessManager exec registry:** owner-aware sessions on all engines; `StopExecSession` waits before delete with orphan sweep.
+
+### Fixed
+
+- **Local vs controller exec collision:** deterministic `{containerID}-exec` id removed; local and controller sessions no longer cross-kill.
+- **Dead attach after POST 200:** sync start gate prevents returning a session id before the shell is ready.
 
 ## [1.0.0-rc.4] — June 2026
 

@@ -70,7 +70,7 @@ func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlan
 		return errors.New("process manager is not initialized")
 	}
 
-	now := time.Now().Unix()
+	nowSec := time.Now().Unix()
 
 	container, contErr := pm.containerForControlPlane(item.ControllerUUID, item.ContainerID)
 	if contErr != nil {
@@ -78,7 +78,7 @@ func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlan
 	}
 
 	if container == nil {
-		pm.launchControlPlaneWithHook(item, now)
+		pm.launchControlPlaneWithHook(item, nowSec)
 		got, found, err := store.GetInstance().GetSystemControlPlane()
 		if err != nil {
 			return err
@@ -96,14 +96,14 @@ func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlan
 	}
 
 	if pullImage || !engine.SupportsInPlaceRestart(pm.engineName) {
-		return pm.recreateControlPlaneDeployment(item, pullImage, now)
+		return pm.recreateControlPlaneDeployment(item, pullImage, nowSec)
 	}
 
 	if err := pm.StopMicroservice(item.ControllerUUID); err != nil {
 		item.LastError = err.Error()
 		item.RuntimeState = "failed"
 		item.State = item.RuntimeState
-		item.LastTransitionAt = now
+		item.LastTransitionAt = nowSec
 		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return err
 	}
@@ -111,7 +111,7 @@ func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlan
 		item.LastError = err.Error()
 		item.RuntimeState = "failed"
 		item.State = item.RuntimeState
-		item.LastTransitionAt = now
+		item.LastTransitionAt = nowSec
 		_ = store.GetInstance().UpsertSystemControlPlane(item)
 		return err
 	}
@@ -127,7 +127,7 @@ func (pm *ProcessManager) RestartControlPlaneDeployment(item *models.ControlPlan
 	item.RuntimeState = "running"
 	item.State = item.RuntimeState
 	item.LastError = ""
-	item.LastTransitionAt = now
+	item.LastTransitionAt = nowSec
 	if err := store.GetInstance().UpsertSystemControlPlane(item); err != nil {
 		return err
 	}

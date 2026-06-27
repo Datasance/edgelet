@@ -145,6 +145,7 @@ Stable error codes for API and CLI consumers:
 | `CONFLICT` | State conflict prevents the operation (e.g. apply already in progress) |
 | `NOT_IMPLEMENTED` | Endpoint or operation not implemented |
 | `METHOD_NOT_ALLOWED` | HTTP method not supported for route |
+| `EXEC_START_TIMEOUT` | Local exec session shell did not start within 15s (HTTP 504) |
 | `INTERNAL` | Unexpected server-side failure |
 
 ### CLI exit mapping
@@ -208,7 +209,7 @@ Runtime view and lifecycle for workloads (managed, local, and control-plane sour
 - `GET /v1/ms/{id}` — inspect (UUID or `namespace.name`)
 - Lifecycle: `start`, `stop`, `restart`, `kill`
 - Logs: `GET .../logs` (HTTP); `GET .../logs:stream` (WebSocket follow)
-- Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket)
+- Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket). See [exec-sessions.md](exec-sessions.md) for multi-session behavior, the 15s start wait, and `EXEC_START_TIMEOUT`.
 
 ### `/v1/deploy/*`
 
