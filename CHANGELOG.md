@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+
+
 ## [1.0.0-rc.6] — June 2026
 
 Release candidate introducing multi-session exec (Controller Plan 17 parity), local concurrent `edgelet ms exec`, and control-plane restart. Pair with Controller **v3.8.x** including Plan 17 multi-exec sessions.
@@ -18,6 +22,7 @@ Release candidate introducing multi-session exec (Controller Plan 17 parity), lo
 - **Exec start gate:** `POST /v1/ms/{id}/exec/sessions` blocks up to 15s; timeout returns **`EXEC_START_TIMEOUT`** (CLI maps to a retry hint).
 - **Status `execSessionIds[]`:** reports local controller attachment session ids per microservice (not local CLI sessions).
 - **ControlPlane restart:** `edgelet controlplane restart [--pull]` and `POST /v1/system/controlplane/restart` bounce the local controller container while provisioned; preserves UUID and volumes.
+- **Race detector Make targets:** `make test-race` (full unit-test tree on host), `make test-linux-race` (+ `-arm64` / `-amd64` for Linux Docker parity with CI tag matrix).
 
 ### Changed
 
@@ -28,6 +33,9 @@ Release candidate introducing multi-session exec (Controller Plan 17 parity), lo
 
 - **Local vs controller exec collision:** deterministic `{containerID}-exec` id removed; local and controller sessions no longer cross-kill.
 - **Dead attach after POST 200:** sync start gate prevents returning a session id before the shell is ready.
+- **Network manager boot retry:** no longer recurses on missing IPv4 at boot; degraded continue with background retry.
+- **Embedded containerd stale tasks:** orphaned runtime task dirs cleaned on data-plane bootstrap without wiping image cache.
+- **Controller reconnect reconcile:** field agent live-reconciles from Pot on reconnect; deduplicated init reload vs getChanges.
 
 ## [1.0.0-rc.4] — June 2026
 
