@@ -1,10 +1,41 @@
 package processmanager
 
 import (
+	"time"
+
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
+
+var execStartGateTimeoutForTest time.Duration
+
+func execStartGateDuration() time.Duration {
+	if execStartGateTimeoutForTest > 0 {
+		return execStartGateTimeoutForTest
+	}
+	return ExecStartGateTimeout * time.Second
+}
+
+// SetExecStartGateTimeoutForTest shortens the sync start gate for unit tests.
+func SetExecStartGateTimeoutForTest(d time.Duration) {
+	execStartGateTimeoutForTest = d
+}
+
+// ResetExecStartGateTimeoutForTest restores the production sync start gate duration.
+func ResetExecStartGateTimeoutForTest() {
+	execStartGateTimeoutForTest = 0
+}
+
+// ResetExecRegistryForTest clears the exec session registry on the singleton.
+func ResetExecRegistryForTest() {
+	GetInstance().execRegistry = NewExecSessionRegistry()
+}
+
+// RegisterExecSessionForTest inserts a registry row for handler/integration tests.
+func RegisterExecSessionForTest(rec *ExecSessionRecord) error {
+	return GetInstance().ensureExecRegistry().Register(rec)
+}
 
 // ConfigureEngineForTest wires a test engine into the process manager singleton.
 func ConfigureEngineForTest(eng engine.ContainerEngine) {
@@ -28,4 +59,14 @@ func ConfigureControlPlaneRestartForTest(eng engine.ContainerEngine, engineName 
 	if pm.logger == nil {
 		pm.logger = logging.NewModuleLogger(ProcessManagerModuleName)
 	}
+}
+
+// ResetProcessManagerEngineForTest clears test engine wiring on the singleton so later
+// tests that expect an uninitialized process manager are not polluted.
+func ResetProcessManagerEngineForTest() {
+	pm := GetInstance()
+	pm.engine = nil
+	pm.engineName = ""
+	pm.containerManager = nil
+	pm.recreateControlPlaneFn = nil
 }
