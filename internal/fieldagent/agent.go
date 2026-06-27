@@ -71,6 +71,10 @@ type FieldAgent struct {
 	bootstrapMu          sync.RWMutex
 	bootstrapCacheLoaded bool
 
+	// reconnect tracks connect generation and last reconcile for init-path dedup (Plan 22-C).
+	reconnect   reconnectState
+	reconcileMu sync.Mutex
+
 	// Provisioning lock
 	provisioningMu sync.Mutex
 
@@ -82,6 +86,9 @@ type FieldAgent struct {
 
 	// test hook: replaces processChanges in the changes worker.
 	processChangesFn func(changes map[string]any) bool
+
+	// test hook: replaces controllerReconcile in unit tests.
+	controllerReconcileHook func() error
 
 	controllerRegister *controllerRegisterState
 }
@@ -392,14 +399,20 @@ func contains(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
-// ping pings the controller to check connectivity
+// ping pings the controller to check connectivity.
 func (fa *FieldAgent) ping() bool {
+	ok, _ := fa.pingWithTransition()
+	return ok
+}
+
+// pingWithTransition pings the controller and reports whether this success was a reconnect
+// transition from NOT_CONNECTED or BROKEN_CERTIFICATE (Plan 22-C).
+func (fa *FieldAgent) pingWithTransition() (ok bool, transitioned bool) {
 	logging.LogDebug(moduleName, "Started Ping")
 
 	if fa.NotProvisioned() {
 		logging.LogDebug(moduleName, "Agent not provisioned, skipping ping")
-		// logging.LogInfo(moduleName, "Finished Ping: false (not provisioned)")
-		return false
+		return false, false
 	}
 
 	timeoutSec := config.GetInstance().ControllerPingTimeoutSeconds
@@ -412,21 +425,21 @@ func (fa *FieldAgent) ping() bool {
 	client := fa.getAPIClient()
 	if client == nil {
 		logging.LogError(moduleName, "API client not initialized for ping", errors.New("api client is nil"))
-		return false
+		return false, false
 	}
 	logging.LogDebug(moduleName, "Calling API client ping")
-	ok, err := client.Ping(ctx)
+	pingOK, err := client.Ping(ctx)
 	if err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Error pinging controller: %v", err), err)
 		fa.verificationFailed(err)
 		logging.LogDebug(moduleName, "Finished Ping: false (error)")
-		return false
+		return false, false
 	}
 
-	if ok {
+	if pingOK {
+		transitioned = fa.noteControllerReachable()
 		fa.state.SetControllerStatus(models.ControllerStatusOK)
 		fa.state.SetControllerVerified(true)
-		// Update StatusReporter
 		statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
 			status.ControllerStatus = models.ControllerStatusOK
 			status.ControllerVerified = true
@@ -435,13 +448,12 @@ func (fa *FieldAgent) ping() bool {
 		logging.LogDebug(moduleName, fmt.Sprintf("Updated StatusReporter: ControllerStatus=%s, ControllerVerified=%v",
 			models.ControllerStatusOK, true))
 
-		// Verify the update was applied
 		verifyStatus := statusreporter.GetInstance().GetFieldAgentStatus()
 		logging.LogDebug(moduleName, fmt.Sprintf("Verified StatusReporter state: ControllerStatus=%s, ControllerVerified=%v",
 			verifyStatus.ControllerStatus, verifyStatus.ControllerVerified))
 
 		logging.LogDebug(moduleName, "Finished Ping: true")
-		return true
+		return true, transitioned
 	}
 
 	logging.LogWarn(moduleName, "Controller ping returned false (no status in response)")
@@ -454,7 +466,7 @@ func (fa *FieldAgent) ping() bool {
 		})
 	}
 	logging.LogDebug(moduleName, "Finished Ping: false")
-	return false
+	return false, false
 }
 
 // Provision provisions the agent with the controller

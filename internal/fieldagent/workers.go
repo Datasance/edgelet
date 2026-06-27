@@ -70,12 +70,15 @@ func (fa *FieldAgent) pingControllerWorker() {
 		case <-timer.C:
 			if !fa.NotProvisioned() {
 				logging.LogDebug(moduleName, "Start Ping controller")
-				ok := fa.ping()
+				ok, transitioned := fa.pingWithTransition()
 				logging.LogDebug(moduleName, "Finished Ping controller")
 
 				if ok {
 					consecutiveFailures = 0
 					interval = baseInterval
+					if transitioned {
+						fa.runControllerReconcileAsync()
+					}
 				} else {
 					consecutiveFailures++
 					// Exponential backoff: 30s, 60s, 120s, ... cap at 5 min
