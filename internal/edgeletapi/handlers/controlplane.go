@@ -180,6 +180,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApply(w http.ResponseWriter,
 	h.controlPlaneApplyMu.Unlock()
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("control plane apply operation started operationId=%s source=%s dryRun=%v namespace=%s name=%s", op.OperationID, strings.TrimSpace(sourceName), dryRun, op.Namespace, op.Name))
 
+	accepted := snapshotControlPlaneApplyAccepted(op)
 	go func(operationID, manifestText, source string, applyDryRun bool) {
 		result, applyErr := h.facade.ApplyControlPlaneManifest(manifestText, source, applyDryRun, func(stage string, _ string) {
 			normalized := strings.TrimSpace(strings.ToLower(stage))
@@ -224,16 +225,7 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApply(w http.ResponseWriter,
 		logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("control plane apply succeeded operationId=%s controllerUuid=%s dryRun=%v", operationID, result.ControllerUUID, applyDryRun))
 	}(op.OperationID, manifest, sourceName, dryRun)
 
-	writeSuccess(w, http.StatusAccepted, map[string]any{
-		"operationId":    op.OperationID,
-		"status":         op.Status,
-		"controllerUuid": op.ControllerUUID,
-		"generation":     op.Generation,
-		"namespace":      op.Namespace,
-		"name":           op.Name,
-		"image":          op.Image,
-		"startedAt":      op.StartedAt.Format(time.RFC3339Nano),
-	})
+	writeSuccess(w, http.StatusAccepted, accepted)
 }
 
 func (h *EdgeletAPIHandler) HandleDeployControlPlaneApplyStatus(w http.ResponseWriter, r *http.Request) {
@@ -248,56 +240,13 @@ func (h *EdgeletAPIHandler) HandleDeployControlPlaneApplyStatus(w http.ResponseW
 	}
 	h.controlPlaneApplyMu.RLock()
 	op, ok := h.controlPlaneApplyOps[operationID]
-	h.controlPlaneApplyMu.RUnlock()
 	if !ok {
+		h.controlPlaneApplyMu.RUnlock()
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "control plane apply operation not found", nil)
 		return
 	}
-	response := map[string]any{
-		"operationId": op.OperationID,
-		"status":      op.Status,
-		"startedAt":   op.StartedAt.Format(time.RFC3339Nano),
-	}
-	if strings.TrimSpace(op.Stage) != "" {
-		response["stage"] = op.Stage
-	}
-	if strings.TrimSpace(op.ControllerUUID) != "" {
-		response["controllerUuid"] = op.ControllerUUID
-	}
-	if op.Generation > 0 {
-		response["generation"] = op.Generation
-	}
-	if strings.TrimSpace(op.Namespace) != "" {
-		response["namespace"] = op.Namespace
-	}
-	if strings.TrimSpace(op.Name) != "" {
-		response["name"] = op.Name
-	}
-	if strings.TrimSpace(op.Image) != "" {
-		response["image"] = op.Image
-	}
-	if strings.TrimSpace(op.Mode) != "" {
-		response["mode"] = op.Mode
-	}
-	if strings.TrimSpace(op.ContainerID) != "" {
-		response["containerId"] = op.ContainerID
-	}
-	if strings.TrimSpace(op.RuntimeState) != "" {
-		response["runtimeState"] = op.RuntimeState
-	}
-	if op.EndedAt != nil {
-		response["endedAt"] = op.EndedAt.Format(time.RFC3339Nano)
-	}
-	if strings.TrimSpace(op.ErrorMessage) != "" {
-		code := strings.TrimSpace(op.ErrorCode)
-		if code == "" {
-			code = ErrCodeInternal
-		}
-		response["error"] = map[string]any{
-			"code":    code,
-			"message": op.ErrorMessage,
-		}
-	}
+	response := snapshotControlPlaneApplyOperation(op)
+	h.controlPlaneApplyMu.RUnlock()
 	writeSuccess(w, http.StatusOK, response)
 }
 
