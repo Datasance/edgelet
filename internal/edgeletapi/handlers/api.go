@@ -2087,28 +2087,37 @@ func (h *EdgeletAPIHandler) handleCreateExecSession(w http.ResponseWriter, r *ht
 	if len(req.Command) == 1 && strings.TrimSpace(req.Command[0]) == "" {
 		req.Command = containerexec.ShellCommandInteractive()
 	}
-	uuid, err := h.facade.ResolveMicroserviceID(selector)
+	msUUID, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
+	sessionID := uuid.NewString()
 	callback := newLocalExecCallback()
-	execID, err := processmanager.GetInstance().CreateExecSession(uuid, req.Command, callback)
-	if err != nil {
+	pm := processmanager.GetInstance()
+	if err := pm.CreateLocalExecSession(sessionID, msUUID, req.Command, callback); err != nil {
+		if errors.Is(err, processmanager.ErrExecStartTimeout) {
+			writeAPIError(w, http.StatusGatewayTimeout, ErrCodeExecStartTimeout, err.Error(), nil)
+			return
+		}
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
+	status := "PENDING"
+	if rec, ok := pm.GetSession(sessionID); ok && rec.Started {
+		status = "ACTIVE"
+	}
 	h.execMu.Lock()
-	h.execSessions[execID] = &localExecSession{
-		SessionID:        execID,
-		MicroserviceUUID: uuid,
+	h.execSessions[sessionID] = &localExecSession{
+		SessionID:        sessionID,
+		MicroserviceUUID: msUUID,
 		callback:         callback,
 		createdAt:        time.Now().UTC(),
 	}
 	h.execMu.Unlock()
 	writeSuccess(w, http.StatusOK, map[string]any{
-		"sessionId": execID,
-		"wsUrl":     fmt.Sprintf("/v1/ms/%s/exec/sessions/%s:attach", selector, execID),
+		"sessionId": sessionID,
+		"status":    status,
 	})
 }
 
@@ -2118,14 +2127,13 @@ func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, se
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	h.execMu.RLock()
-	session, ok := h.execSessions[sessionID]
-	h.execMu.RUnlock()
-	if !ok || session.MicroserviceUUID != uuid {
+	rec, ok := h.lookupLocalExecSession(uuid, sessionID)
+	if !ok {
 		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
 		return
 	}
-	running, err := processmanager.GetInstance().GetExecSessionStatus(sessionID)
+	pm := processmanager.GetInstance()
+	running, err := pm.GetExecSessionStatus(rec.RuntimeExecID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
@@ -2135,7 +2143,7 @@ func (h *EdgeletAPIHandler) handleGetExecSessionStatus(w http.ResponseWriter, se
 		"microserviceUuid": uuid,
 		"running":          running,
 		"exitCode": func() any {
-			code, codeErr := processmanager.GetInstance().GetExecSessionExitCode(sessionID)
+			code, codeErr := pm.GetExecSessionExitCode(rec.RuntimeExecID)
 			if codeErr != nil {
 				return nil
 			}
@@ -2150,7 +2158,11 @@ func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selecto
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	if err := processmanager.GetInstance().StopExecSession(uuid, sessionID); err != nil {
+	if _, ok := h.lookupLocalExecSession(uuid, sessionID); !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
+		return
+	}
+	if err := processmanager.GetInstance().ReleaseExecSession(sessionID, processmanager.ExecOwnerLocal); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
 		return
 	}
@@ -2160,10 +2172,23 @@ func (h *EdgeletAPIHandler) handleStopExecSession(w http.ResponseWriter, selecto
 	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok", "sessionId": sessionID})
 }
 
+func (h *EdgeletAPIHandler) lookupLocalExecSession(msUUID, sessionID string) (*processmanager.ExecSessionRecord, bool) {
+	rec, ok := processmanager.GetInstance().GetSession(sessionID)
+	if !ok || rec.Owner != processmanager.ExecOwnerLocal || rec.MSUUID != msUUID {
+		return nil, false
+	}
+	return rec, true
+}
+
 func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *http.Request, selector, sessionID string) {
 	uuid, err := h.facade.ResolveMicroserviceID(selector)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
+		return
+	}
+	rec, ok := h.lookupLocalExecSession(uuid, sessionID)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, "exec session not found", nil)
 		return
 	}
 	h.execMu.RLock()
@@ -2178,6 +2203,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 		return
 	}
 
+	pm := processmanager.GetInstance()
 	var wg sync.WaitGroup
 	var writeMu sync.Mutex
 	wg.Add(3)
@@ -2231,7 +2257,7 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 				Rows uint32 `json:"rows"`
 			}
 			if json.Unmarshal(msg, &ctrl) == nil && strings.EqualFold(strings.TrimSpace(ctrl.Type), "resize") {
-				_ = processmanager.GetInstance().ResizeExecSession(sessionID, ctrl.Cols, ctrl.Rows)
+				_ = pm.ResizeExecSession(rec.RuntimeExecID, ctrl.Cols, ctrl.Rows)
 				continue
 			}
 			_, _ = session.callback.stdinW.Write(msg)
@@ -2241,8 +2267,8 @@ func (h *EdgeletAPIHandler) handleAttachExecSessionWS(w http.ResponseWriter, r *
 	case <-session.callback.done:
 	case <-time.After(10 * time.Minute):
 	}
-	exitCode, _ := processmanager.GetInstance().GetExecSessionExitCode(sessionID)
-	_ = processmanager.GetInstance().StopExecSession(uuid, sessionID)
+	exitCode, _ := pm.GetExecSessionExitCode(rec.RuntimeExecID)
+	_ = pm.ReleaseExecSession(sessionID, processmanager.ExecOwnerLocal)
 	h.execMu.Lock()
 	delete(h.execSessions, sessionID)
 	h.execMu.Unlock()

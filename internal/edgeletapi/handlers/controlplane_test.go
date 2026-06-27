@@ -89,7 +89,7 @@ func (e *controlPlaneAPITestEngine) AreMicroserviceAndContainerEqual(string, *mo
 	return false
 }
 func (e *controlPlaneAPITestEngine) EnsureNetwork(string) error { return nil }
-func (e *controlPlaneAPITestEngine) CreateExecSession(string, []string) (string, error) {
+func (e *controlPlaneAPITestEngine) CreateExecSession(string, string, []string) (string, error) {
 	return "", nil
 }
 func (e *controlPlaneAPITestEngine) StartExecSession(string, io.Reader, io.Writer, io.Writer) error {

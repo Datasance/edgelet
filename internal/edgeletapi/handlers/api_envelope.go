@@ -18,6 +18,7 @@ const (
 	ErrCodeNotImplemented   = "NOT_IMPLEMENTED"
 	ErrCodeInternal         = "INTERNAL"
 	ErrCodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
+	ErrCodeExecStartTimeout = "EXEC_START_TIMEOUT"
 )
 
 type apiErrorBody struct {
