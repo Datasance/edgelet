@@ -82,8 +82,8 @@ func (e *cpRestartTestEngine) PullImage(string, *models.Registry, *engine.PullIm
 	return nil
 }
 func (e *cpRestartTestEngine) FindLocalImage(string, string, bool) (bool, error) { return true, nil }
-func (e *cpRestartTestEngine) RemoveImage(string) error                            { return nil }
-func (e *cpRestartTestEngine) PruneImages() error                                  { return nil }
+func (e *cpRestartTestEngine) RemoveImage(string) error                          { return nil }
+func (e *cpRestartTestEngine) PruneImages() error                                { return nil }
 func (e *cpRestartTestEngine) ListImages(context.Context) ([]engine.ImageInfo, error) {
 	return nil, nil
 }
@@ -108,7 +108,7 @@ func (e *cpRestartTestEngine) GetContainerStats(string) (*engine.ContainerStats,
 	return nil, nil
 }
 func (e *cpRestartTestEngine) GetContainerIPAddress(string) (string, error) { return "10.0.0.2", nil }
-func (e *cpRestartTestEngine) GetContainerStartedAt(string) (int64, error)    { return 0, nil }
+func (e *cpRestartTestEngine) GetContainerStartedAt(string) (int64, error)  { return 0, nil }
 func (e *cpRestartTestEngine) InspectContainerRaw(string) (map[string]any, error) {
 	return nil, nil
 }
@@ -119,7 +119,7 @@ func (e *cpRestartTestEngine) AreMicroserviceAndContainerEqual(string, *models.M
 	return false
 }
 func (e *cpRestartTestEngine) EnsureNetwork(string) error { return nil }
-func (e *cpRestartTestEngine) CreateExecSession(string, []string) (string, error) {
+func (e *cpRestartTestEngine) CreateExecSession(string, string, []string) (string, error) {
 	return "", nil
 }
 func (e *cpRestartTestEngine) StartExecSession(string, io.Reader, io.Writer, io.Writer) error {
@@ -161,6 +161,7 @@ func setupControlPlaneRestartFacadeTest(t *testing.T, uuid string) *Facade {
 		item.LastError = ""
 		return store.GetInstance().UpsertSystemControlPlane(item)
 	})
+	t.Cleanup(processmanager.ResetProcessManagerEngineForTest)
 
 	return f
 }

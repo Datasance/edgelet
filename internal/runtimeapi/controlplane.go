@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
@@ -14,7 +15,7 @@ import (
 
 var (
 	ErrControlPlaneNotFound       = errors.New("control plane deployment not found")
-	ErrControlPlaneRestartBlocked   = errors.New("control plane restart blocked: apply in progress")
+	ErrControlPlaneRestartBlocked = errors.New("control plane restart blocked: apply in progress")
 )
 
 const controlPlaneLaunchInFlightStaleTimeout = 30 * time.Minute
@@ -151,18 +152,14 @@ func controlPlaneLaunchInFlight(item *models.ControlPlaneDeployment, now int64) 
 }
 
 func (f *Facade) stopControlPlaneExecSessions(controllerUUID string) {
-	if f == nil || f.fa == nil {
+	if f == nil {
 		return
 	}
 	uuid := strings.TrimSpace(controllerUUID)
 	if uuid == "" {
 		return
 	}
-	execID := strings.TrimSpace(f.fa.GetActiveExecSession(uuid))
-	if execID == "" {
-		return
-	}
-	_ = f.fa.HandleExecSessionClose(uuid, execID)
+	fieldagent.GetExecSessionManager().StopAllInteractiveForMicroservice(uuid)
 }
 
 // DeleteControlPlane removes the controller deployment, container, and volumes.
