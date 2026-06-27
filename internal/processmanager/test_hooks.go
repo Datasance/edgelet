@@ -40,8 +40,10 @@ func RegisterExecSessionForTest(rec *ExecSessionRecord) error {
 // ConfigureEngineForTest wires a test engine into the process manager singleton.
 func ConfigureEngineForTest(eng engine.ContainerEngine) {
 	pm := GetInstance()
+	pm.engineMu.Lock()
 	pm.engine = eng
 	pm.containerManager = NewContainerManager(eng, nil, "docker")
+	pm.engineMu.Unlock()
 	if pm.logger == nil {
 		pm.logger = logging.NewModuleLogger(ProcessManagerModuleName)
 	}
@@ -50,12 +52,14 @@ func ConfigureEngineForTest(eng engine.ContainerEngine) {
 // ConfigureControlPlaneRestartForTest wires engine metadata and optional recreate hook for facade restart tests.
 func ConfigureControlPlaneRestartForTest(eng engine.ContainerEngine, engineName string, recreateFn func(*models.ControlPlaneDeployment, bool, int64) error) {
 	pm := GetInstance()
+	pm.engineMu.Lock()
 	pm.engine = eng
 	if engineName != "" {
 		pm.engineName = engineName
 	}
 	pm.containerManager = NewContainerManager(eng, nil, pm.engineName)
 	pm.recreateControlPlaneFn = recreateFn
+	pm.engineMu.Unlock()
 	if pm.logger == nil {
 		pm.logger = logging.NewModuleLogger(ProcessManagerModuleName)
 	}
@@ -65,8 +69,10 @@ func ConfigureControlPlaneRestartForTest(eng engine.ContainerEngine, engineName 
 // tests that expect an uninitialized process manager are not polluted.
 func ResetProcessManagerEngineForTest() {
 	pm := GetInstance()
+	pm.engineMu.Lock()
 	pm.engine = nil
 	pm.engineName = ""
 	pm.containerManager = nil
 	pm.recreateControlPlaneFn = nil
+	pm.engineMu.Unlock()
 }

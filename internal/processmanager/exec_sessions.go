@@ -195,16 +195,20 @@ func (pm *ProcessManager) prepareAndCreateExec(containerID, execIDHint string, c
 }
 
 func (pm *ProcessManager) launchExecSessionIO(runtimeExecID string, callback ExecSessionCallbackInterface) {
+	pm.engineMu.RLock()
+	eng := pm.engine
+	pm.engineMu.RUnlock()
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				logging.LogError(ProcessManagerModuleName, "Panic recovered", fmt.Errorf("%v", r))
 			}
 		}()
-		if callback == nil {
+		if callback == nil || eng == nil {
 			return
 		}
-		if err := pm.engine.StartExecSession(
+		if err := eng.StartExecSession(
 			runtimeExecID,
 			callback.GetStdinReader(),
 			callback.GetStdoutWriter(),

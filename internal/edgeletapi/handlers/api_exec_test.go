@@ -166,6 +166,7 @@ func setupExecAPITest(t *testing.T, eng *execAPITestEngine) (*EdgeletAPIHandler,
 	t.Cleanup(func() {
 		processmanager.ResetExecStartGateTimeoutForTest()
 		processmanager.ResetExecRegistryForTest()
+		processmanager.ResetProcessManagerEngineForTest()
 	})
 	return NewEdgeletAPIHandler(), "ms-1"
 }

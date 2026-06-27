@@ -41,6 +41,7 @@ const (
 // ProcessManager manages container lifecycle via a ContainerEngine.
 type ProcessManager struct {
 	engine                       engine.ContainerEngine
+	engineMu                     sync.RWMutex
 	engineName                   string
 	microserviceManager          MicroserviceManagerInterface
 	containerManager             *ContainerManager
@@ -94,7 +95,9 @@ func GetInstance() *ProcessManager {
 func (pm *ProcessManager) Start(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) error {
 	pm.logger.Info("Starting Process Manager")
 
+	pm.engineMu.Lock()
 	pm.engine = eng
+	pm.engineMu.Unlock()
 	pm.microserviceManager = microserviceManager
 	if cfg := config.GetInstance(); cfg != nil {
 		pm.engineName = cfg.ContainerEngine
