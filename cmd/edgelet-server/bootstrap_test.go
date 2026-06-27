@@ -20,8 +20,9 @@ type fakeContainerdService struct {
 func (f *fakeContainerdService) Start() error { return f.startErr }
 func (f *fakeContainerdService) Stop()        { f.stopCalled++ }
 
-func TestStartEmbeddedContainerdWithRetryDeps_PreStartCleanupRunsBeforeFirstAttempt(t *testing.T) {
-	cleanupCalls := 0
+func TestStartEmbeddedContainerdWithRetryDeps_StaleCleanupRunsBeforeFirstAttempt(t *testing.T) {
+	staleCleanupCalls := 0
+	artifactCleanupCalls := 0
 	attempts := 0
 
 	deps := bootstrapDeps{
@@ -31,7 +32,11 @@ func TestStartEmbeddedContainerdWithRetryDeps_PreStartCleanupRunsBeforeFirstAtte
 			return &fakeContainerdService{}
 		},
 		cleanupRuntime: func() error {
-			cleanupCalls++
+			artifactCleanupCalls++
+			return nil
+		},
+		cleanupStaleTasks: func() error {
+			staleCleanupCalls++
 			return nil
 		},
 		sleep: func(time.Duration) {},
@@ -47,14 +52,18 @@ func TestStartEmbeddedContainerdWithRetryDeps_PreStartCleanupRunsBeforeFirstAtte
 	if attempts != 1 {
 		t.Fatalf("expected single attempt success, got attempts=%d", attempts)
 	}
-	if cleanupCalls != 1 {
-		t.Fatalf("expected exactly one pre-start cleanup call, got %d", cleanupCalls)
+	if staleCleanupCalls != 1 {
+		t.Fatalf("expected exactly one stale task cleanup call, got %d", staleCleanupCalls)
+	}
+	if artifactCleanupCalls != 0 {
+		t.Fatalf("expected no artifact cleanup on first-attempt success, got %d", artifactCleanupCalls)
 	}
 }
 
 func TestStartEmbeddedContainerdWithRetryDeps_SucceedsAfterRetry(t *testing.T) {
 	attempt := 0
-	cleanupCalls := 0
+	staleCleanupCalls := 0
+	artifactCleanupCalls := 0
 
 	deps := bootstrapDeps{
 		ensureDependencies: func() error { return nil },
@@ -66,7 +75,11 @@ func TestStartEmbeddedContainerdWithRetryDeps_SucceedsAfterRetry(t *testing.T) {
 			return &fakeContainerdService{}
 		},
 		cleanupRuntime: func() error {
-			cleanupCalls++
+			artifactCleanupCalls++
+			return nil
+		},
+		cleanupStaleTasks: func() error {
+			staleCleanupCalls++
 			return nil
 		},
 		sleep: func(time.Duration) {},
@@ -82,14 +95,18 @@ func TestStartEmbeddedContainerdWithRetryDeps_SucceedsAfterRetry(t *testing.T) {
 	if attempt != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempt)
 	}
-	if cleanupCalls != 2 {
-		t.Fatalf("expected cleanup to run once before attempt and once between retries, got %d", cleanupCalls)
+	if staleCleanupCalls != 1 {
+		t.Fatalf("expected stale cleanup once before first attempt, got %d", staleCleanupCalls)
+	}
+	if artifactCleanupCalls != 1 {
+		t.Fatalf("expected artifact cleanup once between retries, got %d", artifactCleanupCalls)
 	}
 }
 
 func TestStartEmbeddedContainerdWithRetryDeps_FailsAfterMaxAttempts(t *testing.T) {
 	attempt := 0
-	cleanupCalls := 0
+	staleCleanupCalls := 0
+	artifactCleanupCalls := 0
 
 	deps := bootstrapDeps{
 		ensureDependencies: func() error { return nil },
@@ -98,7 +115,11 @@ func TestStartEmbeddedContainerdWithRetryDeps_FailsAfterMaxAttempts(t *testing.T
 			return &fakeContainerdService{startErr: errors.New("persistent failure")}
 		},
 		cleanupRuntime: func() error {
-			cleanupCalls++
+			artifactCleanupCalls++
+			return nil
+		},
+		cleanupStaleTasks: func() error {
+			staleCleanupCalls++
 			return nil
 		},
 		sleep: func(time.Duration) {},
@@ -120,9 +141,12 @@ func TestStartEmbeddedContainerdWithRetryDeps_FailsAfterMaxAttempts(t *testing.T
 	if attempt != containerdBootstrapMaxAttempts {
 		t.Fatalf("expected %d attempts, got %d", containerdBootstrapMaxAttempts, attempt)
 	}
-	expectedCleanupCalls := containerdBootstrapMaxAttempts // one pre-start + between retries
-	if cleanupCalls != expectedCleanupCalls {
-		t.Fatalf("expected cleanup calls=%d, got %d", expectedCleanupCalls, cleanupCalls)
+	if staleCleanupCalls != 1 {
+		t.Fatalf("expected stale cleanup calls=1, got %d", staleCleanupCalls)
+	}
+	expectedArtifactCleanupCalls := containerdBootstrapMaxAttempts - 1
+	if artifactCleanupCalls != expectedArtifactCleanupCalls {
+		t.Fatalf("expected artifact cleanup calls=%d, got %d", expectedArtifactCleanupCalls, artifactCleanupCalls)
 	}
 }
 

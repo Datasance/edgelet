@@ -83,6 +83,20 @@ flowchart LR
 | `edgelet.service` | `edgelet-containerd.service` | attach-only (no subtree mutation) |
 | openrc `edgelet-containerd` | `before edgelet` | light `cgroup-preflight` in `start_pre` |
 
+### Wrong-order manual restart (embedded split)
+
+Restart the **data plane before the control plane** when both units need a restart:
+
+```bash
+# Wrong — bypasses After= ordering on manual restart:
+systemctl restart edgelet && systemctl restart edgelet-containerd
+
+# Correct:
+systemctl restart edgelet-containerd.service
+sleep 3
+systemctl restart edgelet.service
+```
+
 ---
 
 ## Before runtime split (monolithic embedded)

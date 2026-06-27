@@ -154,13 +154,21 @@ See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
 
 2. Check embedded containerd logs in daemon journal output.
 
-3. Look for orphan overlay mounts blocking cleanup:
+3. Shim load errors such as `address: no such file` usually mean stale runtime task metadata. Restart the **data plane** first (`systemctl restart edgelet-containerd`); stale task cleanup runs on the next data-plane bootstrap. Then restart control if needed:
+
+   ```bash
+   systemctl restart edgelet-containerd.service
+   sleep 3
+   systemctl restart edgelet.service
+   ```
+
+4. Look for orphan overlay mounts blocking cleanup:
 
    ```bash
    mount | grep edgelet
    ```
 
-4. Restart daemon (graceful):
+5. Restart daemon (graceful):
 
    ```bash
    sudo systemctl restart edgelet
