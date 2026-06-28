@@ -163,57 +163,72 @@ func (fa *FieldAgent) controllerRegisterWorker() {
 }
 
 func (fa *FieldAgent) tryControllerRegister() {
+	fa.registerControllerMicroservice(false)
+}
+
+// SyncControllerRegister upserts the controller microservice.
+// When force is false, skips if register already succeeded for this UUID.
+// When force is true, always attempts upsert when preconditions are met (e.g. after CP patch apply).
+func (fa *FieldAgent) SyncControllerRegister(force bool) bool {
+	return fa.registerControllerMicroservice(force)
+}
+
+func (fa *FieldAgent) registerControllerMicroservice(force bool) bool {
 	if fa.NotProvisioned() || !fa.IsControllerConnected(false) {
-		return
+		return false
 	}
 	if fa.getAPIClient() == nil {
-		return
+		return false
 	}
 
 	cp, found, err := store.GetInstance().GetSystemControlPlane()
 	if err != nil || !found || cp == nil {
-		return
+		return false
 	}
 	cp.NormalizeDefaults()
 	controllerUUID := strings.TrimSpace(cp.ControllerUUID)
 	if controllerUUID == "" {
-		return
+		return false
 	}
-	if fa.controllerRegister != nil && fa.controllerRegister.isSucceeded(controllerUUID) {
-		return
+	if !force && fa.controllerRegister != nil && fa.controllerRegister.isSucceeded(controllerUUID) {
+		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(cp.DesiredState), "running") {
-		return
+		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(cp.RuntimeState), "running") {
-		return
+		return false
 	}
 	if fa.processManager == nil {
-		return
+		return false
 	}
 	container, err := fa.processManager.GetContainerForMicroservice(controllerUUID)
 	if err != nil || container == nil {
 		logging.LogDebug(moduleName, fmt.Sprintf("controller register waiting for running container uuid=%s", controllerUUID))
-		return
+		return false
 	}
 
 	body, err := buildControllerRegisterBody(fa.config, cp)
 	if err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("controller register body build failed uuid=%s err=%v", controllerUUID, err))
-		return
+		return false
 	}
 
-	ctx, cancel := context.WithTimeout(fa.ctx, 30*time.Second)
+	parentCtx := fa.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	apiClient := fa.getAPIClient()
 	if apiClient == nil {
 		cancel()
-		return
+		return false
 	}
 	result, reqErr := apiClient.Request(ctx, "controller/register", POST, nil, body)
 	cancel()
 	if reqErr != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("controller register request failed uuid=%s err=%v", controllerUUID, reqErr))
-		return
+		return false
 	}
 
 	respUUID, ok := result["uuid"].(string)
@@ -226,7 +241,7 @@ func (fa *FieldAgent) tryControllerRegister() {
 			controllerUUID,
 			respUUID,
 		))
-		return
+		return false
 	}
 
 	if fa.controllerRegister != nil {
@@ -234,6 +249,7 @@ func (fa *FieldAgent) tryControllerRegister() {
 	}
 	fa.persistControllerRegistered(controllerUUID)
 	logging.LogInfo(moduleName, fmt.Sprintf("controller microservice registered uuid=%s", controllerUUID))
+	return true
 }
 
 func buildControllerRegisterBody(cfg *config.Config, cp *models.ControlPlaneDeployment) (map[string]any, error) {
@@ -269,6 +285,9 @@ func buildControllerRegisterBody(cfg *config.Config, cp *models.ControlPlaneDepl
 		return nil, err
 	}
 	body["env"] = envVarsToRegisterBody(envMap)
+	if len(ms.CapAdd) > 0 {
+		body["capAdd"] = capabilitiesToRegisterBody(ms.CapAdd)
+	}
 	if ms.Runtime != nil && strings.TrimSpace(*ms.Runtime) != "" {
 		body["runtime"] = strings.TrimSpace(*ms.Runtime)
 	}
@@ -334,6 +353,18 @@ func envVarsToRegisterBody(env map[string]string) []map[string]any {
 			"key":   key,
 			"value": value,
 		})
+	}
+	return out
+}
+
+func capabilitiesToRegisterBody(caps []string) []string {
+	out := make([]string, 0, len(caps))
+	for _, cap := range caps {
+		cap = strings.TrimSpace(cap)
+		if cap == "" {
+			continue
+		}
+		out = append(out, cap)
 	}
 	return out
 }
