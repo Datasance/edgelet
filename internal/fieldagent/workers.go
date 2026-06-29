@@ -38,6 +38,8 @@ const (
 	changesProcessTimeout          = 5 * time.Minute
 	localAPITokenRotationInterval  = 30 * time.Second
 	serviceAccountRotationInterval = 30 * time.Second
+	upgradeScanPollInterval        = 500 * time.Millisecond
+	defaultUpgradeScanHours        = 24
 )
 
 func changesWorkerFrequency() time.Duration {
@@ -472,31 +474,144 @@ func (fa *FieldAgent) localAPITokenRotationWorker() {
 }
 
 // upgradeScanWorker periodically evaluates OTA readiness for controller status.
+// It waits until the supervisor is operational before each scan and resets its
+// timer immediately when upgradeScanFrequency changes.
 func (fa *FieldAgent) upgradeScanWorker() {
 	defer fa.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.LogError(moduleName, "Panic recovered in upgrade scan worker", fmt.Errorf("%v", r))
+		}
+	}()
 
-	fa.scanVersionReadiness()
+	fa.ensureUpgradeScanRescheduleChan()
 
 	timer := time.NewTimer(upgradeScanInterval())
-	defer timer.Stop()
+	defer stopTimer(timer)
+	fa.setAppliedUpgradeScanFrequency(fa.upgradeScanFrequencyHours())
+
+	runScan := func() bool {
+		if !fa.waitForDaemonOperational(fa.ctx) {
+			return false
+		}
+		fa.scanVersionReadiness()
+		return true
+	}
+
+	if !runScan() {
+		return
+	}
 
 	for {
 		select {
 		case <-fa.ctx.Done():
 			return
 		case <-timer.C:
-			fa.scanVersionReadiness()
-			timer.Reset(upgradeScanInterval())
+			if !runScan() {
+				return
+			}
+			fa.resetUpgradeScanTimer(timer)
+		case <-fa.upgradeScanReschedule:
+			if fa.upgradeScanFrequencyChanged() {
+				if !runScan() {
+					return
+				}
+			}
+			fa.resetUpgradeScanTimer(timer)
 		}
 	}
 }
 
 func upgradeScanInterval() time.Duration {
-	hours := config.GetInstance().UpgradeScanFrequency
+	return time.Duration(upgradeScanFrequencyHours(config.GetInstance().UpgradeScanFrequency)) * time.Hour
+}
+
+func upgradeScanFrequencyHours(hours int) int {
 	if hours <= 0 {
-		hours = 24
+		return defaultUpgradeScanHours
 	}
-	return time.Duration(hours) * time.Hour
+	return hours
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+}
+
+func (fa *FieldAgent) ensureUpgradeScanRescheduleChan() {
+	fa.upgradeScanMu.Lock()
+	defer fa.upgradeScanMu.Unlock()
+	if fa.upgradeScanReschedule == nil {
+		fa.upgradeScanReschedule = make(chan struct{}, 1)
+	}
+}
+
+func (fa *FieldAgent) notifyUpgradeScanReschedule() {
+	fa.ensureUpgradeScanRescheduleChan()
+	select {
+	case fa.upgradeScanReschedule <- struct{}{}:
+	default:
+	}
+}
+
+func (fa *FieldAgent) rescheduleUpgradeScanIfFrequencyChanged() {
+	freq := fa.upgradeScanFrequencyHours()
+	fa.upgradeScanMu.Lock()
+	prev := fa.appliedUpgradeScanFrequency
+	changed := prev != 0 && prev != freq
+	fa.upgradeScanMu.Unlock()
+	if changed {
+		logging.LogDebug(moduleName, fmt.Sprintf("Rescheduling upgrade scan worker (frequency %dh -> %dh)", prev, freq))
+		fa.notifyUpgradeScanReschedule()
+	}
+}
+
+func (fa *FieldAgent) setAppliedUpgradeScanFrequency(hours int) {
+	fa.upgradeScanMu.Lock()
+	fa.appliedUpgradeScanFrequency = hours
+	fa.upgradeScanMu.Unlock()
+}
+
+func (fa *FieldAgent) upgradeScanFrequencyHours() int {
+	return upgradeScanFrequencyHours(config.GetInstance().UpgradeScanFrequency)
+}
+
+func (fa *FieldAgent) upgradeScanFrequencyChanged() bool {
+	fa.upgradeScanMu.Lock()
+	defer fa.upgradeScanMu.Unlock()
+	return fa.appliedUpgradeScanFrequency != 0 &&
+		fa.appliedUpgradeScanFrequency != fa.upgradeScanFrequencyHours()
+}
+
+func (fa *FieldAgent) waitForDaemonOperational(ctx context.Context) bool {
+	if statusreporter.GetInstance().DaemonOperational() {
+		return true
+	}
+	ticker := time.NewTicker(upgradeScanPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+			if statusreporter.GetInstance().DaemonOperational() {
+				return true
+			}
+		}
+	}
+}
+
+func (fa *FieldAgent) resetUpgradeScanTimer(timer *time.Timer) {
+	stopTimer(timer)
+	timer.Reset(upgradeScanInterval())
+	fa.setAppliedUpgradeScanFrequency(fa.upgradeScanFrequencyHours())
 }
 
 func (fa *FieldAgent) scanVersionReadiness() {

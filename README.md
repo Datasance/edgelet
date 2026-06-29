@@ -137,7 +137,7 @@ RELEASE_FRESH_CI_IMAGE=1 ./test/release/build-all.sh
 
 ```bash
 make build-desktop-darwin build-desktop-windows
-scripts/release-binaries.sh v1.0.0-rc.7
+scripts/release-binaries.sh v1.0.0
 ```
 
 Local / single-target builds:
@@ -149,7 +149,7 @@ make deps                     # embed pipeline before linux thin build
 make build-linux-amd64        # deps + thin for amd64
 make build-linux-arm64        # deps + thin for arm64
 make build-desktop-darwin     # darwin monolithic
-make release-binaries VERSION=v1.0.0-rc.7
+make release-binaries VERSION=v1.0.0
 ```
 
 ## Testing

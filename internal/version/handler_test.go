@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 )
 
 func TestParseVersionCommand(t *testing.T) {
@@ -63,6 +64,22 @@ func TestIsReadyToUpgrade_RequiresInstallScriptAndHealthyDaemon(t *testing.T) {
 	_ = os.Remove(script)
 	if h.IsReadyToUpgradeWithAction(map[string]any{"version": "2.0.0"}) {
 		t.Fatal("expected not ready when install.sh missing")
+	}
+}
+
+func TestDefaultDaemonHealthy_AcceptsWarning(t *testing.T) {
+	sr := statusreporter.GetInstance()
+	sr.UpdateSupervisorStatus(func(s *models.SupervisorStatus) {
+		s.SetDaemonStatus(models.ModuleStatusWarning)
+	})
+	t.Cleanup(func() {
+		sr.UpdateSupervisorStatus(func(s *models.SupervisorStatus) {
+			s.SetDaemonStatus(models.ModuleStatusRunning)
+		})
+	})
+
+	if !defaultDaemonHealthy() {
+		t.Fatal("expected WARNING daemon to be operational for upgrade readiness")
 	}
 }
 

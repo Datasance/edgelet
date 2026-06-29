@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
-	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 )
 
@@ -83,14 +82,11 @@ func HealthReadyHandler(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	sr := statusreporter.GetInstance()
-	if sr != nil {
-		ss := sr.GetSupervisorStatus()
-		if ss != nil && (ss.DaemonStatus == models.ModuleStatusRunning || ss.DaemonStatus == models.ModuleStatusWarning) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ready"}`))
-			return
-		}
+	if sr != nil && sr.DaemonOperational() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

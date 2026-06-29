@@ -91,6 +91,10 @@ type FieldAgent struct {
 	controllerReconcileHook func() error
 
 	controllerRegister *controllerRegisterState
+
+	upgradeScanMu               sync.Mutex
+	upgradeScanReschedule       chan struct{}
+	appliedUpgradeScanFrequency int
 }
 
 var (
@@ -991,12 +995,14 @@ func (fa *FieldAgent) clearLiteRuntimeArtifactsOnDeprovision(preserveLocal bool,
 }
 
 // Update updates the FieldAgent when configuration changes.
-// Workers are NOT restarted — they use dynamic timers that re-read config on
-// every tick, so they pick up new frequencies automatically.
+// Most workers re-read config on every tick; upgradeScanWorker is notified
+// explicitly when upgradeScanFrequency changes so its timer is reset immediately.
 // NewAPIClient() is moved into the background goroutine so the SIGHUP handler
 // goroutine is never blocked by DNS resolution for the new controller URL.
 func (fa *FieldAgent) Update() error {
 	logging.LogDebug(moduleName, "Updating Field Agent due to config change")
+
+	fa.rescheduleUpgradeScanIfFrequencyChanged()
 
 	if err := fa.hydratePrivateKeyFromDB(); err != nil {
 		logging.LogError(moduleName, "Failed to hydrate private key from SQLite during update; blocking private-key dependent paths", err)
