@@ -1,6 +1,7 @@
 package fieldagent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
@@ -102,6 +103,20 @@ spec:
 				t.Fatalf("volume mapping missing %s: %#v", key, vm)
 			}
 		}
+	}
+
+	capAdd, ok := body["capAdd"].([]string)
+	if !ok || len(capAdd) == 0 {
+		t.Fatalf("capAdd: got %#v", body["capAdd"])
+	}
+	hasNetRaw := false
+	for _, cap := range capAdd {
+		if strings.EqualFold(cap, "NET_RAW") {
+			hasNetRaw = true
+		}
+	}
+	if !hasNetRaw {
+		t.Fatalf("capAdd must include NET_RAW, got %#v", capAdd)
 	}
 }
 

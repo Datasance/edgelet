@@ -229,25 +229,25 @@ func formatImagePruneResult(result map[string]any) string {
 		)
 	case "volumes":
 		return fmt.Sprintf(
-			"pruned volumes: deleted=%s reclaimed=%s (engine=%s)",
+			"pruned volumes: deleted=%s disk reclaimed=%s (engine=%s)",
 			MapValueAsString(result, "deletedCount"),
-			ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), ValueOrDefault(MapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+			ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), "-"),
 			engineName,
 		)
 	case "all":
 		return fmt.Sprintf(
-			"pruned all: containers=%s volumes=%s images=%s reclaimed=%s (engine=%s)",
+			"pruned all: containers=%s volumes=%s images=%s disk reclaimed=%s (engine=%s)",
 			MapValueAsString(result, "containersDeletedCount"),
 			MapValueAsString(result, "volumesDeletedCount"),
 			MapValueAsString(result, "imagesDeletedCount"),
-			ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), ValueOrDefault(MapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+			ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), "-"),
 			engineName,
 		)
 	}
 	return fmt.Sprintf(
-		"pruned dangling images: deleted=%s reclaimed=%s (engine=%s)",
+		"pruned dangling images: deleted=%s disk reclaimed=%s (engine=%s)",
 		MapValueAsString(result, "deletedCount"),
-		ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), ValueOrDefault(MapValueAsString(result, "spaceReclaimedBytes"), "0 B")),
+		ValueOrDefault(MapValueAsString(result, "spaceReclaimedHuman"), "-"),
 		engineName,
 	)
 }

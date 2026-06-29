@@ -1,8 +1,10 @@
 package output
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -299,7 +301,7 @@ func formatImageList(result map[string]any) string {
 		return "No images found."
 	}
 	rows := [][]string{
-		{"REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"},
+		{"REPOSITORY", "TAG", "IMAGE ID", "CREATED", "DISK USAGE", "CONTENT SIZE", "IN USE"},
 	}
 	for _, raw := range rawItems {
 		item, ok := raw.(map[string]any)
@@ -311,10 +313,41 @@ func formatImageList(result map[string]any) string {
 			ValueOrDefault(MapValueAsString(item, "tag"), "<none>"),
 			ValueOrDefault(MapValueAsString(item, "shortId"), "<none>"),
 			humanizeCreated(MapValueAsString(item, "createdAt")),
-			ValueOrDefault(MapValueAsString(item, "sizeHuman"), "0 B"),
+			ValueOrDefault(MapValueAsString(item, "diskUsageHuman"), "0 B"),
+			formatOptionalHumanSize(MapValueAsString(item, "contentSizeHuman")),
+			formatOptionalInUse(item["inUse"]),
 		})
 	}
 	return formatAlignedTable(rows)
+}
+
+func formatOptionalHumanSize(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "<unknown>" {
+		return "-"
+	}
+	return value
+}
+
+func formatOptionalInUse(raw any) string {
+	switch v := raw.(type) {
+	case nil:
+		return "-"
+	case float64:
+		return strconv.FormatInt(int64(v), 10)
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case json.Number:
+		return v.String()
+	default:
+		s := strings.TrimSpace(fmt.Sprint(v))
+		if s == "" || s == "<nil>" {
+			return "-"
+		}
+		return s
+	}
 }
 
 func stripQuery(path string) string {

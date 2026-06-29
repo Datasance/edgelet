@@ -99,6 +99,35 @@ func TestFormatEdgeletAPIHuman_MSListHandlesQueryPath(t *testing.T) {
 	}
 }
 
+func TestFormatEdgeletAPIHuman_ImageListColumns(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/images", map[string]any{
+		"items": []any{
+			map[string]any{
+				"repository":       "demo/app",
+				"tag":              "1.0",
+				"shortId":          "abc123",
+				"createdAt":        "2026-01-01T00:00:00Z",
+				"diskUsageHuman":   "1.5 GB",
+				"contentSizeHuman": "340 MB",
+				"inUse":            float64(2),
+			},
+			map[string]any{
+				"repository":       "legacy/app",
+				"tag":              "latest",
+				"shortId":          "def456",
+				"diskUsageHuman":   "100 MB",
+				"contentSizeHuman": nil,
+				"inUse":            nil,
+			},
+		},
+	})
+	for _, want := range []string{"DISK USAGE", "CONTENT SIZE", "IN USE", "1.5 GB", "340 MB", "2", "-"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in output, got: %s", want, out)
+		}
+	}
+}
+
 func TestFormatEdgeletAPIHuman_MSLifecycleFormatting(t *testing.T) {
 	out := FormatEdgeletAPIHuman("/v1/ms/abc/start", map[string]any{
 		"status":           "ok",

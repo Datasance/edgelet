@@ -286,6 +286,12 @@ func (f *Facade) ApplyControlPlaneManifest(manifest, sourceName string, dryRun b
 	result.RuntimeState = got.RuntimeState
 	result.ContainerID = got.ContainerID
 	result.Generation = got.Generation
+
+	if mode == "patch" && f.fa != nil && !f.fa.NotProvisioned() &&
+		strings.EqualFold(strings.TrimSpace(got.RuntimeState), "running") {
+		f.fa.SyncControllerRegister(true)
+	}
+
 	emitDeployProgress(progress, DeployStageDone, "control plane apply completed")
 	return result, nil
 }

@@ -272,7 +272,7 @@ func updateAutomaticConfigParams(cfg *Config) {
 	cfg.MonitorRegistriesStatusFreqSeconds = 60
 	cfg.HealthcheckIntervalSeconds = 30
 	cfg.GetUsageDataFreqSeconds = 5
-	cfg.DockerAPIVersion = "1.44"
+	cfg.DockerAPIVersion = "1.47"
 	cfg.SetSystemTimeFreqSeconds = 5
 	cfg.MonitorSSHTunnelStatusFreqSeconds = 30
 }
