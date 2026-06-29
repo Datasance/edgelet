@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
@@ -363,11 +362,7 @@ func defaultIsContainer() bool {
 }
 
 func defaultDaemonHealthy() bool {
-	status := statusreporter.GetInstance().GetSupervisorStatus()
-	if status == nil {
-		return false
-	}
-	return status.DaemonStatus == models.ModuleStatusRunning
+	return statusreporter.GetInstance().DaemonOperational()
 }
 
 func defaultStartDetached(script string, args ...string) error {

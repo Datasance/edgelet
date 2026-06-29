@@ -113,3 +113,23 @@ func TestGetAvailableRuntimes_ExternalEngineFallbackOnInfoErrorOrEmpty(t *testin
 		t.Fatalf("expected podman fallback runtime list, got: %v", runtimes)
 	}
 }
+
+func TestDaemonOperational(t *testing.T) {
+	sr := GetInstance()
+	for _, tc := range []struct {
+		status models.ModuleStatus
+		want   bool
+	}{
+		{models.ModuleStatusStarting, false},
+		{models.ModuleStatusRunning, true},
+		{models.ModuleStatusWarning, true},
+		{models.ModuleStatusStopped, false},
+	} {
+		sr.UpdateSupervisorStatus(func(s *models.SupervisorStatus) {
+			s.SetDaemonStatus(tc.status)
+		})
+		if got := sr.DaemonOperational(); got != tc.want {
+			t.Fatalf("status=%s got=%v want=%v", tc.status, got, tc.want)
+		}
+	}
+}

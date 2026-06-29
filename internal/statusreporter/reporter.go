@@ -326,6 +326,21 @@ func (sr *StatusReporter) GetSupervisorStatus() *models.SupervisorStatus {
 	return sr.supervisorStatus
 }
 
+// DaemonOperational reports whether the supervisor is running or degraded-but-operational.
+func (sr *StatusReporter) DaemonOperational() bool {
+	sr.mu.RLock()
+	defer sr.mu.RUnlock()
+	if sr.supervisorStatus == nil {
+		return false
+	}
+	switch sr.supervisorStatus.DaemonStatus {
+	case models.ModuleStatusRunning, models.ModuleStatusWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // GetResourceConsumptionManagerStatus returns the resource consumption manager status
 func (sr *StatusReporter) GetResourceConsumptionManagerStatus() *models.ResourceConsumptionManagerStatus {
 	sr.mu.RLock()
