@@ -127,7 +127,9 @@ func (e *controllerRegisterTestEngine) GetContainerSandboxID(string) (string, er
 func (e *controllerRegisterTestEngine) GetRunningContainers() ([]engine.Container, error) {
 	return nil, nil
 }
-func (e *controllerRegisterTestEngine) GetAllContainers() ([]engine.Container, error) { return nil, nil }
+func (e *controllerRegisterTestEngine) GetAllContainers() ([]engine.Container, error) {
+	return nil, nil
+}
 func (e *controllerRegisterTestEngine) CreateContainer(*models.Microservice, string) (string, error) {
 	return "", nil
 }
@@ -143,7 +145,7 @@ func (e *controllerRegisterTestEngine) PullImage(string, *models.Registry, *engi
 func (e *controllerRegisterTestEngine) FindLocalImage(string, string, bool) (bool, error) {
 	return true, nil
 }
-func (e *controllerRegisterTestEngine) RemoveImage(string) error   { return nil }
+func (e *controllerRegisterTestEngine) RemoveImage(string) error { return nil }
 func (e *controllerRegisterTestEngine) PruneImages() error       { return nil }
 func (e *controllerRegisterTestEngine) ListImages(context.Context) ([]engine.ImageInfo, error) {
 	return nil, nil

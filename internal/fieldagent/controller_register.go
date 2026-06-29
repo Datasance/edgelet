@@ -359,12 +359,12 @@ func envVarsToRegisterBody(env map[string]string) []map[string]any {
 
 func capabilitiesToRegisterBody(caps []string) []string {
 	out := make([]string, 0, len(caps))
-	for _, cap := range caps {
-		cap = strings.TrimSpace(cap)
-		if cap == "" {
+	for _, capName := range caps {
+		capName = strings.TrimSpace(capName)
+		if capName == "" {
 			continue
 		}
-		out = append(out, cap)
+		out = append(out, capName)
 	}
 	return out
 }
