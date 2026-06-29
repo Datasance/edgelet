@@ -10,15 +10,17 @@ import (
 
 // ImageInfo is the engine-agnostic representation of a local container image.
 type ImageInfo struct {
-	ID         string    // content-addressable digest or engine-specific ID
-	RepoTags   []string  // list of "name:tag" references; may be empty for dangling images
-	ShortID    string    // short display id when available
-	Repository string    // repository part of primary tag
-	Tag        string    // tag part of primary tag
-	Digest     string    // primary digest when available
-	CreatedAt  time.Time // image creation timestamp when available
-	SizeBytes  int64     // image size in bytes when available
-	Engine     string    // engine that emitted this record (docker|podman|iofog)
+	ID               string    // content-addressable digest or engine-specific ID
+	RepoTags         []string  // list of "name:tag" references; may be empty for dangling images
+	ShortID          string    // short display id when available
+	Repository       string    // repository part of primary tag
+	Tag              string    // tag part of primary tag
+	Digest           string    // primary digest when available
+	CreatedAt        time.Time // image creation timestamp when available
+	ContentSizeBytes int64     // distributable content size; SizeUnknown when unavailable
+	DiskUsageBytes   int64     // content plus unpacked snapshot size on disk
+	InUse            int64     // containers referencing this image; SizeUnknown when unavailable
+	Engine           string    // engine that emitted this record (docker|podman|edgelet)
 }
 
 // LoadedImage is a normalized result entry returned by load/import operations.

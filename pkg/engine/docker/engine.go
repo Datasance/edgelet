@@ -125,12 +125,10 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	inUseCounts, inUseErr := e.client.ImageInUseCounts()
 	result := make([]engine.ImageInfo, 0, len(summaries))
 	for _, s := range summaries {
-		repository, tag := splitRepoTag("<none>:<none>")
-		if len(s.RepoTags) > 0 {
-			repository, tag = splitRepoTag(s.RepoTags[0])
-		}
+		repository, tag := engine.PickPrimaryRepoTag(s.RepoTags)
 		shortID := strings.TrimPrefix(s.ID, "sha256:")
 		if len(shortID) > 12 {
 			shortID = shortID[:12]
@@ -139,31 +137,29 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 		if len(s.RepoDigests) > 0 {
 			digest = s.RepoDigests[0]
 		}
+		contentSize, diskUsage, contentKnown := engine.ImageSizesFromSummary(s)
+		if !contentKnown {
+			contentSize = engine.SizeUnknown
+		}
+		inUse := engine.ImageInUseFromSummary(s)
+		if inUse == engine.SizeUnknown && inUseErr == nil {
+			inUse = engine.LookupImageInUseByID(s.ID, inUseCounts)
+		}
 		result = append(result, engine.ImageInfo{
-			ID:         s.ID,
-			RepoTags:   s.RepoTags,
-			ShortID:    shortID,
-			Repository: repository,
-			Tag:        tag,
-			Digest:     digest,
-			CreatedAt:  time.Unix(s.Created, 0).UTC(),
-			SizeBytes:  s.Size,
-			Engine:     "docker",
+			ID:               s.ID,
+			RepoTags:         s.RepoTags,
+			ShortID:          shortID,
+			Repository:       repository,
+			Tag:              tag,
+			Digest:           digest,
+			CreatedAt:        time.Unix(s.Created, 0).UTC(),
+			ContentSizeBytes: contentSize,
+			DiskUsageBytes:   diskUsage,
+			InUse:            inUse,
+			Engine:           "docker",
 		})
 	}
 	return result, nil
-}
-
-func splitRepoTag(ref string) (string, string) {
-	ref = strings.TrimSpace(ref)
-	if ref == "" || ref == "<none>:<none>" {
-		return "<none>", "<none>"
-	}
-	idx := strings.LastIndex(ref, ":")
-	if idx <= 0 {
-		return ref, "<none>"
-	}
-	return ref[:idx], ref[idx+1:]
 }
 
 func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]engine.LoadedImage, error) {

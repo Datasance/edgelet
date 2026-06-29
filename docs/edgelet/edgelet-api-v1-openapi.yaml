@@ -1602,11 +1602,22 @@ components:
           type: string
         createdAt:
           type: string
-        sizeBytes:
+        contentSizeBytes:
           type: integer
           format: int64
-        sizeHuman:
+          nullable: true
+        contentSizeHuman:
           type: string
+          nullable: true
+        diskUsageBytes:
+          type: integer
+          format: int64
+        diskUsageHuman:
+          type: string
+        inUse:
+          type: integer
+          format: int64
+          nullable: true
         engine:
           type: string
     ImageListResponse:

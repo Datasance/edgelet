@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -384,21 +385,6 @@ func (f *Facade) ListImages() ([]map[string]any, error) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		repo := strings.TrimSpace(item.Repository)
-		tag := strings.TrimSpace(item.Tag)
-		if repo == "" {
-			repo = "<none>"
-		}
-		if tag == "" {
-			tag = "<none>"
-		}
-		shortID := strings.TrimSpace(item.ShortID)
-		if shortID == "" {
-			shortID = strings.TrimPrefix(strings.TrimSpace(item.ID), "sha256:")
-			if len(shortID) > 12 {
-				shortID = shortID[:12]
-			}
-		}
 		engineName := strings.TrimSpace(item.Engine)
 		if engineName == "" {
 			engineName = currentEngineName(f.cfg)
@@ -407,19 +393,51 @@ func (f *Facade) ListImages() ([]map[string]any, error) {
 		if !item.CreatedAt.IsZero() {
 			createdAt = item.CreatedAt.UTC().Format(time.RFC3339)
 		}
-		out = append(out, map[string]any{
-			"id":         item.ID,
-			"shortId":    shortID,
-			"repository": repo,
-			"tag":        tag,
-			"digest":     item.Digest,
-			"createdAt":  createdAt,
-			"sizeBytes":  item.SizeBytes,
-			"sizeHuman":  humanBytes(item.SizeBytes),
-			"engine":     engineName,
-		})
+		out = append(out, imageInfoToMap(item, engineName, createdAt))
 	}
 	return out, nil
+}
+
+func imageInfoToMap(item engine.ImageInfo, engineName, createdAt string) map[string]any {
+	repo := strings.TrimSpace(item.Repository)
+	tag := strings.TrimSpace(item.Tag)
+	if repo == "" {
+		repo = "<none>"
+	}
+	if tag == "" {
+		tag = "<none>"
+	}
+	shortID := strings.TrimSpace(item.ShortID)
+	if shortID == "" {
+		shortID = strings.TrimPrefix(strings.TrimSpace(item.ID), "sha256:")
+		if len(shortID) > 12 {
+			shortID = shortID[:12]
+		}
+	}
+	entry := map[string]any{
+		"id":             item.ID,
+		"shortId":        shortID,
+		"repository":     repo,
+		"tag":            tag,
+		"digest":         item.Digest,
+		"createdAt":      createdAt,
+		"diskUsageBytes": item.DiskUsageBytes,
+		"diskUsageHuman": humanBytes(item.DiskUsageBytes),
+		"engine":         engineName,
+	}
+	if item.ContentSizeBytes >= 0 {
+		entry["contentSizeBytes"] = item.ContentSizeBytes
+		entry["contentSizeHuman"] = humanBytes(item.ContentSizeBytes)
+	} else {
+		entry["contentSizeBytes"] = nil
+		entry["contentSizeHuman"] = nil
+	}
+	if item.InUse >= 0 {
+		entry["inUse"] = item.InUse
+	} else {
+		entry["inUse"] = nil
+	}
+	return entry
 }
 
 // PullImage pulls an image with optional registry id and platform selector.
@@ -809,14 +827,34 @@ func humanBytes(size int64) string {
 	if size <= 0 {
 		return "0 B"
 	}
-	units := []string{"B", "KB", "MB", "GB", "TB"}
-	value := float64(size)
-	idx := 0
-	for value >= 1024 && idx < len(units)-1 {
-		value /= 1024
-		idx++
+	const unit = 1000.0
+	if float64(size) < unit {
+		return strconv.FormatInt(size, 10) + " B"
 	}
-	return strconv.FormatFloat(value, 'f', 1, 64) + " " + units[idx]
+
+	exp := int(math.Log(float64(size)) / math.Log(unit))
+	if exp < 1 {
+		exp = 1
+	}
+	if exp > 4 {
+		exp = 4
+	}
+
+	prefixes := []string{"KB", "MB", "GB", "TB"}
+	value := float64(size) / math.Pow(unit, float64(exp))
+	prefix := prefixes[exp-1]
+
+	switch exp {
+	case 4, 3: // TB, GB — match Docker image list precision
+		return strconv.FormatFloat(value, 'f', 2, 64) + " " + prefix
+	case 2: // MB
+		if value >= 100 {
+			return strconv.FormatFloat(value, 'f', 0, 64) + " " + prefix
+		}
+		return strconv.FormatFloat(value, 'f', 1, 64) + " " + prefix
+	default: // KB
+		return strconv.FormatFloat(value, 'f', 1, 64) + " " + prefix
+	}
 }
 
 var imageIDPrefixPattern = regexp.MustCompile(`^[a-f0-9]{3,64}$`)

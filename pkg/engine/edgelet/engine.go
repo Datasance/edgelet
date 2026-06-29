@@ -958,39 +958,16 @@ func (e *Engine) ListImages(_ context.Context) ([]engine.ImageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := make([]engine.ImageInfo, 0, len(imgs))
-	for _, img := range imgs {
-		name := strings.TrimSpace(img.Name())
-		repository := "<none>"
-		tag := "<none>"
-		if name != "" {
-			repository = name
-			if idx := strings.LastIndex(name, ":"); idx > 0 {
-				repository = name[:idx]
-				tag = name[idx+1:]
-			}
-		}
-		id := img.Target().Digest.String()
-		shortID := strings.TrimPrefix(id, "sha256:")
-		if len(shortID) > 12 {
-			shortID = shortID[:12]
-		}
-		sizeBytes := int64(0)
-		if info, err := e.client.ContentStore().Info(ctx, img.Target().Digest); err == nil {
-			sizeBytes = info.Size
-		}
-		result = append(result, engine.ImageInfo{
-			ID:         id,
-			RepoTags:   []string{name},
-			ShortID:    shortID,
-			Repository: repository,
-			Tag:        tag,
-			Digest:     id,
-			CreatedAt:  img.Metadata().CreatedAt.UTC(),
-			SizeBytes:  sizeBytes,
-			Engine:     "edgelet",
-		})
+
+	inUseCounts, inUseErr := e.listImageInUseCounts(ctx)
+	inUseKnown := inUseErr == nil
+
+	byDigest := groupImagesByDigest(imgs)
+	result := make([]engine.ImageInfo, 0, len(byDigest))
+	for digest, group := range byDigest {
+		result = append(result, imageInfoFromDigestGroup(ctx, e.client, digest, group, inUseCounts, inUseKnown))
 	}
+	sortImageInfos(result)
 	return result, nil
 }
 
@@ -1058,9 +1035,8 @@ func (e *Engine) PruneDangling(_ context.Context) (*engine.ImagePruneReport, err
 		if !strings.HasPrefix(name, "sha256:") && strings.Contains(name, ":") {
 			continue
 		}
-		if info, infoErr := e.client.ContentStore().Info(ctx, img.Target().Digest); infoErr == nil {
-			reclaimed += info.Size
-		}
+		_, diskUsage := imageDiskUsage(ctx, e.client, img)
+		reclaimed += diskUsage
 		if err := is.Delete(ctx, name, images.SynchronousDelete()); err != nil {
 			e.emitEngineWarn(runtimeops.EventEnginePrune, "", "", name, runtimeops.ReasonRemoveFailed, "prune dangling image failed", pruneStart, err, map[string]any{"operation": "pruneDangling"})
 			continue

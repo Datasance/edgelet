@@ -223,12 +223,39 @@ func (c *Client) GetImages() ([]image.Summary, error) {
 	}
 
 	ctx := c.GetContext()
-	listResult, err := cli.ImageList(ctx, client.ImageListOptions{})
+	listResult, err := cli.ImageList(ctx, client.ImageListOptions{Manifests: true})
 	if err != nil {
 		return nil, err
 	}
 
 	return listResult.Items, nil
+}
+
+// ImageInUseCounts returns container counts keyed by image ID for all containers.
+func (c *Client) ImageInUseCounts() (map[string]int64, error) {
+	cli := c.GetClient()
+	if cli == nil {
+		return nil, errors.New("docker client not initialized")
+	}
+
+	ctx := c.GetContext()
+	listResult, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]int64, len(listResult.Items))
+	for _, cont := range listResult.Items {
+		key := strings.TrimSpace(cont.ImageID)
+		if key == "" {
+			key = strings.TrimSpace(cont.Image)
+		}
+		if key == "" {
+			continue
+		}
+		counts[key]++
+	}
+	return counts, nil
 }
 
 // DockerPrune prunes Docker images (removes unused images)
