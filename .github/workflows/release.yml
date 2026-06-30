@@ -116,8 +116,21 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p build
+          PKG=github.com/eclipse-iofog/edgelet
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-s -w \
+            -X main.version=${VERSION} \
+            -X main.buildTime=${BUILD_TIME} \
+            -X main.gitCommit=${GIT_COMMIT} \
+            -X ${PKG}/internal/cli/cmd.Version=${VERSION} \
+            -X ${PKG}/internal/cli/cmd.BuildTime=${BUILD_TIME} \
+            -X ${PKG}/internal/cli/cmd.GitCommit=${GIT_COMMIT} \
+            -X ${PKG}/internal/version.Version=${VERSION} \
+            -X ${PKG}/internal/version.BuildTime=${BUILD_TIME} \
+            -X ${PKG}/internal/version.GitCommit=${GIT_COMMIT}"
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath \
-            -ldflags "-X main.version=${{ github.ref_name }} -X main.gitCommit=${{ github.sha }} -s -w" \
+            -ldflags "${LDFLAGS}" \
             -o "${{ matrix.out }}" ./cmd/edgelet
           test -f "${{ matrix.out }}"
 
