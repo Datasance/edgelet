@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
@@ -87,6 +88,7 @@ type LogSessionInfo struct {
 	Session     *LogSession
 	ContainerID string
 	IsStreaming bool
+	tailCancel  context.CancelFunc
 }
 
 // LogSessionManager manages active log sessions
@@ -228,6 +230,11 @@ func (lsm *LogSessionManager) HandleLogSessions(fetchedSessions []*LogSession) {
 		if info, exists := lsm.activeSessions[sessionID]; exists {
 			// Update existing session if needed
 			info.Session = session
+			wsHandler := lsm.webSocketHandlers[sessionID]
+			if wsHandler != nil && !wsHandler.IsConnected() {
+				logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Reconnecting log WebSocket for session: %s", sessionID))
+				lsm.reconnectLogSessionLocked(sessionID)
+			}
 			if !info.IsStreaming && session.Status == "ACTIVE" {
 				// Session was pending, now active - start streaming
 				logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Session became active, starting stream: %s", sessionID))
@@ -359,6 +366,8 @@ func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, mic
 		return
 	}
 
+	lsm.stopLogStreamingLocked(sessionID)
+
 	// Look up container via the engine abstraction (works for Docker, iofog, and all others)
 	container, err := lsm.containerEngine.GetContainer(microserviceUUID)
 	if err != nil {
@@ -382,7 +391,26 @@ func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, mic
 
 	if tailConfig == nil {
 		tailConfig = parseTailConfig(nil)
+	} else {
+		cfgCopy := *tailConfig
+		tailConfig = &cfgCopy
 	}
+
+	tailCtx, tailCancel := context.WithCancel(context.Background())
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			tailCancel()
+		}
+	}()
+
+	tailConfig.Ctx = tailCtx
+	info, ok := lsm.activeSessions[sessionID]
+	if !ok {
+		return
+	}
+	info.tailCancel = tailCancel
+	handedOff = true
 
 	handler := &logTailHandler{
 		sessionID:        sessionID,
@@ -393,10 +421,8 @@ func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, mic
 
 	lsm.tailCallbacks[sessionID] = handler
 
-	if info, ok := lsm.activeSessions[sessionID]; ok {
-		info.ContainerID = containerID
-		info.IsStreaming = true
-	}
+	info.ContainerID = containerID
+	info.IsStreaming = true
 
 	// Run TailContainerLogs in a goroutine — it blocks in follow mode until the session ends.
 	// If called synchronously, lsm.mu would be held for the entire stream, deadlocking
@@ -430,16 +456,15 @@ type logTailHandler struct {
 	microserviceUUID string
 	wsHandler        *LogSessionWebSocketHandler
 	lsm              *LogSessionManager
+	stopped          atomic.Bool
 }
 
 func (h *logTailHandler) OnLogLine(_, _ string, lineBytes []byte, _ engine.StreamType) {
-	if h.wsHandler != nil && len(lineBytes) > 0 {
-		// Always call SendMessage — it buffers when not active and sends when active
-		msgType := byte(6) // LogTypeLogLine
-		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {
-			logging.LogError(logSessionManagerModuleName, "Error sending log line", err)
-		}
+	if h.stopped.Load() || h.wsHandler == nil || len(lineBytes) == 0 {
+		return
 	}
+	msgType := byte(6) // LogTypeLogLine
+	_ = h.wsHandler.SendMessage(msgType, lineBytes)
 }
 
 func (h *logTailHandler) OnComplete(sessionID string) {
@@ -467,6 +492,8 @@ func (h *logTailHandler) OnError(sessionID string, err error) {
 // startFogLogStreamingLocked starts streaming fog logs (must be called with lock held)
 func (lsm *LogSessionManager) startFogLogStreamingLocked(sessionID, iofogUUID string, tailConfig *utils.TailConfig) {
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Starting fog log streaming: sessionId=%s, iofogUuid=%s", sessionID, iofogUUID))
+
+	lsm.stopLogStreamingLocked(sessionID)
 
 	// Get WebSocket handler
 	wsHandler := lsm.webSocketHandlers[sessionID]
@@ -505,17 +532,16 @@ type fogLogHandler struct {
 	iofogUUID string
 	wsHandler *LogSessionWebSocketHandler
 	lsm       *LogSessionManager
+	stopped   atomic.Bool
 }
 
 func (h *fogLogHandler) OnLogLine(_, _, line string) {
-	if h.wsHandler != nil && line != "" {
-		// Always call SendMessage — it buffers when not active and sends when active
-		lineBytes := []byte(line)
-		msgType := byte(6) // LogTypeLogLine
-		if err := h.wsHandler.SendMessage(msgType, lineBytes); err != nil {
-			logging.LogError(logSessionManagerModuleName, "Error sending log line", err)
-		}
+	if h.stopped.Load() || h.wsHandler == nil || line == "" {
+		return
 	}
+	lineBytes := []byte(line)
+	msgType := byte(6) // LogTypeLogLine
+	_ = h.wsHandler.SendMessage(msgType, lineBytes)
 }
 
 func (h *fogLogHandler) OnComplete(sessionID string) {
@@ -544,16 +570,58 @@ func (h *fogLogHandler) OnError(sessionID string, err error) {
 	delete(h.lsm.localLogReaders, sessionID)
 }
 
-// stopLogSessionLocked stops a log session (must be called with lock held)
-func (lsm *LogSessionManager) stopLogSessionLocked(sessionID string) {
-	// Stop LocalLogReader if it exists
+// stopLogStreamingLocked stops active tail readers without removing the session (must be called with lock held).
+func (lsm *LogSessionManager) stopLogStreamingLocked(sessionID string) {
 	if reader, ok := lsm.localLogReaders[sessionID]; ok {
 		reader.Stop()
 		delete(lsm.localLogReaders, sessionID)
 	}
 
-	// Remove engine tail callback if it exists
-	delete(lsm.tailCallbacks, sessionID)
+	if handler, ok := lsm.tailCallbacks[sessionID]; ok {
+		handler.stopped.Store(true)
+		delete(lsm.tailCallbacks, sessionID)
+	}
+
+	if info, ok := lsm.activeSessions[sessionID]; ok {
+		if info.tailCancel != nil {
+			info.tailCancel()
+			info.tailCancel = nil
+		}
+		info.IsStreaming = false
+	}
+}
+
+// HandleWebSocketTransportClose stops log tailing when the controller WebSocket drops.
+// The session row is retained so HandleLogSessions can reconnect on the next poll.
+func (lsm *LogSessionManager) HandleWebSocketTransportClose(sessionID string) {
+	lsm.mu.Lock()
+	defer lsm.mu.Unlock()
+	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Stopping log streaming after WebSocket transport close: %s", sessionID))
+	lsm.stopLogStreamingLocked(sessionID)
+}
+
+func (lsm *LogSessionManager) reconnectLogSessionLocked(sessionID string) {
+	wsHandler := lsm.webSocketHandlers[sessionID]
+	if wsHandler == nil {
+		return
+	}
+	if wsHandler.IsConnected() {
+		return
+	}
+	lsm.mu.Unlock()
+	if wsHandler.needsResetBeforeConnect() {
+		wsHandler.Reset()
+	}
+	err := wsHandler.Connect()
+	lsm.mu.Lock()
+	if err != nil {
+		logging.LogError(logSessionManagerModuleName, fmt.Sprintf("Failed to reconnect log WebSocket: %s", sessionID), err)
+	}
+}
+
+// stopLogSessionLocked stops a log session (must be called with lock held)
+func (lsm *LogSessionManager) stopLogSessionLocked(sessionID string) {
+	lsm.stopLogStreamingLocked(sessionID)
 
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Stopping log session: %s", sessionID))
 
