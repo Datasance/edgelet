@@ -7,6 +7,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -72,6 +73,17 @@ func TestLoadControllerCertFromConfig_InvalidPath(t *testing.T) {
 	_, err := LoadControllerCertFromConfig("/etc/edgelet/does-not-exist.crt")
 	if err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestLoadControllerTrustForTLS_MissingFile(t *testing.T) {
+	_, err := LoadControllerTrustForTLS("/etc/edgelet/does-not-exist.crt")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	var loadErr *ControllerTrustLoadError
+	if !errors.As(err, &loadErr) {
+		t.Fatalf("expected ControllerTrustLoadError, got %T", err)
 	}
 }
 

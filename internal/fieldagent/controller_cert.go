@@ -2,36 +2,29 @@ package fieldagent
 
 import (
 	"crypto/tls"
-	"crypto/x509"
+	"errors"
+	"fmt"
+	"os"
 
 	"github.com/eclipse-iofog/edgelet/internal/auth"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
 
-// loadControllerCert loads the controller trust certificate from config, logging
-// non-fatal load failures and returning nil when unset or unreadable.
-func loadControllerCert(configValue, moduleName string) *x509.Certificate {
-	if configValue == "" {
-		return nil
-	}
-	cert, err := auth.LoadControllerCertFromConfig(configValue)
+// buildControllerTLSConfig loads controllerCert from config and builds TLS settings
+// for controller HTTPS/WSS dials.
+func buildControllerTLSConfig(secureMode bool, configuredPath, moduleName string) *tls.Config {
+	certs, err := auth.LoadControllerTrustForTLS(configuredPath)
 	if err != nil {
-		logging.LogError(moduleName, "Failed to load controller certificate", err)
-		return nil
+		var loadErr *auth.ControllerTrustLoadError
+		if errors.As(err, &loadErr) {
+			if os.IsNotExist(loadErr.Err) {
+				logging.LogWarn(moduleName, fmt.Sprintf("controllerCert %q not found; using OS trust store", loadErr.Path))
+			} else {
+				logging.LogWarn(moduleName, fmt.Sprintf("controllerCert %q failed to load: %v; using OS trust store", loadErr.Path, loadErr.Err))
+			}
+		} else {
+			logging.LogWarn(moduleName, fmt.Sprintf("controllerCert failed to load: %v; using OS trust store", err))
+		}
 	}
-	return cert
-}
-
-// controllerDialTLSConfig builds TLS settings for controller HTTPS/WSS dials.
-func controllerDialTLSConfig(secureMode bool, cert *x509.Certificate) *tls.Config {
-	cfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: !secureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-	}
-	if cert != nil {
-		pool := x509.NewCertPool()
-		pool.AddCert(cert)
-		cfg.RootCAs = pool
-	}
-	return cfg
+	return auth.BuildControllerDialTLSConfig(secureMode, configuredPath, certs, err)
 }

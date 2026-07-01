@@ -5,7 +5,37 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+// BuildControllerDialTLSConfig builds TLS settings for controller HTTPS/WSS dials.
+//
+// Trust policy:
+//   - secureMode off: skip verification (controllerCert ignored)
+//   - secureMode on, empty configuredPath: OS trust store (RootCAs nil)
+//   - secureMode on, path set, loadErr != nil: OS trust store (missing/unreadable file)
+//   - secureMode on, path set, certs loaded: exclusive trust in those PEMs only
+func BuildControllerDialTLSConfig(secureMode bool, configuredPath string, customCerts []*x509.Certificate, loadErr error) *tls.Config {
+	cfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if !secureMode {
+		cfg.InsecureSkipVerify = true // #nosec G402 -- controlled by SecureMode config
+		return cfg
+	}
+
+	cfg.InsecureSkipVerify = false
+
+	path := strings.TrimSpace(configuredPath)
+	if path == "" || loadErr != nil {
+		return cfg
+	}
+
+	if pool := CertPoolFromCertificates(customCerts); pool != nil {
+		cfg.RootCAs = pool
+	}
+	return cfg
+}
 
 // CreateControllerTLSConfig creates a TLS config for controller connections
 func CreateControllerTLSConfig(controllerCert *x509.Certificate) (*tls.Config, error) {

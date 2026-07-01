@@ -3,7 +3,7 @@ package fieldagent
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,7 +78,7 @@ type LogSessionWebSocketHandler struct {
 	pingTicker        *time.Ticker
 	config            *config.Config
 	jwtManager        *auth.JWTManager
-	controllerCert    *x509.Certificate
+	controllerTLS     *tls.Config
 	logSessionManager *LogSessionManager // Reference to start tailing when ready
 	lifecycleMu       sync.Mutex
 }
@@ -137,7 +137,7 @@ func newLogSessionWebSocketHandler(sessionID, microserviceUUID, iofogUUID string
 
 	// Load controller certificate only if using WSS (secure WebSocket)
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
-		handler.controllerCert = loadControllerCert(cfg.ControllerCert, logWebSocketModuleName)
+		handler.controllerTLS = buildControllerTLSConfig(cfg.SecureMode, cfg.ControllerCert, logWebSocketModuleName)
 	}
 
 	return handler
@@ -218,7 +218,7 @@ func (h *LogSessionWebSocketHandler) connectTransportLocked() error {
 	// Create WebSocket dialer
 	dialer := websocket.Dialer{
 		HandshakeTimeout: logHandshakeTimeout,
-		TLSClientConfig:  controllerDialTLSConfig(h.config.SecureMode, h.controllerCert),
+		TLSClientConfig:  h.controllerTLS,
 	}
 
 	// Set headers with JWT token

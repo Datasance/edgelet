@@ -3,8 +3,6 @@ package fieldagent
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,10 +28,9 @@ const (
 
 // APIClient handles all HTTP communication with the controller
 type APIClient struct {
-	baseURL        string
-	httpClient     *http.Client
-	jwtManager     *auth.JWTManager
-	controllerCert *x509.Certificate
+	baseURL    string
+	httpClient *http.Client
+	jwtManager *auth.JWTManager
 }
 
 // NewAPIClient creates a new API client for controller communication
@@ -49,33 +46,20 @@ func NewAPIClient() (*APIClient, error) {
 		}
 	}
 
-	// Create HTTP client with timeout
 	httpClient := &http.Client{
 		Timeout: requestTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion:         tls.VersionTLS12,
-				InsecureSkipVerify: !cfg.SecureMode, // #nosec G402 -- controlled by SecureMode config; false in production
-			},
+			TLSClientConfig: buildControllerTLSConfig(cfg.SecureMode, cfg.ControllerCert, "Field Agent"),
 		},
-	}
-
-	// Load controller certificate if configured
-	controllerCert := loadControllerCert(cfg.ControllerCert, "Field Agent")
-	if controllerCert != nil {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: controllerDialTLSConfig(cfg.SecureMode, controllerCert),
-		}
 	}
 
 	// Normalize baseURL - remove trailing slash if present to avoid double slashes
 	baseURL := strings.TrimSuffix(cfg.ControllerURL, "/")
 
 	return &APIClient{
-		baseURL:        baseURL,
-		httpClient:     httpClient,
-		jwtManager:     auth.GetJWTManager(),
-		controllerCert: controllerCert,
+		baseURL:    baseURL,
+		httpClient: httpClient,
+		jwtManager: auth.GetJWTManager(),
 	}, nil
 }
 
