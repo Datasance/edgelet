@@ -292,6 +292,7 @@ func (e *Engine) TailContainerLogs(containerID, sessionID, microserviceUUID stri
 		Lines:  cfg.Lines,
 		Since:  cfg.Since,
 		Until:  cfg.Until,
+		Ctx:    cfg.Ctx,
 	}
 	return e.client.TailContainerLogs(containerID, sessionID, microserviceUUID, &logHandlerAdapter{h: handler}, dockerCfg)
 }

@@ -266,43 +266,42 @@ func (h *LogSessionWebSocketHandler) transitionState(from, to LogConnectionState
 	return false
 }
 
-// SendMessage sends a log message to the controller
+// SendMessage sends a log message to the controller.
+// Output is buffered while disconnected or pending activation (exec-session parity).
 func (h *LogSessionWebSocketHandler) SendMessage(msgType byte, data []byte) error {
-	if !h.isConnected.Load() {
-		logging.LogWarn(logWebSocketModuleName, "Cannot send message - not connected")
-		return errors.New("not connected")
+	if !h.isConnected.Load() || !h.isActive.Load() {
+		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Buffering log output while connection is not active: connected=%v active=%v type=%d length=%d",
+			h.isConnected.Load(), h.isActive.Load(), msgType, len(data)))
+		return h.bufferOutput(msgType, data)
+	}
+	return h.writeOutboundMessage(msgType, data)
+}
+
+func (h *LogSessionWebSocketHandler) bufferOutput(msgType byte, data []byte) error {
+	if h.bufferedFrames.Load() >= logMaxBufferedFrames {
+		logging.LogWarn(logWebSocketModuleName, "Buffer full, dropping frame")
+		return errors.New("buffer full")
+	}
+	if h.bufferedSize.Load()+int64(len(data)) > logMaxBufferSize {
+		logging.LogWarn(logWebSocketModuleName, "Buffer size limit reached, dropping frame")
+		return errors.New("buffer size limit reached")
 	}
 
-	// If not active, buffer the output
-	if !h.isActive.Load() {
-		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Buffering log output while connection is not active: type=%d, length=%d", msgType, len(data)))
+	bufferedData := make([]byte, len(data))
+	copy(bufferedData, data)
 
-		// Check buffer limits
-		if h.bufferedFrames.Load() >= logMaxBufferedFrames {
-			logging.LogWarn(logWebSocketModuleName, "Buffer full, dropping frame")
-			return errors.New("buffer full")
-		}
-		if h.bufferedSize.Load()+int64(len(data)) > logMaxBufferSize {
-			logging.LogWarn(logWebSocketModuleName, "Buffer size limit reached, dropping frame")
-			return errors.New("buffer size limit reached")
-		}
-
-		// Store both the type and data so flushBuffer can preserve the original msgType.
-		bufferedData := make([]byte, len(data))
-		copy(bufferedData, data)
-
-		select {
-		case h.outputBuffer <- logFrame{msgType: msgType, data: bufferedData}:
-			h.bufferedFrames.Add(1)
-			h.bufferedSize.Add(int64(len(data)))
-		default:
-			logging.LogWarn(logWebSocketModuleName, "Buffer channel full, dropping frame")
-			return errors.New("buffer channel full")
-		}
-		return nil
+	select {
+	case h.outputBuffer <- logFrame{msgType: msgType, data: bufferedData}:
+		h.bufferedFrames.Add(1)
+		h.bufferedSize.Add(int64(len(data)))
+	default:
+		logging.LogWarn(logWebSocketModuleName, "Buffer channel full, dropping frame")
+		return errors.New("buffer channel full")
 	}
+	return nil
+}
 
-	// Pack message using MessagePack
+func (h *LogSessionWebSocketHandler) writeOutboundMessage(msgType byte, data []byte) error {
 	var buf bytes.Buffer
 	enc := msgpack.NewEncoder(&buf)
 
@@ -576,7 +575,7 @@ func (h *LogSessionWebSocketHandler) handleMessage(data []byte) {
 		h.handleLogStart(msgData, sessionID)
 	case LogTypeLogStop:
 		logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Received LOG_STOP message for session: %s", sessionID))
-		h.handleClose()
+		h.handleSessionClose()
 	case LogTypeLogError:
 		h.handleLogError(msgData)
 	default:
@@ -644,11 +643,10 @@ func (h *LogSessionWebSocketHandler) flushBuffer() {
 	for {
 		select {
 		case frame := <-h.outputBuffer:
-			if err := h.SendMessage(frame.msgType, frame.data); err != nil {
+			h.bufferedFrames.Add(-1)
+			h.bufferedSize.Add(-int64(len(frame.data)))
+			if err := h.writeOutboundMessage(frame.msgType, frame.data); err != nil {
 				logging.LogError(logWebSocketModuleName, "Failed to send buffered message", err)
-			} else {
-				h.bufferedFrames.Add(-1)
-				h.bufferedSize.Add(-int64(len(frame.data)))
 			}
 		default:
 			return
@@ -672,20 +670,44 @@ func (h *LogSessionWebSocketHandler) IsActive() bool {
 	return h.isActive.Load()
 }
 
-// handleClose handles WebSocket close
-func (h *LogSessionWebSocketHandler) handleClose() {
+// needsResetBeforeConnect reports whether stale transport state must be torn down before Connect().
+func (h *LogSessionWebSocketHandler) needsResetBeforeConnect() bool {
+	if h == nil {
+		return false
+	}
+	if h.IsConnected() {
+		return true
+	}
+	return h.GetConnectionState() != LogStateDisconnected
+}
+
+func (h *LogSessionWebSocketHandler) handleTransportClose() {
 	if !h.isConnected.Load() {
 		logging.LogDebug(logWebSocketModuleName, fmt.Sprintf("Already disconnected for session: %s", h.sessionID))
 		return
 	}
 
-	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Handling close for session: %s, connectionState=%v",
-		h.sessionID, h.state.Load()))
+	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Transport closed for log session: %s (tail stopped; session retained for reconnect)", h.sessionID))
 
 	h.isConnected.Store(false)
 	h.isActive.Store(false)
 	h.state.Store(LogStateDisconnected)
+	if h.logSessionManager != nil {
+		h.logSessionManager.HandleWebSocketTransportClose(h.sessionID)
+	}
 	h.Reset()
+}
 
-	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Close handling completed for session: %s", h.sessionID))
+func (h *LogSessionWebSocketHandler) handleSessionClose() {
+	sessionID := h.sessionID
+	if h.logSessionManager != nil {
+		go h.logSessionManager.StopLogSession(sessionID)
+		return
+	}
+	h.handleTransportClose()
+}
+
+// handleClose handles unexpected WebSocket transport loss.
+func (h *LogSessionWebSocketHandler) handleClose() {
+	h.handleTransportClose()
 }

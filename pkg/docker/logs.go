@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ type TailConfig struct {
 	Lines  int
 	Since  string // ISO 8601 timestamp
 	Until  string // ISO 8601 timestamp
+	Ctx    context.Context
 }
 
 // StreamType represents the stream type (stdout or stderr)
@@ -45,6 +47,9 @@ func (c *Client) TailContainerLogs(containerID string, sessionID, microserviceUU
 	}
 
 	ctx := c.GetContext()
+	if tailConfig != nil && tailConfig.Ctx != nil {
+		ctx = tailConfig.Ctx
+	}
 
 	// Parse tail config with defaults
 	follow := true

@@ -1524,15 +1524,32 @@ func (e *Engine) TailContainerLogs(containerID, sessionID, microserviceUUID stri
 	}
 
 	// Try CRI single-file format first (0.log)
+	tailCtx := tailContext(cfg)
 	if _, err := os.Stat(criLogPath); err == nil {
-		return e.tailCRILogFile(criLogPath, sessionID, microserviceUUID, handler, nLines, follow, since, until)
+		return e.tailCRILogFile(tailCtx, criLogPath, sessionID, microserviceUUID, handler, nLines, follow, since, until)
 	}
 
 	// Fallback: separate stdout.log / stderr.log (no timestamp filtering for plain format)
-	return e.tailSeparateLogFiles(logDir, sessionID, microserviceUUID, handler, nLines, follow)
+	return e.tailSeparateLogFiles(tailCtx, logDir, sessionID, microserviceUUID, handler, nLines, follow)
 }
 
-func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, since, until *time.Time) error {
+func tailContext(cfg *engine.TailConfig) context.Context {
+	if cfg != nil && cfg.Ctx != nil {
+		return cfg.Ctx
+	}
+	return context.Background()
+}
+
+func tailCancelled(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *Engine) tailCRILogFile(ctx context.Context, logPath, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, since, until *time.Time) error {
 	if !follow {
 		// Historical query: read from start, return last N lines (filtered by since/until)
 		whence := 0 // io.SeekStart
@@ -1554,6 +1571,10 @@ func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, han
 			text   string
 		}
 		for line := range t.Lines {
+			if tailCancelled(ctx) {
+				handler.OnComplete(sessionID)
+				return nil
+			}
 			if line.Err != nil {
 				handler.OnError(sessionID, line.Err)
 				return line.Err
@@ -1585,6 +1606,10 @@ func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, han
 		return err
 	}
 	for _, item := range initialLines {
+		if tailCancelled(ctx) {
+			handler.OnComplete(sessionID)
+			return nil
+		}
 		handler.OnLogLine(sessionID, microserviceUUID, item.msg, item.stream)
 	}
 
@@ -1609,25 +1634,34 @@ func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, han
 	}
 	defer t.Cleanup()
 
-	for line := range t.Lines {
-		if line.Err != nil {
-			handler.OnError(sessionID, line.Err)
-			return line.Err
-		}
-		if !shouldIncludeCRILine(line.Text, since, until) {
-			// If we've passed until, stop following
-			if until != nil {
-				if t, ok := parseCRITimestamp(line.Text); ok && t.After(*until) {
-					break
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			handler.OnComplete(sessionID)
+			return nil
+		case line, ok := <-t.Lines:
+			if !ok {
+				handler.OnComplete(sessionID)
+				return nil
 			}
-			continue
+			if line.Err != nil {
+				handler.OnError(sessionID, line.Err)
+				return line.Err
+			}
+			if !shouldIncludeCRILine(line.Text, since, until) {
+				// If we've passed until, stop following
+				if until != nil {
+					if ts, ok := parseCRITimestamp(line.Text); ok && ts.After(*until) {
+						handler.OnComplete(sessionID)
+						return nil
+					}
+				}
+				continue
+			}
+			msg, st := parseCRILogLine(line.Text)
+			handler.OnLogLine(sessionID, microserviceUUID, msg, st)
 		}
-		msg, st := parseCRILogLine(line.Text)
-		handler.OnLogLine(sessionID, microserviceUUID, msg, st)
 	}
-	handler.OnComplete(sessionID)
-	return nil
 }
 
 type criLine struct {
@@ -1664,7 +1698,7 @@ func readLastCRILines(logPath string, nLines int, since, until *time.Time) ([]cr
 	return lines, nil
 }
 
-func (e *Engine) tailSeparateLogFiles(logDir, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool) error {
+func (e *Engine) tailSeparateLogFiles(ctx context.Context, logDir, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool) error {
 	stdoutPath := filepath.Join(logDir, "stdout.log")
 	stderrPath := filepath.Join(logDir, "stderr.log")
 
@@ -1675,6 +1709,9 @@ func (e *Engine) tailSeparateLogFiles(logDir, sessionID, microserviceUUID string
 			return
 		}
 		for _, l := range lines {
+			if tailCancelled(ctx) {
+				return
+			}
 			handler.OnLogLine(sessionID, microserviceUUID, l, st)
 		}
 	}
@@ -1729,12 +1766,20 @@ func (e *Engine) tailSeparateLogFiles(logDir, sessionID, microserviceUUID string
 			return
 		}
 		defer t.Cleanup()
-		for line := range t.Lines {
-			if line.Err != nil {
-				handler.OnError(sessionID, line.Err)
+		for {
+			select {
+			case <-ctx.Done():
 				return
+			case line, ok := <-t.Lines:
+				if !ok {
+					return
+				}
+				if line.Err != nil {
+					handler.OnError(sessionID, line.Err)
+					return
+				}
+				handler.OnLogLine(sessionID, microserviceUUID, []byte(line.Text), st)
 			}
-			handler.OnLogLine(sessionID, microserviceUUID, []byte(line.Text), st)
 		}
 	}
 

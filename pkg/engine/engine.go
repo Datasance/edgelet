@@ -186,6 +186,8 @@ type TailConfig struct {
 	Lines  int
 	Since  string
 	Until  string
+	// Ctx, when set, cancels log tailing when done or when the session ends.
+	Ctx context.Context
 }
 
 // StreamType distinguishes stdout from stderr in log lines.
