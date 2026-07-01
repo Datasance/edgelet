@@ -3,7 +3,7 @@ package fieldagent
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -75,7 +75,7 @@ type ExecSessionWebSocketHandler struct {
 	pingTicker         *time.Ticker
 	config             *config.Config
 	jwtManager         *auth.JWTManager
-	controllerCert     *x509.Certificate
+	controllerTLS      *tls.Config
 	execSessionManager *ExecSessionManager
 	lifecycleMu        sync.Mutex
 }
@@ -128,7 +128,7 @@ func newExecSessionWebSocketHandler(sessionID, microserviceUUID string) *ExecSes
 	handler.isActive.Store(false)
 
 	if strings.HasPrefix(strings.ToLower(controllerWsURL), "wss://") {
-		handler.controllerCert = loadControllerCert(cfg.ControllerCert, execWebSocketModuleName)
+		handler.controllerTLS = buildControllerTLSConfig(cfg.SecureMode, cfg.ControllerCert, execWebSocketModuleName)
 	}
 
 	return handler
@@ -217,7 +217,7 @@ func (h *ExecSessionWebSocketHandler) connectTransportLocked() error {
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: handshakeTimeout,
-		TLSClientConfig:  controllerDialTLSConfig(h.config.SecureMode, h.controllerCert),
+		TLSClientConfig:  h.controllerTLS,
 	}
 
 	headers := http.Header{}
