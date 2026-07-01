@@ -1526,11 +1526,11 @@ func (e *Engine) TailContainerLogs(containerID, sessionID, microserviceUUID stri
 	// Try CRI single-file format first (0.log)
 	tailCtx := tailContext(cfg)
 	if _, err := os.Stat(criLogPath); err == nil {
-		return e.tailCRILogFile(criLogPath, sessionID, microserviceUUID, handler, nLines, follow, since, until, tailCtx)
+		return e.tailCRILogFile(tailCtx, criLogPath, sessionID, microserviceUUID, handler, nLines, follow, since, until)
 	}
 
 	// Fallback: separate stdout.log / stderr.log (no timestamp filtering for plain format)
-	return e.tailSeparateLogFiles(logDir, sessionID, microserviceUUID, handler, nLines, follow, tailCtx)
+	return e.tailSeparateLogFiles(tailCtx, logDir, sessionID, microserviceUUID, handler, nLines, follow)
 }
 
 func tailContext(cfg *engine.TailConfig) context.Context {
@@ -1549,7 +1549,7 @@ func tailCancelled(ctx context.Context) bool {
 	}
 }
 
-func (e *Engine) tailCRILogFile(logPath, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, since, until *time.Time, ctx context.Context) error {
+func (e *Engine) tailCRILogFile(ctx context.Context, logPath, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, since, until *time.Time) error {
 	if !follow {
 		// Historical query: read from start, return last N lines (filtered by since/until)
 		whence := 0 // io.SeekStart
@@ -1698,7 +1698,7 @@ func readLastCRILines(logPath string, nLines int, since, until *time.Time) ([]cr
 	return lines, nil
 }
 
-func (e *Engine) tailSeparateLogFiles(logDir, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool, ctx context.Context) error {
+func (e *Engine) tailSeparateLogFiles(ctx context.Context, logDir, sessionID, microserviceUUID string, handler engine.LogTailHandler, nLines int, follow bool) error {
 	stdoutPath := filepath.Join(logDir, "stdout.log")
 	stderrPath := filepath.Join(logDir, "stderr.log")
 
