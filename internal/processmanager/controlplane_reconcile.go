@@ -285,7 +285,7 @@ func (pm *ProcessManager) syncControlPlaneProcessManagerStatus(
 	}
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
 		if status != nil {
-			pmStatus.SetMicroservicesStatus(uuid, status)
+			syncMicroserviceStatusToReporter(pmStatus, uuid, status)
 			return
 		}
 		state := controlPlaneRuntimeStateToMicroserviceState(item.RuntimeState)
@@ -295,6 +295,9 @@ func (pm *ProcessManager) syncControlPlaneProcessManagerStatus(
 				existing.ContainerID = container.ID
 				pmStatus.SetMicroservicesStatus(uuid, existing)
 			}
+		}
+		if state == models.MicroserviceStateRunning {
+			pmStatus.SetMicroservicesStatusErrorMessage(uuid, "")
 		}
 	})
 }

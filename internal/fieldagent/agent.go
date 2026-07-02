@@ -52,7 +52,7 @@ type FieldAgent struct {
 	// Callbacks for other modules (will be set by supervisor)
 	onMicroservicesUpdate func([]*models.Microservice) error
 	onRegistriesUpdate    func([]*models.Registry) error
-	onConfigsUpdate       func(map[string]string) error
+	onConfigsUpdate       func(changedUUIDs []string) error
 	processManager        *processmanager.ProcessManager
 
 	// Microservice management (for MicroserviceManagerInterface)
@@ -289,8 +289,8 @@ func (fa *FieldAgent) SetOnRegistriesUpdate(callback func([]*models.Registry) er
 	fa.onRegistriesUpdate = callback
 }
 
-// SetOnConfigsUpdate sets the callback for configs updates
-func (fa *FieldAgent) SetOnConfigsUpdate(callback func(map[string]string) error) {
+// SetOnConfigsUpdate sets the callback when microservice config content changes.
+func (fa *FieldAgent) SetOnConfigsUpdate(callback func(changedUUIDs []string) error) {
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 	fa.onConfigsUpdate = callback
@@ -880,7 +880,7 @@ func (fa *FieldAgent) DeprovisionWithScope(clearCredentials bool, scope string) 
 				}
 			}
 			if fa.onConfigsUpdate != nil {
-				if err := fa.onConfigsUpdate(map[string]string{}); err != nil {
+				if err := fa.onConfigsUpdate(nil); err != nil {
 					logging.LogWarn(moduleName, fmt.Sprintf("Error notifying configs update: %v", err))
 				}
 			}

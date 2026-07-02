@@ -1267,7 +1267,7 @@ func (pm *ProcessManager) handleLatestMicroservices(stats *reconcileCycleStats) 
 			if existing != nil && existing.HealthStatus != nil && status.HealthStatus == nil {
 				status.HealthStatus = existing.HealthStatus
 			}
-			pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
+			syncMicroserviceStatusToReporter(pmStatus, ms.MicroserviceUUID, status)
 		})
 
 		pm.updateMicroservice(container, ms, stats)

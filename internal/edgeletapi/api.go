@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/edgeletapi/handlers"
+	"github.com/eclipse-iofog/edgelet/internal/edgeletapi/websocket"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
@@ -104,12 +105,22 @@ func (l *EdgeletAPI) Stop() error {
 	return nil
 }
 
-// Update is called when configuration changes
+// NotifyMicroserviceConfigChanged pushes control signals to workloads whose config changed.
+func (l *EdgeletAPI) NotifyMicroserviceConfigChanged(changedUUIDs []string) {
+	if len(changedUUIDs) == 0 {
+		return
+	}
+	websocket.NewControlHandler().SendControlSignalToAll(changedUUIDs)
+}
+
+// NotifyResourceLimitsChanged pushes resource-limit signals to all connected workloads.
+func (l *EdgeletAPI) NotifyResourceLimitsChanged() {
+	websocket.NewControlHandler().SendResourceSignal()
+}
+
+// Update is called when agent configuration changes (hot reload).
 func (l *EdgeletAPI) Update() {
-	logging.LogDebug(localAPIModuleName, "Start the real-time control signal when the configuration updated")
-	// This will be implemented to trigger control signals
-	// For now, just log
-	logging.LogDebug(localAPIModuleName, "Finish the real-time control signal when the configuration updated")
+	l.NotifyResourceLimitsChanged()
 }
 
 // GetName returns the module name

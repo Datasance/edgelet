@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Microservice control WebSocket signals:** when controller `microserviceConfig` changes, Edgelet pushes opcode `0xC` on `/v1/microservices/control` so workloads can fetch `GET /v1/microservices/config`. Agent hot reload pushes opcode `0xF` for resource-limit changes.
 - **`edgelet system status` resource breakdown:** `agentCpuPercent`, `agentMemoryMiB`, optional embedded `runtime*` fields, and `edgeletTotal*` stack totals on `GET /v1/system/status`.
 
 ### Changed

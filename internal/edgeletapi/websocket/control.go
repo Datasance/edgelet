@@ -410,7 +410,7 @@ func (h *ControlHandler) handleBinaryMessage(conn *Connection, data []byte) {
 	case OpcodePing:
 		// Respond with pong
 		pongData := []byte{OpcodePong}
-		if err := conn.Conn.WriteMessage(websocket.BinaryMessage, pongData); err != nil {
+		if err := conn.WriteMessage(websocket.BinaryMessage, pongData); err != nil {
 			logging.LogError(controlHandlerModuleName, "Failed to send pong", err)
 		}
 	case OpcodeACK:
@@ -425,7 +425,7 @@ func (h *ControlHandler) handleBinaryMessage(conn *Connection, data []byte) {
 func (h *ControlHandler) handlePing(conn *Connection) {
 	// Respond with pong
 	pongData := []byte{OpcodePong}
-	if err := conn.Conn.WriteMessage(websocket.PongMessage, pongData); err != nil {
+	if err := conn.WriteMessage(websocket.PongMessage, pongData); err != nil {
 		logging.LogError(controlHandlerModuleName, "Failed to send pong", err)
 	}
 }
@@ -438,7 +438,7 @@ func (h *ControlHandler) SendControlSignal(containerID string) error {
 	}
 
 	signalData := []byte{OpcodeControlSignal}
-	return conn.Conn.WriteMessage(websocket.BinaryMessage, signalData)
+	return conn.WriteMessage(websocket.BinaryMessage, signalData)
 }
 
 // SendControlSignalToAll sends a control signal to all connected containers
@@ -448,7 +448,7 @@ func (h *ControlHandler) SendControlSignalToAll(changedConfigIDs []string) {
 	for _, containerID := range changedConfigIDs {
 		if conn, exists := allConnections[containerID]; exists {
 			signalData := []byte{OpcodeControlSignal}
-			if err := conn.Conn.WriteMessage(websocket.BinaryMessage, signalData); err != nil {
+			if err := conn.WriteMessage(websocket.BinaryMessage, signalData); err != nil {
 				logging.LogError(controlHandlerModuleName, "Failed to send control signal", err)
 			}
 		}
@@ -461,7 +461,7 @@ func (h *ControlHandler) SendResourceSignal() {
 
 	for _, conn := range allConnections {
 		signalData := []byte{OpcodeResourceSignal}
-		if err := conn.Conn.WriteMessage(websocket.BinaryMessage, signalData); err != nil {
+		if err := conn.WriteMessage(websocket.BinaryMessage, signalData); err != nil {
 			logging.LogError(controlHandlerModuleName, "Failed to send resource signal", err)
 		}
 	}
