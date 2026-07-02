@@ -1,22 +1,36 @@
 package models
 
-// ResourceConsumptionManagerStatus represents the Resource Consumption Manager status
+// ResourceConsumptionManagerStatus represents the Resource Consumption Manager status.
+// CPUUsage and MemoryUsage are edgelet stack totals (control plane + embedded runtime when available).
 type ResourceConsumptionManagerStatus struct {
-	MemoryUsage     float64 `json:"memoryUsage" yaml:"memoryUsage"`         // Memory usage in MiB
+	AgentCPUPercent        float64 `json:"agentCpuPercent" yaml:"agentCpuPercent"`
+	AgentMemoryMiB         float64 `json:"agentMemoryMiB" yaml:"agentMemoryMiB"`
+	RuntimeCPUPercent      float64 `json:"runtimeCpuPercent" yaml:"runtimeCpuPercent"`
+	RuntimeMemoryMiB       float64 `json:"runtimeMemoryMiB" yaml:"runtimeMemoryMiB"`
+	RuntimeAvailable       bool    `json:"runtimeAvailable" yaml:"runtimeAvailable"`
+	RuntimeDegraded        bool    `json:"runtimeDegraded" yaml:"runtimeDegraded"`
+	RuntimeTracked         bool    `json:"runtimeTracked" yaml:"runtimeTracked"`
+	RuntimePIDCount        int     `json:"runtimePidCount" yaml:"runtimePidCount"`
+	EdgeletTotalCPUPercent float64 `json:"edgeletTotalCpuPercent" yaml:"edgeletTotalCpuPercent"`
+	EdgeletTotalMemoryMiB  float64 `json:"edgeletTotalMemoryMiB" yaml:"edgeletTotalMemoryMiB"`
+
+	MemoryUsage     float64 `json:"memoryUsage" yaml:"memoryUsage"`         // Edgelet stack memory in MiB (alias of EdgeletTotalMemoryMiB)
 	DiskUsage       float64 `json:"diskUsage" yaml:"diskUsage"`             // Disk usage in GiB
-	CPUUsage        float64 `json:"cpuUsage" yaml:"cpuUsage"`               // CPU usage percentage (0-100)
+	CPUUsage        float64 `json:"cpuUsage" yaml:"cpuUsage"`               // Edgelet stack CPU percent (alias of EdgeletTotalCPUPercent)
 	MemoryViolation bool    `json:"memoryViolation" yaml:"memoryViolation"` // Whether memory limit is violated
 	DiskViolation   bool    `json:"diskViolation" yaml:"diskViolation"`     // Whether disk limit is violated
 	CPUViolation    bool    `json:"cpuViolation" yaml:"cpuViolation"`       // Whether CPU limit is violated
 	AvailableMemory int64   `json:"availableMemory" yaml:"availableMemory"` // System available memory in bytes
-	TotalCPU        float64 `json:"totalCpu" yaml:"totalCpu"`               // Total system CPU usage percentage
+	TotalCPU        float64 `json:"totalCpu" yaml:"totalCpu"`               // Host CPU usage percentage
 	AvailableDisk   int64   `json:"availableDisk" yaml:"availableDisk"`     // System available disk space in bytes
 	TotalDiskSpace  int64   `json:"totalDiskSpace" yaml:"totalDiskSpace"`   // Total system disk space in bytes
 }
 
 // NewResourceConsumptionManagerStatus creates a new ResourceConsumptionManagerStatus
 func NewResourceConsumptionManagerStatus() *ResourceConsumptionManagerStatus {
-	return &ResourceConsumptionManagerStatus{}
+	return &ResourceConsumptionManagerStatus{
+		RuntimeAvailable: true,
+	}
 }
 
 // SetMemoryUsage sets the memory usage and returns the status for chaining

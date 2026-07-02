@@ -6,6 +6,8 @@ func TestNormalizeReportKey_CamelCase(t *testing.T) {
 	tests := map[string]string{
 		"connection-to-controller":        "connectionToController",
 		"cpu usage":                       "cpuUsage",
+		"agent cpu percent":               "agentCpuPercent",
+		"edgelet total memory mib":        "edgeletTotalMemoryMiB",
 		"edgelet daemon":                  "edgeletDaemon",
 		"gps-coordinates(lat,lon)":        "gpsCoordinates",
 		"developer's-mode":                "developerMode",

@@ -5,21 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
 	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
-	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/shirou/gopsutil/v4/process"
 )
 
 const (
@@ -34,6 +32,13 @@ type Manager struct {
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
 	mu             sync.RWMutex
+
+	processReader    processMetricsReader
+	hostCPUReader    hostCPUReader
+	runtimePIDReader runtimePIDReader
+
+	cpuHistoryMu sync.Mutex
+	cpuHistory   map[string][]float64
 
 	// Limits (in bytes for memory/disk, percentage for CPU)
 	diskLimit   int64
@@ -50,7 +55,9 @@ var (
 func GetInstance() *Manager {
 	once.Do(func() {
 		instance = &Manager{
-			config: config.GetInstance(),
+			config:        config.GetInstance(),
+			processReader: gopsutilProcessReader{},
+			cpuHistory:    make(map[string][]float64),
 		}
 	})
 	return instance
@@ -65,11 +72,8 @@ func (rcm *Manager) Start() error {
 	logging.LogDebug(moduleName, fmt.Sprintf("Resource limits set: Disk=%.2f GiB, Memory=%.2f MiB, CPU=%.2f%%",
 		float64(rcm.diskLimit)/1_000_000_000, float64(rcm.memoryLimit)/1_000_000, rcm.cpuLimit))
 
-	// Create context for cancellation
 	rcm.ctx, rcm.cancel = context.WithCancel(context.Background())
 
-	// Collect initial usage data immediately (before starting periodic worker)
-	// This ensures status is available right away
 	logging.LogDebug(moduleName, "Collecting initial resource usage data")
 	rcm.collectUsageData()
 	logging.LogDebug(moduleName, fmt.Sprintf("Initial resource usage: Memory=%.2f MiB, CPU=%.2f%%, Disk=%.2f GiB",
@@ -77,7 +81,6 @@ func (rcm *Manager) Start() error {
 		rcm.statusReporter.GetResourceConsumptionManagerStatus().CPUUsage,
 		rcm.statusReporter.GetResourceConsumptionManagerStatus().DiskUsage))
 
-	// Start background worker
 	rcm.wg.Add(1)
 	go rcm.runUsageDataWorker()
 
@@ -85,43 +88,68 @@ func (rcm *Manager) Start() error {
 	return nil
 }
 
-// collectUsageData collects resource usage data and updates status
-// Extracted from getUsageDataWorker for immediate collection on startup
 func (rcm *Manager) collectUsageData() {
 	logging.LogDebug(moduleName, "Get usage data")
 
-	memoryUsage := rcm.getMemoryUsage()
-	cpuUsage := rcm.getCPUUsage()
+	trackRuntime := rcm.shouldTrackEmbeddedRuntime()
+	runtimePIDs := []int(nil)
+	if trackRuntime {
+		runtimePIDs = rcm.embeddedRuntimePIDs()
+		if len(runtimePIDs) > 1 {
+			logging.LogWarn(moduleName, fmt.Sprintf("Multiple embedded containerd child processes detected: count=%d", len(runtimePIDs)))
+		}
+	}
 
-	// Calculate disk usage (directory may not exist yet, which is OK)
+	sample := rcm.sampleEdgeletUsage(trackRuntime, runtimePIDs)
+
+	agentCPU := rcm.smoothCPU("agent", sample.agentCPU)
+	runtimeCPU := 0.0
+	if trackRuntime && sample.runtimeAvailable {
+		runtimeCPU = rcm.smoothCPU("runtime", sample.runtimeCPU)
+	}
+	totalCPU := rcm.smoothCPU("total", agentCPU+runtimeCPU)
+
+	agentMemoryMiB := bytesToMiB(sample.agentRSS)
+	runtimeMemoryMiB := bytesToMiB(sample.runtimeRSS)
+	totalMemoryMiB := agentMemoryMiB + runtimeMemoryMiB
+	totalMemoryBytes := sample.agentRSS + sample.runtimeRSS
+
 	diskUsage := rcm.directorySize(rcm.config.DiskDirectory)
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Disk usage: diskDirectory=%d bytes", diskUsage))
-
 	availableMemory := rcm.getSystemAvailableMemory()
-	totalCPU := rcm.getTotalCPU()
 	availableDisk := rcm.getAvailableDisk()
 	totalDiskSpace := rcm.getTotalDiskSpace()
 
-	logging.LogDebug(moduleName, fmt.Sprintf("System resources: availableMemory=%d bytes, availableDisk=%d bytes, totalDiskSpace=%d bytes, totalCpu=%.2f%%",
-		availableMemory, availableDisk, totalDiskSpace, totalCPU))
+	runtimeAvailable := !trackRuntime || sample.runtimeAvailable
+	runtimeDegraded := trackRuntime && !sample.runtimeAvailable
 
-	// Update status atomically (fixes race condition)
+	logging.LogDebug(moduleName, fmt.Sprintf(
+		"Edgelet usage: agentCPU=%.2f runtimeCPU=%.2f totalCPU=%.2f agentMem=%.2f MiB runtimeMem=%.2f MiB hostCPU=%.2f runtimeAvailable=%v",
+		agentCPU, runtimeCPU, totalCPU, agentMemoryMiB, runtimeMemoryMiB, sample.hostCPU, runtimeAvailable,
+	))
+
 	rcm.statusReporter.UpdateResourceConsumptionManagerStatus(func(status *models.ResourceConsumptionManagerStatus) {
-		status.MemoryUsage = float64(memoryUsage) / 1_000_000 // bytes to MiB
-		status.CPUUsage = cpuUsage
-		status.DiskUsage = float64(diskUsage) / 1_000_000_000 // bytes to GiB
-		status.MemoryViolation = memoryUsage > rcm.memoryLimit
+		status.AgentCPUPercent = agentCPU
+		status.AgentMemoryMiB = agentMemoryMiB
+		status.RuntimeCPUPercent = runtimeCPU
+		status.RuntimeMemoryMiB = runtimeMemoryMiB
+		status.RuntimeAvailable = runtimeAvailable
+		status.RuntimeDegraded = runtimeDegraded
+		status.RuntimeTracked = trackRuntime
+		status.RuntimePIDCount = sample.runtimePIDCount
+		status.EdgeletTotalCPUPercent = totalCPU
+		status.EdgeletTotalMemoryMiB = totalMemoryMiB
+
+		status.CPUUsage = totalCPU
+		status.MemoryUsage = totalMemoryMiB
+		status.DiskUsage = float64(diskUsage) / 1_000_000_000
+		status.MemoryViolation = totalMemoryBytes > rcm.memoryLimit
 		status.DiskViolation = diskUsage > rcm.diskLimit
-		status.CPUViolation = cpuUsage > rcm.cpuLimit
+		status.CPUViolation = totalCPU > rcm.cpuLimit
 		status.AvailableMemory = availableMemory
 		status.AvailableDisk = availableDisk
 		status.TotalDiskSpace = totalDiskSpace
-		status.TotalCPU = totalCPU
+		status.TotalCPU = sample.hostCPU
 	})
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Updated status: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB",
-		float64(memoryUsage)/1_000_000, cpuUsage, float64(diskUsage)/1_000_000_000))
 
 	logging.LogDebug(moduleName, "Finished Get usage data")
 }
@@ -134,7 +162,6 @@ func (rcm *Manager) Stop() error {
 		rcm.cancel()
 	}
 
-	// Wait for all workers to finish
 	rcm.wg.Wait()
 
 	logging.LogDebug(moduleName, "Resource Consumption Manager stopped")
@@ -156,13 +183,22 @@ func (rcm *Manager) InstanceConfigUpdated() {
 	rcm.mu.Lock()
 	defer rcm.mu.Unlock()
 
-	// Convert limits from config (GiB/MiB) to bytes
-	rcm.diskLimit = int64(rcm.config.DiskLimit * 1_000_000_000) // GiB to bytes
-	rcm.memoryLimit = int64(rcm.config.MemoryLimit * 1_000_000) // MiB to bytes
-	rcm.cpuLimit = rcm.config.CPULimit                          // Percentage
+	rcm.diskLimit = int64(rcm.config.DiskLimit * 1_000_000_000)
+	rcm.memoryLimit = int64(rcm.config.MemoryLimit * 1_000_000)
+	rcm.cpuLimit = rcm.config.CPULimit
 }
 
-// runUsageDataWorker periodically computes resource usage and updates status
+func (rcm *Manager) shouldTrackEmbeddedRuntime() bool {
+	cfg := rcm.config
+	if cfg == nil {
+		return false
+	}
+	if !buildmeta.HasEmbeddedEngine() {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(cfg.ContainerEngine), constants.EngineEdgelet)
+}
+
 func (rcm *Manager) runUsageDataWorker() {
 	defer rcm.wg.Done()
 
@@ -180,190 +216,43 @@ func (rcm *Manager) runUsageDataWorker() {
 	}
 }
 
-// getMemoryUsage gets the memory usage of the ioFog process in bytes
-func (rcm *Manager) getMemoryUsage() int64 {
-	logging.LogDebug(moduleName, "Start get memory usage")
-
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// Go equivalent: Sys (total memory obtained from OS) - HeapIdle (free heap memory)
-	// But more accurate: Alloc (allocated heap) + (Sys - HeapSys) (non-heap memory)
-	memoryUsage := int64(m.Alloc) // #nosec G115 -- Alloc is heap bytes; practical values fit in int64
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get memory usage: %d bytes (Alloc=%d, Sys=%d, HeapSys=%d, HeapIdle=%d)",
-		memoryUsage, m.Alloc, m.Sys, m.HeapSys, m.HeapIdle))
-	return memoryUsage
-}
-
-// getCPUUsage gets the CPU usage percentage of the ioFog process
-func (rcm *Manager) getCPUUsage() float64 {
-	logging.LogDebug(moduleName, "Start get cpu usage")
-
-	// Get current process
-	proc, err := process.NewProcess(int32(os.Getpid())) // #nosec G115 -- PID fits in int32 on all supported platforms
-	if err != nil {
-		logging.LogError(moduleName, "Error getting current process", err)
-		return 0.0
-	}
-
-	// Get CPU percentage for this process
-	cpuPercent, err := proc.Percent(time.Second)
-	if err != nil {
-		logging.LogError(moduleName, "Error getting CPU usage", err)
-		return 0.0
-	}
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get cpu usage: %.2f", cpuPercent))
-	return cpuPercent
-}
-
-// getSystemAvailableMemory gets the system available memory in bytes
 func (rcm *Manager) getSystemAvailableMemory() int64 {
-	logging.LogDebug(moduleName, "Start get system available memory")
-
 	vmStat, err := mem.VirtualMemory()
 	if err != nil {
 		logging.LogError(moduleName, "Error getting system available memory", err)
 		return 0
 	}
-
-	availableMemory := int64(vmStat.Available) // #nosec G115 -- system available memory is below int64 max in practice
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get system available memory: %d", availableMemory))
-	return availableMemory
+	return int64(vmStat.Available) // #nosec G115 -- system available memory is below int64 max in practice
 }
 
-// getTotalCPU gets the total system CPU usage percentage
-// Uses gopsutil cpu.Percent() for cross-platform support (Linux, Windows, macOS, etc.)
-// This is the recommended method that works on all platforms
-func (rcm *Manager) getTotalCPU() float64 {
-	logging.LogDebug(moduleName, "Start get total cpu")
-
-	// Use gopsutil cpu.Percent() - the recommended cross-platform method
-	// When interval > 0, it blocks for that duration and measures CPU usage
-	// percpu=false returns overall CPU usage (single value)
-	percentages, err := cpu.Percent(1*time.Second, false)
-	if err != nil {
-		logging.LogError(moduleName, "Error getting total CPU usage", err)
-		// Fallback to Linux-specific method if on Linux
-		if runtime.GOOS == "linux" {
-			logging.LogDebug(moduleName, "Falling back to Linux /proc/stat method")
-			return rcm.getTotalCPULinux()
-		}
-		return 0.0
-	}
-
-	if len(percentages) == 0 {
-		logging.LogWarn(moduleName, "No CPU percentage returned from gopsutil")
-		// Fallback to Linux-specific method if on Linux
-		if runtime.GOOS == "linux" {
-			return rcm.getTotalCPULinux()
-		}
-		return 0.0
-	}
-
-	totalCPU := percentages[0]
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get total cpu: %.2f%%", totalCPU))
-	return totalCPU
-}
-
-// getTotalCPULinux reads /proc/stat to calculate total CPU usage
-func (rcm *Manager) getTotalCPULinux() float64 {
-	// Read /proc/stat
-	statFile := "/proc/stat"
-	data, err := os.ReadFile(statFile)
-	if err != nil {
-		logging.LogError(moduleName, "Error reading /proc/stat", err)
-		return 0.0
-	}
-
-	lines := strings.Split(string(data), "\n")
-	if len(lines) == 0 {
-		return 0.0
-	}
-
-	// Parse first line (cpu line)
-	firstLine := strings.TrimSpace(lines[0])
-	if !strings.HasPrefix(firstLine, "cpu ") {
-		return 0.0
-	}
-
-	parts := strings.Fields(firstLine)
-	if len(parts) < 8 {
-		return 0.0
-	}
-
-	// Parse CPU times
-	user, _ := strconv.ParseInt(parts[1], 10, 64)
-	nice, _ := strconv.ParseInt(parts[2], 10, 64)
-	system, _ := strconv.ParseInt(parts[3], 10, 64)
-	idle, _ := strconv.ParseInt(parts[4], 10, 64)
-	iowait, _ := strconv.ParseInt(parts[5], 10, 64)
-	irq, _ := strconv.ParseInt(parts[6], 10, 64)
-	softirq, _ := strconv.ParseInt(parts[7], 10, 64)
-	steal := int64(0)
-	if len(parts) >= 9 {
-		steal, _ = strconv.ParseInt(parts[8], 10, 64)
-	}
-
-	totalTime := user + nice + system + idle + iowait + irq + softirq + steal
-	idleTime := idle + iowait
-
-	if totalTime > 0 {
-		cpuUsage := float64(totalTime-idleTime) / float64(totalTime) * 100.0
-		logging.LogDebug(moduleName, fmt.Sprintf("Finished get total cpu: %.2f", cpuUsage))
-		return cpuUsage
-	}
-
-	return 0.0
-}
-
-// getAvailableDisk gets the available disk space in bytes
 func (rcm *Manager) getAvailableDisk() int64 {
-	logging.LogDebug(moduleName, "Start get available disk")
-
 	cfg := rcm.config
 	usage, err := disk.Usage(cfg.DiskDirectory)
 	if err != nil {
 		logging.LogError(moduleName, "Error getting available disk", err)
 		return 0
 	}
-
-	availableDisk := int64(usage.Free) // #nosec G115 -- disk size is below int64 max in practice
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get available disk: %d", availableDisk))
-	return availableDisk
+	return int64(usage.Free) // #nosec G115 -- disk size is below int64 max in practice
 }
 
-// getTotalDiskSpace gets the total disk space in bytes
 func (rcm *Manager) getTotalDiskSpace() int64 {
-	logging.LogDebug(moduleName, "Start get total disk space")
-
 	cfg := rcm.config
 	usage, err := disk.Usage(cfg.DiskDirectory)
 	if err != nil {
 		logging.LogError(moduleName, "Error getting total disk space", err)
 		return 0
 	}
-
-	totalDiskSpace := int64(usage.Total) // #nosec G115 -- disk size is below int64 max in practice
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished get total disk space: %d", totalDiskSpace))
-	return totalDiskSpace
+	return int64(usage.Total) // #nosec G115 -- disk size is below int64 max in practice
 }
 
-// directorySize computes the size of a directory in bytes
 func (rcm *Manager) directorySize(path string) int64 {
-	logging.LogDebug(moduleName, fmt.Sprintf("Inside get directory size: %s", path))
-
-	// Check if directory exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		logging.LogDebug(moduleName, fmt.Sprintf("Directory does not exist: %s, returning 0", path))
 		return 0
 	}
 
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
-			// Log but continue on error (e.g., permission denied)
-			logging.LogDebug(moduleName, fmt.Sprintf("Error accessing file in %s: %v", path, err))
 			return nil
 		}
 		if !info.IsDir() {
@@ -371,12 +260,9 @@ func (rcm *Manager) directorySize(path string) int64 {
 		}
 		return nil
 	})
-
 	if err != nil {
 		logging.LogError(moduleName, fmt.Sprintf("Error calculating directory size for %s", path), err)
 		return 0
 	}
-
-	logging.LogDebug(moduleName, fmt.Sprintf("Finished directory size: %d bytes for %s", size, path))
 	return size
 }

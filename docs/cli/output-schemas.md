@@ -9,15 +9,23 @@ Route: `GET /v1/system/status`
 | Field | Type | Description |
 |-------|------|-------------|
 | `connectionToController` | string | Controller connectivity summary |
-| `cpuUsage` | number | Host CPU usage snapshot |
+| `agentCpuPercent` | number | Control-plane CPU percent |
+| `agentMemoryMiB` | number | Control-plane RSS in MiB |
+| `runtimeCpuPercent` | number | Embedded containerd child CPU (embedded engine only) |
+| `runtimeMemoryMiB` | number | Embedded containerd child RSS in MiB |
+| `runtimeAvailable` | boolean | Embedded runtime process present |
+| `runtimeDegraded` | boolean | Embedded engine configured but runtime child missing |
+| `edgeletTotalCpuPercent` | number | Edgelet stack CPU total |
+| `edgeletTotalMemoryMiB` | number | Edgelet stack memory total in MiB |
+| `cpuUsage` | number | Edgelet stack CPU total (controller alias) |
 | `edgeletDaemon` | string | Daemon lifecycle state (e.g. `running`) |
-| `memoryUsage` | string | Optional memory summary |
+| `memoryUsage` | number | Edgelet stack memory total in MiB (controller alias) |
 | `diskUsage` | string | Optional disk summary |
 | `runningMicroservices` | number | Optional running MS count |
 | `systemAvailableDisk` | string | Optional free disk |
 | `systemAvailableMemory` | string | Optional free memory |
 | `systemTime` | string | Optional agent time |
-| `systemTotalCpu` | string | Optional total CPU |
+| `systemTotalCpu` | string | Host CPU usage percent |
 | `availableNetworkInterfaces` | string | Comma-separated interfaces |
 | `availableRuntimes` | string | Comma-separated runtime handlers |
 
