@@ -632,20 +632,24 @@ func parseRegistry(data map[string]any) *models.Registry {
 func (fa *FieldAgent) processMicroserviceConfig(microservices []*models.Microservice) error {
 	logging.LogDebug(moduleName, "Start process microservice configuration")
 
-	configs := make(map[string]string)
+	var changed []string
 	fa.containerConfigMu.Lock()
 	for _, microservice := range microservices {
-		if microservice.Config != nil {
-			configStr := *microservice.Config
-			configs[microservice.MicroserviceUUID] = configStr
-			fa.containerConfigMap[microservice.MicroserviceUUID] = configStr
+		if microservice.Config == nil {
+			continue
+		}
+		uuid := microservice.MicroserviceUUID
+		newConfig := *microservice.Config
+		oldConfig, existed := fa.containerConfigMap[uuid]
+		fa.containerConfigMap[uuid] = newConfig
+		if existed && oldConfig != newConfig {
+			changed = append(changed, uuid)
 		}
 	}
 	fa.containerConfigMu.Unlock()
 
-	// Notify callback if set
-	if fa.onConfigsUpdate != nil {
-		if err := fa.onConfigsUpdate(configs); err != nil {
+	if len(changed) > 0 && fa.onConfigsUpdate != nil {
+		if err := fa.onConfigsUpdate(changed); err != nil {
 			return fmt.Errorf("failed to update configs: %w", err)
 		}
 	}

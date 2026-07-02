@@ -155,3 +155,13 @@ func (c *Connection) IsClosed() bool {
 	defer c.mu.RUnlock()
 	return c.closed
 }
+
+// WriteMessage sends a WebSocket message when the connection is still open.
+func (c *Connection) WriteMessage(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed || c.Conn == nil {
+		return websocket.ErrCloseSent
+	}
+	return c.Conn.WriteMessage(messageType, data)
+}

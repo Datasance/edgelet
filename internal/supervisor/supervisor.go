@@ -242,6 +242,10 @@ func (s *Supervisor) Start() error {
 	if err := s.localAPI.Start(); err != nil {
 		return fmt.Errorf("failed to start Edgelet API server: %w", err)
 	}
+	s.fieldAgent.SetOnConfigsUpdate(func(changedUUIDs []string) error {
+		s.localAPI.NotifyMicroserviceConfigChanged(changedUUIDs)
+		return nil
+	})
 
 	s.localAPIMonitorTicker = time.NewTicker(10 * time.Second)
 	s.wg.Add(1)

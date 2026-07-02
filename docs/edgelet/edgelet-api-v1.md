@@ -272,6 +272,16 @@ Upgrade paths use the same TLS trust and bearer token as HTTP. Client must send 
 | `GET /v1/ms/{id}/exec/sessions/{sessionId}:attach` | Interactive exec terminal |
 | `GET /v1/microservices/control` | Microservice control channel (self) |
 
+Server → client binary opcodes on the control channel:
+
+| Opcode | Meaning | Client action |
+|--------|---------|---------------|
+| `0x9` | Ping | Respond with pong |
+| `0xA` | Pong | — |
+| `0xB` | ACK | — |
+| `0xC` | Config changed | `GET /v1/microservices/config` |
+| `0xF` | Resource limits changed | Re-read agent limits / adjust behavior |
+
 Exact message framing is defined in OpenAPI operation descriptions.
 
 ---

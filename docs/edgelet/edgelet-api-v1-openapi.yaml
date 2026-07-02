@@ -605,6 +605,8 @@ paths:
       description: >
         Upgrades to WSS control channel for the calling microservice identity.
         Server resolves microservice UUID from JWT claim `iofog.org.microservice.uuid`.
+        Server may push binary opcodes: `0xC` (config changed — fetch
+        `GET /v1/microservices/config`), `0xF` (agent resource limits changed).
       responses:
         "101":
           description: Switching Protocols
