@@ -29,5 +29,18 @@ func normalizeReportKey(raw string) string {
 		runes[0] = unicode.ToUpper(runes[0])
 		camel += string(runes)
 	}
-	return camel
+	return fixStatusReportKeyAcronyms(camel)
+}
+
+func fixStatusReportKeyAcronyms(key string) string {
+	switch key {
+	case "agentMemoryMib":
+		return "agentMemoryMiB"
+	case "runtimeMemoryMib":
+		return "runtimeMemoryMiB"
+	case "edgeletTotalMemoryMib":
+		return "edgeletTotalMemoryMiB"
+	default:
+		return key
+	}
 }

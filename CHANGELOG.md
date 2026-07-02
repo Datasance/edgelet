@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`edgelet system status` resource breakdown:** `agentCpuPercent`, `agentMemoryMiB`, optional embedded `runtime*` fields, and `edgeletTotal*` stack totals on `GET /v1/system/status`.
 
+### Changed
+
+- **Agent resource metrics:** `cpuUsage` / `memoryUsage` now report edgelet stack totals using process RSS and smoothed CPU (control plane + embedded containerd child when present). Controller `PUT status` keys are unchanged; reported values are more accurate (especially memory). External `docker` / `podman` engines remain agent-only totals.
 
 ## [1.0.0-rc.6] — June 2026
 

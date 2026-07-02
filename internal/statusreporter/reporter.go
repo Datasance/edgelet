@@ -144,16 +144,18 @@ func (sr *StatusReporter) GetStatusReport() string {
 	defer sr.mu.RUnlock()
 
 	var result string
-	diskUsage := sr.resourceConsumptionManagerStatus.DiskUsage
-	availableDisk := float64(sr.resourceConsumptionManagerStatus.AvailableDisk) / 1024.0 / 1024.0
-	availableMemory := float64(sr.resourceConsumptionManagerStatus.AvailableMemory) / 1024.0 / 1024.0
-	totalCPU := sr.resourceConsumptionManagerStatus.TotalCPU
-	memoryUsage := sr.resourceConsumptionManagerStatus.MemoryUsage
-	cpuUsage := sr.resourceConsumptionManagerStatus.CPUUsage
+	rcs := sr.resourceConsumptionManagerStatus
+	diskUsage := rcs.DiskUsage
+	availableDisk := float64(rcs.AvailableDisk) / 1024.0 / 1024.0
+	availableMemory := float64(rcs.AvailableMemory) / 1024.0 / 1024.0
+	hostCPU := rcs.TotalCPU
+	memoryUsage := rcs.MemoryUsage
+	cpuUsage := rcs.CPUUsage
 
-	// Debug logging to trace status values
-	logging.LogDebug(moduleName, fmt.Sprintf("Status values: MemoryUsage=%.2f MiB, CPUUsage=%.2f%%, DiskUsage=%.2f GiB, AvailableMemory=%.2f MB, AvailableDisk=%.2f MB, TotalCPU=%.2f%%",
-		memoryUsage, cpuUsage, diskUsage, availableMemory, availableDisk, totalCPU))
+	logging.LogDebug(moduleName, fmt.Sprintf(
+		"Status values: agentCPU=%.2f runtimeCPU=%.2f totalCPU=%.2f agentMem=%.2f MiB runtimeMem=%.2f MiB totalMem=%.2f MiB hostCPU=%.2f%%",
+		rcs.AgentCPUPercent, rcs.RuntimeCPUPercent, cpuUsage, rcs.AgentMemoryMiB, rcs.RuntimeMemoryMiB, memoryUsage, hostCPU,
+	))
 
 	// Get connection status
 	var connectionStatus string
@@ -189,6 +191,16 @@ func (sr *StatusReporter) GetStatusReport() string {
 		daemonStatus = "RUNNING"
 	}
 	result += fmt.Sprintf("Edgelet daemon                : %s\n", daemonStatus)
+	result += fmt.Sprintf("Agent CPU percent             : about %.2f %%\n", rcs.AgentCPUPercent)
+	result += fmt.Sprintf("Agent memory MiB              : about %.2f\n", rcs.AgentMemoryMiB)
+	if rcs.RuntimeTracked {
+		result += fmt.Sprintf("Runtime CPU percent           : about %.2f %%\n", rcs.RuntimeCPUPercent)
+		result += fmt.Sprintf("Runtime memory MiB            : about %.2f\n", rcs.RuntimeMemoryMiB)
+		result += fmt.Sprintf("Runtime available             : %t\n", rcs.RuntimeAvailable)
+		if rcs.RuntimeDegraded {
+			result += "Runtime degraded              : true\n"
+		}
+	}
 	result += fmt.Sprintf("Memory Usage                : about %.2f MiB\n", memoryUsage)
 	if diskUsage < 1 {
 		result += fmt.Sprintf("Disk Usage                  : about %.2f MiB\n", diskUsage*1024)
@@ -201,7 +213,7 @@ func (sr *StatusReporter) GetStatusReport() string {
 	result += fmt.Sprintf("System Time                 : %s\n", dateFormat)
 
 	// Calculate total disk for percentage
-	totalDisk := float64(sr.resourceConsumptionManagerStatus.TotalDiskSpace) / 1024.0 / 1024.0
+	totalDisk := float64(rcs.TotalDiskSpace) / 1024.0 / 1024.0
 	diskPercent := 0.0
 	if totalDisk > 0 {
 		diskPercent = (availableDisk / totalDisk) * 100.0
@@ -209,7 +221,9 @@ func (sr *StatusReporter) GetStatusReport() string {
 
 	result += fmt.Sprintf("System Available Disk       : %.2f MB (%.2f %%)\n", availableDisk, diskPercent)
 	result += fmt.Sprintf("System Available Memory     : %.2f MB\n", availableMemory)
-	result += fmt.Sprintf("System Total CPU            : %.2f %%\n", totalCPU)
+	result += fmt.Sprintf("System Total CPU            : %.2f %%\n", hostCPU)
+	result += fmt.Sprintf("Edgelet total CPU percent   : %.2f\n", rcs.EdgeletTotalCPUPercent)
+	result += fmt.Sprintf("Edgelet total memory MiB    : %.2f\n", rcs.EdgeletTotalMemoryMiB)
 	availableInterfaces := getAvailableNetworkInterfaces()
 	availableInterfacesLine := "none"
 	if len(availableInterfaces) > 0 {

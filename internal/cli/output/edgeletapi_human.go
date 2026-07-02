@@ -10,6 +10,14 @@ import (
 
 var statusOutputOrder = []string{
 	"connectionToController",
+	"agentCpuPercent",
+	"agentMemoryMiB",
+	"runtimeCpuPercent",
+	"runtimeMemoryMiB",
+	"runtimeAvailable",
+	"runtimeDegraded",
+	"edgeletTotalCpuPercent",
+	"edgeletTotalMemoryMiB",
 	"cpuUsage",
 	"diskUsage",
 	"edgeletDaemon",

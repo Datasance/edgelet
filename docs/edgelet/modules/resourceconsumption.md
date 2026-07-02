@@ -1,15 +1,27 @@
 # Resource Consumption Manager
 
-The resource consumption manager samples **host CPU, memory, and disk** usage against configured limits and publishes results to StatusReporter. It also participates in limit enforcement signaling for the agent.
+The resource consumption manager samples **edgelet stack and host** usage against configured limits and publishes results to StatusReporter. It also participates in limit enforcement signaling for the agent.
 
 **Code:** `internal/resourceconsumption/`
 
 ## Purpose
 
-- Poll system metrics via gopsutil (CPU, mem, disk)
-- Compare against configured limits (bytes / CPU percentage)
+- Sample control-plane RSS/CPU via gopsutil (`process.MemoryInfo`, `process.Percent`)
+- When `containerEngine=edgelet` on an embedded build, include the `--edgelet-containerd-child` data-plane process(es)
+- Compare stack totals against configured limits (bytes / CPU percentage)
 - Update `ResourceConsumptionManagerStatus` on StatusReporter
 - Collect initial sample immediately on start (no wait for first tick)
+
+## Metrics
+
+| Field | Meaning |
+|-------|---------|
+| `agentCpuPercent` / `agentMemoryMiB` | Control-plane `edgelet daemon` process |
+| `runtimeCpuPercent` / `runtimeMemoryMiB` | Embedded containerd child (embedded engine only) |
+| `cpuUsage` / `memoryUsage` | **Edgelet stack total** (agent + runtime when available) — also sent to Pot in `PUT status` |
+| `systemTotalCpu` / `systemAvailableMemory` | Whole host |
+
+External `docker` / `podman` engines report agent-only stack totals (no runtime child tracking).
 
 ## Dependencies
 
@@ -17,7 +29,8 @@ The resource consumption manager samples **host CPU, memory, and disk** usage ag
 |------------|--------|
 | `statusreporter` | Publish usage metrics |
 | `config` | Limits and poll frequency |
-| `gopsutil` | Host metrics |
+| `gopsutil` | Process and host metrics |
+| `pkg/containerd` | Discover embedded containerd child PIDs on Linux |
 
 | Used by | Reason |
 |---------|--------|
@@ -54,7 +67,7 @@ Exact YAML names match `config.yaml` profiles — see default config in `interna
 | StatusReporter index | `0` (`utils.ResourceConsumptionManager`) |
 | First slot in `modulesStatus[]` | Resource Consumption |
 
-Status fields include `memoryUsage`, `cpuUsage`, `diskUsage` (human-readable in logs on start).
+Status fields include stack breakdown plus legacy `memoryUsage`, `cpuUsage`, `diskUsage`.
 
 ## External APIs
 
@@ -64,18 +77,23 @@ Exposed indirectly via `GET /v1/system/status` resource section and Controller s
 
 - Log module: `"Resource Consumption Manager"`
 - Initial and periodic debug logs with MiB/GiB formatting
+- Warn when multiple embedded containerd child PIDs are detected
 
 ## Failure modes
 
 | Symptom | Typical cause |
 |---------|----------------|
 | Zero usage reported | gopsutil error on platform |
-| Limit warnings | Usage exceeded configured thresholds |
+| `runtimeDegraded=true` | Embedded engine configured but containerd child not running |
+| Limit warnings | Stack usage exceeded configured thresholds |
 
 ## Code map
 
 | File | Role |
 |------|------|
 | `manager.go` | Sampling loop, limit comparison, status updates |
+| `stats.go` | Parallel process/host sampling and CPU smoothing |
+| `runtime_linux.go` | Embedded runtime PID discovery |
+| `host_cpu_linux.go` | Linux host CPU fallback |
 
 Related: [statusreporter.md](statusreporter.md), [supervisor.md](supervisor.md).
