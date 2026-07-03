@@ -8,6 +8,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ControllerSessionMaxDuration is the hard cap for controller-attached log/exec sessions on the agent.
+const ControllerSessionMaxDuration = 24 * time.Hour
+
 // recreateHandlerContext cancels the previous session context and returns a fresh one.
 func recreateHandlerContext(ctx *context.Context, cancel *context.CancelFunc) {
 	if *cancel != nil {

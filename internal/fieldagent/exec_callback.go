@@ -14,7 +14,7 @@ import (
 
 const (
 	execCallbackModuleName = "ExecSessionCallback"
-	execTimeout            = 30 * time.Minute
+	execTimeout            = ControllerSessionMaxDuration
 )
 
 // ExecSessionCallback handles Docker exec session I/O and bridges it to WebSocket

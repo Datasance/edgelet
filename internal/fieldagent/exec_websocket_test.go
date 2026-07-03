@@ -444,3 +444,23 @@ func TestExecCallback_ForwardBuffersBeforeConnect(t *testing.T) {
 		t.Fatalf("bufferedFrames = %d, want 1", handler.bufferedFrames.Load())
 	}
 }
+
+func TestExecHandler_readWaitDuration(t *testing.T) {
+	h := newTestExecHandler("ws://unused", "sess-duration", "ms-duration")
+	if got := h.readWaitDuration(); got != execPendingReadTimeout {
+		t.Fatalf("pending readWaitDuration = %v, want %v", got, execPendingReadTimeout)
+	}
+	h.isActive.Store(true)
+	if got := h.readWaitDuration(); got != 0 {
+		t.Fatalf("active readWaitDuration = %v, want 0 (disabled)", got)
+	}
+}
+
+func TestExecCallback_execTimeoutIs24Hours(t *testing.T) {
+	if execTimeout != ControllerSessionMaxDuration {
+		t.Fatalf("execTimeout = %v, want %v", execTimeout, ControllerSessionMaxDuration)
+	}
+	if execTimeout != 24*time.Hour {
+		t.Fatalf("execTimeout = %v, want 24h", execTimeout)
+	}
+}
