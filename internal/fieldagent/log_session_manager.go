@@ -73,6 +73,7 @@ func engineTailConfigToUtils(cfg *engine.TailConfig) *utils.TailConfig {
 
 const (
 	logSessionManagerModuleName = "LogSessionManager"
+	logSessionMaxDuration       = ControllerSessionMaxDuration
 )
 
 // LogSession represents a log session from the controller
@@ -85,10 +86,16 @@ type LogSession struct {
 
 // LogSessionInfo tracks information about an active log session
 type LogSessionInfo struct {
-	Session     *LogSession
-	ContainerID string
-	IsStreaming bool
-	tailCancel  context.CancelFunc
+	Session            *LogSession
+	ContainerID        string
+	IsStreaming        bool
+	streamingStartedAt time.Time
+	tailCancel         context.CancelFunc
+}
+
+func (info *LogSessionInfo) markStreamingStarted() {
+	info.IsStreaming = true
+	info.streamingStartedAt = time.Now()
 }
 
 // LogSessionManager manages active log sessions
@@ -318,7 +325,7 @@ func (lsm *LogSessionManager) startLogStreamingLocked(sessionID string) {
 		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID, engineTailConfigToUtils(defaultTailConfig))
 	}
 
-	info.IsStreaming = true
+	info.markStreamingStarted()
 }
 
 // StartLogStreamingOnActivation starts log streaming when WebSocket becomes active
@@ -349,7 +356,7 @@ func (lsm *LogSessionManager) StartLogStreamingOnActivation(sessionID string, ta
 		lsm.startFogLogStreamingLocked(sessionID, session.IofogUUID, engineTailConfigToUtils(tailConfig))
 	}
 
-	info.IsStreaming = true
+	info.markStreamingStarted()
 }
 
 // startMicroserviceLogStreamingLocked starts streaming microservice logs (must be called with lock held)
@@ -422,7 +429,7 @@ func (lsm *LogSessionManager) startMicroserviceLogStreamingLocked(sessionID, mic
 	lsm.tailCallbacks[sessionID] = handler
 
 	info.ContainerID = containerID
-	info.IsStreaming = true
+	info.markStreamingStarted()
 
 	// Run TailContainerLogs in a goroutine — it blocks in follow mode until the session ends.
 	// If called synchronously, lsm.mu would be held for the entire stream, deadlocking
@@ -588,6 +595,7 @@ func (lsm *LogSessionManager) stopLogStreamingLocked(sessionID string) {
 			info.tailCancel = nil
 		}
 		info.IsStreaming = false
+		info.streamingStartedAt = time.Time{}
 	}
 }
 
@@ -621,13 +629,17 @@ func (lsm *LogSessionManager) reconnectLogSessionLocked(sessionID string) {
 
 // stopLogSessionLocked stops a log session (must be called with lock held)
 func (lsm *LogSessionManager) stopLogSessionLocked(sessionID string) {
+	lsm.stopLogSessionWithReasonLocked(sessionID, logCloseReasonSessionStopped)
+}
+
+func (lsm *LogSessionManager) stopLogSessionWithReasonLocked(sessionID, closeReason string) {
 	lsm.stopLogStreamingLocked(sessionID)
 
 	logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Stopping log session: %s", sessionID))
 
 	// Stop WebSocket handler
 	if handler, exists := lsm.webSocketHandlers[sessionID]; exists {
-		handler.Disconnect()
+		handler.DisconnectWithReason(closeReason)
 		delete(lsm.webSocketHandlers, sessionID)
 	}
 
@@ -635,6 +647,23 @@ func (lsm *LogSessionManager) stopLogSessionLocked(sessionID string) {
 	delete(lsm.activeSessions, sessionID)
 
 	logging.LogDebug(logSessionManagerModuleName, fmt.Sprintf("Stopped log session: %s", sessionID))
+}
+
+func (lsm *LogSessionManager) expireOldLogSessionsLocked() {
+	now := time.Now()
+	expired := make([]string, 0)
+	for sessionID, info := range lsm.activeSessions {
+		if !info.IsStreaming || info.streamingStartedAt.IsZero() {
+			continue
+		}
+		if now.Sub(info.streamingStartedAt) >= logSessionMaxDuration {
+			expired = append(expired, sessionID)
+		}
+	}
+	for _, sessionID := range expired {
+		logging.LogInfo(logSessionManagerModuleName, fmt.Sprintf("Log session max duration reached: %s", sessionID))
+		lsm.stopLogSessionWithReasonLocked(sessionID, logCloseReasonMaxDuration)
+	}
 }
 
 // StopLogSession stops a log session (thread-safe)
@@ -654,6 +683,10 @@ func (lsm *LogSessionManager) StartWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			lsm.mu.Lock()
+			lsm.expireOldLogSessionsLocked()
+			lsm.mu.Unlock()
+
 			sessions, err := lsm.FetchLogSessions(ctx)
 			if err != nil {
 				logging.LogError(logSessionManagerModuleName, "Error fetching log sessions", err)

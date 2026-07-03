@@ -5,14 +5,21 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - July 2026
 
 ### Added
 
 - **Microservice control WebSocket signals:** when controller `microserviceConfig` changes, Edgelet pushes opcode `0xC` on `/v1/microservices/control` so workloads can fetch `GET /v1/microservices/config`. Agent hot reload pushes opcode `0xF` for resource-limit changes.
 - **`edgelet system status` resource breakdown:** `agentCpuPercent`, `agentMemoryMiB`, optional embedded `runtime*` fields, and `edgeletTotal*` stack totals on `GET /v1/system/status`.
 
+### Fixed
+
+- **Agent log WebSocket idle disconnect:** quiet `follow=true` streams no longer drop at ~60s with `i/o timeout` and Controller close code 1006. Agent log sockets now use exec-parity WS ping/pong keepalive, a 120s pending read deadline aligned with Controller `logPendingTimeoutMs`, and no read deadline while actively streaming. Intentional session stop sends WebSocket close **1000** with reason `session stopped`. Pair with Controller WS ping on agent log/exec sockets.
+- **Agent exec WebSocket idle policy:** exec agent sockets now match log keepalive (120s pending, no read deadline while active, graceful **1000** on intentional stop). Controller exec shell sessions use a **24-hour** agent-side max duration (was 30 minutes).
+
 ### Changed
+
+- **Controller log/exec session cap:** agent log streaming stops after **24 hours** with close reason `max session duration` (edge safety cap; Controller session TTL may apply sooner).
 
 - **Agent resource metrics:** `cpuUsage` / `memoryUsage` now report edgelet stack totals using process RSS and smoothed CPU (control plane + embedded containerd child when present). Controller `PUT status` keys are unchanged; reported values are more accurate (especially memory). External `docker` / `podman` engines remain agent-only totals.
 

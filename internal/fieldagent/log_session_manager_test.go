@@ -41,6 +41,46 @@ func TestLogSessionManager_HandleWebSocketTransportCloseStopsTail(t *testing.T) 
 	}
 }
 
+func TestLogSessionManager_expireOldLogSessionsLocked(t *testing.T) {
+	lsm := &LogSessionManager{
+		activeSessions:    make(map[string]*LogSessionInfo),
+		webSocketHandlers: make(map[string]*LogSessionWebSocketHandler),
+	}
+
+	expiredID := "log-session-expired"
+	freshID := "log-session-fresh"
+	lsm.activeSessions[expiredID] = &LogSessionInfo{
+		Session:            &LogSession{SessionID: expiredID},
+		IsStreaming:        true,
+		streamingStartedAt: time.Now().Add(-25 * time.Hour),
+	}
+	lsm.activeSessions[freshID] = &LogSessionInfo{
+		Session:            &LogSession{SessionID: freshID},
+		IsStreaming:        true,
+		streamingStartedAt: time.Now().Add(-1 * time.Hour),
+	}
+
+	lsm.expireOldLogSessionsLocked()
+
+	if _, ok := lsm.activeSessions[expiredID]; ok {
+		t.Fatal("expected expired session to be removed")
+	}
+	if _, ok := lsm.activeSessions[freshID]; !ok {
+		t.Fatal("expected fresh session to remain")
+	}
+}
+
+func TestLogSessionManager_markStreamingStarted(t *testing.T) {
+	info := &LogSessionInfo{}
+	info.markStreamingStarted()
+	if !info.IsStreaming {
+		t.Fatal("expected IsStreaming=true")
+	}
+	if info.streamingStartedAt.IsZero() {
+		t.Fatal("expected streamingStartedAt to be set")
+	}
+}
+
 func TestLogHandler_SendMessageBuffersWhenDisconnected(t *testing.T) {
 	h := newTestLogHandler("ws://unused", "log-buffer")
 	h.isConnected.Store(false)

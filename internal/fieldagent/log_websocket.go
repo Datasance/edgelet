@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -21,12 +22,15 @@ import (
 )
 
 const (
-	logWebSocketModuleName = "Log Session WebSocket Handler"
-	logPingInterval        = 30 * time.Second
-	logHandshakeTimeout    = 10 * time.Second
-	logMaxFrameSize        = 65536
-	logMaxBufferSize       = 1024 * 1024 // 1MB
-	logMaxBufferedFrames   = 1000
+	logWebSocketModuleName       = "Log Session WebSocket Handler"
+	logPingInterval              = 30 * time.Second
+	logPendingReadTimeout        = 120 * time.Second // matches Controller logPendingTimeoutMs
+	logHandshakeTimeout          = 10 * time.Second
+	logCloseReasonSessionStopped = "session stopped"
+	logCloseReasonMaxDuration    = "max session duration"
+	logMaxFrameSize              = 65536
+	logMaxBufferSize             = 1024 * 1024 // 1MB
+	logMaxBufferedFrames         = 1000
 )
 
 // LogMessageType constants
@@ -244,6 +248,7 @@ func (h *LogSessionWebSocketHandler) connectTransportLocked() error {
 
 	h.conn = conn
 	h.isConnected.Store(true)
+	h.configureReadKeepalive(conn)
 
 	if h.transitionState(LogStateConnecting, LogStatePending) {
 		logging.LogInfo(logWebSocketModuleName, "Connection is now pending LOG_START message")
@@ -425,6 +430,54 @@ func (h *LogSessionWebSocketHandler) writeOutboundMessage(msgType byte, data []b
 	return nil
 }
 
+func (h *LogSessionWebSocketHandler) readWaitDuration() time.Duration {
+	if h.isActive.Load() {
+		return 0
+	}
+	return logPendingReadTimeout
+}
+
+func (h *LogSessionWebSocketHandler) extendReadDeadline(conn *websocket.Conn) error {
+	if conn == nil {
+		return nil
+	}
+	if h.isActive.Load() {
+		return conn.SetReadDeadline(time.Time{})
+	}
+	return conn.SetReadDeadline(time.Now().Add(logPendingReadTimeout))
+}
+
+func (h *LogSessionWebSocketHandler) configureReadKeepalive(conn *websocket.Conn) {
+	if conn == nil {
+		return
+	}
+	extend := func() error {
+		return h.extendReadDeadline(conn)
+	}
+	if err := extend(); err != nil {
+		logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
+	}
+	conn.SetPongHandler(func(string) error {
+		return extend()
+	})
+	conn.SetPingHandler(func(appData string) error {
+		if err := extend(); err != nil {
+			return err
+		}
+		h.writeMu.Lock()
+		defer h.writeMu.Unlock()
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+	})
+}
+
+func (h *LogSessionWebSocketHandler) isPendingReadTimeout(err error) bool {
+	if h.isActive.Load() {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
 // pingWorker sends ping frames periodically
 func (h *LogSessionWebSocketHandler) pingWorker() {
 	defer h.wg.Done()
@@ -485,18 +538,18 @@ func (h *LogSessionWebSocketHandler) readWorker() {
 				return
 			}
 
-			// Set read deadline
-			if err := conn.SetReadDeadline(time.Now().Add(logPingInterval * 2)); err != nil {
+			if err := h.extendReadDeadline(conn); err != nil {
 				logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to set read deadline: %v", err))
 			}
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
-				// Unified error handling: any error → close session, no reconnect.
-				// Log appropriately: info for normal close (1000, 1001, 1005), error for others.
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005) {
+				switch {
+				case h.isPendingReadTimeout(err):
+					logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Pending LOG_START timeout for log session: %s", h.sessionID))
+				case websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005):
 					logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("WebSocket closed: %v", err))
-				} else {
+				default:
 					logging.LogError(logWebSocketModuleName, "WebSocket read error", err)
 				}
 				go h.handleClose()
@@ -607,6 +660,13 @@ func (h *LogSessionWebSocketHandler) handleLogStart(data []byte, sessionID strin
 	if h.transitionState(LogStatePending, LogStateActive) {
 		h.isActive.Store(true)
 
+		h.connMu.RLock()
+		conn := h.conn
+		h.connMu.RUnlock()
+		if err := h.extendReadDeadline(conn); err != nil {
+			logging.LogWarn(logWebSocketModuleName, fmt.Sprintf("Failed to extend read deadline on LOG_START: %v", err))
+		}
+
 		// Trigger log streaming start in LogSessionManager with tailConfig from LOG_START
 		if h.logSessionManager != nil {
 			logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Triggering log streaming start on WebSocket activation: sessionId=%s", sessionID))
@@ -654,9 +714,31 @@ func (h *LogSessionWebSocketHandler) flushBuffer() {
 	}
 }
 
+func (h *LogSessionWebSocketHandler) gracefulCloseTransportLocked(reason string) {
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
+	if h.conn == nil {
+		return
+	}
+	h.writeMu.Lock()
+	deadline := time.Now().Add(time.Second)
+	_ = h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason), deadline)
+	h.writeMu.Unlock()
+	_ = h.conn.Close()
+	h.conn = nil
+}
+
 // Disconnect closes the WebSocket connection and resets handler state for reuse.
 func (h *LogSessionWebSocketHandler) Disconnect() {
-	h.Reset()
+	h.DisconnectWithReason(logCloseReasonSessionStopped)
+}
+
+// DisconnectWithReason closes the WebSocket with a specific close reason before reset.
+func (h *LogSessionWebSocketHandler) DisconnectWithReason(reason string) {
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+	h.gracefulCloseTransportLocked(reason)
+	h.resetLocked()
 	logging.LogInfo(logWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for log session: %s", h.sessionID))
 }
 

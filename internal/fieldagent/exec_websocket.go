@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,13 +21,14 @@ import (
 )
 
 const (
-	execWebSocketModuleName = "Exec Session WebSocket Handler"
-	pingInterval            = 30 * time.Second
-	handshakeTimeout        = 10 * time.Second
-	activeReadTimeout       = 30 * time.Minute // matches exec session idle timeout
-	maxFrameSize            = 65536
-	maxBufferSize           = 1024 * 1024 // 1MB
-	maxBufferedFrames       = 1000
+	execWebSocketModuleName       = "Exec Session WebSocket Handler"
+	pingInterval                  = 30 * time.Second
+	execPendingReadTimeout        = 120 * time.Second // matches Controller logPendingTimeoutMs
+	handshakeTimeout              = 10 * time.Second
+	execCloseReasonSessionStopped = "session stopped"
+	maxFrameSize                  = 65536
+	maxBufferSize                 = 1024 * 1024 // 1MB
+	maxBufferedFrames             = 1000
 )
 
 // ExecMessageType constants
@@ -381,16 +383,19 @@ func (h *ExecSessionWebSocketHandler) writeOutboundMessage(msgType byte, data []
 
 func (h *ExecSessionWebSocketHandler) readWaitDuration() time.Duration {
 	if h.isActive.Load() {
-		return activeReadTimeout
+		return 0
 	}
-	return pingInterval * 2
+	return execPendingReadTimeout
 }
 
 func (h *ExecSessionWebSocketHandler) extendReadDeadline(conn *websocket.Conn) error {
 	if conn == nil {
 		return nil
 	}
-	return conn.SetReadDeadline(time.Now().Add(h.readWaitDuration()))
+	if h.isActive.Load() {
+		return conn.SetReadDeadline(time.Time{})
+	}
+	return conn.SetReadDeadline(time.Now().Add(execPendingReadTimeout))
 }
 
 func (h *ExecSessionWebSocketHandler) configureReadKeepalive(conn *websocket.Conn) {
@@ -410,8 +415,18 @@ func (h *ExecSessionWebSocketHandler) configureReadKeepalive(conn *websocket.Con
 		if err := extend(); err != nil {
 			return err
 		}
+		h.writeMu.Lock()
+		defer h.writeMu.Unlock()
 		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
 	})
+}
+
+func (h *ExecSessionWebSocketHandler) isPendingReadTimeout(err error) bool {
+	if h.isActive.Load() {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func (h *ExecSessionWebSocketHandler) pingWorker() {
@@ -478,9 +493,12 @@ func (h *ExecSessionWebSocketHandler) readWorker() {
 
 			messageType, data, err := conn.ReadMessage()
 			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005) {
+				switch {
+				case h.isPendingReadTimeout(err):
+					logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Pending activation timeout for exec session: %s", h.sessionID))
+				case websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, 1005):
 					logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("WebSocket closed: %v", err))
-				} else {
+				default:
 					logging.LogError(execWebSocketModuleName, "WebSocket read error", err)
 				}
 				go h.handleTransportClose()
@@ -665,9 +683,26 @@ func (h *ExecSessionWebSocketHandler) flushBuffer() {
 	}
 }
 
+func (h *ExecSessionWebSocketHandler) gracefulCloseTransportLocked(reason string) {
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
+	if h.conn == nil {
+		return
+	}
+	h.writeMu.Lock()
+	deadline := time.Now().Add(time.Second)
+	_ = h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason), deadline)
+	h.writeMu.Unlock()
+	_ = h.conn.Close()
+	h.conn = nil
+}
+
 // Disconnect closes the WebSocket connection and resets handler state for reuse.
 func (h *ExecSessionWebSocketHandler) Disconnect() {
-	h.Reset()
+	h.lifecycleMu.Lock()
+	defer h.lifecycleMu.Unlock()
+	h.gracefulCloseTransportLocked(execCloseReasonSessionStopped)
+	h.resetLocked()
 	logging.LogInfo(execWebSocketModuleName, fmt.Sprintf("Disconnected WebSocket for exec session: %s", h.sessionID))
 }
 
