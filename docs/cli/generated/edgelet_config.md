@@ -56,9 +56,9 @@ edgelet config [flags]
       --gps-scan-frequency int         GPS scan frequency. Alias: --gpsf
   -h, --help                           help for config
       --log-directory string           log directory. Alias: --ld
-      --log-limit-gib float            log limit (GiB). Alias: --l
       --log-file-count int             log file count. Alias: --lc
       --log-level string               log level (DEBUG|INFO|WARN|ERROR). Alias: --ll
+      --log-limit-gib float            log limit (GiB). Alias: --l
       --memory-limit-mib float         memory limit (MiB). Alias: --m
       --network-interface string       network interface. Alias: --n
       --pruning-frequency int          prune frequency. Alias: --pf
