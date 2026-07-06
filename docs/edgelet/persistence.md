@@ -42,6 +42,8 @@ Tables are grouped by **source prefix** (v1 schema):
 
 Image layers and containerd state live **outside** `diskDirectory` (for example `/var/lib/edgelet-containerd/` on the embedded engine). Backing up `edgelet.db` does **not** back up pulled images or running container filesystems.
 
+Stateful **`VOLUME`** mappings persist files under `{diskDirectory}/volumes/data/` outside SQLite. Include that tree in backups for stateful workloads. See [volumes.md](volumes.md).
+
 ---
 
 ## Backup runbook (R85)
@@ -289,3 +291,4 @@ go test ./internal/store/... ./internal/fieldagent/... ./internal/processmanager
 | [troubleshooting.md](troubleshooting.md) | Daemon won't start (includes disk space under `/var/lib/edgelet`) |
 | [control-plane.md](control-plane.md) | ControlPlane redeploy after DB wipe |
 | [container-engine.md](container-engine.md) | `/var/lib/edgelet` vs `edgelet-containerd` data paths |
+| [volumes.md](volumes.md) | `volumes/data/` lifecycle and backup scope |

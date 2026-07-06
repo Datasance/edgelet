@@ -37,6 +37,8 @@ Common issues when running Edgelet on edge nodes.
    df -h /var/lib/edgelet /var/lib/edgelet-containerd
    ```
 
+   If usage grows after deleting microservices, orphaned `VOLUME` data may remain under `/var/lib/edgelet/volumes/data/` until prune runs — see [volumes.md](volumes.md).
+
 ---
 
 ## Cgroup delegation (embedded edgelet engine)

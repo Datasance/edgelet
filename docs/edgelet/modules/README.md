@@ -123,6 +123,7 @@ Edge Guard, Pruning, Volume Mount, and SSH Proxy are not in this fixed array; th
 | EdgeletAPI usage | [../edgelet-api-v1.md](../edgelet-api-v1.md) |
 | Controller sync / CP deploy | [../control-plane.md](../control-plane.md) |
 | SQLite backup / wipe | [../persistence.md](../persistence.md) |
+| Workload volumes | [../volumes.md](../volumes.md) |
 | Container engines | [../container-engine.md](../container-engine.md) |
 | DNS | [../dns.md](../dns.md) |
 | Workload labels/env | [../workload-metadata.md](../workload-metadata.md) |

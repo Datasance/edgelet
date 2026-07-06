@@ -5,7 +5,7 @@
 #     --build-arg VERSION=v0.0.0-test \
 #     -t ghcr.io/eclipse-iofog/edgelet:test .
 
-FROM golang:1.26.4-trixie@sha256:0dcba0d95dbfb072e9917a106b9e07d7cc298097dc83e9307056ef1889de654d AS builder
+FROM golang:1.26.4-trixie@sha256:68b7145ec43d1820b9a56704554b53d1520aa2a15cb5233e374188a31b2a1bce AS builder
 
 ARG BUILDARCH
 ARG TARGETARCH
@@ -42,7 +42,7 @@ RUN set -eux; \
     test -f "build/out/data-linux-${ARCH}.tar.zst"
 
 # Unpack embed bundle + minimal rootfs.
-FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS base
+FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce AS base
 RUN apk add --no-cache ca-certificates zstd tzdata
 ARG TARGETARCH
 ARG VERSION=dev

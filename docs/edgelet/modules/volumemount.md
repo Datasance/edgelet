@@ -67,7 +67,7 @@ Triggered from Field Agent sync path (`fieldagent/sync.go`).
 
 ### Cleanup
 
-`CleanupMicroserviceVolumes(microserviceUUID)` when container removed — preserves shared secret/configmap data dirs where appropriate (see tests).
+`CleanupMicroserviceVolumes(microserviceUUID)` when container removed — preserves shared secret/configmap data dirs where appropriate (see tests). Operator guide: [../volumes.md](../volumes.md).
 
 ## Volume types
 
