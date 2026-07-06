@@ -91,7 +91,7 @@ func (s *Supervisor) handleWarmContainerEngineURLReload(reloadCtx *reloadEngineC
 	engConfig := engine.EngineConfig{
 		SocketURL:  cfg.ContainerEngineURL,
 		APIVersion: cfg.DockerAPIVersion,
-		LogDir:     cfg.LogDiskDirectory + "containers",
+		LogDir:     cfg.LogDirectory + "containers",
 	}
 
 	newEng, err := initExternalEngineAttempt(cfg.ContainerEngine, engConfig)
@@ -163,7 +163,7 @@ func (s *Supervisor) liveExternalEngineConfig() engine.EngineConfig {
 	return engine.EngineConfig{
 		SocketURL:  cfg.ContainerEngineURL,
 		APIVersion: cfg.DockerAPIVersion,
-		LogDir:     cfg.LogDiskDirectory + "containers",
+		LogDir:     cfg.LogDirectory + "containers",
 	}
 }
 

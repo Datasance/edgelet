@@ -181,7 +181,7 @@ func TestHandleSystemPrune_RejectsInvalidMode(t *testing.T) {
 
 func TestHandleSystemLogs_RejectsInvalidTail(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
+	cfg.LogDirectory = t.TempDir() + string(os.PathSeparator)
 
 	handler := NewEdgeletAPIHandler()
 	req := httptest.NewRequest(http.MethodGet, "/v1/system/logs?tailLines=bad", nil)
@@ -195,8 +195,8 @@ func TestHandleSystemLogs_RejectsInvalidTail(t *testing.T) {
 
 func TestHandleSystemLogs_BoundedReturnsEntries(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
-	logFile := filepath.Join(cfg.LogDiskDirectory, "edgelet.0.log")
+	cfg.LogDirectory = t.TempDir() + string(os.PathSeparator)
+	logFile := filepath.Join(cfg.LogDirectory, "edgelet.0.log")
 	logLines := strings.Join([]string{
 		"2026-05-17 00:00:01.000 [info] boot",
 		"2026-05-17 00:00:02.000 [info] ready",

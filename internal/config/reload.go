@@ -44,8 +44,8 @@ func FullReload(hooks ReloadHooks) error {
 	}
 	SetLastReloadSuccessful(true)
 
-	logDiskLimitMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, logging.SeriesControlPlane, logging.RuntimeSplitFromEnv())
-	if err := logging.InstanceConfigUpdated(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
+	logLimitMB := logging.DaemonLogBudgetMB(cfg.LogLimit, logging.SeriesControlPlane, logging.RuntimeSplitFromEnv())
+	if err := logging.InstanceConfigUpdated(cfg.LogDirectory, logLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
 		logging.LogError(reloadModuleName, "Failed to update logger configuration", err)
 	}
 

@@ -105,7 +105,7 @@ plane uses `supervise-daemon` respawn (`respawn_max=0`, parity with systemd `Res
 | Log | Source |
 |-----|--------|
 | `/var/log/edgelet/daemon.log` | OpenRC `output_log` / `error_log` — thin wrapper and pre-exec errors |
-| `/var/log/edgelet/edgelet.0.log` (rotated) | Fat daemon after `edgelet daemon` starts (`logDiskDirectory`) |
+| `/var/log/edgelet/edgelet.0.log` (rotated) | Fat daemon after `edgelet daemon` starts (`logDirectory`) |
 
 ---
 

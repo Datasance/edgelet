@@ -157,11 +157,11 @@ func startLoggingService() {
 
 	cfg := config.GetInstance()
 	logo += fmt.Sprintf("  Log Level: %s\n", cfg.LogLevel)
-	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDiskDirectory)
+	logo += fmt.Sprintf("  Log Directory: %s\n", cfg.LogDirectory)
 	_, _ = fmt.Print(logo)
 
-	logDiskLimitMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, logging.SeriesControlPlane, false)
-	if err := logging.SetupLogger(cfg.LogDiskDirectory, logDiskLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
+	logLimitMB := logging.DaemonLogBudgetMB(cfg.LogLimit, logging.SeriesControlPlane, false)
+	if err := logging.SetupLogger(cfg.LogDirectory, logLimitMB, cfg.LogFileCount, cfg.LogLevel); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 		exitDaemon(1)
 	}

@@ -130,8 +130,8 @@ func TestLongFlagName_ExplicitGiBAndMiB(t *testing.T) {
 	if got := longFlagName("memoryLimitMiB"); got != "memory-limit-mib" {
 		t.Fatalf("memoryLimitMiB=%q", got)
 	}
-	if got := longFlagName("logDiskLimitGiB"); got != "log-disk-limit-gib" {
-		t.Fatalf("logDiskLimitGiB=%q", got)
+	if got := longFlagName("logLimitGiB"); got != "log-limit-gib" {
+		t.Fatalf("logLimitGiB=%q", got)
 	}
 }
 

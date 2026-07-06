@@ -89,8 +89,8 @@ func reloadRuntimeBootstrapConfig() {
 		logging.LogError("RUNTIME_BOOTSTRAP", "Configuration validation failed after reload", err)
 		return
 	}
-	budgetMB := logging.DaemonLogBudgetMB(cfg.LogDiskLimit, logging.SeriesDataPlane, true)
-	if err := logging.InstanceConfigUpdated(cfg.LogDiskDirectory, budgetMB, cfg.LogFileCount, cfg.LogLevel, logging.BasenameDataPlane); err != nil {
+	budgetMB := logging.DaemonLogBudgetMB(cfg.LogLimit, logging.SeriesDataPlane, true)
+	if err := logging.InstanceConfigUpdated(cfg.LogDirectory, budgetMB, cfg.LogFileCount, cfg.LogLevel, logging.BasenameDataPlane); err != nil {
 		logging.LogError("RUNTIME_BOOTSTRAP", "Failed to update logger configuration", err)
 		return
 	}

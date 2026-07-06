@@ -54,7 +54,7 @@ func TestValidateConfig(t *testing.T) {
 	cfg.DiskLimit = 10.0
 	cfg.MemoryLimit = 4096.0
 	cfg.CPULimit = 80.0
-	cfg.LogDiskLimit = 10.0
+	cfg.LogLimit = 10.0
 	cfg.LogFileCount = 10
 	cfg.LogLevel = "INFO"
 	cfg.StatusFrequency = 10
@@ -77,8 +77,13 @@ func TestValidateConfig(t *testing.T) {
 		t.Errorf("Expected valid config, got error: %v", err)
 	}
 
+	cfg.DiskLimit = 1024.0
+	if err := ValidateConfig(cfg); err != nil {
+		t.Errorf("Expected 1024 GiB disk limit to be valid, got error: %v", err)
+	}
+
 	// Test invalid config
-	cfg.DiskLimit = 200.0 // Invalid: exceeds max
+	cfg.DiskLimit = 200000.0 // Invalid: exceeds max
 	if err := ValidateConfig(cfg); err == nil {
 		t.Error("Expected validation error for invalid disk limit")
 	}
@@ -89,7 +94,7 @@ func TestSnakeToCamel(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"disk_consumption_limit", "diskConsumptionLimit"},
+		{"disk_limit", "diskLimit"},
 		{"log_file_count", "logFileCount"},
 		{"gps_scan_frequency", "gpsScanFrequency"},
 		{"", ""},

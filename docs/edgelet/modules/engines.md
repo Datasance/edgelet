@@ -72,7 +72,7 @@ Supervisor retries docker/podman init; if socket unavailable:
 | `containerEngine` | Factory selector |
 | `containerEngineUrl` | Socket/endpoint for external engines |
 | `dockerApiVersion` | Docker API version string |
-| `logDiskDirectory` | Container log root passed to edgelet engine |
+| `logDirectory` | Container log root passed to edgelet engine |
 
 ## Interface surface
 

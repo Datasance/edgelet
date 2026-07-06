@@ -134,7 +134,11 @@ func loadConfigValues(cfg *Config) {
 	cfg.ContainerEngine = getProp("containerEngine", "edgelet")
 	cfg.ContainerEngineURL = getProp("containerEngineUrl", "unix:///run/edgelet/containerd.sock")
 	cfg.DiskDirectory = getProp("diskDirectory", "/var/lib/edgelet/")
-	cfg.LogDiskDirectory = getProp("logDiskDirectory", "/var/log/edgelet/")
+	logDirectory := getProp("logDirectory", "")
+	if logDirectory == "" {
+		logDirectory = getProp("logDiskDirectory", "/var/log/edgelet/")
+	}
+	cfg.LogDirectory = logDirectory
 	cfg.LogLevel = strings.ToUpper(getProp("logLevel", "INFO"))
 	cfg.GPSDevice = getProp("gpsDevice", "/dev/ttyUSB0")
 	cfg.GPSMode = strings.ToLower(strings.TrimSpace(getProp("gpsMode", "auto")))
@@ -177,7 +181,15 @@ func loadConfigValues(cfg *Config) {
 	cfg.DiskLimit = parseFloat("diskLimit", "10")
 	cfg.MemoryLimit = parseFloat("memoryLimit", "4096")
 	cfg.CPULimit = parseFloat("cpuLimit", "80")
-	cfg.LogDiskLimit = parseFloat("logLimit", "10")
+	logLimitRaw := getProp("logLimit", "")
+	if logLimitRaw == "" {
+		logLimitRaw = getProp("logDiskLimit", "10")
+	}
+	var logLimitVal float64
+	if _, err := fmt.Sscanf(logLimitRaw, "%f", &logLimitVal); err != nil {
+		logging.LogWarn(configLoaderModuleName, fmt.Sprintf("Failed to parse config value for logLimit: %v", err))
+	}
+	cfg.LogLimit = logLimitVal
 	cfg.LogFileCount = parseInt("logFileCount", "10")
 	cfg.StatusFrequency = parseInt("statusFrequency", "10")
 	cfg.ChangeFrequency = parseInt("changeFrequency", "20")

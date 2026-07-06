@@ -363,12 +363,12 @@ install-dev: build-edgelet-local ## Install edgelet and setup local dev environm
 			'    networkInterface: "dynamic"' \
 			'    containerEngine: "docker"' \
 			'    containerEngineUrl: "unix:///var/run/docker.sock"' \
-			'    diskConsumptionLimit: "10"' \
+			'    diskLimit: "10"' \
 			"    diskDirectory: \"$(DEV_VAR_LIB)/\"" \
-			'    memoryConsumptionLimit: "4096"' \
-			'    processorConsumptionLimit: "80.0"' \
-			'    logDiskConsumptionLimit: "10.0"' \
-			"    logDiskDirectory: \"$(DEV_VAR_LOG)/\"" \
+			'    memoryLimit: "4096"' \
+			'    cpuLimit: "80.0"' \
+			'    logLimit: "10.0"' \
+			"    logDirectory: \"$(DEV_VAR_LOG)/\"" \
 			'    logFileCount: "10"' \
 			'    logLevel: "DEBUG"' \
 			'    statusFrequency: "30"' \

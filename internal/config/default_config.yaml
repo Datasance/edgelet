@@ -9,5 +9,5 @@ profiles:
     containerEngine: edgelet
     containerEngineUrl: unix:///run/edgelet/containerd.sock
     diskDirectory: /var/lib/edgelet/
-    logDiskDirectory: /var/log/edgelet/
+    logDirectory: /var/log/edgelet/
     logLevel: INFO

@@ -11,5 +11,5 @@ profiles:
     watchdogEnabled: "off"
     pruningFrequency: "0"
     diskDirectory: /var/lib/edgelet/
-    logDiskDirectory: /var/log/edgelet/
+    logDirectory: /var/log/edgelet/
     logLevel: INFO

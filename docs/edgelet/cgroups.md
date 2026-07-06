@@ -75,7 +75,7 @@ Per-microservice fields enforced on the edgelet engine (CRI/crun):
 - `memoryLimit` (bytes)
 - `cpuSetCpus`
 
-Node configuration `memoryConsumptionLimit` / `processorConsumptionLimit` remain **monitor-only** (not cgroup-enforced).
+Node configuration `memoryLimit` / `cpuLimit` remain **monitor-only** (not cgroup-enforced).
 
 Missing **hugetlb** / **rdma** controllers on edge hardware are tolerated.
 
