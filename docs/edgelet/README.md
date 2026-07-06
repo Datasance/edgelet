@@ -22,6 +22,7 @@ Operator and developer documentation for the Edgelet edge agent.
 | [dns.md](dns.md) | Bridge DNS, embedded resolver, docker/podman aliases and ExtraHosts |
 | [workload-metadata.md](workload-metadata.md) | Container labels and `EDGELET_*` env contract |
 | [workload-continuity.md](workload-continuity.md) | Reconcile behavior across restarts and engine changes |
+| [volumes.md](volumes.md) | Volume types, delete vs prune behavior, disk layout |
 | [edgeguard.md](edgeguard.md) | Hardware attestation (`edgeGuardFrequency`) |
 | [control-plane.md](control-plane.md) | Local Datasance Controller deployment |
 | [exec-sessions.md](exec-sessions.md) | Multi-session exec (local CLI and controller-initiated) |

@@ -78,7 +78,7 @@ spec:
 | `env` | `{key,value}[]` | User env (`EDGELET_*` reserved) |
 | `extraHosts` | `{name,address}[]` or legacy strings | `/etc/hosts` + docker ExtraHosts |
 | `ports` | `{internal,external,protocol}[]` | Port mappings |
-| `volumes` | `{hostDestination,containerDestination,accessMode,type}[]` | Bind mounts / volumes |
+| `volumes` | `{hostDestination,containerDestination,accessMode,type}[]` | `BIND`, `VOLUME`, or controller `VOLUME_MOUNT`. **Delete does not remove `VOLUME` data** on the embedded engine — see [volumes.md](volumes.md). |
 | `commands` | []string | Container command override |
 | `cpuSetCpus` | string | cpuset |
 | `memoryLimit` | int64 | Memory limit bytes |
