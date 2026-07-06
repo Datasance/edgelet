@@ -11,7 +11,7 @@ const (
 //
 // /var/lib/edgelet/            — user data (diskDirectory config field)
 //
-//	diskConsumptionLimit applies only here
+//	diskLimit applies only here
 //
 // /var/lib/edgelet-containerd/ — containerd images, snapshots, layers
 //
@@ -24,7 +24,7 @@ const (
 	EdgeletDataDir = "/var/lib/edgelet"
 
 	// Containerd persistent data root — separate from EdgeletDataDir so that
-	// image layers and snapshots are not counted by diskConsumptionLimit.
+	// image layers and snapshots are not counted by diskLimit.
 	EdgeletContainerdLibDir     = "/var/lib/edgelet-containerd"
 	EdgeletContainerdRootDir    = "/var/lib/edgelet-containerd/root"
 	EdgeletContainerdStateDir   = "/var/lib/edgelet-containerd/state"

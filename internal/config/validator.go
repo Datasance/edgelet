@@ -31,7 +31,7 @@ func ValidateConfig(cfg *Config) error {
 	}
 
 	// Validate log disk limit
-	if cfg.LogDiskLimit < 0.5 || cfg.LogDiskLimit > utils.MaxDiskConsumptionLimit {
+	if cfg.LogLimit < 0.5 || cfg.LogLimit > utils.MaxDiskConsumptionLimit {
 		errors = append(errors, fmt.Sprintf("log disk limit must be between 0.5 and %.1f GB", utils.MaxDiskConsumptionLimit))
 	}
 

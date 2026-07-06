@@ -2656,7 +2656,7 @@ profiles:
     containerEngine: ${_eng}
     containerEngineUrl: ${_du}
     diskDirectory: ${_disk}
-    logDiskDirectory: ${_log_disk}
+    logDirectory: ${_log_disk}
     logLevel: INFO
 YAML
     chmod 640 "$CONFIG_FILE"
@@ -3291,7 +3291,7 @@ profiles:
     containerEngine: ${_eng}
     containerEngineUrl: ${_du}
     diskDirectory: ${_disk}
-    logDiskDirectory: ${_log_disk}
+    logDirectory: ${_log_disk}
     logLevel: INFO
 YAML
     chmod 640 "$CONFIG_FILE"

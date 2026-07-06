@@ -143,8 +143,8 @@ func TestHandleLogsStreamWS_StreamingErrorReturnsErrorEvent(t *testing.T) {
 
 func TestHandleSystemLogsStreamWS_StreamsDaemonLogs(t *testing.T) {
 	cfg := setupConfigForGPSTests(t)
-	cfg.LogDiskDirectory = t.TempDir() + string(os.PathSeparator)
-	logFile := filepath.Join(cfg.LogDiskDirectory, "edgelet.0.log")
+	cfg.LogDirectory = t.TempDir() + string(os.PathSeparator)
+	logFile := filepath.Join(cfg.LogDirectory, "edgelet.0.log")
 	if err := os.WriteFile(logFile, []byte("2026-05-17 00:00:01.000 [info] boot\n"), 0o600); err != nil {
 		t.Fatalf("failed to write log file: %v", err)
 	}

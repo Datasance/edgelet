@@ -100,7 +100,7 @@ Release candidate after provision lifecycle hardening, runtime observability fix
 ### Changed
 
 - **Live reprovision:** `edgelet system provision` on a running daemon reloads registries, volume mounts, microservices, and config without restarting background workers.
-- **Split log basenames:** `edgelet.service` writes `edgelet.*.log`; `edgelet-containerd.service` writes `edgelet-containerd.*.log` under the same `logDiskDirectory` (60/40 rotation budget when runtime split is enabled). See `docs/edgelet/logging.md`.
+- **Split log basenames:** `edgelet.service` writes `edgelet.*.log`; `edgelet-containerd.service` writes `edgelet-containerd.*.log` under the same `logDirectory` (60/40 rotation budget when runtime split is enabled). See `docs/edgelet/logging.md`.
 - **Disk usage metric:** `edgelet system status` `diskUsage` walks the full configured `diskDirectory` instead of legacy `messages/archive` + `volumes/` partial sums; automatic archive prune removed (greenfield).
 - **Image drift (embedded engine):** reconcile compares images with `imageref.Match` so controller short names (e.g. `user/repo:tag`) match runtime `docker.io/` prefixes without endless `config_drift` UPDATE loops.
 - **Deprovision cleanup:** volume-mount index cleanup no longer holds locks across slow filesystem work that blocked the process-manager monitor during background deprovision.

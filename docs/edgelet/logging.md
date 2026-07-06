@@ -64,7 +64,7 @@ Set via config or environment (`LOG_LEVEL=info`).
 
 ## Log files (rotated)
 
-When `logDiskDirectory` is configured (default `/var/log/edgelet/`), control plane and data plane write **separate file series** in the same directory:
+When `logDirectory` is configured (default `/var/log/edgelet/`), control plane and data plane write **separate file series** in the same directory:
 
 | systemd unit | Basename | Active file |
 |--------------|----------|-------------|
@@ -78,9 +78,9 @@ Each series rotates independently using `logFileCount` and a share of **`logLimi
 | Runtime split (`EDGELET_RUNTIME_SPLIT=1`, embedded engine) | 60% | 40% |
 | Monolithic embedded, docker, podman, desktop | 100% | (unit not used) |
 
-**Hot reload:** `logLevel`, `logLimit`, and `logFileCount` apply on config reload without rotating the active log file. Control plane reloads via SIGHUP / `edgelet system reload`; data plane reloads via `systemctl kill -s HUP edgelet-containerd`. Changing `logDiskDirectory` still requires a process restart.
+**Hot reload:** `logLevel`, `logLimit`, and `logFileCount` apply on config reload without rotating the active log file. Control plane reloads via SIGHUP / `edgelet system reload`; data plane reloads via `systemctl kill -s HUP edgelet-containerd`. Changing `logDirectory` still requires a process restart.
 
-Microservice logs under `logDiskDirectory/containers/` use separate per-UUID series (not included in the daemon 60/40 split).
+Microservice logs under `logDirectory/containers/` use separate per-UUID series (not included in the daemon 60/40 split).
 
 ## journald
 

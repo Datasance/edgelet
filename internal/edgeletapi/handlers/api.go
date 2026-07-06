@@ -336,7 +336,7 @@ func (h *EdgeletAPIHandler) HandleSystemLogs(w http.ResponseWriter, r *http.Requ
 	reader := utils.NewLocalLogReader(
 		fmt.Sprintf("edgeletapi-system-logs-%d", time.Now().UnixNano()),
 		iofogUUID,
-		cfg.LogDiskDirectory,
+		cfg.LogDirectory,
 		&utils.TailConfig{
 			Follow: false,
 			Lines:  tailLines,
@@ -739,8 +739,8 @@ func (h *EdgeletAPIHandler) HandleConfig(w http.ResponseWriter, r *http.Request)
 			"diskDirectory":          cfg.DiskDirectory,
 			"memoryLimitMiB":         cfg.MemoryLimit,
 			"cpuLimitPercent":        cfg.CPULimit,
-			"logDiskLimitGiB":        cfg.LogDiskLimit,
-			"logDiskDirectory":       cfg.LogDiskDirectory,
+			"logLimitGiB":            cfg.LogLimit,
+			"logDirectory":           cfg.LogDirectory,
 			"logFileCount":           cfg.LogFileCount,
 			"logLevel":               cfg.LogLevel,
 			"statusFrequencySeconds": cfg.StatusFrequency,
@@ -2319,7 +2319,7 @@ func (h *EdgeletAPIHandler) handleSystemLogsStreamWS(w http.ResponseWriter, r *h
 	reader := utils.NewLocalLogReader(
 		fmt.Sprintf("edgeletapi-system-log-stream-%d", time.Now().UnixNano()),
 		iofogUUID,
-		cfg.LogDiskDirectory,
+		cfg.LogDirectory,
 		&utils.TailConfig{
 			Follow: true,
 			Lines:  tailLines,
@@ -2488,9 +2488,9 @@ func configKeyToShortCode(key string) (string, bool) {
 		return "m", true
 	case "p", "cpuLimitPercent":
 		return "p", true
-	case "l", "logDiskLimitGiB":
+	case "l", "logLimitGiB":
 		return "l", true
-	case "ld", "logDiskDirectory":
+	case "ld", "logDirectory":
 		return "ld", true
 	case "lc", "logFileCount":
 		return "lc", true

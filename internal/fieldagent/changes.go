@@ -356,36 +356,36 @@ func (fa *FieldAgent) getFogConfig() error {
 	// Map controller config keys to agent config keys (short codes)
 	configMap := make(map[string]any)
 
-	// Mapping from controller JSON keys to internal short codes
+	// Mapping from controller JSON keys to internal short codes (Pot agent-service.js).
 	keyMapping := map[string]string{
-		"diskConsumptionLimit":      "d",
-		"diskDirectory":             "dl",
-		"memoryConsumptionLimit":    "m",
-		"processorConsumptionLimit": "p",
-		"controllerUrl":             "a",
-		"controllerCert":            "ac",
-		"containerEngineUrl":        "cu",
-		"containerEngine":           "ce",
-		"networkInterface":          "n",
-		"logDiskConsumptionLimit":   "l",
-		"logDiskDirectory":          "ld",
-		"logFileCount":              "lc",
-		"logLevel":                  "ll",
-		"statusFrequency":           "sf",
-		"changeFrequency":           "cf",
-		"deviceScanFrequency":       "sd",
-		"watchdogEnabled":           "wd",
-		"edgeGuardFrequency":        "egf",
-		"gpsMode":                   "gps",
-		"gpsDevice":                 "gpsd",
-		"gpsScanFrequency":          "gpsf",
-		"arch":                      "ft",
-		"secureMode":                "sec",
-		"pruningFrequency":          "pf",
-		"availableDiskThreshold":    "dt",
-		"upgradeScanFrequency":      "uf",
-		"devMode":                   "dev",
-		"timeZone":                  "tz",
+		"diskLimit":              "d",
+		"diskDirectory":          "dl",
+		"memoryLimit":            "m",
+		"cpuLimit":               "p",
+		"controllerUrl":          "a",
+		"controllerCert":         "ac",
+		"containerEngineUrl":     "cu",
+		"containerEngine":        "ce",
+		"networkInterface":       "n",
+		"logLimit":               "l",
+		"logDirectory":           "ld",
+		"logFileCount":           "lc",
+		"logLevel":               "ll",
+		"statusFrequency":        "sf",
+		"changeFrequency":        "cf",
+		"deviceScanFrequency":    "sd",
+		"watchdogEnabled":        "wd",
+		"edgeGuardFrequency":     "egf",
+		"gpsMode":                "gps",
+		"gpsDevice":              "gpsd",
+		"gpsScanFrequency":       "gpsf",
+		"arch":                   "ft",
+		"secureMode":             "sec",
+		"pruningFrequency":       "pf",
+		"availableDiskThreshold": "dt",
+		"upgradeScanFrequency":   "uf",
+		"devMode":                "dev",
+		"timeZone":               "tz",
 	}
 
 	for k, v := range configs {
@@ -394,17 +394,20 @@ func (fa *FieldAgent) getFogConfig() error {
 		}
 	}
 
-	// Apply configuration
-	if len(configMap) > 0 {
-		logging.LogDebug(moduleName, fmt.Sprintf("Applying config changes: %+v", configMap))
-		cfg := config.GetInstance()
-		errorMap := cfg.SetConfig(configMap)
+	// Apply only keys that differ from local config (controller sends full snapshot).
+	cfg := config.GetInstance()
+	changedMap := cfg.FilterChangedConfigKeys(configMap)
+	if len(changedMap) > 0 {
+		logging.LogDebug(moduleName, fmt.Sprintf("Applying config changes: %+v", changedMap))
+		errorMap := cfg.SetConfig(changedMap)
 
 		if len(errorMap) > 0 {
 			logging.LogError(moduleName, fmt.Sprintf("Errors applying config: %+v", errorMap), nil)
 		} else {
 			logging.LogInfo(moduleName, "Configuration applied successfully")
 		}
+	} else if len(configMap) > 0 {
+		logging.LogDebug(moduleName, "Controller config unchanged; skipping apply")
 	} else {
 		logging.LogDebug(moduleName, "No matching config fields found to apply")
 	}
@@ -449,29 +452,29 @@ func (fa *FieldAgent) postFogConfig() error {
 
 	// Build config data
 	configData := map[string]any{
-		"networkInterface":          networkInterfaceName,
-		"containerEngineUrl":        cfg.ContainerEngineURL,
-		"diskConsumptionLimit":      cfg.DiskLimit,
-		"diskDirectory":             cfg.DiskDirectory,
-		"memoryConsumptionLimit":    cfg.MemoryLimit,
-		"processorConsumptionLimit": cfg.CPULimit,
-		"logDiskConsumptionLimit":   cfg.LogDiskLimit,
-		"logDiskDirectory":          cfg.LogDiskDirectory,
-		"logFileCount":              cfg.LogFileCount,
-		"statusFrequency":           cfg.StatusFrequency,
-		"changeFrequency":           cfg.ChangeFrequency,
-		"deviceScanFrequency":       cfg.DeviceScanFrequency,
-		"watchdogEnabled":           cfg.WatchdogEnabled,
-		"edgeGuardFrequency":        cfg.EdgeGuardFrequency,
-		"gpsDevice":                 cfg.GPSDevice,
-		"gpsScanFrequency":          cfg.GPSScanFrequency,
-		"gpsMode":                   strings.ToLower(cfg.GPSMode),
-		"latitude":                  latitude,
-		"longitude":                 longitude,
-		"logLevel":                  strings.ToUpper(cfg.LogLevel),
-		"availableDiskThreshold":    cfg.AvailableDiskThreshold,
-		"pruningFrequency":          cfg.PruningFrequency,
-		"upgradeScanFrequency":      cfg.UpgradeScanFrequency,
+		"networkInterface":       networkInterfaceName,
+		"containerEngineUrl":     cfg.ContainerEngineURL,
+		"diskLimit":              cfg.DiskLimit,
+		"diskDirectory":          cfg.DiskDirectory,
+		"memoryLimit":            cfg.MemoryLimit,
+		"cpuLimit":               cfg.CPULimit,
+		"logLimit":               cfg.LogLimit,
+		"logDirectory":           cfg.LogDirectory,
+		"logFileCount":           cfg.LogFileCount,
+		"statusFrequency":        cfg.StatusFrequency,
+		"changeFrequency":        cfg.ChangeFrequency,
+		"deviceScanFrequency":    cfg.DeviceScanFrequency,
+		"watchdogEnabled":        cfg.WatchdogEnabled,
+		"edgeGuardFrequency":     cfg.EdgeGuardFrequency,
+		"gpsDevice":              cfg.GPSDevice,
+		"gpsScanFrequency":       cfg.GPSScanFrequency,
+		"gpsMode":                strings.ToLower(cfg.GPSMode),
+		"latitude":               latitude,
+		"longitude":              longitude,
+		"logLevel":               strings.ToUpper(cfg.LogLevel),
+		"availableDiskThreshold": cfg.AvailableDiskThreshold,
+		"pruningFrequency":       cfg.PruningFrequency,
+		"upgradeScanFrequency":   cfg.UpgradeScanFrequency,
 	}
 
 	// Use context from FieldAgent (daemon mode) or create new one (CLI mode)

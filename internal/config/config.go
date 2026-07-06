@@ -31,8 +31,8 @@ type Config struct {
 	MemoryLimit                     float64
 	DiskDirectory                   string
 	CPULimit                        float64
-	LogDiskLimit                    float64
-	LogDiskDirectory                string
+	LogLimit                        float64
+	LogDirectory                    string
 	LogFileCount                    int
 	LogLevel                        string
 	StatusFrequency                 int
@@ -362,11 +362,11 @@ func (c *Config) GetConfigReportWithIP(ipAddress string) string {
 	// CPU limit
 	buildLine("CPU Usage Limit", fmt.Sprintf("%.2f%%", c.CPULimit))
 
-	// Log disk limit
-	buildLine("Log Disk Limit", fmt.Sprintf("%.2f GiB", c.LogDiskLimit))
+	// Log limit
+	buildLine("Log Limit", fmt.Sprintf("%.2f GiB", c.LogLimit))
 
 	// Log directory
-	buildLine("Log File Directory", c.LogDiskDirectory)
+	buildLine("Log Directory", c.LogDirectory)
 
 	// Log file count
 	buildLine("Log Files Count", fmt.Sprintf("%d", c.LogFileCount))

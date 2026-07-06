@@ -523,7 +523,7 @@ func (lsm *LogSessionManager) startFogLogStreamingLocked(sessionID, iofogUUID st
 
 	// Get log directory from config
 	cfg := config.GetInstance()
-	logDir := cfg.LogDiskDirectory
+	logDir := cfg.LogDirectory
 
 	// Create and start LocalLogReader
 	reader := utils.NewLocalLogReader(sessionID, iofogUUID, logDir, tailConfig, handler)

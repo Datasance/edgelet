@@ -27,8 +27,8 @@ var ConfigParamMap = map[string]string{
 	"cu":   "containerEngineURL",
 	"ce":   "containerEngine",
 	"n":    "networkInterface",
-	"l":    "logDiskLimit",
-	"ld":   "logDiskDirectory",
+	"l":    "logLimit",
+	"ld":   "logDirectory",
 	"lc":   "logFileCount",
 	"ll":   "logLevel",
 	"sf":   "statusFrequency",
@@ -49,6 +49,10 @@ var ConfigParamMap = map[string]string{
 	"tz":   "timeZone",
 }
 
+// setConfigApplyOrder lists short codes applied before other keys in the same batch.
+// containerEngine must precede containerEngineURL because URL validation depends on engine.
+var setConfigApplyOrder = []string{"ce", "cu"}
+
 // SetConfig sets configuration values from a map of command line parameters
 // Returns a map of errors keyed by parameter name
 func (c *Config) SetConfig(configMap map[string]any) map[string]string {
@@ -56,33 +60,41 @@ func (c *Config) SetConfig(configMap map[string]any) map[string]string {
 	defer c.mu.Unlock()
 
 	errorMap := make(map[string]string)
+	applied := make(map[string]struct{}, len(configMap))
 
-	for option, value := range configMap {
-		// Get config field name
+	applyOne := func(option string, value any) {
+		if _, done := applied[option]; done {
+			return
+		}
+		applied[option] = struct{}{}
+
 		fieldName, exists := ConfigParamMap[option]
 		if !exists {
 			errorMap[option] = "Invalid parameter"
-			continue
+			return
 		}
 
-		// Convert value to string
 		valueStr := fmt.Sprintf("%v", value)
-
-		// Remove leading "+" if present
 		valueStr = strings.TrimPrefix(valueStr, "+")
 
-		// Validate
 		if strings.TrimSpace(valueStr) == "" && option != "ac" {
 			errorMap[option] = "Command or value is invalid"
-			continue
+			return
 		}
 
-		// Set the config value based on field name
-		err := c.setConfigField(fieldName, valueStr, option)
-		if err != nil {
+		if err := c.setConfigField(fieldName, valueStr, option); err != nil {
 			errorMap[option] = err.Error()
 			logging.LogError(setConfigModuleName, fmt.Sprintf("Error setting %s: %v", option, err), nil)
 		}
+	}
+
+	for _, option := range setConfigApplyOrder {
+		if value, ok := configMap[option]; ok {
+			applyOne(option, value)
+		}
+	}
+	for option, value := range configMap {
+		applyOne(option, value)
 	}
 
 	// Save config updates (while holding lock)
@@ -181,7 +193,11 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 
 	case "containerEngineURL":
 		if strings.EqualFold(strings.TrimSpace(c.ContainerEngine), constants.EngineEdgelet) {
-			return fmt.Errorf("containerEngineUrl is fixed for containerEngine edgelet (%s)", constants.EdgeletEngineSocketURL())
+			want := constants.EdgeletEngineSocketURL()
+			if strings.TrimSpace(value) == want {
+				return nil
+			}
+			return fmt.Errorf("containerEngineUrl is fixed for containerEngine edgelet (%s)", want)
 		}
 		c.ContainerEngineURL = value
 		if err := c.setYamlProperty("containerEngineUrl", value); err != nil {
@@ -213,19 +229,19 @@ func (c *Config) setConfigField(fieldName, value, _ string) error {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
-	case "logDiskLimit":
+	case "logLimit":
 		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return fmt.Errorf("invalid log disk limit: %w", err)
+			return fmt.Errorf("invalid log limit: %w", err)
 		}
-		c.LogDiskLimit = val
-		if err := c.setYamlProperty("logDiskLimit", value); err != nil {
+		c.LogLimit = val
+		if err := c.setYamlProperty("logLimit", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 
-	case "logDiskDirectory":
-		c.LogDiskDirectory = value
-		if err := c.setYamlProperty("logDiskDirectory", value); err != nil {
+	case "logDirectory":
+		c.LogDirectory = value
+		if err := c.setYamlProperty("logDirectory", value); err != nil {
 			logging.LogWarn(setConfigModuleName, fmt.Sprintf("Failed to persist config property: %v", err))
 		}
 

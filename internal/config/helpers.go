@@ -6,7 +6,7 @@ import (
 )
 
 // snakeToCamel converts snake_case to camelCase
-// Example: "disk_consumption_limit" -> "diskConsumptionLimit"
+// Example: "disk_limit" -> "diskLimit"
 func snakeToCamel(s string) string {
 	if s == "" {
 		return s

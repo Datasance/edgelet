@@ -132,7 +132,7 @@ const (
 
 // Limits
 const (
-	MaxDiskConsumptionLimit = 100.0
+	MaxDiskConsumptionLimit = 100000.0
 	PercentageCompletion    = 100.0
 )
 
