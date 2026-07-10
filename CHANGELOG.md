@@ -5,6 +5,24 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - July 2026
+
+### Added
+
+- **Volume reference docs:** operator guide for CONFIGMAP/SECRET mounts, host paths, and persistence in `docs/edgelet/volumes.md`.
+- **EdgeletAPI OpenAPI:** `GET /v1/controlplane/apply/{operationId}` documents `ControlPlaneApplyOperationResponse` with running, succeeded, and failed examples.
+
+### Changed
+
+- **Pot config key names:** local YAML and controller wire keys aligned with Pot `agent-service.js` — `diskLimit`, `logLimit`, `logDirectory`, `memoryLimit`, `cpuLimit` (CLI short codes `d`, `l`, `ld`, `m`, `p` unchanged). Legacy YAML aliases `logDiskDirectory` and `logDiskLimit` remain readable on load.
+- **Controller config sync:** `GET config` applies only keys whose values differ from the in-memory config, avoiding unnecessary rewrites and validation on unchanged fields.
+- **Disk limit ceiling:** maximum `diskLimit` and `logLimit` raised to **100 TB** (was 100 GB).
+- **Toolchain:** Go **1.26.5** in `go.mod`, CI workflows, Dockerfiles, and quality scripts.
+
+### Fixed
+
+- **Controller config key mismatch:** Pot `GET config` snapshots no longer fail to map or spuriously reload when wire keys used legacy names (`diskConsumptionLimit`, `logDiskDirectory`, etc.) that did not match Edgelet's config model.
+
 ## [1.0.0] - July 2026
 
 ### Added
