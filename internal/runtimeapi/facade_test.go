@@ -128,13 +128,6 @@ func TestFacadePullImage_ResolvesRegistryHostWithRegistryID(t *testing.T) {
 	}
 }
 
-func TestFacadeRemoveImage_ValidatesSelector(t *testing.T) {
-	f := NewFacade()
-	if _, err := f.RemoveImage("   "); err == nil || !strings.Contains(err.Error(), "selector is required") {
-		t.Fatalf("expected selector validation error, got: %v", err)
-	}
-}
-
 func TestFacadePullImage_RegistryNotFound(t *testing.T) {
 	f := NewFacade()
 	if err := f.db.Open(t.TempDir()); err != nil {

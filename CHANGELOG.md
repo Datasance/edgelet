@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Controller config sync:** `GET config` applies only keys whose values differ from the in-memory config, avoiding unnecessary rewrites and validation on unchanged fields.
 - **Disk limit ceiling:** maximum `diskLimit` and `logLimit` raised to **100 TB** (was 100 GB).
 - **Image load (embedded engine):** `edgelet image load -f` accepts gzip-compressed `.tar.gz` archives as well as plain `.tar` on `containerEngine: edgelet`, matching `docker load` / `podman load` behavior (`docker` / `podman` engines unchanged).
+- **Image remove selectors:** `edgelet image rm` resolves repository:tag (including short names such as `alpine:3.19`), full or short image IDs from `image ls`, and unique image ID prefixes (minimum 3 hex characters), with ambiguous prefix errors listing candidates.
 - **Toolchain:** Go **1.26.5** in `go.mod`, CI workflows, Dockerfiles, and quality scripts.
 - **Go dependencies:** minor bumps — `klauspost/compress` 1.19.0, `gopsutil/v4` 4.26.6, `golang.org/x/sys` 0.47.0, `golang.org/x/term` 0.45.0.
 
