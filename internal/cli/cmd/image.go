@@ -82,7 +82,7 @@ func newImageLoadCommand() *cobra.Command {
 			return writeHumanOrRoute(appCtx, "/v1/images:load", result.Human, result.Data)
 		},
 	}
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to image tar archive")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to image tar or tar.gz archive")
 	_ = cmd.MarkFlagRequired("file")
 	return cmd
 }

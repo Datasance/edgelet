@@ -9,7 +9,7 @@ edgelet image load [flags]
 ### Options
 
 ```
-  -f, --file string   Path to image tar archive
+  -f, --file string   Path to image tar or tar.gz archive
   -h, --help          help for load
 ```
 

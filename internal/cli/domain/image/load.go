@@ -22,7 +22,7 @@ type LoadRequest struct {
 	Path string
 }
 
-// Load imports an image archive from a tar file path.
+// Load imports an image archive from a tar or tar.gz file path.
 func Load(ctx context.Context, clientAPI run.EdgeletAPIClient, uiProgress *ui.UI, req LoadRequest) (*LoadResult, error) {
 	if clientAPI == nil {
 		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)

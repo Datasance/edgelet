@@ -8,7 +8,6 @@ package edgelet
 
 import (
 	"bufio"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -182,14 +181,14 @@ func (e *Engine) importPauseImage() error {
 	defer func() {
 		_ = f.Close()
 	}()
-	gz, err := gzip.NewReader(f)
+	archive, err := decompressImageArchive(f)
 	if err != nil {
-		return fmt.Errorf("gzip reader: %w", err)
+		return err
 	}
 	defer func() {
-		_ = gz.Close()
+		_ = archive.Close()
 	}()
-	if _, err := e.client.Import(e.ctx(), gz); err != nil {
+	if _, err := e.client.Import(e.ctx(), archive); err != nil {
 		return fmt.Errorf("import pause image: %w", err)
 	}
 	log.Debugf("Pause image imported from %s", pausePath)
@@ -979,7 +978,14 @@ func (e *Engine) LoadImageFromPath(_ context.Context, archivePath string) ([]eng
 	defer func() {
 		_ = f.Close()
 	}()
-	imported, err := e.client.Import(e.ctx(), f)
+	archive, err := decompressImageArchive(f)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = archive.Close()
+	}()
+	imported, err := e.client.Import(e.ctx(), archive)
 	if err != nil {
 		return nil, err
 	}
