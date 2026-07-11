@@ -17,11 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pot config key names:** local YAML and controller wire keys aligned with Pot `agent-service.js` — `diskLimit`, `logLimit`, `logDirectory`, `memoryLimit`, `cpuLimit` (CLI short codes `d`, `l`, `ld`, `m`, `p` unchanged). Legacy YAML aliases `logDiskDirectory` and `logDiskLimit` remain readable on load.
 - **Controller config sync:** `GET config` applies only keys whose values differ from the in-memory config, avoiding unnecessary rewrites and validation on unchanged fields.
 - **Disk limit ceiling:** maximum `diskLimit` and `logLimit` raised to **100 TB** (was 100 GB).
+- **Image load (embedded engine):** `edgelet image load -f` accepts gzip-compressed `.tar.gz` archives as well as plain `.tar` on `containerEngine: edgelet`, matching `docker load` / `podman load` behavior (`docker` / `podman` engines unchanged).
 - **Toolchain:** Go **1.26.5** in `go.mod`, CI workflows, Dockerfiles, and quality scripts.
+- **Go dependencies:** minor bumps — `klauspost/compress` 1.19.0, `gopsutil/v4` 4.26.6, `golang.org/x/sys` 0.47.0, `golang.org/x/term` 0.45.0.
 
 ### Fixed
 
 - **Controller config key mismatch:** Pot `GET config` snapshots no longer fail to map or spuriously reload when wire keys used legacy names (`diskConsumptionLimit`, `logDiskDirectory`, etc.) that did not match Edgelet's config model.
+
+### Known limitations
+
+- **govulncheck exception (embedded engine):** **GO-2026-5932** documents transitive `golang.org/x/crypto/openpgp` from containerd encrypted-image support (`ocicrypt` / `imgcrypt`); no upstream fix version. Edgelet does not use OpenPGP directly; risk is low unless pulling PGP-encrypted OCI layers on `containerEngine: edgelet`. `make vulncheck` allows this finding only; full rationale: [SECURITY.md](SECURITY.md).
 
 ## [1.0.0] - July 2026
 
