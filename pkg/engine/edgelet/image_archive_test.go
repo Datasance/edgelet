@@ -43,7 +43,7 @@ func TestDecompressImageArchive_UncompressedTar(t *testing.T) {
 		t.Fatalf("read decompressed archive: %v", err)
 	}
 	if !bytes.Equal(got, raw) {
-		t.Fatalf("expected uncompressed tar to pass through unchanged")
+		t.Fatal("expected uncompressed tar to pass through unchanged")
 	}
 }
 
@@ -69,6 +69,6 @@ func TestDecompressImageArchive_GzipTar(t *testing.T) {
 		t.Fatalf("read decompressed archive: %v", err)
 	}
 	if !bytes.Equal(got, raw) {
-		t.Fatalf("expected gzip tar to decompress to original tar bytes")
+		t.Fatal("expected gzip tar to decompress to original tar bytes")
 	}
 }
