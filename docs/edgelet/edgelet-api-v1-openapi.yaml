@@ -1150,6 +1150,54 @@ paths:
       responses:
         "200":
           description: Operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneApplyOperationResponse"
+              examples:
+                running:
+                  value:
+                    success: true
+                    data:
+                      operationId: cp_apply_8a1c3d2e
+                      status: running
+                      startedAt: "2026-05-14T00:10:12Z"
+                      stage: parsing
+                      namespace: datasance
+                      name: controller
+                      image: ghcr.io/datasance/controller:3.8.0
+                succeeded:
+                  value:
+                    success: true
+                    data:
+                      operationId: cp_apply_8a1c3d2e
+                      status: succeeded
+                      startedAt: "2026-05-14T00:10:12Z"
+                      endedAt: "2026-05-14T00:11:02Z"
+                      stage: done
+                      controllerUuid: c65a473a-c760-4625-968a-41940fd1c949
+                      generation: 1
+                      namespace: datasance
+                      name: controller
+                      image: ghcr.io/datasance/controller:3.8.0
+                      mode: create
+                      containerId: edgelet-controller
+                      runtimeState: running
+                failed:
+                  value:
+                    success: true
+                    data:
+                      operationId: cp_apply_8a1c3d2e
+                      status: failed
+                      startedAt: "2026-05-14T00:10:12Z"
+                      endedAt: "2026-05-14T00:10:44Z"
+                      stage: persisting
+                      namespace: datasance
+                      name: controller
+                      image: ghcr.io/datasance/controller:3.8.0
+                      error:
+                        code: INVALID_ARGUMENT
+                        message: "control plane manifest validation failed"
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -2088,6 +2136,55 @@ components:
           type: array
           items:
             type: string
+    ControlPlaneApplyOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [operationId, status, startedAt]
+          properties:
+            operationId:
+              type: string
+            status:
+              type: string
+              enum: [running, succeeded, failed]
+            stage:
+              type: string
+              enum: [parsing, pulling, creating, starting, persisting, done]
+            controllerUuid:
+              type: string
+            generation:
+              type: integer
+              format: int64
+            namespace:
+              type: string
+            name:
+              type: string
+            image:
+              type: string
+            mode:
+              type: string
+            containerId:
+              type: string
+            runtimeState:
+              type: string
+            startedAt:
+              type: string
+              format: date-time
+            endedAt:
+              type: string
+              format: date-time
+            error:
+              $ref: "#/components/schemas/DeployApplyError"
+          example:
+            operationId: cp_apply_8a1c3d2e
+            status: running
+            startedAt: "2026-05-14T00:10:12Z"
+            namespace: datasance
+            name: controller
+            image: ghcr.io/datasance/controller:3.8.0
     DeployMicroserviceApplyOperationStartResponse:
       type: object
       properties:
