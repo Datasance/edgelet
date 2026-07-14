@@ -76,7 +76,7 @@ address = "/run/edgelet/containerd.sock"
 
 CNI conflist: `/var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist`
 
-On data-plane bootstrap (`edgelet runtime-bootstrap` or monolithic embedded start), Edgelet runs **stale runtime task cleanup** under the state directory (`io.containerd.runtime.v2.task/`). Orphaned task directories missing a valid `address` file are removed. Image cache under `/var/lib/edgelet-containerd/root` is preserved. Full state wipe (`CleanupRuntimeArtifacts`) runs only when embedded containerd fails to start and bootstrap retries.
+On data-plane bootstrap (`edgelet runtime-bootstrap` or monolithic embedded start), Edgelet prepares the runtime in order: stop orphaned containerd children, reap managed shims for the edgelet socket, then remove stale runtime task directories under the state tree (`io.containerd.runtime.v2.task/`). Orphaned task directories missing a valid `address` file are removed; `EBUSY` removals are retried and logged without failing bootstrap. Image cache under `/var/lib/edgelet-containerd/root` is preserved. Full state wipe (`CleanupRuntimeArtifacts`) runs only when embedded containerd fails to start, bootstrap retries, and shim reap reports zero remaining PIDs.
 
 ---
 
@@ -126,6 +126,33 @@ Unsupported when `containerEngine` is docker/podman:
 `Error[INVALID_ARGUMENT]: runtimeclass is supported only when containerEngine=edgelet`
 
 RBAC and endpoints: [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md).
+
+---
+
+## Data-plane restart and shim upgrades (embedded)
+
+**Safe `edgelet-containerd` restart:** prefer **`stop` then `start`** over blind `restart` during shim or catalog upgrades. A stop/start cycle lets `runtime-bootstrap` drain MS cleanly and avoids racing extract/rename on a warm bundle dir.
+
+```bash
+sudo systemctl stop edgelet-containerd
+sudo systemctl start edgelet-containerd
+sudo journalctl -u edgelet-containerd -n 20 --no-pager   # Embedded containerd is ready
+```
+
+OpenRC: `rc-service edgelet-containerd stop` then `rc-service edgelet-containerd start`.
+
+**Shim upgrade sequence** (no `edgelet config` reconfigure required):
+
+1. `systemctl stop edgelet` (control only — MS keep running on data plane)
+2. Install new shim binaries into the active bundle `bin/` (OTA or manual copy)
+3. `systemctl stop edgelet-containerd` then `systemctl start edgelet-containerd`
+4. `systemctl start edgelet`
+
+Catalog runtimes registered in `/var/lib/edgelet-containerd/config.toml` pick up new shims on `PATH` only after a **data-plane restart**. Control-plane restart alone is not enough.
+
+Crash-loop symptoms (`rename extracted bundle: file exists`, repeated `Preparing data dir`): [troubleshooting.md](troubleshooting.md#embed-bundle--data-plane-restart).
+
+Orphan shim recovery after a failed data-plane stop: [troubleshooting.md](troubleshooting.md#catalog-runtime--orphan-shims-after-data-plane-restart).
 
 ---
 

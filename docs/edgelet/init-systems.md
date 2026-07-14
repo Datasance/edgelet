@@ -49,12 +49,13 @@ Install uses **`packaging/init/` only** — there is no `packaging/systemd/` ins
 |--------|----------------|------|
 | **Preflight** | `edgelet cgroup-preflight` | `start_pre` (openrc), sysv/s6/runit/upstart start, before daemon |
 | **Shutdown** | `/usr/libexec/edgelet/edgelet-shutdown` → `edgelet shutdown` | systemd `ExecStop`, all init `stop` paths |
+| **Data-plane orphan reap** | `edgelet runtime reap-orphans` | systemd `ExecStopPost` on `edgelet-containerd`; openrc `stop` post-hook (last resort after Go teardown) |
 
 Preflight on the **thin** `/usr/local/bin/edgelet` uses a procfs/cgroupfs-only probe (`DetectPreflight`); full cgroup subtree setup stays in the **fat** runtime (`Detect` / `Bootstrap` with `containerd/cgroups`).
 
 `edgelet shutdown` tries EdgeletAPI graceful stop, then SIGTERM/SIGKILL fallback. **Drain / leave-running policy** is defined in [workload-continuity.md](workload-continuity.md); init templates only define the stop entry.
 
-`TimeoutStopSec=120` on systemd equals default `shutdownGracePeriodSeconds` (90) + 30s buffer. Embedded engine uses `edgelet.service.d/edgelet.conf` drop-in with `EDGELET_RUNTIME_SPLIT=1`.
+`TimeoutStopSec=120` on systemd equals default `shutdownGracePeriodSeconds` (90) + 30s buffer for shim reap and orphan cleanup. The data-plane unit uses the same 120s budget; `edgelet-containerd.service` runs `ExecStopPost=-/usr/local/bin/edgelet runtime reap-orphans` as a last-resort sweep for edgelet-managed shims and `--edgelet-containerd-child` processes. Embedded engine uses `edgelet.service.d/edgelet.conf` drop-in with `EDGELET_RUNTIME_SPLIT=1`.
 
 ---
 
@@ -74,6 +75,8 @@ systemctl show edgelet -p DelegateSubgroup,TimeoutStopSec
 ```
 
 Enable `edgelet-containerd.service` before `edgelet.service` for embedded split.
+
+**Data-plane crash-loop guard:** `edgelet-containerd.service` uses `StartLimitIntervalSec=300`, `StartLimitBurst=5`, and `RestartSec=5s`. After five rapid failures within 300s, systemd stops auto-restarting until `systemctl reset-failed edgelet-containerd`. OpenRC stub uses `respawn_max=5`, `respawn_period=300`, `respawn_delay=5` (parity).
 
 Split embedded units are **siblings**: `Wants`/`After` on `edgelet.service` only orders **start**. There is no `PartOf` — `systemctl stop edgelet` does not stop `edgelet-containerd`. Full teardown stops both units (see [workload-continuity.md](workload-continuity.md)).
 
@@ -99,6 +102,8 @@ immediately after — that double-cycles the control plane and can fail attach.
 For control-only restart (MS survive): `rc-service edgelet restart` alone.
 OpenRC units wait for `/run/edgelet/containerd.sock` in `start_post` / `start_pre`; control
 plane uses `supervise-daemon` respawn (`respawn_max=0`, parity with systemd `Restart=always`).
+**Data-plane stub** (`edgelet-containerd`): `supervise-daemon` with `respawn_max=5`,
+`respawn_period=300`, `respawn_delay=5` — stops respawning after five failures in 300s.
 
 ### Logging (openrc)
 

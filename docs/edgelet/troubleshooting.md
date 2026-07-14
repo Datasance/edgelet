@@ -142,6 +142,114 @@ See [workload-continuity.md](workload-continuity.md) for the full OTA matrix.
 
 ---
 
+## Embed bundle / data-plane restart
+
+**Symptoms:** `edgelet-containerd` in a crash loop; journal shows `rename extracted bundle: file exists`; `Preparing data dir` on every start; MS stuck after repeated data-plane restarts.
+
+**Diagnostic:**
+
+```bash
+sudo journalctl -u edgelet-containerd -n 80 --no-pager
+readlink /var/lib/edgelet/data/current/bin/aux/iptables   # expect xtables-legacy-multi
+ls -la /var/lib/edgelet/data/current /var/lib/edgelet/data/.lock
+```
+
+**Recovery ladder:**
+
+1. Stop both units and clear systemd start-limit (if applicable):
+
+   ```bash
+   sudo systemctl stop edgelet edgelet-containerd
+   sudo systemctl reset-failed edgelet-containerd
+   ```
+
+   OpenRC: `rc-service edgelet stop && rc-service edgelet-containerd stop`
+
+2. **In-place repair** (aux symlink drift):
+
+   ```bash
+   sudo ln -sf xtables-legacy-multi /var/lib/edgelet/data/current/bin/aux/iptables
+   ```
+
+3. Start data plane; wait for readiness:
+
+   ```bash
+   sudo systemctl start edgelet-containerd
+   sudo journalctl -u edgelet-containerd -f   # Embedded containerd is ready
+   ```
+
+   OpenRC: `rc-service edgelet-containerd start`
+
+4. Start control plane:
+
+   ```bash
+   sudo systemctl start edgelet
+   ```
+
+5. **Nuclear** (last resort — re-extracts bundle; MS stop + reconcile):
+
+   ```bash
+   sudo systemctl stop edgelet edgelet-containerd
+   sudo rm -rf /var/lib/edgelet/data/<hash-dir> /var/lib/edgelet/data/<hash-dir>-tmp /var/lib/edgelet/data/.lock
+   sudo systemctl start edgelet-containerd
+   sleep 5
+   sudo systemctl start edgelet
+   ```
+
+   Replace `<hash-dir>` with the bundle directory name under `/var/lib/edgelet/data/` (not `current` or `previous` symlinks).
+
+Prefer **`systemctl stop` then `systemctl start`** over blind `restart` during shim upgrades — see [container-engine.md](container-engine.md). After five rapid failures within 300s, systemd stops auto-restarting `edgelet-containerd` until `reset-failed` (openrc: `respawn_max=5` per 300s window).
+
+---
+
+## Catalog runtime / orphan shims after data-plane restart
+
+**Symptoms:** `device or resource busy` on sandbox or task cleanup; `dial unix:///run/edgelet/containerd.sock: timeout`; journal mentions `left-over process` or `containerd-shim-*` after `edgelet-containerd` stop; catalog workloads (WASM, spin, etc.) fail to start until manual cleanup.
+
+**Checks:**
+
+```bash
+sudo journalctl -u edgelet-containerd -n 80 --no-pager
+pgrep -af 'containerd-shim-.*edgelet/containerd.sock' || true
+pgrep -af -- '--edgelet-containerd-child' || true
+```
+
+**Recovery:**
+
+1. Stop both units:
+
+   ```bash
+   sudo systemctl stop edgelet edgelet-containerd
+   ```
+
+   OpenRC: `rc-service edgelet stop && rc-service edgelet-containerd stop`
+
+2. Reap orphaned data-plane processes:
+
+   ```bash
+   sudo edgelet runtime reap-orphans
+   ```
+
+3. Clear systemd start-limit if the data plane was crash-looping:
+
+   ```bash
+   sudo systemctl reset-failed edgelet-containerd
+   ```
+
+4. Start data plane, then control:
+
+   ```bash
+   sudo systemctl start edgelet-containerd
+   sleep 3
+   sudo systemctl start edgelet
+   ```
+
+The command only targets edgelet embedded containerd (`--edgelet-containerd-child` and shims referencing `/run/edgelet/containerd.sock`). It does not kill host Docker or Podman shims.
+
+Prefer **`stop` then `start`** on the data plane when upgrading catalog shims — see [container-engine.md](container-engine.md#data-plane-restart-and-shim-upgrades-embedded).
+
+---
+
 ## Containerd socket (edgelet engine)
 
 **Symptoms:** `connection refused` to `/run/edgelet/containerd.sock`; microservices stuck in pull/create.
@@ -289,7 +397,7 @@ See [../../test/embedded/README.md](../../test/embedded/README.md).
    edgelet ms restart <uuid>
    ```
 
-5. **Controller exec only:** verify agent connectivity and that Controller **v3.8.x + Plan 17** is deployed. Status should list active controller session ids:
+5. **Controller exec only:** verify agent connectivity and that Controller **v3.8.x** (multi-exec sessions) is deployed. Status should list active controller session ids:
 
    ```bash
    edgelet system status -o json | jq '.connectionToController'

@@ -4,7 +4,7 @@ Audit scope: `internal/volumemount/`, `internal/fieldagent/`, `internal/processm
 
 ## Summary
 
-Plan 19 fixed two production deadlock/contention paths:
+Two production deadlock/contention paths were fixed in recent releases:
 
 1. **LC-1 (19-A):** Re-entrant `VolumeMountManager.indexLock` when `ProcessVolumeMountChanges` → `updateVolumeMount` → `syncMicroserviceSymlinks` re-acquired the same lock (CONFIGMAP/SECRET version bump froze the changes worker).
 2. **LC-3 (19-C):** `Clear()` held `indexLock` across slow filesystem walks, blocking PM `CleanupMicroserviceVolumes()` during background deprovision.
@@ -46,7 +46,7 @@ No additional re-entrant mutex deadlocks were found in the audit packages. Lock 
 | `containerConfigMu` | `agent.go`, `sync.go` | Config push paths | Independent of volumemount locks |
 | `execSessionsMu` | `agent.go`, exec paths | Exec session map | Independent |
 | `bootstrapMu` | `bootstrap_sync.go` | Cache-loaded flag | Independent |
-| `reconcileMu` | `reconnect_reconcile.go` | `controllerReconcile` single-flight | Does not nest `state.mu`; see Plan 22-C section |
+| `reconcileMu` | `reconnect_reconcile.go` | `controllerReconcile` single-flight | Does not nest `state.mu`; see reconnect reconcile section below |
 | `reconnect.mu` | `reconnect_reconcile.go` | Connect generation + last reconcile metadata | Independent of `reconcileMu`; lock order: `reconcileMu` then brief `reconnect.mu` at end of reconcile |
 | `state.mu` | `state.go` | Controller status / init flags | `shouldSkipInitReload` reads init under `reconnect.mu` only; reconcile reads init without holding `reconcileMu` across Pot HTTP |
 | `controllerRegister.mu` | `controller_register.go` | Register retry state | Independent |
