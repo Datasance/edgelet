@@ -51,6 +51,9 @@ func EnsureExtracted() error {
 	if err := installFromBundle(dir); err != nil {
 		return err
 	}
+	if err := pinLegacyIptablesAux(filepath.Join(dir, "bin")); err != nil {
+		return fmt.Errorf("pin legacy iptables aux: %w", err)
+	}
 	if err := prependRuntimePath(dir); err != nil {
 		return fmt.Errorf("prepend runtime PATH: %w", err)
 	}
@@ -165,7 +168,7 @@ func logBundleHashMismatchIfNeeded(dataDir, wantHash string) {
 // tryUseAuthoritativeBundle uses data/<embed-hash>/ when ready.
 // It synchronizes current/previous/cni to that tree and returns it for exec/runtime resolution.
 func tryUseAuthoritativeBundle(dataDir, wantHash, dir string) (string, bool, error) {
-	if !isBundleReady(dir) {
+	if reason := bundleReadyReason(dir); reason != "" {
 		return "", false, nil
 	}
 	logBundleHashMismatchIfNeeded(dataDir, wantHash)
@@ -197,6 +200,8 @@ func extract(dataDir string) (string, error) {
 		return "", err
 	} else if ok {
 		return bundleDir, nil
+	} else if reason := bundleReadyReason(dir); reason != "" {
+		dataLogger.Infof("Embed bundle not ready at %s: %s", dir, reason)
 	}
 
 	logBundleHashMismatchIfNeeded(dataDir, wantHash)
@@ -246,6 +251,21 @@ func extract(dataDir string) (string, error) {
 		return "", fmt.Errorf("verify extracted bin: %w", err)
 	}
 
+	if st, err := os.Stat(dir); err == nil && st.IsDir() {
+		if isBundleReady(dir) {
+			dataLogger.Debugf("Reusing ready embed bundle at %s", dir)
+			if err := promoteCurrentBundle(dataDir, dir); err != nil {
+				return "", err
+			}
+			setExtractDir(dir)
+			return dir, nil
+		}
+		dataLogger.Infof("Replacing incomplete embed bundle at %s", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			return "", fmt.Errorf("remove incomplete bundle dir: %w", err)
+		}
+	}
+
 	if err := os.Rename(tempDest, dir); err != nil {
 		return "", fmt.Errorf("rename extracted bundle: %w", err)
 	}
@@ -258,15 +278,48 @@ func extract(dataDir string) (string, error) {
 	return dir, nil
 }
 
-func isBundleReady(dir string) bool {
+func bundleReadyReason(dir string) string {
 	binDir := filepath.Join(dir, "bin")
 	if err := dataverify.VerifyFatRuntime(filepath.Join(binDir, dataverify.FatRuntimeName)); err != nil {
-		return false
+		return fmt.Sprintf("fat runtime: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(binDir, "containerd-shim-runc-v2")); err != nil {
-		return false
+		return "missing containerd-shim-runc-v2"
 	}
-	return dataverify.VerifyNetAux(binDir) == nil
+	if err := dataverify.VerifyNetAux(binDir); err != nil {
+		return fmt.Sprintf("net aux: %v", err)
+	}
+	return ""
+}
+
+func isBundleReady(dir string) bool {
+	return bundleReadyReason(dir) == ""
+}
+
+const legacyIptablesTarget = "xtables-legacy-multi"
+
+func pinLegacyIptablesAux(binDir string) error {
+	legacyBin := filepath.Join(binDir, "aux", legacyIptablesTarget)
+	if _, err := os.Stat(legacyBin); err != nil {
+		return fmt.Errorf("stat %s: %w", legacyIptablesTarget, err)
+	}
+	iptablesLink := filepath.Join(binDir, "aux", "iptables")
+	currentTarget, err := os.Readlink(iptablesLink)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("read aux/iptables symlink: %w", err)
+		}
+	} else if currentTarget == legacyIptablesTarget {
+		return nil
+	}
+	dataLogger.Infof("Repairing aux/iptables symlink (was %q, want %s)", currentTarget, legacyIptablesTarget)
+	if err := os.Remove(iptablesLink); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove aux/iptables: %w", err)
+	}
+	if err := os.Symlink(legacyIptablesTarget, iptablesLink); err != nil {
+		return fmt.Errorf("symlink aux/iptables: %w", err)
+	}
+	return nil
 }
 
 func setExtractDir(dir string) {
