@@ -37,6 +37,15 @@ func RegisterExecSessionForTest(rec *ExecSessionRecord) error {
 	return GetInstance().ensureExecRegistry().Register(rec)
 }
 
+// NewProcessManagerForHandlerTest returns a minimal process manager wired for EdgeletAPI handler tests.
+func NewProcessManagerForHandlerTest(eng engine.ContainerEngine) *ProcessManager {
+	return &ProcessManager{
+		engine:     eng,
+		engineName: "edgelet",
+		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
+	}
+}
+
 // ConfigureEngineForTest wires a test engine into the process manager singleton.
 func ConfigureEngineForTest(eng engine.ContainerEngine) {
 	pm := GetInstance()

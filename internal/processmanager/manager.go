@@ -91,6 +91,13 @@ func GetInstance() *ProcessManager {
 	return instance
 }
 
+// SetInstanceForTest replaces the ProcessManager singleton for tests and returns a restore func.
+func SetInstanceForTest(pm *ProcessManager) func() {
+	prev := instance
+	instance = pm
+	return func() { instance = prev }
+}
+
 // Start starts the ProcessManager with a given container engine.
 func (pm *ProcessManager) Start(eng engine.ContainerEngine, microserviceManager MicroserviceManagerInterface) error {
 	pm.logger.Info("Starting Process Manager")
@@ -202,6 +209,90 @@ func (pm *ProcessManager) DrainRuntimeForShutdown(timeout time.Duration) error {
 		pm.stopRuntimeContainersConcurrently(runtimeIDs)
 		time.Sleep(shutdownDrainPollInterval)
 	}
+}
+
+// DrainRuntimeForDataPlaneShutdown tears down labeled workload containers from the
+// runtime before the embedded data-plane stops. Deploy specs in SQLite are preserved;
+// ephemeral runtime refs are cleared so reconcile recreates sandboxes after the socket
+// returns (BR-24-I1, BR-24-I3).
+func (pm *ProcessManager) DrainRuntimeForDataPlaneShutdown(timeout time.Duration) error {
+	if pm.engine == nil {
+		return nil
+	}
+	initialRuntimeIDs, err := pm.runtimeWorkloadContainerIDsWithRetry(3 * time.Second)
+	if err != nil {
+		pm.clearWorkloadRuntimeRefsForDataPlaneDrainRecovery()
+		// Socket may already be down during edgelet-containerd SIGTERM; clear refs so
+		// reconcile recreates workloads after the data plane comes back (BR-24-E5).
+		pm.logger.Warnf("data-plane drain: runtime list unavailable (%v); cleared workload refs for recovery", err)
+		return nil
+	}
+	drainErr := pm.teardownRuntimeWorkloadForDataPlaneShutdown(initialRuntimeIDs, timeout)
+	pm.clearWorkloadRuntimeRefsForDataPlaneDrainRecovery()
+	return drainErr
+}
+
+func (pm *ProcessManager) runtimeWorkloadContainerIDsWithRetry(budget time.Duration) ([]string, error) {
+	if budget <= 0 {
+		budget = 10 * time.Second
+	}
+	deadline := time.Now().Add(budget)
+	var lastErr error
+	for {
+		ids, err := pm.runtimeWorkloadContainerIDs()
+		if err == nil {
+			return ids, nil
+		}
+		lastErr = err
+		if !isRetryableRuntimeListError(err) || !time.Now().Before(deadline) {
+			break
+		}
+		time.Sleep(shutdownDrainPollInterval)
+	}
+	return nil, lastErr
+}
+
+func isRetryableRuntimeListError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connection error") ||
+		strings.Contains(msg, "unavailable") ||
+		strings.Contains(msg, "not ready")
+}
+
+func (pm *ProcessManager) clearWorkloadRuntimeRefsForDataPlaneDrainRecovery() {
+	if pm == nil {
+		return
+	}
+	if items, err := store.GetInstance().ListLocalWorkloads(); err == nil {
+		for _, item := range items {
+			if item == nil || item.DesiredState != "running" {
+				continue
+			}
+			pm.clearLocalWorkloadRuntimeRef(item.LocalUUID)
+		}
+	}
+	_ = store.GetInstance().ClearRuntimeContainerRefs("")
+	_ = store.GetInstance().ClearControllerMicroserviceRuntimeFields()
+}
+
+func (pm *ProcessManager) clearLocalWorkloadRuntimeRef(localUUID string) {
+	item, err := store.GetInstance().GetLocalWorkload(localUUID)
+	if err != nil || item == nil {
+		return
+	}
+	if item.DesiredState != "running" {
+		return
+	}
+	item.ContainerID = ""
+	item.RuntimeState = "pending"
+	item.State = item.RuntimeState
+	item.LastError = ""
+	item.FailureCount = 0
+	_ = store.GetInstance().UpsertLocalWorkload(item)
 }
 
 func adaptiveShutdownDrainTimeout(containerCount int) time.Duration {
@@ -417,6 +508,9 @@ func (pm *ProcessManager) Update() {
 
 // notifyMonitorThread wakes up the monitor thread immediately
 func (pm *ProcessManager) notifyMonitorThread() {
+	if pm == nil || pm.updateChan == nil {
+		return
+	}
 	select {
 	case pm.updateChan <- struct{}{}:
 	default:

@@ -23,10 +23,13 @@ type drainTestEngine struct {
 	stopDelay   time.Duration
 
 	stopCalls     int64
+	removeCalls   int64
 	activeStops   int64
 	maxConcurrent int64
 	stopErrByID   map[string]error
 	killErrByID   map[string]error
+	removeErrByID map[string]error
+	removeRemoves bool
 }
 
 func newDrainTestEngine(ids ...string) *drainTestEngine {
@@ -40,10 +43,12 @@ func newDrainTestEngine(ids ...string) *drainTestEngine {
 		}
 	}
 	return &drainTestEngine{
-		running:     running,
-		stopRemoves: true,
-		stopErrByID: make(map[string]error),
-		killErrByID: make(map[string]error),
+		running:       running,
+		stopRemoves:   true,
+		removeRemoves: true,
+		stopErrByID:   make(map[string]error),
+		killErrByID:   make(map[string]error),
+		removeErrByID: make(map[string]error),
 	}
 }
 
@@ -107,6 +112,19 @@ func (e *drainTestEngine) KillContainer(id string) error {
 	e.mu.Lock()
 	delete(e.running, id)
 	e.mu.Unlock()
+	return nil
+}
+
+func (e *drainTestEngine) RemoveContainer(id string, _ bool) error {
+	atomic.AddInt64(&e.removeCalls, 1)
+	if err, ok := e.removeErrByID[id]; ok && err != nil {
+		return err
+	}
+	if e.removeRemoves {
+		e.mu.Lock()
+		delete(e.running, id)
+		e.mu.Unlock()
+	}
 	return nil
 }
 
@@ -223,6 +241,25 @@ func TestDrainRuntimeForShutdown_UsesBoundedConcurrency(t *testing.T) {
 	}
 	if maxConcurrent > shutdownDrainMaxWorkers {
 		t.Fatalf("expected bounded concurrency <= %d, got %d", shutdownDrainMaxWorkers, maxConcurrent)
+	}
+}
+
+func TestDrainRuntimeForShutdown_UsesStopOnlyNotRemove(t *testing.T) {
+	eng := newDrainTestEngine("c1")
+	pm := &ProcessManager{
+		engine:     eng,
+		engineName: "edgelet",
+		logger:     logging.NewModuleLogger(ProcessManagerModuleName),
+	}
+
+	if err := pm.DrainRuntimeForShutdown(0); err != nil {
+		t.Fatalf("expected drain success, got err: %v", err)
+	}
+	if got := atomic.LoadInt64(&eng.removeCalls); got != 0 {
+		t.Fatalf("expected stop-only shutdown drain, RemoveContainer calls=%d", got)
+	}
+	if got := atomic.LoadInt64(&eng.stopCalls); got == 0 {
+		t.Fatal("expected StopContainer during shutdown drain")
 	}
 }
 

@@ -6,20 +6,26 @@ import (
 	"sync"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/store"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
 var (
-	quiesceMu sync.RWMutex
-	quiesced  bool
+	quiesceMu                 sync.RWMutex
+	quiesced                  bool
+	quiescedForDataPlaneDrain bool
 )
 
 // SetQuiesced blocks or resumes reconcile scheduling.
 func SetQuiesced(v bool) {
 	quiesceMu.Lock()
 	quiesced = v
+	if !v {
+		quiescedForDataPlaneDrain = false
+	}
 	quiesceMu.Unlock()
 }
 
@@ -28,6 +34,49 @@ func IsQuiesced() bool {
 	quiesceMu.RLock()
 	defer quiesceMu.RUnlock()
 	return quiesced
+}
+
+// RuntimeEngineAvailable reports whether the process manager has a wired container engine.
+func RuntimeEngineAvailable() bool {
+	pm := GetInstance()
+	return pm != nil && pm.engine != nil
+}
+
+// IsQuiescedForDataPlaneDrain reports whether reconcile is held for a data-plane stop
+// until the runtime engine socket becomes healthy again.
+func IsQuiescedForDataPlaneDrain() bool {
+	quiesceMu.RLock()
+	defer quiesceMu.RUnlock()
+	return quiescedForDataPlaneDrain
+}
+
+// BeginQuiesceForDataPlaneDrain pauses reconcile for coordinated data-plane MS drain.
+// Reconcile resumes via TryResumeReconcileAfterDataPlaneEngineReady once the engine is ready.
+func BeginQuiesceForDataPlaneDrain() {
+	quiesceMu.Lock()
+	quiesced = true
+	quiescedForDataPlaneDrain = true
+	quiesceMu.Unlock()
+}
+
+// TryResumeReconcileAfterDataPlaneEngineReady clears data-plane drain quiesce after the
+// runtime engine is healthy again (runtime split attach path).
+func TryResumeReconcileAfterDataPlaneEngineReady() {
+	quiesceMu.Lock()
+	if !quiescedForDataPlaneDrain {
+		quiesceMu.Unlock()
+		return
+	}
+	quiescedForDataPlaneDrain = false
+	quiesced = false
+	runtimestate.GetState().SetEngineReady(true)
+	pm := GetInstance()
+	quiesceMu.Unlock()
+
+	logging.LogInfo(ProcessManagerModuleName, "engine_ready_resume")
+	if pm != nil {
+		pm.notifyMonitorThread()
+	}
 }
 
 // SetEngine swaps the active container engine without restarting the process manager.

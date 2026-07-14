@@ -33,6 +33,8 @@ func mapRequestToPermission(r *http.Request) (rbacPermission, bool) {
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/provision", Verb: verb}, true
 	case path == "/v1/system/reload":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/reload", Verb: verb}, true
+	case path == "/v1/runtime/drain":
+		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "runtime/drain", Verb: verb}, true
 	case path == "/v1/system/prune":
 		return rbacPermission{APIGroups: localAPIAuthorizationGroups, Resource: "system/prune", Verb: verb}, true
 	case path == "/v1/system/logs":
