@@ -12,6 +12,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/pkg/engine"
 )
 
@@ -212,7 +213,7 @@ func newExecTestProcessManager(eng *execTestEngine) *ProcessManager {
 	pm := &ProcessManager{
 		engine:       eng,
 		execRegistry: NewExecSessionRegistry(),
-		logger:       GetInstance().logger,
+		logger:       logging.NewModuleLogger(ProcessManagerModuleName),
 	}
 	pm.containerManager = NewContainerManager(eng, nil, "edgelet")
 	return pm

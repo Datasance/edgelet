@@ -55,7 +55,6 @@ func TestSendControlSignalToAll_SendsOpcode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial control websocket: %v", err)
 	}
-	defer func() { _ = conn.Close() }()
 
 	done := make(chan []byte, 1)
 	go func() {
@@ -75,6 +74,8 @@ func TestSendControlSignalToAll_SendsOpcode(t *testing.T) {
 	if len(msg) != 1 || msg[0] != OpcodeControlSignal {
 		t.Fatalf("expected control opcode 0x%x, got %v", OpcodeControlSignal, msg)
 	}
+	_ = conn.Close()
+	waitForControlConnectionsDrained(t)
 }
 
 func TestSendResourceSignal_SendsOpcode(t *testing.T) {
@@ -120,7 +121,6 @@ func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial control websocket: %v", err)
 	}
-	defer func() { _ = conn.Close() }()
 
 	done := make(chan []byte, 1)
 	go func() {
@@ -140,4 +140,6 @@ func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 	if len(msg) != 1 || msg[0] != OpcodeResourceSignal {
 		t.Fatalf("expected resource opcode 0x%x, got %v", OpcodeResourceSignal, msg)
 	}
+	_ = conn.Close()
+	waitForControlConnectionsDrained(t)
 }
