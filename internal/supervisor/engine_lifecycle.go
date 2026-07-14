@@ -150,6 +150,7 @@ func (s *Supervisor) swapContainerEngine(eng engine.ContainerEngine, engineType 
 	s.processManager.SetEngine(eng, engineType)
 	s.containerEngine = eng
 	runtimestate.GetState().SetEngineReady(true)
+	processmanager.TryResumeReconcileAfterDataPlaneEngineReady()
 
 	if s.dockerPruningManager != nil {
 		s.dockerPruningManager.SetEngine(eng)

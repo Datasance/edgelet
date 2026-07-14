@@ -416,6 +416,7 @@ func (s *Supervisor) wireContainerEngine(eng engine.ContainerEngine) error {
 	}
 	s.containerEngine = eng
 	runtimestate.GetState().SetEngineReady(true)
+	processmanager.TryResumeReconcileAfterDataPlaneEngineReady()
 	s.statusReporter.UpdateSupervisorStatus(func(status *models.SupervisorStatus) {
 		status.SetModuleStatus(utils.ProcessManager, models.ModuleStatusRunning)
 	})
@@ -644,13 +645,37 @@ func (s *Supervisor) operationDurationWorker() {
 // containerdWatchdog runs periodic containerd socket liveness checks when
 // containerEngine=iofog. The runtime is a managed child process; watchdog does
 // not run a nested runtime restart loop and instead requests daemon restart.
+func containerdWatchdogInterval() time.Duration {
+	if processmanager.IsQuiescedForDataPlaneDrain() {
+		return 2 * time.Second
+	}
+	return 30 * time.Second
+}
+
+const containerdWatchdogFailureThreshold = 3
+
+// containerdWatchdogShouldSkipEscalation reports whether intentional data-plane
+// downtime must not trigger a control-plane restart.
+func containerdWatchdogShouldSkipEscalation(attachOnly bool) bool {
+	return attachOnly || processmanager.IsQuiescedForDataPlaneDrain()
+}
+
+// containerdWatchdogShouldEscalateUnhealthy reports whether repeated socket check
+// failures should request a control-plane restart.
+func containerdWatchdogShouldEscalateUnhealthy(consecutiveFailures int) bool {
+	if processmanager.IsQuiescedForDataPlaneDrain() {
+		return false
+	}
+	return consecutiveFailures >= containerdWatchdogFailureThreshold
+}
+
 func (s *Supervisor) containerdWatchdog() {
 	defer s.wg.Done()
 
-	ticker := time.NewTicker(30 * time.Second)
+	interval := containerdWatchdogInterval()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	consecutiveFailures := 0
-	const failureThreshold = 3
 
 	for {
 		select {
@@ -660,22 +685,37 @@ func (s *Supervisor) containerdWatchdog() {
 			if s.containerdSvc == nil {
 				return
 			}
-			if !s.containerdSvc.IsHealthy() {
-				consecutiveFailures++
-				logging.LogWarn(moduleName, fmt.Sprintf(
-					"Embedded containerd socket is unresponsive (%d/%d consecutive checks)",
-					consecutiveFailures, failureThreshold,
-				))
-				if consecutiveFailures >= failureThreshold {
-					requestDaemonRestart(
-						"Embedded containerd is persistently unhealthy; requesting daemon restart via SIGTERM",
-						errors.New("containerd watchdog reached failure threshold"),
-					)
-					return
+			if s.containerdSvc.IsHealthy() {
+				consecutiveFailures = 0
+				processmanager.TryResumeReconcileAfterDataPlaneEngineReady()
+
+				nextInterval := containerdWatchdogInterval()
+				if nextInterval != interval {
+					ticker.Stop()
+					interval = nextInterval
+					ticker = time.NewTicker(interval)
 				}
 				continue
 			}
-			consecutiveFailures = 0
+			if containerdWatchdogShouldSkipEscalation(s.containerdAttachOnly) {
+				// Runtime split: data-plane unit owns containerd lifecycle; socket
+				// downtime during edgelet-containerd stop/start must not restart control plane.
+				logging.LogDebug(moduleName, "containerd watchdog skipping escalation (attach-only or data-plane quiesce)")
+				consecutiveFailures = 0
+				continue
+			}
+			consecutiveFailures++
+			logging.LogWarn(moduleName, fmt.Sprintf(
+				"Embedded containerd socket is unresponsive (%d/%d consecutive checks)",
+				consecutiveFailures, containerdWatchdogFailureThreshold,
+			))
+			if containerdWatchdogShouldEscalateUnhealthy(consecutiveFailures) {
+				requestDaemonRestart(
+					"Embedded containerd is persistently unhealthy; requesting daemon restart via SIGTERM",
+					errors.New("containerd watchdog reached failure threshold"),
+				)
+				return
+			}
 		}
 	}
 }
