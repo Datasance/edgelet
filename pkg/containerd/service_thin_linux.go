@@ -66,6 +66,12 @@ func CleanupRuntimeArtifacts() error { return nil }
 // CleanupStaleRuntimeTasks is a no-op on thin linux builds.
 func CleanupStaleRuntimeTasks() error { return nil }
 
+// CleanupStaleRuntimeTasksWithRetry is a no-op on thin linux builds.
+func CleanupStaleRuntimeTasksWithRetry() error { return nil }
+
+// PrepareEmbeddedContainerdBootstrap is a no-op on thin linux builds.
+func PrepareEmbeddedContainerdBootstrap() {}
+
 // StopOrphanedEmbeddedContainerd stops a leftover embedded containerd child after switching to docker/podman.
 func StopOrphanedEmbeddedContainerd() error {
 	return stopOrphanedEmbeddedContainerdFromProc()

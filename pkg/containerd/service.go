@@ -3,14 +3,14 @@
 package containerd
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -44,24 +44,27 @@ const (
 )
 
 var containerdShutdownWaitTimeout = 15 * time.Second
-var containerdShimReapGraceTimeout = 5 * time.Second
-var containerdShimReapForceTimeout = 5 * time.Second
-var containerdShimReapPollInterval = 100 * time.Millisecond
+var shimReapRemainingBudget = DefaultShimReapBudgetCap
 var containerdReconfigureStabilityWindow = 3 * time.Second
 var containerdReconfigureRetryDelay = 500 * time.Millisecond
 var containerdReconfigureMaxAttempts = 2
 
 const runtimeV2TaskDirName = "io.containerd.runtime.v2.task"
 
+const (
+	staleTaskCleanupMaxPasses  = 6
+	staleTaskCleanupRetryDelay = 2 * time.Second
+)
+
 var (
-	findManagedShimPIDs            = findManagedShimPIDsFromProc
 	containerdStateDirForCleanup   = constants.EdgeletContainerdStateDir
 	runtimeArtifactCleanupSocket   = constants.EdgeletContainerdSocket
 	runtimeArtifactCleanupRunDir   = constants.EdgeletRunDir
 	runtimeArtifactCleanupStateDir = constants.EdgeletContainerdStateDir
+	removeStaleRuntimeTaskDir      = os.RemoveAll
+	staleTaskCleanupSleep          = time.Sleep
 )
 var resolveChildExecutable = data.RuntimeBinary
-var signalPID = syscall.Kill
 var writeConfigForService = writeConfigFile
 var readLKGForService = readLastKnownGoodConfig
 var writeAtomicForService = writeFileAtomically
@@ -475,7 +478,7 @@ func (s *Service) SetUnexpectedExitHandler(handler func(error)) {
 	s.unexpectedExitHandler = handler
 }
 
-// IsHealthy returns true if the containerd socket is reachable.
+// IsHealthy returns true when containerd is reachable and the CRI runtime plugin is usable.
 func (s *Service) IsHealthy() bool {
 	c, err := client.New(constants.EdgeletContainerdSocket)
 	if err != nil {
@@ -484,10 +487,12 @@ func (s *Service) IsHealthy() bool {
 	defer func() {
 		_ = c.Close()
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), criHealthProbeTimeout)
 	defer cancel()
-	_, err = c.Version(ctx)
-	return err == nil
+	if _, err = c.Version(ctx); err != nil {
+		return false
+	}
+	return criRuntimeUsable()
 }
 
 func (s *Service) spawnChild() (*exec.Cmd, error) {
@@ -713,109 +718,71 @@ func waitForDone(done <-chan struct{}, timeout time.Duration) bool {
 	}
 }
 
+// RemainingStopBudget returns the stop time left from totalBudget since stopStarted.
+func RemainingStopBudget(stopStarted time.Time, totalBudget time.Duration) time.Duration {
+	remaining := totalBudget - time.Since(stopStarted)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// SetShimReapRemainingBudget configures the shim-reap slice for the next Stop/reap call.
+func SetShimReapRemainingBudget(remaining time.Duration) {
+	if remaining < 0 {
+		remaining = 0
+	}
+	shimReapRemainingBudget = remaining
+}
+
+// ResetShimReapRemainingBudget restores the default shim-reap budget cap.
+func ResetShimReapRemainingBudget() {
+	shimReapRemainingBudget = DefaultShimReapBudgetCap
+}
+
 func (s *Service) reapManagedShims() error {
-	remaining, err := findManagedShimPIDs(constants.EdgeletContainerdSocket)
-	if err != nil {
-		return fmt.Errorf("discover managed shims before reap: %w", err)
-	}
-	if len(remaining) == 0 {
-		return nil
-	}
-
-	logger.Warnf("Detected %d managed containerd shim process(es) after containerd stop; reaping", len(remaining))
-	for _, pid := range remaining {
-		if err := signalPID(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-			logger.Warnf("Failed to signal shim pid %d with SIGTERM: %v", pid, err)
-		}
-	}
-
-	if exited, waitErr := waitForManagedShimsExit(constants.EdgeletContainerdSocket, containerdShimReapGraceTimeout); waitErr != nil {
-		return fmt.Errorf("wait for shim SIGTERM completion: %w", waitErr)
-	} else if exited {
-		return nil
-	}
-
-	remaining, err = findManagedShimPIDs(constants.EdgeletContainerdSocket)
-	if err != nil {
-		return fmt.Errorf("discover managed shims before SIGKILL: %w", err)
-	}
-	for _, pid := range remaining {
-		if err := signalPID(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-			logger.Warnf("Failed to signal shim pid %d with SIGKILL: %v", pid, err)
-		}
-	}
-
-	if exited, waitErr := waitForManagedShimsExit(constants.EdgeletContainerdSocket, containerdShimReapForceTimeout); waitErr != nil {
-		return fmt.Errorf("wait for shim SIGKILL completion: %w", waitErr)
-	} else if !exited {
-		if stillRunning, listErr := findManagedShimPIDs(constants.EdgeletContainerdSocket); listErr == nil {
-			return fmt.Errorf("managed shims still running after reap attempts: pids=%v", stillRunning)
-		}
-		return errors.New("managed shims still running after reap attempts")
-	}
-	return nil
+	return reapManagedShimsForSocket(constants.EdgeletContainerdSocket, shimReapRemainingBudget)
 }
 
-func waitForManagedShimsExit(socketPath string, timeout time.Duration) (bool, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		pids, err := findManagedShimPIDs(socketPath)
-		if err != nil {
-			return false, err
-		}
-		if len(pids) == 0 {
-			return true, nil
-		}
-		if time.Now().After(deadline) {
-			return false, nil
-		}
-		time.Sleep(containerdShimReapPollInterval)
-	}
+// StopOrphanedEmbeddedContainerd stops leftover embedded containerd children from /proc.
+func StopOrphanedEmbeddedContainerd() error {
+	return stopOrphanedEmbeddedContainerdFromProc()
 }
 
-func findManagedShimPIDsFromProc(socketPath string) ([]int, error) {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return nil, fmt.Errorf("read /proc: %w", err)
-	}
-
-	pids := make([]int, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		pid, convErr := strconv.Atoi(entry.Name())
-		if convErr != nil || pid <= 0 {
-			continue
-		}
-		cmdline, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-		if readErr != nil {
-			continue
-		}
-		if !bytes.Contains(cmdline, []byte("containerd-shim-")) {
-			continue
-		}
-		if !bytes.Contains(cmdline, []byte(socketPath)) {
-			continue
-		}
-		pids = append(pids, pid)
-	}
-	return pids, nil
+type staleTaskCleanupResult struct {
+	ebusyDirs []string
+	fatalErr  error
 }
 
-// CleanupStaleRuntimeTasks removes orphaned runtime task directories under
-// EdgeletContainerdStateDir. Preserves EdgeletContainerdRootDir (images/layers).
-func CleanupStaleRuntimeTasks() error {
+func isRemoveAllEBUSY(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EBUSY) {
+		return true
+	}
+	// Match kernel errno text only; avoid substring "ebusy" (false positives in paths
+	// such as ...ReturnsFatalOnNonEBUSY... in test temp dirs).
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "device or resource busy")
+}
+
+func cleanupStaleRuntimeTasksPass() staleTaskCleanupResult {
 	base := filepath.Join(containerdStateDirForCleanup, runtimeV2TaskDirName)
+	return cleanupStaleRuntimeTasksInDir(base)
+}
+
+func cleanupStaleRuntimeTasksInDir(base string) staleTaskCleanupResult {
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return staleTaskCleanupResult{}
 		}
-		return fmt.Errorf("read runtime task directory %s: %w", base, err)
+		return staleTaskCleanupResult{fatalErr: fmt.Errorf("read runtime task directory %s: %w", base, err)}
 	}
 
 	var errs []string
+	var ebusyDirs []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -827,11 +794,27 @@ func CleanupStaleRuntimeTasks() error {
 			continue
 		}
 		if os.IsNotExist(statErr) {
+			if hasNestedRuntimeTaskDirs(taskDir) {
+				nested := cleanupStaleRuntimeTasksInDir(taskDir)
+				if nested.fatalErr != nil {
+					errs = append(errs, nested.fatalErr.Error())
+				}
+				ebusyDirs = append(ebusyDirs, nested.ebusyDirs...)
+				continue
+			}
 			logger.Warnf("Removing stale runtime task directory without address file: %s", taskDir)
 		} else {
 			logger.Warnf("Removing stale runtime task directory with unreadable address file %s: %v", addressPath, statErr)
 		}
-		if removeErr := os.RemoveAll(taskDir); removeErr != nil && !os.IsNotExist(removeErr) {
+		if prepErr := prepareStaleRuntimeTaskDirRemoval(taskDir); prepErr != nil {
+			logger.Warnf("Stale runtime task pre-removal failed for %s: %v", taskDir, prepErr)
+		}
+		if removeErr := removeStaleRuntimeTaskDir(taskDir); removeErr != nil && !os.IsNotExist(removeErr) {
+			if isRemoveAllEBUSY(removeErr) {
+				logger.Warnf("Stale runtime task directory still busy; will retry after shim reap: %s", taskDir)
+				ebusyDirs = append(ebusyDirs, taskDir)
+				continue
+			}
 			errs = append(errs, fmt.Sprintf("%s: %v", taskDir, removeErr))
 			continue
 		}
@@ -839,9 +822,146 @@ func CleanupStaleRuntimeTasks() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("stale runtime task cleanup failed: %s", strings.Join(errs, "; "))
+		return staleTaskCleanupResult{fatalErr: fmt.Errorf("stale runtime task cleanup failed: %s", strings.Join(errs, "; "))}
+	}
+	return staleTaskCleanupResult{ebusyDirs: ebusyDirs}
+}
+
+func hasNestedRuntimeTaskDirs(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		child := filepath.Join(dir, entry.Name())
+		if _, err := os.Stat(filepath.Join(child, "address")); err == nil {
+			return true
+		}
+		if _, err := os.Stat(filepath.Join(child, "rootfs")); err == nil {
+			return true
+		}
+		if _, err := os.Stat(filepath.Join(child, "config.json")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func prepareStaleRuntimeTaskDirRemoval(taskDir string) error {
+	taskID := filepath.Base(taskDir)
+	if err := ReapShimsForStaleTask(constants.EdgeletContainerdSocket, taskID, DefaultShimReapBudgetCap); err != nil {
+		return err
+	}
+	return detachStaleRuntimeTaskMounts(taskDir)
+}
+
+func detachStaleRuntimeTaskMounts(taskDir string) error {
+	taskDir = filepath.Clean(taskDir)
+	mounts, err := mountPointsUnder(taskDir)
+	if err != nil {
+		return err
+	}
+	var errs []string
+	for _, mountPoint := range mounts {
+		if umountErr := syscall.Unmount(mountPoint, syscall.MNT_DETACH); umountErr != nil && !errors.Is(umountErr, syscall.EINVAL) && !errors.Is(umountErr, syscall.ENOENT) {
+			errs = append(errs, fmt.Sprintf("%s: %v", mountPoint, umountErr))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("detach stale runtime task mounts: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func mountPointsUnder(root string) ([]string, error) {
+	root = filepath.Clean(root)
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return nil, fmt.Errorf("read mountinfo: %w", err)
+	}
+
+	mounts := make([]string, 0)
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		mountPoint := fields[4]
+		mountPoint = strings.ReplaceAll(mountPoint, "\\040", " ")
+		if mountPoint == root || strings.HasPrefix(mountPoint, root+"/") {
+			mounts = append(mounts, mountPoint)
+		}
+	}
+	slices.SortFunc(mounts, func(a, b string) int {
+		return cmp.Compare(len(b), len(a))
+	})
+	return mounts, nil
+}
+
+// CleanupStaleRuntimeTasks removes orphaned runtime task directories under
+// EdgeletContainerdStateDir. Preserves EdgeletContainerdRootDir (images/layers).
+func CleanupStaleRuntimeTasks() error {
+	res := cleanupStaleRuntimeTasksPass()
+	if res.fatalErr != nil {
+		return res.fatalErr
+	}
+	if len(res.ebusyDirs) > 0 {
+		return fmt.Errorf("stale runtime task cleanup blocked by EBUSY: %s", strings.Join(res.ebusyDirs, "; "))
+	}
+	return nil
+}
+
+// CleanupStaleRuntimeTasksWithRetry removes stale runtime task directories with bounded
+// EBUSY retries after shim reap. Bootstrap continues when dirs remain busy.
+func CleanupStaleRuntimeTasksWithRetry() error {
+	var lastEBUSY []string
+	for pass := 1; pass <= staleTaskCleanupMaxPasses; pass++ {
+		res := cleanupStaleRuntimeTasksPass()
+		if res.fatalErr != nil {
+			return res.fatalErr
+		}
+		if len(res.ebusyDirs) == 0 {
+			return nil
+		}
+		lastEBUSY = res.ebusyDirs
+		logger.Warnf(
+			"stale runtime task cleanup pass %d/%d: %d director(y/ies) still EBUSY",
+			pass, staleTaskCleanupMaxPasses, len(res.ebusyDirs),
+		)
+		if pass < staleTaskCleanupMaxPasses {
+			if err := ReapManagedShimsUntilClear(constants.EdgeletContainerdSocket, DefaultShimReapBudgetCap); err != nil {
+				logger.Warnf("managed shim reap during stale task cleanup retry failed: %v", err)
+			}
+			staleTaskCleanupSleep(staleTaskCleanupRetryDelay)
+		}
+	}
+	if len(lastEBUSY) > 0 {
+		logger.Warnf(
+			"stale runtime task cleanup incomplete after %d passes; continuing bootstrap: %s",
+			staleTaskCleanupMaxPasses, strings.Join(lastEBUSY, "; "),
+		)
+	}
+	return nil
+}
+
+// PrepareEmbeddedContainerdBootstrap stops orphans, reaps shims, and cleans stale tasks
+// before embedded containerd start or retry.
+func PrepareEmbeddedContainerdBootstrap() {
+	if err := stopOrphanedEmbeddedContainerdFromProc(); err != nil {
+		logger.Warnf("orphan embedded containerd stop before bootstrap failed: %v", err)
+	}
+	if err := ReapManagedShimsUntilClear(constants.EdgeletContainerdSocket, DefaultShimReapBudgetCap); err != nil {
+		logger.Warnf("managed shim reap before bootstrap incomplete: %v", err)
+	}
+	if err := CleanupStaleRuntimeTasksWithRetry(); err != nil {
+		logger.Warnf("stale runtime task cleanup before bootstrap failed: %v", err)
+	}
 }
 
 func logStaleTaskMetadataHintIfPresent(err error) {
