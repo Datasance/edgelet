@@ -5,6 +5,8 @@ Documentation=https://github.com/eclipse-iofog/edgelet
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Intentionally NOT PartOf=edgelet.service: control restart/stop must not
 # stop the data plane (Plan 11 attach-only). Full teardown: stop both units.
 
@@ -12,8 +14,9 @@ Wants=network-online.target
 Type=simple
 ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
 ExecStart=/usr/local/bin/edgelet runtime-bootstrap
+ExecStopPost=-/usr/local/bin/edgelet runtime reap-orphans
 Restart=always
-RestartSec=2s
+RestartSec=5s
 # Data-plane stop: drain MS via runtime-bootstrap SIGTERM handler + shutdownGracePeriodSeconds
 TimeoutStopSec=120s
 KillMode=process

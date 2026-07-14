@@ -5,7 +5,10 @@ name="edgelet-containerd"
 description="Edgelet embedded containerd (data plane)"
 command="/usr/local/bin/edgelet"
 command_args="runtime-bootstrap"
-command_background=true
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=5
+respawn_period=300
 command_user="root"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/edgelet/containerd.log"
@@ -67,5 +70,6 @@ stop() {
         fi
     fi
     rm -f "${pidfile}" 2>/dev/null || true
+    /usr/local/bin/edgelet runtime reap-orphans || ewarn "orphan reap exited non-zero"
     eend 0
 }
