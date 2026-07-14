@@ -43,7 +43,7 @@ while [ "${_elapsed}" -lt "${_timeout}" ]; do
   if { [ -S /run/edgelet/containerd.sock ] || [ -S /var/run/edgelet/containerd.sock ]; } && \
      { [ -S /run/edgelet/edgelet.sock ] || [ -S /var/run/edgelet/edgelet.sock ]; } && \
      edgelet system status 2>/dev/null | grep -q edgeletDaemon && \
-     edgelet system status -o json 2>/dev/null | jq -e ".[\"runtime.engineReady\"] == \"true\"" >/dev/null; then
+     edgelet system status 2>/dev/null | grep -q 'runtime.engineReady: true'; then
     exit 0
   fi
   sleep 2
@@ -64,8 +64,7 @@ _ms_name="${MS_NAME:?MS_NAME required}"
 _elapsed=0
 _timeout="${MS_WAIT_SEC:-240}"
 while [ "${_elapsed}" -lt "${_timeout}" ]; do
-  if edgelet system status -o json 2>/dev/null \
-       | jq -e ".[\"runtime.engineReady\"] == \"true\"" >/dev/null \
+  if edgelet system status 2>/dev/null | grep -q 'runtime.engineReady: true' \
      && edgelet ms ls 2>/dev/null | grep -F "${_ms_name}" | grep -qi running; then
     exit 0
   fi
@@ -74,7 +73,6 @@ while [ "${_elapsed}" -lt "${_timeout}" ]; do
 done
 echo "MS ${_ms_name} not running after ${_timeout}s (post-restart reconcile)" >&2
 edgelet ms ls 2>&1 || true
-edgelet system status -o json 2>/dev/null \
-  | jq "{engineReady: .[\"runtime.engineReady\"]}" || true
+edgelet system status 2>/dev/null | grep 'runtime.engineReady:' || true
 pgrep -af "edgelet|containerd-child" 2>/dev/null || true
 exit 1'

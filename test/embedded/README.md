@@ -48,7 +48,7 @@ Installed automatically by `setup.sh`:
 | Tool | Purpose |
 |---|---|
 | [Lima](https://github.com/lima-vm/lima) 0.14+ | Linux VM manager for macOS (vzNAT requires 0.14+; macOS 13.0+ for VZ) |
-| `jq` | JSON parsing in test assertions |
+| `jq` | Host-only: Lima `limactl list --json` parsing (guest tests use `grep` / `edgelet` CLI) |
 | `aarch64-unknown-linux-gnu-gcc` | CGO cross-compiler (Apple Silicon) |
 | `x86_64-unknown-linux-gnu-gcc` | CGO cross-compiler (Intel Mac) |
 

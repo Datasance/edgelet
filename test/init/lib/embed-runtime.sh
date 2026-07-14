@@ -52,7 +52,7 @@ while [ "${_elapsed}" -lt "${_timeout}" ]; do
   if { [ -S /run/edgelet/edgelet.sock ] || [ -S /var/run/edgelet/edgelet.sock ]; } && \
      { [ -S /run/edgelet/containerd.sock ] || [ -S /var/run/edgelet/containerd.sock ]; } && \
      edgelet system status 2>/dev/null | grep -q edgeletDaemon && \
-     edgelet system status -o json 2>/dev/null | jq -e ".[\"runtime.engineReady\"] == \"true\"" >/dev/null; then
+     edgelet system status 2>/dev/null | grep -q 'runtime.engineReady: true'; then
     exit 0
   fi
   sleep 2

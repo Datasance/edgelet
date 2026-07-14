@@ -11,7 +11,7 @@
 #   Phase 5 — Runtime prerequisites
 #   Phase 6 — CLI integration
 #   Phase 7 — Chaos gates (control restart; data plane stays up — runtime split)
-#   Phase 8 — RuntimeClass dual-shim (data-plane restart for shim discovery)
+#   Phase 8 — RuntimeClass dual-shim (shim discovery + catalog data-plane restart storm)
 #
 # Usage:
 #   ./test/embedded/vm-test.sh [--vm-name=iofog-test]
@@ -120,9 +120,10 @@ echo \"\$(cat /proc/\${ctl_pid}/cgroup | sed -n 's/^0:://p')\" | grep -q 'edgele
 
 assert_ok "control plane status reports host cgroup policy (split)" \
     R "set -e
-mode=\$(edgelet system status -o json | jq -r .cgroupMode)
-driver=\$(edgelet system status -o json | jq -r .cgroupDriver)
-nested=\$(edgelet system status -o json | jq -r .cgroupNested)
+status=\$(edgelet system status 2>/dev/null)
+mode=\$(echo \"\${status}\" | sed -n 's/^cgroupMode: //p')
+driver=\$(echo \"\${status}\" | sed -n 's/^cgroupDriver: //p')
+nested=\$(echo \"\${status}\" | sed -n 's/^cgroupNested: //p')
 case \"\${mode}\" in v2|v1|hybrid) ;; *) echo \"unexpected cgroupMode=\${mode}\"; exit 1 ;; esac
 case \"\${driver}\" in systemd|cgroupfs) ;; *) echo \"unexpected cgroupDriver=\${driver}\"; exit 1 ;; esac
 test \"\${nested}\" = false
@@ -133,14 +134,14 @@ assert_ok "runtime.engineReady before deploy-heavy phases" \
     R "set -e
 _elapsed=0
 while [ \${_elapsed} -lt 180 ]; do
-  if edgelet system status -o json 2>/dev/null | jq -e '.[\"runtime.engineReady\"] == \"true\"' >/dev/null; then
+  if edgelet system status 2>/dev/null | grep -q 'runtime.engineReady: true'; then
     exit 0
   fi
   sleep 2
   _elapsed=\$((_elapsed + 2))
 done
 echo 'runtime.engineReady not true after 180s' >&2
-edgelet system status -o json 2>/dev/null | jq '{engineReady: .[\"runtime.engineReady\"], agentPhase: .[\"runtime.agentPhase\"]}' || true
+edgelet system status 2>/dev/null | grep -E 'runtime.engineReady:|runtime.agentPhase:' || true
 exit 1"
 
 ###############################################################################
@@ -152,16 +153,16 @@ assert_ok "Canonical CNI conflist written at conf_dir root" \
     R "test -f /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has edgelet network name" \
-    R "jq -e '.name == \"edgelet\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
+    R "grep -q '\"name\": \"edgelet\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has bridge plugin" \
-    R "jq -e '.plugins[0].type == \"bridge\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
+    R "grep -q '\"type\": \"bridge\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has bridge name edgelet0" \
-    R "jq -e '.plugins[0].bridge == \"edgelet0\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
+    R "grep -q '\"bridge\": \"edgelet0\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Canonical CNI conflist has portmap plugin" \
-    R "jq -e '.plugins[] | select(.type==\"portmap\")' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
+    R "grep -q '\"type\": \"portmap\"' /var/lib/edgelet-containerd/cni/conf/10-edgelet.conflist"
 
 assert_ok "Local CNI conflist not active in single-bridge mode" \
     R "test ! -f /var/lib/edgelet-containerd/cni/conf/local/11-edgelet-local.conflist"
@@ -604,6 +605,11 @@ assert_ok "create RuntimeClass apply/delete operation helper" \
 #!/usr/bin/env bash
 set -euo pipefail
 
+runtimeclass_json_field() {
+  local body=\"\${1}\" key=\"\${2}\"
+  echo \"\${body}\" | sed -n \"s/.*\\\"\${key}\\\":\\\"\\([^\\\"]*\\\)\\\".*/\\1/p\" | head -1
+}
+
 runtimeclass_token_file() {
   if [ -f /etc/edgelet/edgelet-api ]; then
     echo /etc/edgelet/edgelet-api
@@ -645,8 +651,8 @@ runtimeclass_wait_operation() {
   local endpoint=\"/v1/deploy/runtimeclasses:\${kind}/\${operation_id}\"
   for i in \$(seq 1 120); do
     body=\$(runtimeclass_api GET \"\${endpoint}\")
-    echo \"\${body}\" | jq -e '.success == true' >/dev/null
-    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    echo \"\${body}\" | grep -q '\"success\":true'
+    status=\$(runtimeclass_json_field \"\${body}\" status)
     if [ \"\${status}\" = \"succeeded\" ]; then
       return 0
     fi
@@ -671,15 +677,15 @@ runtimeclass_apply_wait() {
   local body
   body=\$(cat \"\${response_file}\")
   rm -f \"\${response_file}\"
-  echo \"\${body}\" | jq -e '.success == true' >/dev/null
+  echo \"\${body}\" | grep -q '\"success\":true'
   if [ \"\${http_code}\" = \"200\" ]; then
-    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    status=\$(runtimeclass_json_field \"\${body}\" status)
     if [ \"\${status}\" = \"succeeded\" ]; then
       return 0
     fi
   fi
   if [ \"\${http_code}\" = \"202\" ] || [ \"\${http_code}\" = \"200\" ]; then
-    operation_id=\$(echo \"\${body}\" | jq -r '.data.operationId // \"\"')
+    operation_id=\$(runtimeclass_json_field \"\${body}\" operationId)
     test -n \"\${operation_id}\"
     runtimeclass_wait_operation apply \"\${operation_id}\"
     return 0
@@ -699,15 +705,15 @@ runtimeclass_delete_wait() {
   local body
   body=\$(cat \"\${response_file}\")
   rm -f \"\${response_file}\"
-  echo \"\${body}\" | jq -e '.success == true' >/dev/null
+  echo \"\${body}\" | grep -q '\"success\":true'
   if [ \"\${http_code}\" = \"200\" ]; then
-    status=\$(echo \"\${body}\" | jq -r '.data.status // \"\"')
+    status=\$(runtimeclass_json_field \"\${body}\" status)
     if [ \"\${status}\" = \"succeeded\" ]; then
       return 0
     fi
   fi
   if [ \"\${http_code}\" = \"202\" ] || [ \"\${http_code}\" = \"200\" ]; then
-    operation_id=\$(echo \"\${body}\" | jq -r '.data.operationId // \"\"')
+    operation_id=\$(runtimeclass_json_field \"\${body}\" operationId)
     test -n \"\${operation_id}\"
     runtimeclass_wait_operation delete \"\${operation_id}\"
     return 0
@@ -729,9 +735,9 @@ runtimeclass_delete_expect_in_use() {
   body=\$(cat \"\${response_file}\")
   rm -f \"\${response_file}\"
   test \"\${http_code}\" = \"400\"
-  echo \"\${body}\" | jq -e '.success == false' >/dev/null
-  echo \"\${body}\" | jq -e '.error.code == \"INVALID_ARGUMENT\"' >/dev/null
-  echo \"\${body}\" | jq -e --arg uuid \"\${blocking_uuid}\" '.error.details.blockingMicroserviceUuids[] == \$uuid' >/dev/null
+  echo \"\${body}\" | grep -q '\"success\":false'
+  echo \"\${body}\" | grep -q '\"code\":\"INVALID_ARGUMENT\"'
+  echo \"\${body}\" | grep -q \"\${blocking_uuid}\"
 }
 
 runtimeclass_expect_missing() {
@@ -746,8 +752,8 @@ runtimeclass_expect_missing() {
   body=\$(cat \"\${response_file}\")
   rm -f \"\${response_file}\"
   test \"\${http_code}\" = \"404\"
-  echo \"\${body}\" | jq -e '.success == false' >/dev/null
-  echo \"\${body}\" | jq -e '.error.code == \"NOT_FOUND\"' >/dev/null
+  echo \"\${body}\" | grep -q '\"success\":false'
+  echo \"\${body}\" | grep -q '\"code\":\"NOT_FOUND\"'
 }
 EOF
 chmod +x /tmp/runtimeclass-ops.sh"
@@ -756,7 +762,7 @@ assert_ok "apply RuntimeClass spin succeeds without controlled containerd reconf
     R "set -e
 test -S /run/edgelet/edgelet.sock
 source /tmp/runtimeclass-ops.sh
-since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
+since_ts=\$(date '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-spin.yaml
 systemctl is-active --quiet edgelet
 edgelet system status >/dev/null 2>&1
@@ -766,7 +772,7 @@ assert_ok "apply RuntimeClass edgelet-wasmtime succeeds without controlled conta
     R "set -e
 test -S /run/edgelet/edgelet.sock
 source /tmp/runtimeclass-ops.sh
-since_ts=\$(date -u '+%Y-%m-%d %H:%M:%S')
+since_ts=\$(date '+%Y-%m-%d %H:%M:%S')
 runtimeclass_apply_wait /tmp/runtimeclass-edgelet-wasmtime.yaml
 systemctl is-active --quiet edgelet
 edgelet system status >/dev/null 2>&1
@@ -897,6 +903,87 @@ assert_ok "runtimeclass delete is rejected while dependent workload exists" \
 source /tmp/runtimeclass-ops.sh
 source /tmp/runtimeclass-ms-uuids.env
 runtimeclass_delete_expect_in_use spin \"\${RUNTIME_SPIN_UUID}\""
+
+assert_ok "catalog data-plane restart storm x3 with WASM workloads running" \
+    R "set -e
+source /tmp/runtimeclass-ms-uuids.env
+
+data_plane_ready() {
+  local since_ts=\"\$1\"
+  systemctl is-active --quiet edgelet-containerd \
+    && test -S /run/edgelet/containerd.sock \
+    && pgrep -f 'edgelet-containerd-child' >/dev/null \
+    && journalctl -u edgelet-containerd --since \"\${since_ts}\" --no-pager \
+       | grep -q 'Embedded containerd is ready'
+}
+
+control_ready() {
+  systemctl is-active --quiet edgelet \
+    && test -S /run/edgelet/edgelet.sock \
+    && edgelet system status >/dev/null 2>&1
+}
+
+catalog_runtimes_ok() {
+  status=\$(edgelet system status || true)
+  echo \"\${status}\" | grep -q 'spin' \
+    && echo \"\${status}\" | grep -q 'edgelet-wasmtime' \
+    && echo \"\${status}\" | grep -q 'runtime.engineReady: true'
+}
+
+workloads_running() {
+  out=\$(edgelet ms ls || true)
+  echo \"\${out}\" | awk '\$3==\"runtime-spin-ms\" && \$5!=\"\" {s=1}
+                       \$3==\"runtime-edgelet-ms\" && \$5!=\"\" {e=1}
+                       END{exit (s&&e)?0:1}'
+  curl -fsS --max-time 5 http://127.0.0.1:8080/hello >/dev/null
+}
+
+ok=0
+for j in \$(seq 1 30); do
+  if control_ready && workloads_running; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+test \"\${ok}\" -eq 1
+
+for i in \$(seq 1 3); do
+  since_ts=\$(date '+%Y-%m-%d %H:%M:%S')
+  control_ready
+  workloads_running
+  systemctl restart edgelet-containerd
+  ok=0
+  for j in \$(seq 1 120); do
+    if data_plane_ready \"\${since_ts}\" && catalog_runtimes_ok && control_ready; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+  test \"\${ok}\" -eq 1
+  journal=\$(journalctl -u edgelet-containerd --since \"\${since_ts}\" --no-pager || true)
+  echo \"\${journal}\" | grep -q 'Embedded containerd is ready'
+  echo \"\${journal}\" | grep -q 'drain_complete'
+  ! echo \"\${journal}\" | grep -q 'drain_degraded'
+  ! echo \"\${journal}\" | grep -q 'rename extracted bundle: file exists'
+  ! echo \"\${journal}\" | grep -q 'Preparing data dir'
+  ok=0
+  for j in \$(seq 1 90); do
+    if workloads_running; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+  test \"\${ok}\" -eq 1
+  curl -fsS --max-time 5 http://127.0.0.1:8080/hello >/dev/null
+done
+
+readlink /var/lib/edgelet/data/current/bin/aux/iptables | grep -q xtables-legacy-multi
+systemctl is-active --quiet edgelet
+test -S /run/edgelet/edgelet.sock
+edgelet system status >/dev/null 2>&1"
 
 assert_ok "remove runtime-pinned workloads before runtimeclass delete" \
     R "set -e
