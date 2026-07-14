@@ -47,7 +47,7 @@ provision:
       # Install runtime dependencies
       apt-get update -qq
       apt-get install -y --no-install-recommends \
-          curl ca-certificates iptables iproute2 jq
+          curl ca-certificates iptables iproute2
 
       # Ensure host/containerd packages (if present in base image) do not
       # interfere with embedded Edgelet containerd validation.

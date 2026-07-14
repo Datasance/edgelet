@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -524,44 +523,14 @@ func (f *Facade) LoadImageFromPath(path string) ([]engine.LoadedImage, error) {
 
 // RemoveImage removes an image by selector (id, id prefix, name:tag, or digest).
 func (f *Facade) RemoveImage(selector string) (string, error) {
-	selector = strings.TrimSpace(selector)
-	if selector == "" {
-		return "", errors.New("selector is required")
-	}
-	pm := processmanager.GetInstance()
-	if err := pm.RemoveImage(selector); err == nil {
-		return selector, nil
-	}
-
-	if !looksLikeImageIDPrefix(selector) {
-		return "", fmt.Errorf("image not found: %s", selector)
-	}
-	items, err := pm.ListImages()
+	ref, err := f.ResolveImageDeleteRef(selector)
 	if err != nil {
 		return "", err
 	}
-	matches := make([]string, 0)
-	for _, item := range items {
-		if imageIDMatchesPrefix(item.ID, selector) {
-			matches = append(matches, item.ID)
-		}
+	if err := processmanager.GetInstance().RemoveImage(ref); err != nil {
+		return "", err
 	}
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("image not found: %s", selector)
-	case 1:
-		if err := pm.RemoveImage(matches[0]); err != nil {
-			return "", err
-		}
-		return matches[0], nil
-	default:
-		slices.Sort(matches)
-		candidates := matches
-		if len(candidates) > 5 {
-			candidates = candidates[:5]
-		}
-		return "", fmt.Errorf("ambiguous image id prefix %q; candidates: %s", selector, strings.Join(candidates, ", "))
-	}
+	return ref, nil
 }
 
 // ListRuntimeMicroservices returns process-manager tracked microservices.
@@ -855,25 +824,6 @@ func humanBytes(size int64) string {
 	default: // KB
 		return strconv.FormatFloat(value, 'f', 1, 64) + " " + prefix
 	}
-}
-
-var imageIDPrefixPattern = regexp.MustCompile(`^[a-f0-9]{3,64}$`)
-
-func looksLikeImageIDPrefix(selector string) bool {
-	normalized := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(selector), "sha256:"))
-	return imageIDPrefixPattern.MatchString(normalized)
-}
-
-func imageIDMatchesPrefix(imageID, prefix string) bool {
-	imageID = strings.TrimSpace(strings.ToLower(imageID))
-	prefix = strings.TrimSpace(strings.ToLower(prefix))
-	if imageID == "" || prefix == "" {
-		return false
-	}
-	if strings.HasPrefix(imageID, prefix) {
-		return true
-	}
-	return strings.HasPrefix(strings.TrimPrefix(imageID, "sha256:"), strings.TrimPrefix(prefix, "sha256:"))
 }
 
 // ResolveMicroserviceID resolves selectors in this order:

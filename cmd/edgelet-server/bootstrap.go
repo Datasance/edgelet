@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/eclipse-iofog/edgelet/internal/constants"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/eclipse-iofog/edgelet/pkg/containerd"
 	"github.com/eclipse-iofog/edgelet/pkg/data"
@@ -18,6 +19,11 @@ const (
 	containerdBootstrapMaxBackoff  = 10 * time.Second
 )
 
+var (
+	reapManagedShimsBeforeBootstrapCleanup = containerd.ReapManagedShimsUntilClear
+	prepareEmbeddedContainerdBootstrapFn   = containerd.PrepareEmbeddedContainerdBootstrap
+)
+
 type containerdStarter interface {
 	Start() error
 	Stop()
@@ -27,7 +33,7 @@ type bootstrapDeps struct {
 	ensureDependencies func() error
 	newService         func() containerdStarter
 	cleanupRuntime     func() error
-	cleanupStaleTasks  func() error
+	prepareBootstrap   func()
 	sleep              func(time.Duration)
 }
 
@@ -37,9 +43,8 @@ func startEmbeddedContainerdWithRetry() (*containerd.Service, error) {
 		newService: func() containerdStarter {
 			return containerd.NewService()
 		},
-		cleanupRuntime:    containerd.CleanupRuntimeArtifacts,
-		cleanupStaleTasks: containerd.CleanupStaleRuntimeTasks,
-		sleep:             time.Sleep,
+		cleanupRuntime: containerd.CleanupRuntimeArtifacts,
+		sleep:          time.Sleep,
 	}
 
 	svc, err := startEmbeddedContainerdWithRetryDeps(deps)
@@ -57,14 +62,14 @@ func startEmbeddedContainerdWithRetry() (*containerd.Service, error) {
 func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter, error) {
 	var lastErr error
 	backoff := containerdBootstrapBaseBackoff
-
-	if deps.cleanupStaleTasks != nil {
-		if err := deps.cleanupStaleTasks(); err != nil {
-			logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("stale runtime task cleanup failed: %v", err))
-		}
+	prepare := deps.prepareBootstrap
+	if prepare == nil {
+		prepare = prepareEmbeddedContainerdBootstrapFn
 	}
 
 	for attempt := 1; attempt <= containerdBootstrapMaxAttempts; attempt++ {
+		prepare()
+
 		if err := deps.ensureDependencies(); err != nil {
 			lastErr = wrapBootstrapErr("prepare embedded runtime bundle", err)
 		} else {
@@ -85,7 +90,9 @@ func startEmbeddedContainerdWithRetryDeps(deps bootstrapDeps) (containerdStarter
 			break
 		}
 
-		if err := deps.cleanupRuntime(); err != nil {
+		if err := reapManagedShimsBeforeBootstrapCleanup(constants.EdgeletContainerdSocket, containerd.DefaultShimReapBudgetCap); err != nil {
+			logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("deferring runtime artifact cleanup after incomplete shim reap: %v", err))
+		} else if err := deps.cleanupRuntime(); err != nil {
 			logging.LogWarn("MAIN_DAEMON", fmt.Sprintf("Embedded containerd runtime cleanup failed before retry: %v", err))
 		}
 

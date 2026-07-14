@@ -42,7 +42,7 @@ if [[ -n "${VM_STATUS}" ]]; then
     log_info "VM '${VM_NAME}' already exists (status: ${VM_STATUS})"
 else
     log_step "Creating Lima VM '${VM_NAME}' from ${LIMA_YAML}"
-    limactl create --name="${VM_NAME}" "${LIMA_YAML}"
+    limactl --tty=false create --name="${VM_NAME}" "${LIMA_YAML}"
     log_ok "VM '${VM_NAME}' created"
 fi
 
@@ -51,7 +51,7 @@ if [[ "${VM_STATUS}" == "Running" ]]; then
     log_info "VM '${VM_NAME}' is already running"
 else
     log_step "Starting VM '${VM_NAME}'..."
-    limactl start --timeout=1200s "${VM_NAME}"
+    limactl --tty=false start --timeout=1200s "${VM_NAME}"
 fi
 
 log_step "Waiting for VM to be SSH-ready (timeout: ${TIMEOUT}s)"

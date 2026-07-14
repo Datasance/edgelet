@@ -24,7 +24,7 @@ RACE_TEST_FLAGS  ?= -race -short -count=1 -timeout 30m
 
 # Version and build info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-# Container image tags omit the git "v" prefix (e.g. 1.0.0 not v1.0.0).
+# Container image tags omit the git "v" prefix (e.g. 1.0.1 not v1.0.1).
 CONTAINER_TAG := $(patsubst v%,%,$(VERSION))
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")

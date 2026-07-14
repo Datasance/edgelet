@@ -2,6 +2,13 @@
 
 Remove an image
 
+### Synopsis
+
+Remove an image by repository:tag, image ID, or image ID prefix.
+
+The selector may be a full or short image ID (from edgelet image ls), a unique ID prefix
+(at least 3 hexadecimal characters), or a repository tag such as alpine:3.19.
+
 ```
 edgelet image rm <selector> [flags]
 ```

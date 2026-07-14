@@ -14,7 +14,7 @@ lima_wait_edgelet_api() {
     local _vm="$1" _timeout="${2:-180}" _elapsed=0
     while (( _elapsed < _timeout )); do
         if lima_remote "${_vm}" \
-            "edgelet system status -o json 2>/dev/null | jq -e '.[\"runtime.engineReady\"] == \"true\"' >/dev/null"; then
+            "edgelet system status 2>/dev/null | grep -q 'runtime.engineReady: true'"; then
             return 0
         fi
         sleep 2

@@ -55,6 +55,8 @@ Cgroup bootstrap runs in `edgelet runtime-bootstrap` on the containerd unit. Con
 
 **systemd coupling:** `edgelet-containerd.service` is **not** `PartOf=edgelet.service`. Stopping or restarting **only** `edgelet` leaves the data plane running.
 
+**Data-plane stop (catalog runtimes included):** stopping or restarting `edgelet-containerd` drains labeled microservice containers first (`edgelet runtime drain`), then stops embedded containerd and reaps edgelet-managed shims. Total stop budget is **120 seconds** (default 90s drain + 30s reap/cleanup). If the control plane is briefly unavailable during stop, the data plane proceeds with degraded teardown rather than blocking indefinitely.
+
 **Full embedded shutdown** (backup, uninstall, wipe):
 
 ```bash
@@ -96,6 +98,12 @@ systemctl restart edgelet-containerd.service
 sleep 3
 systemctl restart edgelet.service
 ```
+
+Prefer **`stop` then `start`** on the data plane when upgrading shims or recovering from embed extract errors — see [container-engine.md](container-engine.md#data-plane-restart-and-shim-upgrades-embedded) and [troubleshooting.md](troubleshooting.md#embed-bundle--data-plane-restart).
+
+### Data-plane crash loop (`file exists`)
+
+Repeated `edgelet-containerd` restarts can fail with `rename extracted bundle: file exists` (fixed in current builds; recovery ladder in troubleshooting). While the data plane is down, the controller MS list may look **stale** — local `edgelet ms ls` reflects last-known DB state until CRI reattaches.
 
 ---
 

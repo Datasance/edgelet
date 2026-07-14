@@ -5,7 +5,7 @@ metadata:
   namespace: bar
 spec:
   controller:
-    image: ghcr.io/datasance/controller:3.8.0
+    image: ghcr.io/datasance/controller:3.8.1
     registry: 1
     port: 51121
     # publicUrl: https://controller.example.com
@@ -44,12 +44,12 @@ spec:
   systemMicroservices:
     router:
       # amd64: ghcr.io/datasance/router:3.8.0
-      arm64: ghcr.io/datasance/router:3.8.0
+      arm64: ghcr.io/datasance/router:3.8.1
       # riscv64: ghcr.io/datasance/router:3.8.0
       # arm: ghcr.io/datasance/router:3.8.0
     nats:   # when nats.enabled is true
       # amd64: ghcr.io/datasance/nats:2.14.2
-      arm64: ghcr.io/datasance/nats:2.14.2
+      arm64: ghcr.io/datasance/nats:2.14.3-1
     #   riscv64: ghcr.io/datasance/nats:2.14.2
     #   arm: ghcr.io/datasance/nats:2.14.2
   nats:  # optional; when present and enabled, NATS is deployed with JetStream

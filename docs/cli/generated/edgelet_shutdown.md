@@ -4,7 +4,7 @@ Control-plane stop for init systems
 
 ### Synopsis
 
-Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Drain policy is coordinated in Plan 11.
+Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Control-plane stop skips microservice drain when shutdownPolicy=leave-running (default for docker/podman and embedded split).
 
 ```
 edgelet shutdown [flags]

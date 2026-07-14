@@ -278,6 +278,43 @@ func (h *EdgeletAPIHandler) HandleSystemReload(w http.ResponseWriter, r *http.Re
 	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
+func (h *EdgeletAPIHandler) HandleRuntimeDrain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)
+		return
+	}
+	if !runtimestate.GetState().EngineReady() && !processmanager.RuntimeEngineAvailable() {
+		writeAPIError(w, http.StatusServiceUnavailable, ErrCodeInternal, "runtime engine is not ready", nil)
+		return
+	}
+
+	timeout := time.Duration(config.GetInstance().ShutdownDrainTimeout()) * time.Second
+	var body struct {
+		TimeoutSeconds *int `json:"timeoutSeconds"`
+	}
+	if r.Body != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, "invalid JSON body", nil)
+			return
+		}
+	}
+	if body.TimeoutSeconds != nil && *body.TimeoutSeconds >= 0 {
+		timeout = time.Duration(*body.TimeoutSeconds) * time.Second
+	}
+
+	if err := processmanager.DrainRuntimeForDataPlaneStop(timeout); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "timed out") {
+			writeAPIError(w, http.StatusGatewayTimeout, ErrCodeInternal, err.Error(), nil)
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error(), nil)
+		return
+	}
+	writeSuccess(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
 func (h *EdgeletAPIHandler) HandleSystemPrune(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "method not allowed", nil)

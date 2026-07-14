@@ -13,7 +13,7 @@ type RemoveResult struct {
 	Data  map[string]any
 }
 
-// Remove deletes an image by selector.
+// Remove deletes an image by repository:tag, image ID, or image ID prefix.
 func Remove(client run.EdgeletAPIClient, selector string) (*RemoveResult, error) {
 	if client == nil {
 		return nil, run.NewCLIError(run.CodeInternal, "edgeletapi client is nil", nil)

@@ -223,6 +223,8 @@ Documentation=https://github.com/eclipse-iofog/edgelet
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Intentionally NOT PartOf=edgelet.service: control restart/stop must not
 # stop the data plane (Plan 11 attach-only). Full teardown: stop both units.
 
@@ -230,8 +232,9 @@ Wants=network-online.target
 Type=simple
 ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
 ExecStart=/usr/local/bin/edgelet runtime-bootstrap
+ExecStopPost=-/usr/local/bin/edgelet runtime reap-orphans
 Restart=always
-RestartSec=2s
+RestartSec=5s
 # Data-plane stop: drain MS via runtime-bootstrap SIGTERM handler + shutdownGracePeriodSeconds
 TimeoutStopSec=120s
 KillMode=process
@@ -385,7 +388,10 @@ name="edgelet-containerd"
 description="Edgelet embedded containerd (data plane)"
 command="/usr/local/bin/edgelet"
 command_args="runtime-bootstrap"
-command_background=true
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=5
+respawn_period=300
 command_user="root"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/edgelet/containerd.log"
@@ -447,6 +453,7 @@ stop() {
         fi
     fi
     rm -f "${pidfile}" 2>/dev/null || true
+    /usr/local/bin/edgelet runtime reap-orphans || ewarn "orphan reap exited non-zero"
     eend 0
 }
 EDGELET_OPENRC_EDGELET_CONTAINERD_INIT_EOF
@@ -1416,6 +1423,8 @@ Documentation=https://github.com/eclipse-iofog/edgelet
 Before=edgelet.service
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Intentionally NOT PartOf=edgelet.service: control restart/stop must not
 # stop the data plane (Plan 11 attach-only). Full teardown: stop both units.
 
@@ -1423,8 +1432,9 @@ Wants=network-online.target
 Type=simple
 ExecStartPre=/bin/sh -c 'mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true'
 ExecStart=/usr/local/bin/edgelet runtime-bootstrap
+ExecStopPost=-/usr/local/bin/edgelet runtime reap-orphans
 Restart=always
-RestartSec=2s
+RestartSec=5s
 # Data-plane stop: drain MS via runtime-bootstrap SIGTERM handler + shutdownGracePeriodSeconds
 TimeoutStopSec=120s
 KillMode=process
@@ -1578,7 +1588,10 @@ name="edgelet-containerd"
 description="Edgelet embedded containerd (data plane)"
 command="/usr/local/bin/edgelet"
 command_args="runtime-bootstrap"
-command_background=true
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=5
+respawn_period=300
 command_user="root"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/edgelet/containerd.log"
@@ -1640,6 +1653,7 @@ stop() {
         fi
     fi
     rm -f "${pidfile}" 2>/dev/null || true
+    /usr/local/bin/edgelet runtime reap-orphans || ewarn "orphan reap exited non-zero"
     eend 0
 }
 EDGELET_OPENRC_EDGELET_CONTAINERD_INIT_EOF

@@ -14,7 +14,6 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/constants"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
-	"github.com/eclipse-iofog/edgelet/pkg/data"
 )
 
 func runRuntimeBootstrap() {
@@ -65,13 +64,14 @@ func runRuntimeBootstrap() {
 		case syscall.SIGTERM, syscall.SIGINT:
 			logging.LogInfo("RUNTIME_BOOTSTRAP", "Stopping embedded containerd data plane")
 
-			if err := data.EnsureExtracted(); err != nil {
-				logging.LogWarn("RUNTIME_BOOTSTRAP", fmt.Sprintf("Runtime bundle refresh before drain skipped: %v", err))
-			}
-
 			drainSec := cfg.ShutdownDrainTimeout()
-			logging.LogInfo("RUNTIME_BOOTSTRAP", fmt.Sprintf("Data-plane stop grace: %ds", drainSec))
-			svc.Stop()
+			stopEmbeddedContainerdDataPlane(
+				constants.EdgeletContainerdSocket,
+				drainSec,
+				svc,
+				defaultRuntimeBootstrapStopDeps(),
+			)
+
 			logging.LogInfo("RUNTIME_BOOTSTRAP", "Embedded containerd data plane stopped")
 			return
 		}

@@ -40,6 +40,7 @@ edgelet [flags]
 * [edgelet ms](edgelet_ms.md)	 - Microservice operations
 * [edgelet provision](edgelet_provision.md)	 - Provision the agent
 * [edgelet registry](edgelet_registry.md)	 - Registry operations
+* [edgelet runtime](edgelet_runtime.md)	 - Embedded runtime data-plane operations
 * [edgelet runtimeclass](edgelet_runtimeclass.md)	 - Runtime class operations
 * [edgelet shutdown](edgelet_shutdown.md)	 - Control-plane stop for init systems
 * [edgelet system](edgelet_system.md)	 - System operations

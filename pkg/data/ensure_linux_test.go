@@ -5,7 +5,10 @@ package data
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/eclipse-iofog/edgelet/pkg/dataverify"
 )
 
 func TestIsBundleReadyRequiresFatRuntimeAndShim(t *testing.T) {
@@ -250,6 +253,100 @@ func TestExtractPrefersEmbedHashDirOverStaleCurrent(t *testing.T) {
 	}
 }
 
+func TestExtractReusesReadyDir(t *testing.T) {
+	want := EmbeddedBundleHash()
+	if want == "" {
+		t.Skip("test binary has no embedded bundle")
+	}
+
+	t.Parallel()
+
+	root := t.TempDir()
+	dataRoot := filepath.Join(root, "data")
+	hashDir := filepath.Join(dataRoot, want)
+	writeReadyBundleDir(t, hashDir)
+	marker := filepath.Join(hashDir, "marker-ready")
+	if err := os.WriteFile(marker, []byte("keep"), 0644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	got, err := extract(root)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if got != hashDir {
+		t.Fatalf("extract=%q want %q", got, hashDir)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("ready dir marker should remain: %v", err)
+	}
+}
+
+func TestExtractReplacesCorruptDir(t *testing.T) {
+	want := EmbeddedBundleHash()
+	if want == "" {
+		t.Skip("test binary has no embedded bundle")
+	}
+
+	t.Parallel()
+
+	root := t.TempDir()
+	dataRoot := filepath.Join(root, "data")
+	hashDir := filepath.Join(dataRoot, want)
+	binDir := filepath.Join(hashDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "edgelet"), []byte("\x7fELF\x02\x01"), 0755); err != nil {
+		t.Fatalf("write edgelet: %v", err)
+	}
+	marker := filepath.Join(hashDir, "marker-corrupt")
+	if err := os.WriteFile(marker, []byte("stale"), 0644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	got, err := extract(root)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if got != hashDir {
+		t.Fatalf("extract=%q want %q", got, hashDir)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("corrupt dir marker should be replaced, stat err=%v", err)
+	}
+	if !isBundleReady(hashDir) {
+		t.Fatal("expected replaced bundle to be ready")
+	}
+}
+
+func TestExtractFreshInstall(t *testing.T) {
+	want := EmbeddedBundleHash()
+	if want == "" {
+		t.Skip("test binary has no embedded bundle")
+	}
+
+	t.Parallel()
+
+	root := t.TempDir()
+	dataRoot := filepath.Join(root, "data")
+	hashDir := filepath.Join(dataRoot, want)
+	if _, err := os.Stat(hashDir); !os.IsNotExist(err) {
+		t.Fatalf("hash dir should not exist before extract: %v", err)
+	}
+
+	got, err := extract(root)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if got != hashDir {
+		t.Fatalf("extract=%q want %q", got, hashDir)
+	}
+	if !isBundleReady(hashDir) {
+		t.Fatal("expected fresh extract to produce ready bundle")
+	}
+}
+
 func TestExtractUsesCurrentWhenNoEmbed(t *testing.T) {
 	if EmbeddedBundleHash() != "" {
 		t.Skip("test binary has embedded bundle")
@@ -271,5 +368,125 @@ func TestExtractUsesCurrentWhenNoEmbed(t *testing.T) {
 	}
 	if got != hashDir {
 		t.Fatalf("extract=%q want %q", got, hashDir)
+	}
+}
+
+func writeNetAuxWithNftIptables(t *testing.T, binDir string) {
+	t.Helper()
+	auxDir := filepath.Join(binDir, "aux")
+	if err := os.MkdirAll(auxDir, 0755); err != nil {
+		t.Fatalf("mkdir aux: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(auxDir, "xtables-legacy-multi"), []byte("\x7fELF"), 0755); err != nil {
+		t.Fatalf("write xtables-legacy-multi: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(auxDir, "xtables-nft-multi"), []byte("\x7fELF"), 0755); err != nil {
+		t.Fatalf("write xtables-nft-multi: %v", err)
+	}
+	if err := os.Symlink("xtables-nft-multi", filepath.Join(auxDir, "iptables")); err != nil {
+		t.Fatalf("symlink iptables to nft: %v", err)
+	}
+	for _, name := range []string{"ip", "busybox"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("\x7fELF"), 0755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+}
+
+func TestPinLegacyIptablesAuxRepairsNftSymlink(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	binDir := filepath.Join(tmp, "bin")
+	writeNetAuxWithNftIptables(t, binDir)
+
+	if err := dataverify.VerifyNetAux(binDir); err == nil {
+		t.Fatal("expected VerifyNetAux to fail with nft iptables symlink")
+	}
+	if err := pinLegacyIptablesAux(binDir); err != nil {
+		t.Fatalf("pinLegacyIptablesAux: %v", err)
+	}
+	if err := dataverify.VerifyNetAux(binDir); err != nil {
+		t.Fatalf("VerifyNetAux after pin: %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(binDir, "aux", "iptables"))
+	if err != nil {
+		t.Fatalf("readlink iptables: %v", err)
+	}
+	if target != "xtables-legacy-multi" {
+		t.Fatalf("iptables -> %q want xtables-legacy-multi", target)
+	}
+}
+
+func TestPinLegacyIptablesAuxNoOpWhenAlreadyLegacy(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	binDir := filepath.Join(tmp, "bin")
+	writeNetAuxStubs(t, binDir)
+	linkPath := filepath.Join(binDir, "aux", "iptables")
+	before, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("readlink before: %v", err)
+	}
+
+	if err := pinLegacyIptablesAux(binDir); err != nil {
+		t.Fatalf("pinLegacyIptablesAux: %v", err)
+	}
+	after, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("readlink after: %v", err)
+	}
+	if before != after {
+		t.Fatalf("symlink changed: before=%q after=%q", before, after)
+	}
+	if err := dataverify.VerifyNetAux(binDir); err != nil {
+		t.Fatalf("VerifyNetAux: %v", err)
+	}
+}
+
+func TestBundleReadyReasonReportsNetAuxFailure(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	binDir := filepath.Join(tmp, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "edgelet"), []byte("\x7fELF\x02\x01"), 0755); err != nil {
+		t.Fatalf("write edgelet: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "containerd-shim-runc-v2"), []byte("shim"), 0755); err != nil {
+		t.Fatalf("write shim: %v", err)
+	}
+	writeNetAuxWithNftIptables(t, binDir)
+
+	reason := bundleReadyReason(tmp)
+	if reason == "" {
+		t.Fatal("expected non-empty reason for nft iptables symlink")
+	}
+	if !strings.HasPrefix(reason, "net aux:") {
+		t.Fatalf("reason=%q want prefix net aux:", reason)
+	}
+	if !strings.Contains(reason, "xtables-nft-multi") {
+		t.Fatalf("reason=%q should mention xtables-nft-multi", reason)
+	}
+}
+
+func TestBundleReadyReasonReportsMissingShim(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	binDir := filepath.Join(tmp, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "edgelet"), []byte("\x7fELF\x02\x01"), 0755); err != nil {
+		t.Fatalf("write edgelet: %v", err)
+	}
+
+	reason := bundleReadyReason(tmp)
+	if reason != "missing containerd-shim-runc-v2" {
+		t.Fatalf("reason=%q want missing containerd-shim-runc-v2", reason)
 	}
 }

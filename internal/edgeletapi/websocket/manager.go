@@ -72,21 +72,25 @@ func (m *Manager) AddConnection(wsType WebSocketType, id string, conn *websocket
 	return connection
 }
 
-// RemoveConnection removes a WebSocket connection
-func (m *Manager) RemoveConnection(wsType WebSocketType, id string) {
+// RemoveConnection removes a WebSocket connection when conn still owns the map slot.
+func (m *Manager) RemoveConnection(wsType WebSocketType, id string, conn *Connection) {
+	if conn == nil {
+		return
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	switch wsType {
 	case ControlWebSocket:
-		if conn, exists := m.controlConnections[id]; exists {
+		if current, exists := m.controlConnections[id]; exists && current == conn {
 			conn.mu.Lock()
 			conn.closed = true
 			conn.mu.Unlock()
 			delete(m.controlConnections, id)
 		}
 	case MessageWebSocket:
-		if conn, exists := m.messageConnections[id]; exists {
+		if current, exists := m.messageConnections[id]; exists && current == conn {
 			conn.mu.Lock()
 			conn.closed = true
 			conn.mu.Unlock()

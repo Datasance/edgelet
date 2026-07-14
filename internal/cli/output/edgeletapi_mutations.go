@@ -17,6 +17,8 @@ func formatMutationRoute(routePath string, result map[string]any) string {
 		return FormatSwitchResult(result)
 	case "/v1/system/reload":
 		return "configuration reloaded successfully"
+	case "/v1/runtime/drain":
+		return "runtime microservice drain completed successfully"
 	case "/v1/images:pull":
 		return formatImagePullResult(result)
 	case "/v1/images:load":

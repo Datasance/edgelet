@@ -23,10 +23,10 @@ vm_status() {
 
 if [[ -z "$(vm_status)" ]]; then
     log_step "Creating VM ${VM_NAME}"
-    limactl create --name="${VM_NAME}" "${LIMA_YAML}"
+    limactl --tty=false create --name="${VM_NAME}" "${LIMA_YAML}"
 fi
 if [[ "$(vm_status)" != "Running" ]]; then
-    limactl start --timeout=1200s "${VM_NAME}"
+    limactl --tty=false start --timeout=1200s "${VM_NAME}"
 fi
 
 elapsed=0

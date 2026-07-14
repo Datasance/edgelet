@@ -87,6 +87,7 @@ func (r *Router) setupRoutes() {
 	r.mux.HandleFunc("/v1/system/version", chainMiddleware(withRoute("/v1/system/version", r.versionHandler.HandleVersion), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/provision", chainMiddleware(withRoute("/v1/system/provision", r.apiHandler.HandleSystemProvision), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/reload", chainMiddleware(withRoute("/v1/system/reload", r.apiHandler.HandleSystemReload), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
+	r.mux.HandleFunc("/v1/runtime/drain", chainMiddleware(withRoute("/v1/runtime/drain", r.apiHandler.HandleRuntimeDrain), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/prune", chainMiddleware(withRoute("/v1/system/prune", r.apiHandler.HandleSystemPrune), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/logs", chainMiddleware(withRoute("/v1/system/logs", r.apiHandler.HandleSystemLogs), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))
 	r.mux.HandleFunc("/v1/system/logs:stream", chainMiddleware(withRoute("/v1/system/logs:stream", r.apiHandler.HandleSystemLogs), authMiddlewareV1, accessLoggingMiddleware, requestIDMiddleware))

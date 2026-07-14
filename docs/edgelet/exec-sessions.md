@@ -1,6 +1,6 @@
 # Microservice exec sessions (operator guide)
 
-Interactive exec into microservice containers uses a **multi-session model** aligned with Controller Plan 17. Each session has its own id, WebSocket attach path, and runtime exec process.
+Interactive exec into microservice containers uses a **multi-session model** aligned with Controller **v3.8.x** multi-exec sessions. Each session has its own id, WebSocket attach path, and runtime exec process.
 
 ## Overview
 
@@ -64,7 +64,7 @@ Values are **controller session ids** for attachments this agent holds — not c
 
 ## `execEnabled` (deprecated)
 
-Edgelet **no longer** uses the microservice `execEnabled` flag to open or keep exec sessions. Controller Plan 17 drives exec via session poll (`execSessions: true`).
+Edgelet **no longer** uses the microservice `execEnabled` flag to open or keep exec sessions. Controller multi-exec session poll (`execSessions: true`) drives attach and teardown.
 
 The SQLite column may still exist on upgraded databases; removal from the microservice model is an application-level cleanup with **no schema migration** in this release. Operators do not need to toggle `execEnabled` for exec to work.
 

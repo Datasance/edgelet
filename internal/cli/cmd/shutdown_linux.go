@@ -23,7 +23,7 @@ func newShutdownCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "shutdown",
 		Short: "Control-plane stop for init systems",
-		Long:  "Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Drain policy is coordinated in Plan 11.",
+		Long:  "Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Control-plane stop skips microservice drain when shutdownPolicy=leave-running (default for docker/podman and embedded split).",
 		Args:  cobra.NoArgs,
 		RunE:  runShutdown,
 	}

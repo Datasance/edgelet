@@ -50,8 +50,12 @@ func newImageCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "rm <selector>",
 			Short: "Remove an image",
-			Args:  cobra.ExactArgs(1),
-			RunE:  runImageRemove,
+			Long: strings.TrimSpace(`Remove an image by repository:tag, image ID, or image ID prefix.
+
+The selector may be a full or short image ID (from edgelet image ls), a unique ID prefix
+(at least 3 hexadecimal characters), or a repository tag such as alpine:3.19.`),
+			Args: cobra.ExactArgs(1),
+			RunE: runImageRemove,
 		},
 	)
 

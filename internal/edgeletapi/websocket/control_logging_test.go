@@ -5,11 +5,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 	gws "github.com/gorilla/websocket"
 )
+
+func waitForControlConnectionsDrained(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if GetManager().GetControlConnectionsCount() == 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for control websocket connections to drain")
+}
 
 func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 	originalSink := wsLogSink
@@ -192,25 +205,7 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 	}()
 	validateLocalJWTFn = func(string) (*auth.LocalJWTValidationResult, error) {
 		return &auth.LocalJWTValidationResult{
-			Claims: jwt.MapClaims{
-				"sub":      "system:serviceaccount:app:svc",
-				"tokenUse": "serviceaccount",
-				"edgelet.iofog.org": map[string]any{
-					"microservice": map[string]any{
-						"uuid": "ms-1",
-					},
-					"rbac": map[string]any{
-						"rulesByGroup": map[string]any{
-							"edgelet.iofog.org/v1": []any{
-								map[string]any{
-									"resources": []any{"microservices/control/self"},
-									"verbs":     []any{"get"},
-								},
-							},
-						},
-					},
-				},
-			},
+			Claims: serviceAccountControlClaims("ms-upgrade-regression"),
 		}, nil
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
@@ -235,4 +230,5 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 	if err := dial("/v1/microservices/control"); err != nil {
 		t.Fatalf("expected v3 websocket upgrade success, got err=%v", err)
 	}
+	waitForControlConnectionsDrained(t)
 }

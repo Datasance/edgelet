@@ -68,5 +68,11 @@ func CleanupRuntimeArtifacts() error { return nil }
 // CleanupStaleRuntimeTasks is a no-op on non-Linux platforms.
 func CleanupStaleRuntimeTasks() error { return nil }
 
+// CleanupStaleRuntimeTasksWithRetry is a no-op on non-Linux platforms.
+func CleanupStaleRuntimeTasksWithRetry() error { return nil }
+
+// PrepareEmbeddedContainerdBootstrap is a no-op on non-Linux platforms.
+func PrepareEmbeddedContainerdBootstrap() {}
+
 // MaybeRunChildProcess is a no-op on non-Linux platforms.
 func MaybeRunChildProcess(_ []string) (bool, error) { return false, nil }
