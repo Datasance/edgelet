@@ -375,7 +375,7 @@ func (h *ControlHandler) handleConnection(conn *Connection) {
 		if err := conn.Conn.Close(); err != nil {
 			logging.LogWarn(controlHandlerModuleName, "Failed to close WebSocket connection: "+err.Error())
 		}
-		h.manager.RemoveConnection(ControlWebSocket, conn.ID)
+		h.manager.RemoveConnection(ControlWebSocket, conn.ID, conn)
 		logging.LogDebug(controlHandlerModuleName, "Control WebSocket connection closed")
 	}()
 

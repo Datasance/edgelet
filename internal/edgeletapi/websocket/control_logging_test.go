@@ -205,25 +205,7 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 	}()
 	validateLocalJWTFn = func(string) (*auth.LocalJWTValidationResult, error) {
 		return &auth.LocalJWTValidationResult{
-			Claims: jwt.MapClaims{
-				"sub":      "system:serviceaccount:app:svc",
-				"tokenUse": "serviceaccount",
-				"edgelet.iofog.org": map[string]any{
-					"microservice": map[string]any{
-						"uuid": "ms-1",
-					},
-					"rbac": map[string]any{
-						"rulesByGroup": map[string]any{
-							"edgelet.iofog.org/v1": []any{
-								map[string]any{
-									"resources": []any{"microservices/control/self"},
-									"verbs":     []any{"get"},
-								},
-							},
-						},
-					},
-				},
-			},
+			Claims: serviceAccountControlClaims("ms-upgrade-regression"),
 		}, nil
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
