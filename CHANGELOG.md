@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Controller config key mismatch:** Pot `GET config` snapshots no longer fail to map or spuriously reload when wire keys used legacy names (`diskConsumptionLimit`, `logDiskDirectory`, etc.) that did not match Edgelet's config model.
+- **Embed bundle extract:** idempotent when hash dir exists; fixes `edgelet-containerd` crash loop on restart (`rename extracted bundle: file exists`).
+- **Embed bundle aux readiness:** pin legacy `iptables` aux symlink after `EnsureExtracted`; log bundle readiness failures.
+- **Data-plane shutdown:** remove `EnsureExtracted` from runtime-bootstrap SIGTERM shutdown path.
+- **Data-plane recovery docs:** operator troubleshooting ladder; systemd `StartLimit` and openrc respawn guard on `edgelet-containerd`.
+- **Coordinated MS drain** before data-plane stop on runtime split (`edgelet runtime drain`).
+- **Catalog-agnostic shim/child teardown** with aligned 120s stop budget.
+- **EBUSY-safe stale task cleanup** on data-plane bootstrap.
+- **Data-plane orphan reap** (`edgelet runtime reap-orphans`) and operator recovery docs.
+- **Containerd watchdog during data-plane drain:** control plane no longer self-restarts when the CRI socket is intentionally down during coordinated `edgelet-containerd` stop.
+- **Control-plane resume after data-plane restart:** CRI usability probe before clearing quiesce; bootstrap drain CLI retries API/socket for 45s; `engine_ready_resume` wakes reconcile when `edgelet-containerd` returns.
+- **Bootstrap drain outcome:** retry nested `edgelet runtime drain` on unix `EOF` after long drains; align CLI HTTP timeout with `--timeout` so server drain can exceed 60s.
+- **Data-plane drain teardown:** removes drained workload containers so catalog runtimes recreate cleanly after restart.
+- **Stale task cleanup:** recurse into `k8s.io` namespace dirs instead of deleting the namespace root.
 
 ### Known limitations
 
