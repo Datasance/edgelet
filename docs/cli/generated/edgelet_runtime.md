@@ -1,19 +1,17 @@
-## edgelet shutdown
+## edgelet runtime
 
-Control-plane stop for init systems
+Embedded runtime data-plane operations
 
 ### Synopsis
 
-Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Control-plane stop skips microservice drain when shutdownPolicy=leave-running (default for docker/podman and embedded split).
+Operations for the embedded containerd data plane.
 
-```
-edgelet shutdown [flags]
-```
+Used by edgelet-containerd.service stop hooks and operators during maintenance.
 
 ### Options
 
 ```
-  -h, --help   help for shutdown
+  -h, --help   help for runtime
 ```
 
 ### Options inherited from parent commands
@@ -31,5 +29,7 @@ edgelet shutdown [flags]
 ### SEE ALSO
 
 * [edgelet](edgelet.md)	 - Local CLI for the Edgelet daemon
+* [edgelet runtime drain](edgelet_runtime_drain.md)	 - Drain labeled microservice containers before data-plane stop
+* [edgelet runtime reap-orphans](edgelet_runtime_reap-orphans.md)	 - Reap orphaned edgelet data-plane shims and containerd children
 
 

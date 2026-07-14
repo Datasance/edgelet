@@ -1,19 +1,20 @@
-## edgelet shutdown
+## edgelet runtime reap-orphans
 
-Control-plane stop for init systems
+Reap orphaned edgelet data-plane shims and containerd children
 
 ### Synopsis
 
-Gracefully stops the edgelet daemon. Used by systemd ExecStop and tier-1/2 init scripts. Control-plane stop skips microservice drain when shutdownPolicy=leave-running (default for docker/podman and embedded split).
+Last-resort cleanup for edgelet-scoped containerd-shim and --edgelet-containerd-child
+processes bound to /run/edgelet/containerd.sock. Used by edgelet-containerd stop hooks and operators during recovery.
 
 ```
-edgelet shutdown [flags]
+edgelet runtime reap-orphans [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for shutdown
+  -h, --help   help for reap-orphans
 ```
 
 ### Options inherited from parent commands
@@ -30,6 +31,6 @@ edgelet shutdown [flags]
 
 ### SEE ALSO
 
-* [edgelet](edgelet.md)	 - Local CLI for the Edgelet daemon
+* [edgelet runtime](edgelet_runtime.md)	 - Embedded runtime data-plane operations
 
 
