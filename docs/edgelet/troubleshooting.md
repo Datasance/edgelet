@@ -311,6 +311,24 @@ Prefer **`stop` then `start`** on the data plane when upgrading catalog shims �
 
 ---
 
+## Controller status 401 / unexpected deprovision
+
+**Symptoms:** Agent deprovisions during controller restart or OTA; logs show repeated `PUT status` **401** or **503**; controller-host node loses controller SQLite.
+
+**Context (v1.0.2+):** Edgelet no longer deprovisions on the first status **401**. Auto-deprovision runs only after **5 consecutive** status auth failures spanning at least **60 seconds**, and is suppressed while OTA reprovision is pending or `Provision()` is in flight. Status **503** and `retryable: true` responses never deprovision.
+
+**Checks:**
+
+1. Controller version — full structured errors and readiness `/status` semantics require **Controller ≥ v3.8.2**. Older controllers still benefit from the streak gate but may return legacy error bodies.
+
+2. During OTA or controller restart, expect transient **401** or **503** on status POST and ping; the agent should stay provisioned and retry.
+
+3. If deprovision still occurs after sustained auth failures, verify the provision key was revoked (`delete-node` still deprovisions immediately) or Edge Guard hardware drift (see [edgeguard.md](edgeguard.md)).
+
+4. Inspect field agent logs for `status auth failure` deferral messages vs final deprovision after the gate opens.
+
+---
+
 ## CLI connectivity (exit 10)
 
 **Symptoms:** `Error[DAEMON_UNAVAILABLE]`; exit code **10**.
