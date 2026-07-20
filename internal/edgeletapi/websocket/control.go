@@ -53,10 +53,15 @@ type ControlHandler struct {
 	manager *Manager
 }
 
-// NewControlHandler creates a new control WebSocket handler
+// NewControlHandler creates a new control WebSocket handler backed by the process singleton manager.
 func NewControlHandler() *ControlHandler {
+	return NewControlHandlerWithManager(GetManager())
+}
+
+// NewControlHandlerWithManager creates a control WebSocket handler with an explicit connection manager.
+func NewControlHandlerWithManager(m *Manager) *ControlHandler {
 	return &ControlHandler{
-		manager: GetManager(),
+		manager: m,
 	}
 }
 

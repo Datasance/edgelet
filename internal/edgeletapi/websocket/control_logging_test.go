@@ -5,24 +5,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
 	gws "github.com/gorilla/websocket"
 )
-
-func waitForControlConnectionsDrained(t *testing.T) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if GetManager().GetControlConnectionsCount() == 0 {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatal("timed out waiting for control websocket connections to drain")
-}
 
 func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 	originalSink := wsLogSink
@@ -34,7 +21,7 @@ func TestHandle_UnauthorizedHandshakeEmitsReasonCode(t *testing.T) {
 		}
 	}
 
-	handler := NewControlHandler()
+	handler, _ := newTestControlHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token")
 	rr := httptest.NewRecorder()
@@ -61,7 +48,7 @@ func TestHandle_NonGETRejected(t *testing.T) {
 		}
 	}
 
-	handler := NewControlHandler()
+	handler, _ := newTestControlHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	rr := httptest.NewRecorder()
@@ -97,7 +84,7 @@ func TestHandle_V3MissingMicroserviceUUIDRejected(t *testing.T) {
 		}, nil
 	}
 
-	handler := NewControlHandler()
+	handler, _ := newTestControlHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
@@ -141,7 +128,7 @@ func TestHandle_V3RBACDeniedRejected(t *testing.T) {
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return false }
 
-	handler := NewControlHandler()
+	handler, _ := newTestControlHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
@@ -185,7 +172,7 @@ func TestHandle_UpgradeFailureEmitsReasonCode(t *testing.T) {
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
 
-	handler := NewControlHandler()
+	handler, _ := newTestControlHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/v1/microservices/control", nil)
 	req.Header.Set("Authorization", "Bearer mock")
 	rr := httptest.NewRecorder()
@@ -210,10 +197,11 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
 
-	handler := NewControlHandler()
+	handler, mgr := newTestControlHandler(t)
 	server := httptest.NewServer(http.HandlerFunc(handler.Handle))
 	defer func() {
 		server.Close()
+		waitForControlConnectionsDrained(t, mgr)
 	}()
 
 	dial := func(path string) error {
@@ -230,5 +218,4 @@ func TestHandle_V3UpgradeRegression(t *testing.T) {
 	if err := dial("/v1/microservices/control"); err != nil {
 		t.Fatalf("expected v3 websocket upgrade success, got err=%v", err)
 	}
-	waitForControlConnectionsDrained(t)
 }
