@@ -46,7 +46,7 @@ type Microservice struct {
 	IsNats             bool              `json:"isNats" yaml:"isNats"`
 	Schedule           int               `json:"schedule" yaml:"schedule"`
 	CPUSetCpus         *string           `json:"cpuSetCpus,omitempty" yaml:"cpuSetCpus,omitempty"`
-	MemoryLimit        *int64            `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"` // in bytes
+	MemoryLimit        *int64            `json:"memoryLimit,omitempty" yaml:"memoryLimit,omitempty"` // stored bytes; wire MiB (managed/local YAML)
 	ServiceAccount     *ServiceAccount   `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
 
 	// Internal state fields
@@ -91,7 +91,7 @@ func (m *Microservice) SetIsUpdating(updating bool) {
 	m.IsUpdating = updating
 }
 
-// GetMemoryLimitMB returns the memory limit in MB
+// GetMemoryLimitMB returns the memory limit in MiB (from stored bytes).
 func (m *Microservice) GetMemoryLimitMB() *int64 {
 	if m.MemoryLimit == nil {
 		return nil
@@ -100,7 +100,7 @@ func (m *Microservice) GetMemoryLimitMB() *int64 {
 	return &mb
 }
 
-// SetMemoryLimitMB sets the memory limit from MB to bytes
+// SetMemoryLimitMB sets the memory limit from MiB (managed/local wire) to stored bytes.
 func (m *Microservice) SetMemoryLimitMB(memoryLimitMB *int64) {
 	if memoryLimitMB == nil {
 		m.MemoryLimit = nil

@@ -72,7 +72,7 @@ spec:
 
     commands: []                 # optional — overrides container CMD
     cpuSetCpus: ""               # optional — cpuset.cpus (e.g. "0,1")
-    memoryLimit: 536870912       # optional — memory limit in bytes (512 MiB)
+    memoryLimit: 512             # optional — memory limit in MiB
 
     healthCheck:                 # optional — schema only (not wired in local deploy yet)
       test: ["CMD", "curl", "-f", "http://localhost:1880/"]

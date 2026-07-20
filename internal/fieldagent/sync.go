@@ -360,10 +360,10 @@ func parseMicroservice(data map[string]any) (*models.Microservice, error) {
 		}
 	}
 
-	// Parse memory limit
+	// Parse memory limit (Pot wire format: MiB; stored on Microservice as bytes).
 	if memoryLimit, ok := data["memoryLimit"].(float64); ok {
-		memoryLimitBytes := int64(memoryLimit)
-		microservice.MemoryLimit = &memoryLimitBytes
+		limitMiB := int64(memoryLimit)
+		microservice.SetMemoryLimitMB(&limitMiB)
 	}
 
 	// Parse cdiDevices
