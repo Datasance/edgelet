@@ -267,9 +267,19 @@ func (fa *FieldAgent) PostStatusHelper() {
 		if isCertificateError(err) {
 			fa.verificationFailed(err)
 			logging.LogError(moduleName, "Unable to send status due to broken certificate", err)
-		} else if isUnauthorizedError(err) {
-			if !fa.NotProvisioned() {
-				if depErr := fa.Deprovision(true); depErr != nil {
+		} else if IsRetryableControllerError(err) {
+			logging.LogWarn(moduleName, fmt.Sprintf("Unable to send status (retryable): %v", err))
+		} else if fa.shouldSuppressStatusAuthDeprovision() {
+			logging.LogWarn(moduleName, fmt.Sprintf("Unable to send status due to auth failure; deprovision suppressed: %v", err))
+		} else if isStatusAuthFailure(err) {
+			now := fa.statusAuthNow()
+			fa.recordStatusAuthFailure(now)
+			if !fa.shouldDeprovisionForStatusAuth(now) {
+				logging.LogWarn(moduleName, fmt.Sprintf(
+					"status auth failure (attempt %d/%d); deferring deprovision",
+					fa.statusAuthFailureCount(), statusDeprovision401MaxAttempts))
+			} else if !fa.NotProvisioned() {
+				if depErr := fa.invokeDeprovision(true); depErr != nil {
 					logging.LogWarn(moduleName, fmt.Sprintf("Deprovision failed: %v", depErr))
 				}
 			}
@@ -280,6 +290,7 @@ func (fa *FieldAgent) PostStatusHelper() {
 		logging.LogDebug(moduleName, "Finished posting ioFog status")
 		return
 	}
+	fa.resetStatusAuthFailure()
 	statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
 		pmStatus.RemoveNotRunningMicroserviceStatus()
 	})
