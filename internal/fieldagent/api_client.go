@@ -215,9 +215,8 @@ func (c *APIClient) doRequest(ctx context.Context, command string, requestType R
 		return result, nil
 	case http.StatusNoContent: // 204 - No Content (success with empty body)
 		return make(map[string]any), nil
-	case http.StatusUnauthorized:
-		// Token invalid - trigger deprovision
-		return nil, controllerHTTPError(resp.StatusCode, "unauthorized: invalid JWT token", readLimitedResponseBody(resp))
+	case http.StatusUnauthorized, http.StatusServiceUnavailable:
+		return nil, ParseControllerAPIError(resp.StatusCode, readLimitedResponseBody(resp))
 	case http.StatusNotFound:
 		return nil, controllerHTTPError(resp.StatusCode, "not found: controller endpoint not found", readLimitedResponseBody(resp))
 	case http.StatusBadRequest:
@@ -242,11 +241,20 @@ func shouldRetry(err error) bool {
 		return false
 	}
 
+	if IsNonRetryableAgentAuthError(err) {
+		return false
+	}
+	if IsRetryableControllerError(err) {
+		return true
+	}
+	if IsLegacyControllerAuthError(err) {
+		return true
+	}
+
 	errStr := err.Error()
 
 	// Don't retry on client errors (4xx except 408, 429)
-	if strings.Contains(errStr, "unauthorized") ||
-		strings.Contains(errStr, "forbidden") ||
+	if strings.Contains(errStr, "forbidden") ||
 		strings.Contains(errStr, "not found") ||
 		strings.Contains(errStr, "bad request") {
 		return false
@@ -296,6 +304,9 @@ func (c *APIClient) Ping(ctx context.Context) (bool, error) {
 	// Check status code
 	if resp.StatusCode == http.StatusNotFound {
 		return false, errors.New("not found: controller endpoint not found")
+	}
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return false, ParseControllerAPIError(resp.StatusCode, readLimitedResponseBody(resp))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("ping failed with status %d", resp.StatusCode)
