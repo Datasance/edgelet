@@ -5,6 +5,24 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - July 2026
+
+### Added
+
+- **Controller structured errors:** Field Agent parses top-level `error`, `code`, `message`, and `retryable` from Controller agent routes (`/api/v3/agent/*`) and readiness `/status` responses.
+- **Status auth deprovision gate:** `PostStatusHelper` defers auto-deprovision until **5 consecutive** status auth failures over at least **60 seconds**; streak resets on successful status POST or `Provision()`.
+- **OTA / provision suppress:** status-auth deprovision is suppressed while OTA reprovision is pending or `Provision()` is in flight.
+
+### Changed
+
+- **Controller ping readiness:** `GET /api/v3/status` **503** means not ready (no certificate-style `verificationFailed`); **200** means connected. Pair with Controller **≥ v3.8.2** for full readiness and structured agent errors.
+- **Status 503 / retryable errors:** never trigger auto-deprovision; legacy `{name, message}` 401 bodies use the same streak gate as structured auth failures.
+
+### Fixed
+
+- **First-hit status 401 deprovision:** transient auth or readiness failures during controller restart or OTA no longer immediately call `Deprovision(true)` and wipe local state (including controller-host volume mounts).
+- **Microservice memory limit units:** controller sync and local deploy YAML `memoryLimit` values are interpreted as **MiB** (Pot/ioFog wire format) and converted to bytes before cgroup enforcement on all engines (`edgelet`, `docker`, `podman`). Fixes containers failing to start with crun errors such as “memory limit could be too low” when limits like `1024` were intended as 1 GiB.
+
 ## [1.0.1] - July 2026
 
 ### Added

@@ -135,7 +135,8 @@ Local deploy tables (`local_workloads`, etc.) are written by EdgeletAPI/runtimea
 |---------|----------------|
 | No workloads start | Not provisioned; Controller unreachable |
 | Repeated deprovision | Edge Guard hash mismatch (see [../edgeguard.md](../edgeguard.md)) |
-| Status not updating | `postStatusWorker` blocked; certificate errors |
+| Deprovision during OTA/restart | Pre-v1.0.2 first-hit 401; upgrade Edgelet. v1.0.2+ defers until 5×401 over ≥60s (see [../troubleshooting.md](../troubleshooting.md#controller-status-401--unexpected-deprovision)) |
+| Status not updating | `postStatusWorker` blocked; certificate errors; controller `/status` 503 (not ready — pair with Controller ≥ v3.8.2) |
 | Exec/log failures | Active session map; WebSocket handler not registered |
 
 ## Code map

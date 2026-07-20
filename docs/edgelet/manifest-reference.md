@@ -81,7 +81,7 @@ spec:
 | `volumes` | `{hostDestination,containerDestination,accessMode,type}[]` | `BIND`, `VOLUME`, or controller `VOLUME_MOUNT`. **Delete does not remove `VOLUME` data** on the embedded engine — see [volumes.md](volumes.md). |
 | `commands` | []string | Container command override |
 | `cpuSetCpus` | string | cpuset |
-| `memoryLimit` | int64 | Memory limit bytes |
+| `memoryLimit` | int64 | Memory limit (MiB) |
 | `healthCheck` | object | Healthcheck spec |
 
 ### Apply

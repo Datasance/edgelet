@@ -46,8 +46,8 @@ func BuildMicroserviceFromLocalManifest(doc *LocalDeployManifest, deploymentID, 
 		ms.CPUSetCpus = &cpuSet
 	}
 	if doc.Spec.Container.MemoryLimit > 0 {
-		mem := doc.Spec.Container.MemoryLimit
-		ms.MemoryLimit = &mem
+		limitMiB := doc.Spec.Container.MemoryLimit
+		ms.SetMemoryLimitMB(&limitMiB)
 	}
 	for _, envVar := range doc.Spec.Container.Env {
 		ms.EnvVars = append(ms.EnvVars, &EnvVar{Key: envVar.Key, Value: envVar.Value})

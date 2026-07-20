@@ -28,3 +28,17 @@ func TestBuildMicroserviceFromLocalManifestHostNetworkBypassesLocalScope(t *test
 		t.Fatalf("expected managed scope for host-network local deploy, got %q", got)
 	}
 }
+
+func TestBuildMicroserviceFromLocalManifestConvertsMemoryLimitMiBToBytes(t *testing.T) {
+	doc := validLocalDeployManifestForTest("local-mem")
+	doc.Spec.Container.MemoryLimit = 512
+	ms := BuildMicroserviceFromLocalManifest(doc, "dep-3", "nginx:latest")
+
+	if ms.MemoryLimit == nil {
+		t.Fatal("expected memory limit to be set")
+	}
+	want := int64(512 * 1024 * 1024)
+	if *ms.MemoryLimit != want {
+		t.Fatalf("MemoryLimit=%d want %d", *ms.MemoryLimit, want)
+	}
+}

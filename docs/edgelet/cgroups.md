@@ -72,7 +72,7 @@ Without `--privileged`, cgroup controller delegation fails and edgelet exits or 
 
 Per-microservice fields enforced on the edgelet engine (CRI/crun):
 
-- `memoryLimit` (bytes)
+- `memoryLimit` (MiB on wire; converted to bytes for cgroup enforcement)
 - `cpuSetCpus`
 
 Node configuration `memoryLimit` / `cpuLimit` remain **monitor-only** (not cgroup-enforced).

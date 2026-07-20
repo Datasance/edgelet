@@ -5,7 +5,7 @@
 #     --build-arg VERSION=v0.0.0-test \
 #     -t ghcr.io/eclipse-iofog/edgelet:test .
 
-FROM golang:1.26.5-trixie@sha256:116489021a0d8ca3facf79f84ee69052cff88733547150a644d45c5eaa91dc43 AS builder
+FROM golang:1.26.5-trixie@sha256:117e07f49461abb984fc8aef661432461ff43d06faa22c3b73af6a49ce325cb9 AS builder
 
 ARG BUILDARCH
 ARG TARGETARCH

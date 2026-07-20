@@ -3,10 +3,7 @@ package websocket
 import "testing"
 
 func TestRemoveConnection_OnlyRemovesMatchingConnection(t *testing.T) {
-	m := &Manager{
-		controlConnections: make(map[string]*Connection),
-		messageConnections: make(map[string]*Connection),
-	}
+	m := NewManager()
 
 	stale := &Connection{ID: "ms-1"}
 	replacement := &Connection{ID: "ms-1"}

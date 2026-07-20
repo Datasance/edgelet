@@ -28,9 +28,12 @@ func TestSendControlSignalToAll_SendsOpcode(t *testing.T) {
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
 
-	handler := NewControlHandler()
+	handler, mgr := newTestControlHandler(t)
 	server := httptest.NewServer(http.HandlerFunc(handler.Handle))
-	defer server.Close()
+	t.Cleanup(func() {
+		server.Close()
+		waitForControlConnectionsDrained(t, mgr)
+	})
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/microservices/control"
 	h := http.Header{}
@@ -59,7 +62,6 @@ func TestSendControlSignalToAll_SendsOpcode(t *testing.T) {
 		t.Fatalf("expected control opcode 0x%x, got %v", OpcodeControlSignal, msg)
 	}
 	_ = conn.Close()
-	waitForControlConnectionsDrained(t)
 }
 
 func TestSendResourceSignal_SendsOpcode(t *testing.T) {
@@ -78,9 +80,12 @@ func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 	}
 	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
 
-	handler := NewControlHandler()
+	handler, mgr := newTestControlHandler(t)
 	server := httptest.NewServer(http.HandlerFunc(handler.Handle))
-	defer server.Close()
+	t.Cleanup(func() {
+		server.Close()
+		waitForControlConnectionsDrained(t, mgr)
+	})
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/microservices/control"
 	h := http.Header{}
@@ -109,5 +114,4 @@ func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 		t.Fatalf("expected resource opcode 0x%x, got %v", OpcodeResourceSignal, msg)
 	}
 	_ = conn.Close()
-	waitForControlConnectionsDrained(t)
 }

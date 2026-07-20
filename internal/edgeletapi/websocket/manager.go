@@ -39,13 +39,18 @@ var (
 	once     sync.Once
 )
 
+// NewManager creates an isolated WebSocket connection registry.
+func NewManager() *Manager {
+	return &Manager{
+		controlConnections: make(map[string]*Connection),
+		messageConnections: make(map[string]*Connection),
+	}
+}
+
 // GetManager returns the singleton WebSocket manager
 func GetManager() *Manager {
 	once.Do(func() {
-		instance = &Manager{
-			controlConnections: make(map[string]*Connection),
-			messageConnections: make(map[string]*Connection),
-		}
+		instance = NewManager()
 	})
 	return instance
 }

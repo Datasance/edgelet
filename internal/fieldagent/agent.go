@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/auth"
@@ -80,6 +81,16 @@ type FieldAgent struct {
 
 	// test hook: allows status POST override in unit tests.
 	postStatusFn func(ctx context.Context, status map[string]any) error
+
+	// test hook: replaces Deprovision in status auth gate tests.
+	deprovisionFn func(clearCredentials bool) error
+
+	// test hook: overrides time.Now for status auth gate tests.
+	statusAuthNowFn func() time.Time
+
+	// status auth deprovision gate (Plan 25-B).
+	statusAuthFailure statusAuthFailureState
+	provisionInFlight atomic.Bool
 
 	// test hook: replaces loadInitialControllerData in unit tests.
 	loadInitialControllerDataHook func(isConnected bool)
@@ -434,6 +445,19 @@ func (fa *FieldAgent) pingWithTransition() (ok bool, transitioned bool) {
 	logging.LogDebug(moduleName, "Calling API client ping")
 	pingOK, err := client.Ping(ctx)
 	if err != nil {
+		if IsControllerNotReady(err) {
+			logging.LogWarn(moduleName, "controller not ready")
+			fa.state.SetControllerVerified(false)
+			if !fa.NotProvisioned() {
+				fa.state.SetControllerStatus(models.ControllerStatusNotConnected)
+				statusreporter.GetInstance().UpdateFieldAgentStatus(func(status *models.FieldAgentStatus) {
+					status.ControllerStatus = models.ControllerStatusNotConnected
+					status.ControllerVerified = false
+				})
+			}
+			logging.LogDebug(moduleName, "Finished Ping: false (not ready)")
+			return false, false
+		}
 		logging.LogError(moduleName, fmt.Sprintf("Error pinging controller: %v", err), err)
 		fa.verificationFailed(err)
 		logging.LogDebug(moduleName, "Finished Ping: false (error)")
@@ -475,6 +499,9 @@ func (fa *FieldAgent) pingWithTransition() (ok bool, transitioned bool) {
 
 // Provision provisions the agent with the controller
 func (fa *FieldAgent) Provision(key string) error {
+	fa.setProvisionInFlight(true)
+	defer fa.setProvisionInFlight(false)
+
 	logging.LogDebug(moduleName, "Start provisioning")
 
 	// Use fa.ctx if available (daemon mode), otherwise use context.Background() (CLI mode)
@@ -599,6 +626,8 @@ func (fa *FieldAgent) Provision(key string) error {
 
 		fa.PostStatusHelper()
 	}
+
+	fa.resetStatusAuthFailure()
 
 	logging.LogDebug(moduleName, "Finished provisioning")
 	return nil
