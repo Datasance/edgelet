@@ -83,10 +83,25 @@ func (s *controllerRegisterState) reset() {
 }
 
 func (fa *FieldAgent) resetControllerRegisterState() {
-	if fa.controllerRegister == nil {
+	if fa.controllerRegister != nil {
+		fa.controllerRegister.reset()
+	}
+	fa.clearPersistedControllerRegisterState()
+}
+
+func (fa *FieldAgent) clearPersistedControllerRegisterState() {
+	cp, found, err := store.GetInstance().GetSystemControlPlane()
+	if err != nil || !found || cp == nil {
 		return
 	}
-	fa.controllerRegister.reset()
+	if !cp.ControllerRegistered && !cp.InitialRebuildSkipped {
+		return
+	}
+	cp.ControllerRegistered = false
+	cp.InitialRebuildSkipped = false
+	if err := store.GetInstance().UpsertSystemControlPlane(cp); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("clear persisted controller register state err=%v", err))
+	}
 }
 
 func (fa *FieldAgent) hydrateControllerRegisterState() {

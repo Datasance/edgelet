@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **First-hit status 401 deprovision:** transient auth or readiness failures during controller restart or OTA no longer immediately call `Deprovision(true)` and wipe local state (including controller-host volume mounts).
 - **Microservice memory limit units:** controller sync and local deploy YAML `memoryLimit` values are interpreted as **MiB** (Pot/ioFog wire format) and converted to bytes before cgroup enforcement on all engines (`edgelet`, `docker`, `podman`). Fixes containers failing to start with crun errors such as “memory limit could be too low” when limits like `1024` were intended as 1 GiB.
+- **ControlPlane register state on deprovision:** deprovision clears `system_control_plane.controller_registered` and `initial_rebuild_skipped` in SQLite (not only in-memory state), so reprovision re-registers the local controller microservice with Pot after an accidental deprovision.
 
 ## [1.0.1] - July 2026
 
