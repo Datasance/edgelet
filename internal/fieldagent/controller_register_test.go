@@ -176,6 +176,43 @@ func TestControllerRegisterState_InitialRebuildSkipped(t *testing.T) {
 	}
 }
 
+func TestResetControllerRegisterState_ClearsSQLite(t *testing.T) {
+	openFieldAgentTestDB(t)
+
+	const uuid = "cp-deprov-reset"
+	if err := store.GetInstance().UpsertSystemControlPlane(&models.ControlPlaneDeployment{
+		ControllerUUID:        uuid,
+		Name:                  "pot",
+		ManifestYAML:          minimalReconcileManifestYAML(),
+		ControllerRegistered:  true,
+		InitialRebuildSkipped: true,
+	}); err != nil {
+		t.Fatalf("upsert control plane: %v", err)
+	}
+
+	fa := &FieldAgent{controllerRegister: newControllerRegisterState()}
+	fa.controllerRegister.markSucceeded(uuid)
+	fa.controllerRegister.markInitialRebuildSkipped(uuid)
+
+	fa.resetControllerRegisterState()
+
+	if fa.controllerRegister.isSucceeded(uuid) {
+		t.Fatal("expected in-memory succeeded cleared")
+	}
+	if fa.controllerRegister.isInitialRebuildSkipped(uuid) {
+		t.Fatal("expected in-memory initial rebuild skip cleared")
+	}
+
+	got, found, err := store.GetInstance().GetSystemControlPlane()
+	if err != nil || !found {
+		t.Fatalf("get control plane: found=%v err=%v", found, err)
+	}
+	if got.ControllerRegistered || got.InitialRebuildSkipped {
+		t.Fatalf("expected sqlite register flags cleared, got registered=%v rebuildSkipped=%v",
+			got.ControllerRegistered, got.InitialRebuildSkipped)
+	}
+}
+
 func TestHydrateControllerRegisterStateFromDB(t *testing.T) {
 	openFieldAgentTestDB(t)
 
