@@ -40,6 +40,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
 	"github.com/eclipse-iofog/edgelet/internal/utils"
@@ -2049,7 +2050,7 @@ func (e *Engine) CreateExecSession(containerID string, runtimeExecID string, cmd
 	execSpec := &specs.Process{
 		Args:     cmd,
 		Cwd:      "/",
-		Env:      spec.Process.Env,
+		Env:      containerexec.ExecEnvForTTY(spec.Process.Env, ""),
 		Terminal: true,
 	}
 	if spec.Process.Cwd != "" {

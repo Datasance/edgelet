@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 	"github.com/moby/moby/client"
 )
@@ -26,12 +27,20 @@ func (c *Client) CreateExecSession(containerID string, _ string, command []strin
 
 	ctx := c.GetContext()
 
+	inspectResult, err := cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		logging.LogError(execModuleName, "Error inspecting container for exec env", err)
+		return "", fmt.Errorf("failed to inspect container for exec env: %w", err)
+	}
+	containerEnv := inspectResult.Container.Config.Env
+
 	execResp, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		Cmd:          command,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
+		Env:          containerexec.ExecEnvForTTY(containerEnv, ""),
 	})
 	if err != nil {
 		logging.LogError(execModuleName, "Error creating exec session", err)
