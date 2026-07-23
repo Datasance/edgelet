@@ -14,58 +14,25 @@ import (
 
 func TestSendControlSignalToAll_SendsOpcode(t *testing.T) {
 	const microserviceUUID = "ms-control-signal"
-
-	originalValidate := validateLocalJWTFn
-	originalAuthorize := authorizeV3WSFn
-	defer func() {
-		validateLocalJWTFn = originalValidate
-		authorizeV3WSFn = originalAuthorize
-	}()
-	validateLocalJWTFn = func(string) (*auth.LocalJWTValidationResult, error) {
-		return &auth.LocalJWTValidationResult{
-			Claims: serviceAccountControlClaims(microserviceUUID),
-		}, nil
-	}
-	authorizeV3WSFn = func(jwt.MapClaims) bool { return true }
-
-	handler, mgr := newTestControlHandler(t)
-	server := httptest.NewServer(http.HandlerFunc(handler.Handle))
-	t.Cleanup(func() {
-		server.Close()
-		waitForControlConnectionsDrained(t, mgr)
-	})
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/microservices/control"
-	h := http.Header{}
-	h.Set("Authorization", "Bearer mock")
-	conn, _, err := gws.DefaultDialer.Dial(wsURL, h)
-	if err != nil {
-		t.Fatalf("dial control websocket: %v", err)
-	}
-
-	done := make(chan []byte, 1)
-	go func() {
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, msg, readErr := conn.ReadMessage()
-		if readErr != nil {
-			t.Errorf("read control signal: %v", readErr)
-			done <- nil
-			return
-		}
-		done <- msg
-	}()
-
-	handler.SendControlSignalToAll([]string{microserviceUUID})
-
-	msg := <-done
-	if len(msg) != 1 || msg[0] != OpcodeControlSignal {
-		t.Fatalf("expected control opcode 0x%x, got %v", OpcodeControlSignal, msg)
-	}
-	_ = conn.Close()
+	runControlSignalOpcodeTest(t, microserviceUUID, func(h *ControlHandler) {
+		h.SendControlSignalToAll([]string{microserviceUUID})
+	}, OpcodeControlSignal)
 }
 
 func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 	const microserviceUUID = "ms-resource-signal"
+	runControlSignalOpcodeTest(t, microserviceUUID, func(h *ControlHandler) {
+		h.SendResourceSignal()
+	}, OpcodeResourceSignal)
+}
+
+func runControlSignalOpcodeTest(
+	t *testing.T,
+	microserviceUUID string,
+	send func(*ControlHandler),
+	wantOpcode byte,
+) {
+	t.Helper()
 
 	originalValidate := validateLocalJWTFn
 	originalAuthorize := authorizeV3WSFn
@@ -94,24 +61,28 @@ func TestSendResourceSignal_SendsOpcode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial control websocket: %v", err)
 	}
+	t.Cleanup(func() { _ = conn.Close() })
 
-	done := make(chan []byte, 1)
+	waitForControlConnectionRegistered(t, mgr, microserviceUUID)
+
+	type readResult struct {
+		msg []byte
+		err error
+	}
+	done := make(chan readResult, 1)
 	go func() {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, msg, readErr := conn.ReadMessage()
-		if readErr != nil {
-			t.Errorf("read resource signal: %v", readErr)
-			done <- nil
-			return
-		}
-		done <- msg
+		done <- readResult{msg: msg, err: readErr}
 	}()
 
-	handler.SendResourceSignal()
+	send(handler)
 
-	msg := <-done
-	if len(msg) != 1 || msg[0] != OpcodeResourceSignal {
-		t.Fatalf("expected resource opcode 0x%x, got %v", OpcodeResourceSignal, msg)
+	result := <-done
+	if result.err != nil {
+		t.Fatalf("read control websocket signal: %v", result.err)
 	}
-	_ = conn.Close()
+	if len(result.msg) != 1 || result.msg[0] != wantOpcode {
+		t.Fatalf("expected opcode 0x%x, got %v", wantOpcode, result.msg)
+	}
 }
