@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/utils/logging"
 )
@@ -174,7 +175,7 @@ func (esm *ExecSessionManager) HandleExecSessions(fetchedSessions []*ExecSession
 }
 
 func defaultExecShellCommand() []string {
-	return []string{"sh", "-c", "clear; (bash || ash || sh)"}
+	return containerexec.ShellCommandInteractive()
 }
 
 func (esm *ExecSessionManager) countControllerSessionsForMS(msUUID string) int {
