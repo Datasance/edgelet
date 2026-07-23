@@ -9,7 +9,7 @@ At daemon start edgelet:
 1. Detects cgroup **v1**, **v2**, or **hybrid** layout (prefers unified v2; warns on hybrid).
 2. Selects **systemd** or **cgroupfs** driver for embedded containerd/crun.
 3. On **cgroupfs** hosts only: creates an agent subtree and moves the daemon into it.
-4. Writes `SystemdCgroup` and (when cgroupfs) `cgroup.path` into generated containerd config (overridable via `config.d/*.toml`).
+4. Writes `SystemdCgroup` and (when cgroupfs) `cgroup.path` into generated containerd config (overridable via `config.d/*.toml` — see [container-engine.md](container-engine.md#containerd-configuration-edgelet-engine)).
 
 ## Driver selection
 

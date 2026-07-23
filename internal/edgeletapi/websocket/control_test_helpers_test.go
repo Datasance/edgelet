@@ -13,6 +13,18 @@ func newTestControlHandler(t *testing.T) (*ControlHandler, *Manager) {
 	return NewControlHandlerWithManager(m), m
 }
 
+func waitForControlConnectionRegistered(t *testing.T, m *Manager, id string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := m.GetConnection(ControlWebSocket, id); ok {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for control websocket connection %q to register", id)
+}
+
 func waitForControlConnectionsDrained(t *testing.T, m *Manager) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

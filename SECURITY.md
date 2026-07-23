@@ -41,13 +41,12 @@ make vulncheck       # govulncheck@v1.1.4 + go mod verify
 
 ## Known vulnerability exceptions
 
-`make vulncheck` must pass with **only** the documented exceptions below affecting edgelet call paths.
+`make vulncheck` must pass with **zero** vulnerabilities affecting edgelet call paths. There are **no** active exceptions.
 
-| GO ID | CVE | Component | Rationale | Fix timeline |
-|-------|-----|-----------|-----------|--------------|
-| **GO-2026-5932** | — | `golang.org/x/crypto/openpgp` via `github.com/containers/ocicrypt` → `github.com/containerd/imgcrypt/v2` → in-process containerd CRI images (`containerEngine: edgelet`, linux only) | The Go team marks `openpgp` as deprecated, unmaintained, and unsafe by design; **no fixed version** exists. Edgelet does not call OpenPGP directly — it is linked transitively for **encrypted OCI image** decryption (CRI `image_decryption.key_model: node`). Typical deployments pull standard (non-PGP-encrypted) images; practical risk is low unless operators use PGP-wrapped encrypted layers. Bumping `golang.org/x/crypto` or the k3s containerd fork alone does not remove this dependency (k3s `v2.3.2-k3s2` still pulls `ocicrypt v1.2.1`). | Remove when `ocicrypt` / `imgcrypt` migrate off `golang.org/x/crypto/openpgp` (e.g. maintained fork) or Edgelet drops encrypted-image support in embedded containerd. Track upstream; re-run `make vulncheck` after dependency updates. |
+Previously accepted exceptions removed after dependency fixes:
 
-Previously accepted **GO-2026-4887** / **GO-2026-4883** (legacy `github.com/docker/docker` client SDK) were removed after migrating to `github.com/moby/moby/client@v0.4.1`.
+- **GO-2026-5932** — transitive `golang.org/x/crypto/openpgp` via `ocicrypt` / `imgcrypt` on embedded containerd (`containerEngine: edgelet`). Resolved by pinning `github.com/containers/ocicrypt v1.3.2` and `github.com/containerd/imgcrypt/v2 v2.0.3` (ProtonMail `go-crypto/openpgp`).
+- **GO-2026-4887** / **GO-2026-4883** — legacy `github.com/docker/docker` client SDK; removed after migrating to `github.com/moby/moby/client@v0.4.1`.
 
 ## Exception policy
 

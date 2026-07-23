@@ -37,8 +37,8 @@ spec:
     platform: ""                 # optional — platform when pulling (e.g. linux/amd64)
     runtime: ""                  # optional — RuntimeClass metadata.name (e.g. edgelet-wasmtime), not containerEngine
 
-    # cdiDevices:                  # optional — CDI device IDs (GPU, etc.)
-    #   - docker.com/gpu=webgpu
+    # cdiDevices:                  # optional — CDI device IDs; see container-engine.md § CDI devices
+    #   - nvidia.com/gpu=all
 
     capAdd: []                   # optional — Linux capabilities to add
     capDrop: []                  # optional — Linux capabilities to drop

@@ -177,8 +177,8 @@ func readLastKnownGoodConfig(configPath string) ([]byte, error) {
 }
 
 // generateConfig returns the containerd config map.
-// Uses config version 3 (containerd v2+) and registers crun handlers backed by
-// crun.
+// Uses config version 4 (containerd v2.3+) with server plugins under plugins.*
+// and registers crun handlers backed by crun.
 func generateConfig() map[string]any {
 	shimRuncPath := filepath.Join(constants.EdgeletContainerdBinDir, "containerd-shim-runc-v2")
 	crunPath := filepath.Join(constants.EdgeletContainerdBinDir, "crun")
@@ -217,7 +217,7 @@ func generateConfig() map[string]any {
 	appendDiscoveredRuntimes(runtimes, systemdCgroup)
 
 	return map[string]any{
-		"version":          3,
+		"version":          4,
 		"root":             constants.EdgeletContainerdRootDir,
 		"state":            constants.EdgeletContainerdStateDir,
 		"temp":             "",
@@ -227,12 +227,6 @@ func generateConfig() map[string]any {
 
 		// Allow drop-in config overrides — operators can place *.toml files here.
 		"imports": []string{constants.EdgeletContainerdLibDir + "/config.d/*.toml"},
-
-		"grpc": map[string]any{
-			"address": constants.EdgeletContainerdSocket,
-			"uid":     0,
-			"gid":     0,
-		},
 
 		"cgroup": map[string]any{
 			"path": cgroupPath,
@@ -248,6 +242,17 @@ func generateConfig() map[string]any {
 		},
 
 		"plugins": map[string]any{
+			"io.containerd.server.v1.grpc": map[string]any{
+				"address": constants.EdgeletContainerdSocket,
+				"uid":     0,
+				"gid":     0,
+			},
+			"io.containerd.server.v1.ttrpc": map[string]any{
+				"address": constants.EdgeletContainerdSocket + ".ttrpc",
+				"uid":     0,
+				"gid":     0,
+			},
+
 			// --- CRI image plugin ---
 			"io.containerd.cri.v1.images": map[string]any{
 				"snapshotter":                  "overlayfs",

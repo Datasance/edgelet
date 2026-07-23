@@ -12,6 +12,35 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/constants"
 )
 
+func TestGenerateConfigUsesServerPluginAddresses(t *testing.T) {
+	cfg := generateConfig()
+	if got := cfg["version"]; got != 4 {
+		t.Fatalf("config version mismatch: got=%v want=4", got)
+	}
+	if _, ok := cfg["grpc"]; ok {
+		t.Fatal("legacy top-level grpc block should not be present in config v4")
+	}
+
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatal("type assertion failed for plugins")
+	}
+	grpcPlugin, ok := plugins["io.containerd.server.v1.grpc"].(map[string]any)
+	if !ok {
+		t.Fatal("expected io.containerd.server.v1.grpc plugin config")
+	}
+	if got := grpcPlugin["address"]; got != constants.EdgeletContainerdSocket {
+		t.Fatalf("grpc address mismatch: got=%v want=%s", got, constants.EdgeletContainerdSocket)
+	}
+	ttrpcPlugin, ok := plugins["io.containerd.server.v1.ttrpc"].(map[string]any)
+	if !ok {
+		t.Fatal("expected io.containerd.server.v1.ttrpc plugin config")
+	}
+	if got := ttrpcPlugin["address"]; got != constants.EdgeletContainerdSocket+".ttrpc" {
+		t.Fatalf("ttrpc address mismatch: got=%v want=%s", got, constants.EdgeletContainerdSocket+".ttrpc")
+	}
+}
+
 func TestGenerateConfigUsesCanonicalRuntimeEntries(t *testing.T) {
 	prevLookPath := lookPathForRuntimeCatalog
 	t.Cleanup(func() {

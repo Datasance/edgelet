@@ -12,17 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Controller structured errors:** Field Agent parses top-level `error`, `code`, `message`, and `retryable` from Controller agent routes (`/api/v3/agent/*`) and readiness `/status` responses.
 - **Status auth deprovision gate:** `PostStatusHelper` defers auto-deprovision until **5 consecutive** status auth failures over at least **60 seconds**; streak resets on successful status POST or `Provision()`.
 - **OTA / provision suppress:** status-auth deprovision is suppressed while OTA reprovision is pending or `Provision()` is in flight.
+- **Containerd operator docs:** [container-engine.md](docs/edgelet/container-engine.md) documents embedded containerd `config.d` drop-ins, CDI devices (GPU/accelerators), and optional `config.toml.tmpl`; manifest reference and example updated for `cdiDevices`.
 
 ### Changed
 
 - **Controller ping readiness:** `GET /api/v3/status` **503** means not ready (no certificate-style `verificationFailed`); **200** means connected. Pair with Controller **≥ v3.8.2** for full readiness and structured agent errors.
 - **Status 503 / retryable errors:** never trigger auto-deprovision; legacy `{name, message}` 401 bodies use the same streak gate as structured auth failures.
+- **Embedded containerd:** k3s fork **v2.2.3-k3s1 → v2.3.2-k3s2** (`containerd/api v1.11.1`, `k8s.io/cri-api v1.36.2-k3s2`); embed pin scripts updated (`check-containerd-fork.sh`, `version.sh`).
+- **Containerd config v4:** generated `config.toml` uses **version 4** with `io.containerd.server.v1.grpc` / `io.containerd.server.v1.ttrpc` plugin blocks instead of legacy top-level `[grpc]`.
+- **Encrypted OCI deps:** pin `github.com/containers/ocicrypt v1.3.2` and `github.com/containerd/imgcrypt/v2 v2.0.3` (ProtonMail `go-crypto/openpgp`).
+- **Security / vulncheck:** remove **GO-2026-5932** exception; `make vulncheck` passes with zero documented exceptions ([SECURITY.md](SECURITY.md)).
 
 ### Fixed
 
 - **First-hit status 401 deprovision:** transient auth or readiness failures during controller restart or OTA no longer immediately call `Deprovision(true)` and wipe local state (including controller-host volume mounts).
 - **Microservice memory limit units:** controller sync and local deploy YAML `memoryLimit` values are interpreted as **MiB** (Pot/ioFog wire format) and converted to bytes before cgroup enforcement on all engines (`edgelet`, `docker`, `podman`). Fixes containers failing to start with crun errors such as “memory limit could be too low” when limits like `1024` were intended as 1 GiB.
 - **ControlPlane register state on deprovision:** deprovision clears `system_control_plane.controller_registered` and `initial_rebuild_skipped` in SQLite (not only in-memory state), so reprovision re-registers the local controller microservice with Pot after an accidental deprovision.
+- **Embedded containerd socket:** register containerd 2.3 server plugins (`grpc`, `ttrpc`, `metrics`, `debug`) so `/run/edgelet/containerd.sock` is created; fixes `edgelet-containerd` crash loop / health-check timeout after the 2.3 bump.
+- **CRI env mapping:** `KeyValue.Value` is `[]byte` in cri-api v1.36.2-k3s2 (embedded engine build/runtime fix).
 
 ## [1.0.1] - July 2026
 
@@ -60,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known limitations
 
-- **govulncheck exception (embedded engine):** **GO-2026-5932** documents transitive `golang.org/x/crypto/openpgp` from containerd encrypted-image support (`ocicrypt` / `imgcrypt`); no upstream fix version. Edgelet does not use OpenPGP directly; risk is low unless pulling PGP-encrypted OCI layers on `containerEngine: edgelet`. `make vulncheck` allows this finding only; full rationale: [SECURITY.md](SECURITY.md).
+- ~~**govulncheck exception (embedded engine):** **GO-2026-5932** documents transitive `golang.org/x/crypto/openpgp` from containerd encrypted-image support (`ocicrypt` / `imgcrypt`); no upstream fix version.~~ Resolved in **1.0.2** (`ocicrypt v1.3.2` / `imgcrypt v2.0.3` pins).
 
 ## [1.0.0] - July 2026
 

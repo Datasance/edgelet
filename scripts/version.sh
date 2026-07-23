@@ -18,7 +18,7 @@ get-module-path() {
 PKG_CONTAINERD=$(get-module-path github.com/containerd/containerd/v2)
 VERSION_CONTAINERD=$(get-module-version github.com/containerd/containerd/v2)
 if [ -z "${VERSION_CONTAINERD}" ]; then
-  VERSION_CONTAINERD="v2.2.3-k3s1"
+  VERSION_CONTAINERD="v2.3.2-k3s2"
 fi
 
 VERSION_CNIPLUGINS="v1.9.1-k3s1"

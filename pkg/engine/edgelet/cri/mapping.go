@@ -182,7 +182,7 @@ func ContainerConfigFromMicroservice(ms *models.Microservice, hostname string, e
 		// envVars are "KEY=VALUE".
 		for i := 0; i < len(e); i++ {
 			if e[i] == '=' {
-				envs = append(envs, &runtimeapi.KeyValue{Key: e[:i], Value: e[i+1:]})
+				envs = append(envs, &runtimeapi.KeyValue{Key: e[:i], Value: []byte(e[i+1:])})
 				break
 			}
 		}
