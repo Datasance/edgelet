@@ -159,6 +159,62 @@ install_init_helpers() {
     install_shutdown_helper
 }
 
+# installed_embed_hash returns the basename of data/current (embed SHA256 prefix), or empty.
+installed_embed_hash() {
+    _link="/var/lib/edgelet/data/current"
+    [ -L "$_link" ] || return 0
+    basename "$(readlink -f "$_link" 2>/dev/null || readlink "$_link")"
+}
+
+# binary_embed_hash reads embed hash from a linux thin binary (edgelet version --verbose).
+binary_embed_hash() {
+    _bin="$1"
+    [ -x "$_bin" ] || return 0
+    "$_bin" version --verbose 2>/dev/null \
+        | sed -n 's/^  embed hash: //p' \
+        | head -1
+}
+
+# should_restart_data_plane is true when containerEngine=edgelet and the embed hash changed
+# (or data/current is not yet set). Returns false for docker/podman or lite builds without embed.
+should_restart_data_plane() {
+    _eng="$1"
+    _old="$2"
+    _new="$3"
+    [ "$_eng" = "edgelet" ] || return 1
+    [ -n "$_new" ] || return 1
+    [ -z "$_old" ] && return 0
+    [ "$_old" != "$_new" ]
+}
+
+start_edgelet_containerd_unit() {
+    _init="$1"
+    _restart="$2"
+    case "${_init}" in
+        systemd)
+            systemctl enable edgelet-containerd 2>/dev/null || true
+            if [ "$_restart" = true ]; then
+                info "Embedded bundle hash changed; restarting edgelet-containerd (data plane)"
+                systemctl stop edgelet-containerd 2>/dev/null || true
+                systemctl reset-failed edgelet-containerd 2>/dev/null || true
+                systemctl start edgelet-containerd
+            else
+                systemctl start edgelet-containerd 2>/dev/null || true
+            fi
+            ;;
+        openrc)
+            rc-update add edgelet-containerd default 2>/dev/null || true
+            if [ "$_restart" = true ]; then
+                info "Embedded bundle hash changed; restarting edgelet-containerd (data plane)"
+                rc-service edgelet-containerd stop 2>/dev/null || true
+                rc-service edgelet-containerd start 2>/dev/null || true
+            else
+                rc-service edgelet-containerd start 2>/dev/null || true
+            fi
+            ;;
+    esac
+}
+
 install_systemd_dropin() {
     _eng="$1"
     _root="$2"
@@ -193,6 +249,7 @@ install_systemd_dropin() {
 install_init_unit() {
     _init="$1"
     _eng="$2"
+    _restart_dp="${3:-false}"
     _root="$(init_packaging_root)"
     mkdir -p /var/log/edgelet
     install_init_helpers
@@ -216,8 +273,7 @@ install_init_unit() {
             install_systemd_dropin "${_eng}" "${_root}"
             systemctl daemon-reload
             if [ "${_eng}" = "edgelet" ]; then
-                systemctl enable edgelet-containerd 2>/dev/null || true
-                systemctl start edgelet-containerd 2>/dev/null || true
+                start_edgelet_containerd_unit "${_init}" "${_restart_dp}"
             fi
             systemctl enable edgelet
             systemctl stop edgelet 2>/dev/null || true
@@ -244,8 +300,7 @@ install_init_unit() {
             apply_openrc_engine_deps "${_eng}" /etc/init.d/edgelet
             chmod 755 /etc/init.d/edgelet
             if [ "${_eng}" = "edgelet" ]; then
-                rc-update add edgelet-containerd default 2>/dev/null || true
-                rc-service edgelet-containerd start 2>/dev/null || true
+                start_edgelet_containerd_unit "${_init}" "${_restart_dp}"
             fi
             rc-update add edgelet default 2>/dev/null || true
             rc-service edgelet restart 2>/dev/null || rc-service edgelet start

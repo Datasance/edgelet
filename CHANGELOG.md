@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Status 503 / retryable errors:** never trigger auto-deprovision; legacy `{name, message}` 401 bodies use the same streak gate as structured auth failures.
 - **Embedded containerd:** k3s fork **v2.2.3-k3s1 → v2.3.2-k3s2** (`containerd/api v1.11.1`, `k8s.io/cri-api v1.36.2-k3s2`); embed pin scripts updated (`check-containerd-fork.sh`, `version.sh`).
 - **Containerd config v4:** generated `config.toml` uses **version 4** with `io.containerd.server.v1.grpc` / `io.containerd.server.v1.ttrpc` plugin blocks instead of legacy top-level `[grpc]`.
+- **OTA install script (linux, `containerEngine: edgelet`):** `install.sh --upgrade` and `--rollback` stop/start `edgelet-containerd` only when the new binary’s embed hash differs from `data/current`; thin-only OTAs restart `edgelet` only. Fixes upgrade abort when invoked from `/usr/share/edgelet/install.sh`.
 - **Encrypted OCI deps:** pin `github.com/containers/ocicrypt v1.3.2` and `github.com/containerd/imgcrypt/v2 v2.0.3` (ProtonMail `go-crypto/openpgp`).
 - **Security / vulncheck:** remove **GO-2026-5932** exception; `make vulncheck` passes with zero documented exceptions ([SECURITY.md](SECURITY.md)).
 

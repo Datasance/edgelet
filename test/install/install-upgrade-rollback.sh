@@ -55,7 +55,14 @@ echo ">>> Install baseline ${V_A}"
 "${INSTALL_SH}" --bin-path="${BIN}" --version="${V_A}" --arch="${ARCH}"
 
 echo ">>> Upgrade to ${V_B}"
-"${INSTALL_SH}" --upgrade --bin-path="${BIN}" --version="${V_B}" --arch="${ARCH}"
+_UPGRADE_LOG=$(mktemp)
+"${INSTALL_SH}" --upgrade --bin-path="${BIN}" --version="${V_B}" --arch="${ARCH}" 2>&1 | tee "${_UPGRADE_LOG}"
+if grep -q "data-plane restart required" "${_UPGRADE_LOG}"; then
+    echo "ERROR: same-binary upgrade must not restart data plane (embed hash unchanged)" >&2
+    cat "${_UPGRADE_LOG}" >&2
+    exit 1
+fi
+rm -f "${_UPGRADE_LOG}"
 
 grep -q "^installed_version=${V_B}\$" "${RECEIPT}" || {
     echo "ERROR: receipt not at ${V_B}" >&2
