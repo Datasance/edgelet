@@ -7,7 +7,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Documented upstream exceptions — see SECURITY.md § Known vulnerability exceptions.
-ALLOWED_VULNS="GO-2026-5932"
+# Space-separated GO-* IDs; empty when no exceptions are active.
+ALLOWED_VULNS=""
 
 out="$(mktemp)"
 trap 'rm -f "$out"' EXIT

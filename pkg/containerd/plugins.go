@@ -24,6 +24,10 @@ import (
 	_ "github.com/containerd/containerd/v2/plugins/nri"                      // register containerd in-process plugin
 	_ "github.com/containerd/containerd/v2/plugins/restart"                  // register containerd in-process plugin
 	_ "github.com/containerd/containerd/v2/plugins/sandbox"                  // register containerd in-process plugin
+	_ "github.com/containerd/containerd/v2/plugins/server/debug"             // register containerd in-process plugin
+	_ "github.com/containerd/containerd/v2/plugins/server/grpc"              // register containerd in-process plugin
+	_ "github.com/containerd/containerd/v2/plugins/server/metrics"           // register containerd in-process plugin
+	_ "github.com/containerd/containerd/v2/plugins/server/ttrpc"             // register containerd in-process plugin
 	_ "github.com/containerd/containerd/v2/plugins/services/containers"      // register containerd in-process plugin
 	_ "github.com/containerd/containerd/v2/plugins/services/content"         // register containerd in-process plugin
 	_ "github.com/containerd/containerd/v2/plugins/services/diff"            // register containerd in-process plugin

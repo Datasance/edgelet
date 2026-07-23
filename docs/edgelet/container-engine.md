@@ -80,6 +80,99 @@ On data-plane bootstrap (`edgelet runtime-bootstrap` or monolithic embedded star
 
 ---
 
+## Containerd configuration (edgelet engine)
+
+Edgelet **generates** `/var/lib/edgelet-containerd/config.toml` on every data-plane start (`edgelet-containerd` / `runtime-bootstrap`). Do **not** edit that file by hand — changes are lost on the next start.
+
+| File | Purpose | Operator action |
+|------|---------|-----------------|
+| `config.toml` | Generated base config (socket, runtimes, CNI, cgroup driver) | Read-only reference |
+| `config.toml.lkg` | Last-known-good snapshot for automatic rollback on failed reconfigure | Do not edit |
+| `config.d/*.toml` | Drop-in overrides merged by containerd at load time | **Preferred customization path** |
+| `config.toml.tmpl` | Optional Go template appended during generation (advanced) | Rare; site-specific fragments |
+
+### Customizing with drop-ins
+
+1. Create the drop-in directory:
+
+   ```bash
+   sudo mkdir -p /var/lib/edgelet-containerd/config.d
+   ```
+
+2. Add one or more `*.toml` fragments. Example — registry config path:
+
+   ```toml
+   [plugins."io.containerd.cri.v1.images".registry]
+     config_path = "/etc/containerd/certs.d"
+   ```
+
+3. Restart the **data plane** (control-plane restart alone is not enough):
+
+   ```bash
+   sudo systemctl stop edgelet-containerd
+   sudo systemctl start edgelet-containerd
+   ```
+
+   OpenRC: `rc-service edgelet-containerd stop` then `rc-service edgelet-containerd start`.
+
+Drop-ins persist across Edgelet regenerating `config.toml` because the generated file always includes:
+
+```toml
+imports = ["/var/lib/edgelet-containerd/config.d/*.toml"]
+```
+
+### Constraints
+
+- Do **not** change `root`, `state`, or the gRPC socket path — Edgelet and CRI depend on the defaults under `/var/lib/edgelet-containerd/` and `/run/edgelet/containerd.sock`.
+- Do **not** set `SystemdCgroup = true` for crun — Edgelet always uses the cgroupfs backend for crun. Overrides that enable systemd cgroups break pod sandbox creation on systemd hosts. See [troubleshooting.md](troubleshooting.md).
+- Cgroup driver details and overridable fields: [cgroups.md](cgroups.md).
+
+### CDI devices (GPU / accelerators)
+
+[Container Device Interface (CDI)](https://tags.cncf.io/container-device-interface) injects vendor device specs (GPUs, NPUs, etc.) into container OCI configs. Edgelet enables CDI in the generated containerd config (`enable_cdi = true`). Containerd scans the default spec directories **`/etc/cdi`** (static) and **`/var/run/cdi`** (dynamic). Edgelet does not bundle CDI specs — install them on the host (for example NVIDIA Container Toolkit + `nvidia-ctk cdi generate`).
+
+**Host prep (embedded engine):**
+
+1. Install the vendor toolkit and generate or place CDI spec files under `/etc/cdi` and/or `/var/run/cdi`.
+2. Confirm specs are visible:
+   ```bash
+   ls /etc/cdi /var/run/cdi
+   grep enable_cdi /var/lib/edgelet-containerd/config.toml
+   ```
+3. Optional — add extra scan paths via `config.d`:
+   ```toml
+   [plugins."io.containerd.cri.v1.runtime"]
+     cdi_spec_dirs = ["/etc/cdi", "/var/run/cdi", "/opt/vendor/cdi"]
+   ```
+   Restart the data plane after changing containerd CDI settings.
+
+**Per-microservice devices:** request fully-qualified CDI device names on the microservice spec. Controller (Pot) and local deploy use the same field:
+
+```yaml
+spec:
+  container:
+    cdiDevices:
+      - nvidia.com/gpu=all          # example — use names from your vendor specs
+      - docker.com/gpu=webgpu       # another vendor format
+```
+
+Edgelet maps `cdiDevices` → CRI `CDIDevices` on the embedded engine and to Docker `DeviceRequest` (`driver: cdi`) when `containerEngine: docker`. **Podman** does not wire `cdiDevices` today.
+
+| Mechanism | Purpose |
+|-----------|---------|
+| `cdiDevices` on the microservice | Which CDI devices to inject into **this** workload |
+| `spec.container.runtime: nvidia-cdi` | Use the **`nvidia-cdi`** OCI runtime handler (requires `nvidia-container-runtime.cdi` on `PATH`; see [RuntimeClass](#runtimeclass-edgelet-engine-only)) |
+
+Default runtime remains **`crun`**; CDI injection often works with `crun` when specs exist and device names are listed in `cdiDevices`. Pin `runtime: nvidia-cdi` only when you need the CDI-aware NVIDIA low-level runtime.
+
+Manifest field reference: [manifest-reference.md](manifest-reference.md#speccontainer-common-fields) · Example: [examples/microservice.yaml](examples/microservice.yaml).
+
+### Advanced: `config.toml.tmpl`
+
+For site-specific TOML merged into the generated file at render time, place a Go `text/template` at `/var/lib/edgelet-containerd/config.toml.tmpl`. Most deployments should use `config.d/` instead.
+
+---
+
 ## Docker and Podman (linux + desktop)
 
 Connect to an external engine. Docker/Podman support native OCI `HEALTHCHECK`; the in-agent healthcheck runner is **edgelet engine only**.

@@ -18,7 +18,7 @@ Operator and developer documentation for the Edgelet edge agent.
 
 | Document | Description |
 |----------|-------------|
-| [container-engine.md](container-engine.md) | `edgelet` / `docker` / `podman` engines, CNI, RuntimeClass |
+| [container-engine.md](container-engine.md) | `edgelet` / `docker` / `podman` engines, CNI, RuntimeClass, containerd config drop-ins, CDI |
 | [dns.md](dns.md) | Bridge DNS, embedded resolver, docker/podman aliases and ExtraHosts |
 | [workload-metadata.md](workload-metadata.md) | Container labels and `EDGELET_*` env contract |
 | [workload-continuity.md](workload-continuity.md) | Reconcile behavior across restarts and engine changes |

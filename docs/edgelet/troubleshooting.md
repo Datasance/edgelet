@@ -96,7 +96,7 @@ Common issues when running Edgelet on edge nodes.
 
    If **`edgelet-containerd` fails after a prior successful start** with `preparing machine-root cgroup delegation` or immediate spawn failure in `/var/log/edgelet/containerd.log`, upgrade to a current beta.2 build (skips reparent when prep already ran and prepares OpenRC staging + `/edgelet` cgroups). Do not run manual Moby reparent commands if `edgelet-cgroup-prep` already ran at sysinit.
 
-7. **`RunPodSandbox` / `sd-bus call: Invalid unit name or type`:** crun with `SystemdCgroup=true` (manual `config.d` override or an old edgelet build). Reinstall the current edgelet build — generated config must have **`SystemdCgroup = false`** for crun; systemd bare-metal hosts must stay in `edgelet.service` with no `cgroup.path`. Verify:
+7. **`RunPodSandbox` / `sd-bus call: Invalid unit name or type`:** crun with `SystemdCgroup=true` (manual [`config.d` override](container-engine.md#containerd-configuration-edgelet-engine) or an old edgelet build). Reinstall the current edgelet build — generated config must have **`SystemdCgroup = false`** for crun; systemd bare-metal hosts must stay in `edgelet.service` with no `cgroup.path`. Verify:
 
    ```bash
    edgelet system status -o json | jq '{cgroupDriver,cgroupContainerdPath}'

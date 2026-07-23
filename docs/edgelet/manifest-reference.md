@@ -72,6 +72,7 @@ spec:
 | `isPrivileged` | bool | Privileged container |
 | `runAsUser` | string | User ID or name |
 | `runtime` | string | OCI runtime name (embed engine + RuntimeClass) |
+| `cdiDevices` | []string | CDI device IDs (GPU, etc.); see [container-engine.md](container-engine.md#cdi-devices-gpu--accelerators) |
 | `platform` | string | Platform selector when pulling |
 | `ipcMode`, `pidMode` | string | Passed to engine |
 | `capAdd`, `capDrop` | []string | Linux capabilities |
