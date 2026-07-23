@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ControlPlane register state on deprovision:** deprovision clears `system_control_plane.controller_registered` and `initial_rebuild_skipped` in SQLite (not only in-memory state), so reprovision re-registers the local controller microservice with Pot after an accidental deprovision.
 - **Embedded containerd socket:** register containerd 2.3 server plugins (`grpc`, `ttrpc`, `metrics`, `debug`) so `/run/edgelet/containerd.sock` is created; fixes `edgelet-containerd` crash loop / health-check timeout after the 2.3 bump.
 - **CRI env mapping:** `KeyValue.Value` is `[]byte` in cri-api v1.36.2-k3s2 (embedded engine build/runtime fix).
+- **Interactive exec TERM:** TTY exec sessions inject `TERM=xterm-256color` when the container has none, on edgelet and docker/podman engines; controller exec default shell aligned with local interactive exec (no bare `clear` preamble).
 
 ## [1.0.1] - July 2026
 
