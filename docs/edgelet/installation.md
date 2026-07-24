@@ -241,7 +241,7 @@ Requires an existing binary and `install-receipt`.
 6. `stop_edgelet_service`
 7. Download or stage new binary, verify checksum, install
 8. Update receipt (`install_method=upgrade` or `upgrade-airgap`)
-9. Refresh bundled scripts and `install_init_unit` — **restarts** edgelet via init
+9. Refresh bundled scripts and `install_init_unit` — **restarts** edgelet via init; when `containerEngine=edgelet` and the embedded bundle hash changed, **stop/start** `edgelet-containerd` before edgelet
 
 ```bash
 sudo sh /usr/share/edgelet/install.sh --upgrade --version=v1.2.3
@@ -323,7 +323,7 @@ Operator CLI (`edgelet ms`, `edgelet deploy`, …) runs in the **thin** process 
 | Change | Restart | Microservice impact |
 |--------|---------|---------------------|
 | Thin binary only (same embed hash) | `systemctl restart edgelet` (done by `install_init_unit`) | None on docker/podman; none on embedded split |
-| New embed hash | `edgelet-containerd` then `edgelet` | MS stop during data-plane restart; reconcile on control start |
+| New embed hash | `edgelet-containerd` then `edgelet` (automated by `install.sh` when hash differs) | MS stop during data-plane restart; reconcile on control start |
 
 Details: [workload-continuity.md](workload-continuity.md).
 
@@ -552,6 +552,7 @@ Bundled copy (windows): `sh %ProgramData%\Edgelet\scripts\uninstall.sh`.
 sudo ./test/install/install-fresh-linux.sh
 sudo ./test/install/install-upgrade-rollback.sh
 sudo ./test/install/install-airgap.sh
+./test/install/install-ota-embed-lima.sh       # Lima: v1.0.1 -> v1.0.2-rc.1 embed OTA
 ./test/embedded/run-all.sh --ci --arch=arm64   # Lima VM on macOS
 ```
 
