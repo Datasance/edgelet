@@ -35,7 +35,7 @@ require (
 	google.golang.org/grpc v1.82.1
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/cri-api v0.36.2
-	modernc.org/sqlite v1.54.0
+	modernc.org/sqlite v1.55.0
 )
 
 require (
