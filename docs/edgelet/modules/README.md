@@ -56,6 +56,7 @@ Lazy or engine-bound components (not separate Supervisor `Start()` modules):
 - `proxy` — updated from Controller change feed
 - `runtimeapi` — library facade for EdgeletAPI handlers
 - `serviceaccount` — reconciled from Process Manager / Field Agent
+- `modelmanager` — model artifact reconcile (wired from Supervisor / EdgeletAPI)
 
 ## StatusReporter module indices
 
@@ -128,3 +129,4 @@ Edge Guard, Pruning, Volume Mount, and SSH Proxy are not in this fixed array; th
 | DNS | [../dns.md](../dns.md) |
 | Workload labels/env | [../workload-metadata.md](../workload-metadata.md) |
 | Manifest YAML | [../manifest-reference.md](../manifest-reference.md) |
+| Model artifacts | [../models.md](../models.md) |

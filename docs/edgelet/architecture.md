@@ -59,6 +59,8 @@ flowchart LR
 │   ├── config/               # YAML config load/save, SIGHUP reload
 │   ├── edgeletapi/           # EdgeletAPI HTTP/WebSocket server (:54321)
 │   ├── fieldagent/           # Controller communication and sync
+│   ├── modelmanager/         # Model artifact reconcile, async pull, prune
+│   ├── modelpull/            # OCI + Hugging Face adapters and on-disk store
 │   ├── processmanager/       # Container reconciliation loop
 │   ├── statusreporter/       # Status aggregation
 │   ├── store/                # SQLite persistence

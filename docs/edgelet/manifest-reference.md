@@ -15,6 +15,7 @@ Validation runs in the daemon before apply. Shapes are defined in `internal/mode
 |------|---------|---------------|
 | Microservice | [examples/microservice.yaml](examples/microservice.yaml) | [Microservice](#microservice) |
 | Registry | [examples/registry.yaml](examples/registry.yaml) | [Registry](#registry) |
+| Model | [examples/model.yaml](examples/model.yaml) | [Model](#model) |
 | RuntimeClass | [examples/runtimeclass.yaml](examples/runtimeclass.yaml), [examples/runtimeclass-edgelet-wasmtime.yaml](examples/runtimeclass-edgelet-wasmtime.yaml) | [RuntimeClass](#runtimeclass) |
 | ControlPlane | [examples/controlplane.yaml](examples/controlplane.yaml) | [ControlPlane](#controlplane) |
 
@@ -25,7 +26,7 @@ Validation runs in the daemon before apply. Shapes are defined in `internal/mode
 | Field | Value |
 |-------|--------|
 | `apiVersion` | **`edgelet.iofog.org/v1`** (required) |
-| `kind` | `Microservice`, `Registry`, `RuntimeClass`, or `ControlPlane` |
+| `kind` | `Microservice`, `Registry`, `Model`, `RuntimeClass`, or `ControlPlane` |
 
 Legacy `apiVersion: v3` and Java-era kinds are rejected.
 
@@ -98,27 +99,86 @@ DNS: [dns.md](dns.md) · Metadata: [workload-metadata.md](workload-metadata.md)
 
 ## Registry
 
-Credentials for image pulls stored in local SQLite.
+Credentials for **container image** and **model artifact** pulls, stored in local SQLite.
+
+**Annotated reference:** [examples/registry.yaml](examples/registry.yaml).
+
+Built-in rows (cannot be edited or removed): **id 1** `docker.io` (`oci`), **id 2** `from_cache` (`oci`), **id 3** `https://huggingface.co` (`hf`). User registries start at **id 4**.
 
 ```yaml
 apiVersion: edgelet.iofog.org/v1
 kind: Registry
 spec:
-  url: <registry-host>        # required
+  id: 10                      # optional — upsert that local id; omit to allocate a new id
+  type: oci                   # oci (default) or hf
+  url: <registry-host>        # required — host, or Hub/enterprise base URL
   private: true|false         # required
-  username: <string>          # required when private=true
-  password: <string>          # required when private=true
-  email: <string>             # optional
+  username: <string>          # required when private=true and type=oci; optional for hf
+  password: <string>          # required when private=true (Hub token when type=hf)
+  email: <string>             # optional — oci only
+  ca: <base64-pem>            # optional — extra CA bundle
+  insecure: false             # optional — default false
 ```
+
+| Field | Notes |
+|-------|--------|
+| `spec.id` | When set, upsert that row. When omitted, Edgelet allocates the next unused id after built-ins (4+). Ids 1–3 are refused. Same user id with a different `(type, url)` is a validate error. |
+| `spec.type` | `oci` (default) or `hf`. Microservice image pull and `edgelet image pull` require **`oci`**. |
+| `spec.ca` | Base64-encoded PEM. Applied to both `oci` and `hf` when set. |
+| `spec.insecure` | Default `false`. When `true`, allow `http://` URLs and skip TLS certificate verification for `https://`. |
+| `spec.email` | Rejected when `type: hf`. |
 
 ### Apply
 
 ```bash
 edgelet deploy -f examples/registry.yaml
 edgelet registry ls
+edgelet registry inspect 10
 ```
 
-Registry apply is **synchronous**. Secrets are stored locally — treat YAML as sensitive.
+Registry apply is **synchronous**. `edgelet registry ls` / `inspect` show **`type`** and **`insecure`** (secrets are not printed unless `--password-plain`). Treat YAML as sensitive.
+
+---
+
+## Model
+
+AI model artifact desired state. Pulls store files under `{diskDirectory}/models/` — not through the container engine. Operator guide: [models.md](models.md).
+
+**Annotated reference:** [examples/model.yaml](examples/model.yaml).
+
+```yaml
+apiVersion: edgelet.iofog.org/v1
+kind: Model
+metadata:
+  name: llama-2-7b-q2k        # required — DNS-1123 label; on-disk directory name
+  labels: {}                  # optional
+spec:
+  repo: org/name              # required — upstream path, no scheme or host
+  revision: <pin>             # optional — see revision table
+  registry: 3                 # required — registry row id (type selects the adapter)
+  files:                      # HF only; ignored for oci
+    - weights.gguf
+  format: gguf                # optional — gguf, safetensors, onnx, pytorch, tensorrt, unknown
+```
+
+| Field | Notes |
+|-------|--------|
+| `metadata.name` | Lowercase DNS-1123 label (no `/`). Upsert key. |
+| `spec.repo` | Hub repo id or OCI repository path **without** registry host. |
+| `spec.revision` | OCI empty → `latest`; `sha256:` + 64 hex → digest; else tag. HF empty → `main`; 40-char hex → commit. Floating refs (`latest`, `main`, branches, tags) set `revisionFloating: true` and log a warning. |
+| `spec.registry` | Required. Must exist; `hf` vs `oci` must match the source. |
+| `spec.files` | **HF only.** Empty list → Hub snapshot at the pinned revision. Multi-`*.gguf` repos require an explicit list or glob. Globs: `*`, `**`, `?`. **Ignored for OCI** (full artifact). |
+| `spec.format` | Hint only; does not change pull behavior. |
+
+Deploy apply persists the desired row and starts artifact download. The CLI waits until each model is **Ready** or **Failed**. `--dry-run` validates only. `edgelet model pull <name>` retries an existing row; with `--repo` and `--registry` it upserts the same row then pulls. Spec generation bumps also re-pull on reconcile.
+
+### Apply
+
+```bash
+edgelet deploy -f examples/model.yaml
+edgelet model ls
+edgelet model inspect llama-2-7b-q2k
+```
 
 ---
 
@@ -240,14 +300,16 @@ FQDNs derive from `metadata.namespace` + `metadata.name` — see [dns.md](dns.md
 | Apply manifest | `edgelet deploy -f <file>` |
 | List local MS | `edgelet ms ls --source local` |
 | List registries | `edgelet registry ls` |
+| List models | `edgelet model ls` |
 | List runtime classes | `edgelet runtimeclass ls` |
 | Control plane status | `edgelet controlplane get` |
-| Validate only | EdgeletAPI `POST /v1/deploy/microservices:validate` |
+| Validate only | EdgeletAPI `POST /v1/deploy/microservices:validate` (and `:validate` for other kinds) |
 
 ---
 
 ## Related docs
 
+- [models.md](models.md) — model pull, prune, on-disk layout
 - [installation.md](installation.md) — install and provisioning
 - [deployment.md](deployment.md) — production topology
 - [control-plane.md](control-plane.md) — operator guide

@@ -25,7 +25,8 @@ Operator backup/wipe guidance: [../persistence.md](../persistence.md). This docu
 | `supervisor` | Opens/closes DB around module lifetime |
 | `fieldagent` | Controller cache, credentials, Edge Guard |
 | `processmanager` | Local workloads, runtime refs, control plane row |
-| `runtimeapi` / EdgeletAPI | Deploy apply, auth tokens, provision |
+| `runtimeapi` / EdgeletAPI | Deploy apply, auth tokens, provision, models |
+| `modelmanager` | Local model rows and prune refs |
 | `edgeguard` | Attestation signature row |
 | `serviceaccount` | Projected token persistence |
 
@@ -47,7 +48,7 @@ Operator backup/wipe guidance: [../persistence.md](../persistence.md). This docu
 
 ## Schema v1
 
-Current migration: `migrations/001_edgelet_schema_v1.sql`. `schema_versions` tracks applied version; **wipe-only** upgrades from pre-v1 agents — no in-place legacy migration.
+Baseline migration: `migrations/001_edgelet_schema_v1.sql`. `schema_versions` tracks applied version; **wipe-only** upgrades from pre-v1 agents — no in-place legacy migration.
 
 ### Controller cache (Field Agent writers)
 
@@ -80,6 +81,20 @@ Current migration: `migrations/001_edgelet_schema_v1.sql`. `schema_versions` tra
 |-------|---------|
 | `runtime_container_refs` | Maps MS UUID + scope → containerd workload/sandbox IDs |
 
+## Schema v2
+
+In-place migration `migrations/002_edgelet_schema_v2.sql` (v1 → v2). No wipe.
+
+| Table / column | Purpose |
+|----------------|---------|
+| `local_registries.type`, `ca_b64`, `insecure` | Registry kind (`oci` \| `hf`) and TLS |
+| `controller_registries.type`, `ca_b64`, `insecure` | Same on controller snapshot |
+| `local_models` | Local Model deploy + pull state |
+| `controller_models` | Controller model snapshot stub |
+| `model_refs` | Keep-alive refs for dangling prune |
+
+Operator backup of `{diskDirectory}/models/`: [../persistence.md](../persistence.md), [../models.md](../models.md).
+
 ## Access patterns
 
 Store exposes methods on `*DB` split by domain file:
@@ -91,6 +106,8 @@ Store exposes methods on `*DB` split by domain file:
 | `volumes.go` | Volume mount upsert/replace |
 | `local_deployed_microservices.go` | Local workload CRUD |
 | `local_registries.go` | Local registry CRUD |
+| `local_models.go` | Local model CRUD |
+| `controller_models.go` | Controller model stub rows |
 | `local_runtime_classes.go` | RuntimeClass CRUD |
 | `control_plane_deployments.go` | ControlPlane singleton |
 | `service_account_tokens.go` | SA token upsert/revoke/list |
@@ -132,7 +149,7 @@ Restore procedure: [../persistence.md](../persistence.md).
 |------|------|
 | `db.go` | Singleton, open/close, integrity |
 | `schema.go` | Migration runner |
-| `migrations/*.sql` | Embedded DDL |
-| `*_test.go`, `schema_v1_contract_test.go` | Contract tests |
+| `migrations/*.sql` | Embedded DDL (v1, v2) |
+| `*_test.go`, `schema_v1_contract_test.go`, `schema_v2_test.go` | Contract tests |
 
 Related: [fieldagent.md](fieldagent.md), [processmanager.md](processmanager.md), [edgeletapi.md](edgeletapi.md).
