@@ -14,9 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
+	"github.com/eclipse-iofog/edgelet/internal/modelmanager"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/network"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
@@ -166,6 +169,9 @@ type Facade struct {
 	sr   *statusreporter.StatusReporter
 	db   *store.DB
 	prun *pruning.Manager
+
+	modelsMu sync.Mutex
+	models   *modelmanager.Manager
 }
 
 // DeployProgressCallback reports deploy stage transitions from runtime flow.
@@ -458,6 +464,9 @@ func (f *Facade) PullImage(imageRef string, registryID *int, platform string) (s
 		if strings.EqualFold(strings.TrimSpace(item.URL), "from_cache") {
 			return "", fmt.Errorf("registryId %d cannot be used for pull (from_cache)", *registryID)
 		}
+		if err := models.RequireOCIForImagePull(item); err != nil {
+			return "", err
+		}
 		reg = item
 		resolvedImage, _, _ = imageref.ResolveForRegistry(imageRef, item.URL)
 	}
@@ -490,6 +499,9 @@ func (f *Facade) PullImageWithProgress(imageRef string, registryID *int, platfor
 		}
 		if strings.EqualFold(strings.TrimSpace(item.URL), "from_cache") {
 			return "", fmt.Errorf("registryId %d cannot be used for pull (from_cache)", *registryID)
+		}
+		if err := models.RequireOCIForImagePull(item); err != nil {
+			return "", err
 		}
 		reg = item
 		resolvedImage, _, _ = imageref.ResolveForRegistry(imageRef, item.URL)
@@ -1367,6 +1379,10 @@ func (f *Facade) ApplyLocalManifest(manifest, sourceName string, dryRun bool, pr
 			logging.LogWarn(runtimeAPIModuleName, fmt.Sprintf("local deploy missing registry deploymentId=%s registryId=%d", deploymentID, regID))
 			return "", nil, fmt.Errorf("invalid registry id %d", regID)
 		}
+		if typeErr := models.RequireOCIForImagePull(reg); typeErr != nil {
+			logging.LogWarn(runtimeAPIModuleName, fmt.Sprintf("local deploy registry type rejected deploymentId=%s registryId=%d err=%v", deploymentID, regID, typeErr))
+			return "", nil, typeErr
+		}
 		registry = reg
 		localMS.RegistryID = reg.ID
 	}
@@ -1467,16 +1483,28 @@ func (f *Facade) ParseAndValidateLocalRegistryManifest(manifest string) (*models
 }
 
 // ApplyLocalRegistryManifest validates and stores a registry manifest.
+// spec.id set → upsert that id; omitted → NextLocalRegistryID(). Built-in
+// ids cannot be edited. Collision on (type, url) for an existing id is a
+// validate error.
 func (f *Facade) ApplyLocalRegistryManifest(manifest string, dryRun bool) (*models.Registry, error) {
 	doc, err := f.ParseAndValidateLocalRegistryManifest(manifest)
 	if err != nil {
 		return nil, err
 	}
-	registryID, err := f.nextLocalRegistryID()
-	if err != nil {
+	registryID := doc.Spec.ID
+	if registryID <= 0 {
+		registryID, err = f.nextLocalRegistryID()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if models.IsBuiltInLocalRegistryID(registryID) {
+		return nil, fmt.Errorf("default registry %d cannot be edited", registryID)
+	}
+	reg := doc.ToRegistry(registryID)
+	if err := f.db.CheckLocalRegistryCollision(reg); err != nil {
 		return nil, err
 	}
-	reg := models.NewRegistry(registryID, doc.Spec.URL, !doc.Spec.Private, doc.Spec.UserName, doc.Spec.Password, doc.Spec.UserEmail)
 	if dryRun {
 		return reg, nil
 	}
@@ -1490,17 +1518,10 @@ func (f *Facade) ApplyLocalRegistryManifest(manifest string, dryRun bool) (*mode
 }
 
 func (f *Facade) nextLocalRegistryID() (int, error) {
-	items, err := f.ListRegistries()
-	if err != nil {
+	if err := f.db.EnsureDefaultLocalRegistries(); err != nil {
 		return 0, err
 	}
-	maxID := 2
-	for _, item := range items {
-		if item.ID > maxID {
-			maxID = item.ID
-		}
-	}
-	return maxID + 1, nil
+	return f.db.NextLocalRegistryID()
 }
 
 // ListRegistries returns persisted registry entries with defaults guaranteed.
@@ -1518,7 +1539,7 @@ func (f *Facade) GetRegistry(id int) (*models.Registry, error) {
 
 // DeleteRegistry removes one local registry entry.
 func (f *Facade) DeleteRegistry(id int) error {
-	if id <= 2 {
+	if models.IsBuiltInLocalRegistryID(id) {
 		return fmt.Errorf("default registry %d cannot be removed", id)
 	}
 	return f.db.DeleteLocalRegistry(id)

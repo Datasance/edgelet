@@ -1414,10 +1414,11 @@ func (h *EdgeletAPIHandler) HandleDeployRegistriesApply(w http.ResponseWriter, r
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}
-	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), dryRun))
+	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("local registry apply succeeded id=%d url=%s type=%s dryRun=%v", reg.ID, strings.TrimSpace(reg.URL), reg.NormalizedType(), dryRun))
 	writeSuccess(w, http.StatusOK, map[string]any{
 		"accepted": true,
 		"dryRun":   dryRun,
+		"kind":     "Registry",
 		"registry": reg,
 	})
 }
@@ -1443,6 +1444,8 @@ func (h *EdgeletAPIHandler) HandleDeployRegistriesValidate(w http.ResponseWriter
 		"kind":       doc.Kind,
 		"url":        doc.Spec.URL,
 		"private":    doc.Spec.Private,
+		"type":       doc.Spec.Type,
+		"insecure":   doc.Spec.Insecure,
 	})
 }
 

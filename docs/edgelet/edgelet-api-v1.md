@@ -12,6 +12,7 @@ The **EdgeletAPI** is the on-device operator API exposed by the Edgelet daemon. 
 | [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md) | Endpoint → RBAC resource/verb mapping (deny-by-default) |
 | [../cli/README.md](../cli/README.md) | CLI command reference |
 | [../cli/output-schemas.md](../cli/output-schemas.md) | JSON/YAML output shapes for `-o json` |
+| [models.md](models.md) | Model artifact lifecycle |
 
 ---
 
@@ -218,7 +219,8 @@ Manifest-driven local persistence and apply:
 | Kind | Apply | Validate | List/get/delete |
 |------|-------|----------|-----------------|
 | Microservice | `POST .../microservices:apply` | `...:validate` | `GET/DELETE .../microservices/{id}` |
-| Registry | `POST .../registries:apply` | `...:validate` | `GET/DELETE .../registries/{id}` |
+| Registry | `POST .../registries:apply` | `...:validate` | `GET/DELETE .../registries/{id}` (ids 1–3 are built-in and cannot be edited or removed) |
+| Model | `POST .../models:apply` | `...:validate` | runtime view via `/v1/models` |
 | RuntimeClass | `POST .../runtimeclasses:apply` | `...:validate` | `GET/DELETE .../runtimeclasses/{name}` |
 | ControlPlane | `POST .../controlplane:apply` (async) | `...:validate` | status via `/v1/system/controlplane` |
 
@@ -236,7 +238,7 @@ Apply uses `multipart/form-data`:
 
 Poll: `GET /v1/deploy/{kind}:apply/{operationId}` (and RuntimeClass delete status route).
 
-Registry apply is synchronous. ControlPlane apply is asynchronous by default (long container pull/start).
+Registry apply is synchronous. Model apply persists desired state and starts artifact pulls (`pulls` in the response). ControlPlane apply is asynchronous by default (long container pull/start).
 
 ### `/v1/auth/*`
 
@@ -248,7 +250,20 @@ Registry apply is synchronous. ControlPlane apply is asynchronous by default (lo
 
 ### `/v1/images/*`
 
-Engine image operations: list, pull (with async status poll), load, prune, remove. Requires a healthy container engine.
+Engine image operations: list, pull (with async status poll), load, prune, remove. Requires a healthy container engine. Image pull rejects registries with `type` other than `oci`.
+
+### `/v1/models/*`
+
+Model artifact operations (not container images). Operator guide: [models.md](models.md).
+
+| Route | Purpose |
+|-------|---------|
+| `GET /v1/models` | List deployed models |
+| `GET /v1/models/{name}` | Inspect |
+| `POST /v1/models:pull` | Start async pull — HTTP 202. Body `{"name"}` retries an existing row; optional `repo`, `revision`, `registryId`, `files`, `format` upsert then pull |
+| `GET /v1/models:pull/{operationId}` | Pull progress / terminal status |
+| `POST /v1/models:prune` | Dangling prune (`?mode=dangling`) |
+| `DELETE /v1/models/{name}` | Remove row and on-disk artifacts |
 
 ### Microservice self routes
 

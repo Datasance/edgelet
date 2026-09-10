@@ -128,6 +128,28 @@ func TestFacadePullImage_ResolvesRegistryHostWithRegistryID(t *testing.T) {
 	}
 }
 
+func TestFacadePullImage_RejectsNonOCIRegistry(t *testing.T) {
+	f := NewFacade()
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+	hf := models.NewRegistryBuilder().
+		SetID(5).
+		SetURL("https://huggingface.co").
+		SetType(models.RegistryTypeHF).
+		SetPassword("hf_token").
+		Build()
+	if err := f.db.UpsertLocalRegistry(hf); err != nil {
+		t.Fatalf("failed to upsert hf registry: %v", err)
+	}
+	registryID := 5
+	_, err := f.PullImage("org/weights:latest", &registryID, "")
+	if err == nil || !strings.Contains(err.Error(), "type") || !strings.Contains(err.Error(), "oci") {
+		t.Fatalf("expected oci type requirement error, got: %v", err)
+	}
+}
+
 func TestFacadePullImage_RegistryNotFound(t *testing.T) {
 	f := NewFacade()
 	if err := f.db.Open(t.TempDir()); err != nil {
