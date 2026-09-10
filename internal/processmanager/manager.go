@@ -1945,6 +1945,9 @@ func (pm *ProcessManager) ListImages() ([]engine.ImageInfo, error) {
 
 // PullImage pulls an image using optional registry credentials and platform selector.
 func (pm *ProcessManager) PullImage(imageRef string, registry *models.Registry, platform string) error {
+	if err := models.RequireOCIForImagePull(registry); err != nil {
+		return err
+	}
 	if pm.engine == nil {
 		return errors.New("process manager engine is not initialized")
 	}
@@ -1953,6 +1956,9 @@ func (pm *ProcessManager) PullImage(imageRef string, registry *models.Registry, 
 
 // PullImageWithProgress pulls an image and reports progress percent when available.
 func (pm *ProcessManager) PullImageWithProgress(imageRef string, registry *models.Registry, platform string, onProgress func(float32)) error {
+	if err := models.RequireOCIForImagePull(registry); err != nil {
+		return err
+	}
 	if pm.engine == nil {
 		return errors.New("process manager engine is not initialized")
 	}
@@ -2034,6 +2040,9 @@ func (pm *ProcessManager) launchLocalMicroserviceWithProgressLocked(ms *models.M
 		hostIP = network.GetInstance().GetCurrentIPAddress()
 	}
 	if registry != nil {
+		if err := models.RequireOCIForImagePull(registry); err != nil {
+			return "", err
+		}
 		emitLocalDeployProgress(progress, "pulling", "resolving and preparing image")
 		pullRef, lookupRefs, fromCache := imageref.ResolveForRegistry(ms.ImageName, registry.URL)
 		pullSucceeded := false
