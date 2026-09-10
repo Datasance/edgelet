@@ -2,7 +2,7 @@
 # test/embedded/vm-test.sh
 #
 # Runs the full embedded-containerd integration test suite inside the Lima VM.
-# Tests are grouped into 8 phases:
+# Tests are grouped into 9 phases:
 #
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
@@ -12,6 +12,7 @@
 #   Phase 6 — CLI integration
 #   Phase 7 — Chaos gates (control restart; data plane stays up — runtime split)
 #   Phase 8 — RuntimeClass dual-shim (shim discovery + catalog data-plane restart storm)
+#   Phase 9 — Built-in registries + tiny HF and OCI model pulls
 #
 # Usage:
 #   ./test/embedded/vm-test.sh [--vm-name=iofog-test]
@@ -1017,6 +1018,136 @@ assert_ok "deleted RuntimeClass entries are no longer retrievable via API" \
 source /tmp/runtimeclass-ops.sh
 runtimeclass_expect_missing spin
 runtimeclass_expect_missing edgelet-wasmtime"
+
+###############################################################################
+# Phase 9 — Built-in registries + tiny HF and OCI models
+###############################################################################
+log_step "Phase 9: Built-in registries and tiny HF / OCI models"
+
+assert_ok "registry ls includes docker.io, from_cache, and Hugging Face Hub" \
+    R "set -e
+out=\$(edgelet registry ls -o json)
+echo \"\${out}\" | grep -q 'docker.io'
+echo \"\${out}\" | grep -q 'from_cache'
+echo \"\${out}\" | grep -q 'huggingface.co'
+echo \"\${out}\" | grep -q '\"type\": \"hf\"'"
+
+assert_ok "refuse remove built-in docker.io registry" \
+    R "set -e
+out=\$(edgelet registry rm 1 2>&1 || true)
+echo \"\${out}\" | grep -q 'cannot be removed'"
+
+assert_ok "refuse remove built-in from_cache registry" \
+    R "set -e
+out=\$(edgelet registry rm 2 2>&1 || true)
+echo \"\${out}\" | grep -q 'cannot be removed'"
+
+assert_ok "refuse remove built-in Hugging Face registry" \
+    R "set -e
+out=\$(edgelet registry rm 3 2>&1 || true)
+echo \"\${out}\" | grep -q 'cannot be removed'"
+
+assert_ok "create built-in registry edit probe manifest" \
+    R "cat >/tmp/edgelet-builtin-hf-reg.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Registry
+spec:
+  id: 3
+  type: hf
+  url: https://huggingface.co
+  private: false
+EOF"
+
+assert_ok "refuse deploy edit of built-in Hugging Face registry" \
+    R "set -e
+out=\$(edgelet deploy -f /tmp/edgelet-builtin-hf-reg.yaml 2>&1 || true)
+echo \"\${out}\" | grep -q 'cannot be edited'"
+
+assert_ok "create throwaway user registry manifest" \
+    R "cat >/tmp/edgelet-user-reg.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Registry
+spec:
+  id: 20
+  type: oci
+  url: registry.it.example
+  private: false
+EOF"
+
+assert_contains "deploy throwaway user registry" "registry manifest applied successfully" \
+    R "edgelet deploy -f /tmp/edgelet-user-reg.yaml"
+
+assert_ok "remove throwaway user registry" \
+    R "edgelet registry rm 20"
+
+assert_ok "image pull rejects Hugging Face registry id" \
+    R "set -e
+out=\$(edgelet image pull docker.io/library/alpine:3.19 -r 3 2>&1 || true)
+echo \"\${out}\" | grep -q 'oci'"
+
+assert_ok "create tiny Hugging Face model manifest" \
+    R "cat >/tmp/tiny-gpt2.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Model
+metadata:
+  name: tiny-gpt2
+spec:
+  repo: hf-internal-testing/tiny-random-gpt2
+  revision: 71034c5d8bde858ff824298bdedc65515b97d2b9
+  registry: 3
+  files:
+    - config.json
+  format: unknown
+EOF"
+
+assert_contains "deploy tiny Hugging Face model" "model manifest applied successfully" \
+    R "edgelet deploy -f /tmp/tiny-gpt2.yaml"
+
+assert_contains "model ls lists tiny-gpt2" "tiny-gpt2" \
+    R "edgelet model ls"
+
+assert_contains "inspect tiny model is Ready" "Ready" \
+    R "edgelet model inspect tiny-gpt2"
+
+assert_ok "tiny Hugging Face model content materialized on disk" \
+    R "test -f /var/lib/edgelet/models/tiny-gpt2/content/config.json"
+
+assert_ok "create tiny OCI model manifest" \
+    R "cat >/tmp/smollm2-135m.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Model
+metadata:
+  name: smollm2-135m
+spec:
+  repo: ai/smollm2
+  revision: sha256:eb3483481647229668c7625b080c2d6a632bf49535e0714198de5c026d4f41a5
+  registry: 1
+  files: []
+  format: gguf
+EOF"
+
+assert_contains "deploy tiny OCI model" "model manifest applied successfully" \
+    R "edgelet deploy -f /tmp/smollm2-135m.yaml"
+
+assert_contains "model ls lists smollm2-135m" "smollm2-135m" \
+    R "edgelet model ls"
+
+assert_contains "inspect tiny OCI model is Ready" "Ready" \
+    R "edgelet model inspect smollm2-135m"
+
+assert_ok "tiny OCI model content materialized on disk" \
+    R "set -e
+test -d /var/lib/edgelet/models/smollm2-135m/content
+find /var/lib/edgelet/models/smollm2-135m/content -type f | grep -q ."
+
+assert_ok "remove tiny Hugging Face model" \
+    R "edgelet model rm tiny-gpt2"
+
+assert_ok "remove tiny OCI model" \
+    R "edgelet model rm smollm2-135m"
+
+assert_ok "prune models after remove" \
+    R "edgelet model prune"
 
 ###############################################################################
 # Summary
