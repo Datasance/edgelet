@@ -16,6 +16,8 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/fieldagent"
 	"github.com/eclipse-iofog/edgelet/internal/gps"
 	"github.com/eclipse-iofog/edgelet/internal/healthcheck"
+	"github.com/eclipse-iofog/edgelet/internal/modelmanager"
+	"github.com/eclipse-iofog/edgelet/internal/modelpull"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/network"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
@@ -287,6 +289,15 @@ func (s *Supervisor) Start() error {
 		return names
 	})
 	s.dockerPruningManager.SetEngine(eng)
+	s.dockerPruningManager.SetPruneModelsCallback(func() {
+		modelsRoot := modelpull.Root(s.config.DiskDirectory)
+		mm := modelmanager.New(store.GetInstance(), modelsRoot)
+		mm.SetLiveConfig(s.config)
+		mm.SetDiskPolicy(s.config.DiskDirectory, s.config.AvailableDiskThreshold, nil)
+		if _, err := mm.PruneDangling(); err != nil {
+			logging.LogError(moduleName, "Error pruning unreferenced models", err)
+		}
+	})
 	if err := s.dockerPruningManager.Start(); err != nil {
 		logging.LogError(moduleName, "Failed to start Pruning Manager", err)
 	}
