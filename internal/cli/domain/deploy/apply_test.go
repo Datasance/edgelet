@@ -17,9 +17,22 @@ type applyFakeAPI struct {
 	startResult   map[string]any
 	statusCalls   []map[string]any
 	statusIndex   int
+	modelPulls    int
 }
 
 func (f *applyFakeAPI) Request(method, path string, _ any) (map[string]any, error) {
+	if method == "POST" && path == "/v1/models:pull" {
+		f.modelPulls++
+		return map[string]any{"status": "running", "operationId": "model-pull-1", "name": "llama-2-7b-q2k"}, nil
+	}
+	if method == "GET" && strings.HasPrefix(path, "/v1/models:pull/") {
+		return map[string]any{
+			"status":      "succeeded",
+			"operationId": "model-pull-1",
+			"name":        "llama-2-7b-q2k",
+			"progress":    100,
+		}, nil
+	}
 	if strings.Contains(path, ":apply/") {
 		if f.statusIndex >= len(f.statusCalls) {
 			return f.statusCalls[len(f.statusCalls)-1], nil
@@ -128,6 +141,64 @@ func TestExecute_RuntimeClassApplyPollSucceeded(t *testing.T) {
 	}
 	if !strings.Contains(result.Human, "runtimeclass manifest applied successfully") {
 		t.Fatalf("unexpected human output: %s", result.Human)
+	}
+}
+
+func TestExecute_ModelApplyWaitsForPull(t *testing.T) {
+	manifest := writeManifest(t, "kind: Model\napiVersion: edgelet.iofog.org/v1\nmetadata:\n  name: llama-2-7b-q2k\n")
+	api := &applyFakeAPI{
+		startResult: map[string]any{
+			"accepted": true,
+			"kind":     "Model",
+			"name":     "llama-2-7b-q2k",
+			"model":    map[string]any{"name": "llama-2-7b-q2k"},
+		},
+	}
+	result, err := Execute(context.Background(), api, nil, Request{ManifestPath: manifest})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if api.multipartPath != "/v1/deploy/models:apply" {
+		t.Fatalf("expected models apply path, got %q", api.multipartPath)
+	}
+	if !strings.Contains(result.Human, "model manifest applied successfully") {
+		t.Fatalf("unexpected human output: %s", result.Human)
+	}
+	if api.modelPulls != 1 {
+		t.Fatalf("expected 1 model pull after apply, got %d", api.modelPulls)
+	}
+}
+
+func TestExecute_ModelDryRunDoesNotPull(t *testing.T) {
+	manifest := writeManifest(t, "kind: Model\napiVersion: edgelet.iofog.org/v1\nmetadata:\n  name: llama-2-7b-q2k\n")
+	api := &applyFakeAPI{
+		startResult: map[string]any{
+			"accepted": true,
+			"dryRun":   true,
+			"kind":     "Model",
+			"name":     "llama-2-7b-q2k",
+		},
+	}
+	_, err := Execute(context.Background(), api, nil, Request{ManifestPath: manifest, DryRun: true})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if api.statusIndex != 0 {
+		t.Fatalf("expected no apply polling, status calls=%d", api.statusIndex)
+	}
+	if api.modelPulls != 0 {
+		t.Fatalf("expected no model pull on dry-run, got %d", api.modelPulls)
+	}
+}
+
+func TestDetectTargetFromManifest_Model(t *testing.T) {
+	path := writeManifest(t, "kind: Model\napiVersion: edgelet.iofog.org/v1\n")
+	target, err := DetectTargetFromManifest(path)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if target != TargetModels {
+		t.Fatalf("expected models target, got %q", target)
 	}
 }
 

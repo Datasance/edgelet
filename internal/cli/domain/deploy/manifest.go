@@ -13,6 +13,7 @@ type Target string
 const (
 	TargetMicroservices  Target = "microservices"
 	TargetRegistries     Target = "registries"
+	TargetModels         Target = "models"
 	TargetRuntimeClasses Target = "runtimeclasses"
 	TargetControlPlane   Target = "controlplane"
 )
@@ -26,6 +27,8 @@ func DetectTargetFromManifest(path string) (Target, error) {
 	switch {
 	case strings.EqualFold(kind, "Registry"):
 		return TargetRegistries, nil
+	case strings.EqualFold(kind, "Model"):
+		return TargetModels, nil
 	case strings.EqualFold(kind, "RuntimeClass"):
 		return TargetRuntimeClasses, nil
 	case strings.EqualFold(kind, "ControlPlane"):

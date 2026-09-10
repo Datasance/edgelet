@@ -90,6 +90,8 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]any) string {
 		return formatMSList(result)
 	case "/v1/images":
 		return formatImageList(result)
+	case "/v1/models":
+		return formatModelList(result)
 	case "/v1/deploy/registries":
 		return formatRegistryList(result)
 	case "/v1/deploy/runtimeclasses":
@@ -104,6 +106,9 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]any) string {
 		}
 		if strings.HasPrefix(routePath, "/v1/ms/") {
 			return formatMSInspect(result)
+		}
+		if strings.HasPrefix(routePath, "/v1/models/") {
+			return formatModelInspect(result)
 		}
 		return ""
 	}
@@ -221,7 +226,7 @@ func formatRegistryList(result map[string]any) string {
 		return "No registries found."
 	}
 	rows := [][]string{
-		{"ID", "URL", "PUBLIC", "USERNAME", "EMAIL"},
+		{"ID", "URL", "TYPE", "INSECURE", "PUBLIC", "USERNAME", "EMAIL"},
 	}
 	for _, raw := range rawItems {
 		item, ok := raw.(map[string]any)
@@ -231,12 +236,83 @@ func formatRegistryList(result map[string]any) string {
 		rows = append(rows, []string{
 			MapValueAsString(item, "id"),
 			MapValueAsString(item, "url"),
+			ValueOrDefault(MapValueAsString(item, "type"), "oci"),
+			formatBoolFlag(item["insecure"]),
 			MapValueAsString(item, "isPublic"),
 			MapValueAsString(item, "userName"),
 			MapValueAsString(item, "userEmail"),
 		})
 	}
 	return formatAlignedTable(rows)
+}
+
+func formatModelList(result map[string]any) string {
+	rawItems, ok := result["items"].([]any)
+	if !ok || len(rawItems) == 0 {
+		return "No models found."
+	}
+	rows := [][]string{
+		{"NAME", "REPO", "REVISION", "REGISTRY", "STATE", "FORMAT"},
+	}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			MapValueAsString(item, "name"),
+			MapValueAsString(item, "repo"),
+			ValueOrDefault(MapValueAsString(item, "revision"), "-"),
+			MapValueAsString(item, "registryId"),
+			ValueOrDefault(MapValueAsString(item, "state"), "-"),
+			ValueOrDefault(MapValueAsString(item, "format"), "-"),
+		})
+	}
+	return formatAlignedTable(rows)
+}
+
+var modelInspectOrder = []string{
+	"name",
+	"repo",
+	"revision",
+	"registryId",
+	"format",
+	"state",
+	"files",
+	"generation",
+	"observedGeneration",
+	"resolvedRevision",
+	"digest",
+	"revisionFloating",
+	"totalBytes",
+	"contentPath",
+	"lastError",
+}
+
+func formatModelInspect(result map[string]any) string {
+	if len(result) == 0 {
+		return ""
+	}
+	if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
+		return ""
+	}
+	return formatFlatMapWithOrder(result, modelInspectOrder)
+}
+
+func formatBoolFlag(raw any) string {
+	switch v := raw.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	default:
+		s := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", raw)))
+		if s == "true" || s == "1" {
+			return "true"
+		}
+		return "false"
+	}
 }
 
 func formatRuntimeClassList(result map[string]any) string {

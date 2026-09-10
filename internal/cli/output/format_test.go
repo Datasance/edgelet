@@ -143,7 +143,14 @@ func TestFormatRegistryInspect_HumanReadable(t *testing.T) {
 	out := FormatRegistryInspect(map[string]any{
 		"id": 3, "url": "registry.example.com", "isPublic": false,
 		"userName": "john", "userEmail": "john@example.com", "password": "s3cr3t",
+		"type": "hf", "insecure": true, "ca": "should-not-print",
 	}, false)
+	if !strings.Contains(out, "TYPE: hf") || !strings.Contains(out, "INSECURE: true") {
+		t.Fatalf("expected type and insecure in inspect output, got: %s", out)
+	}
+	if strings.Contains(out, "should-not-print") || strings.Contains(strings.ToLower(out), "ca:") {
+		t.Fatalf("inspect must not print secrets, got: %s", out)
+	}
 	expectedB64 := base64.StdEncoding.EncodeToString([]byte("s3cr3t"))
 	if !strings.Contains(out, "PASSWORD_B64: "+expectedB64) {
 		t.Fatalf("expected PASSWORD_B64 output, got: %s", out)
@@ -160,6 +167,38 @@ func TestFormatLogEntries_PreservesDockerStyleSpacing(t *testing.T) {
 	}, false)
 	if out != "line1\n\nline3\n" {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestFormatEdgeletAPIHuman_ModelListColumns(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/models", map[string]any{
+		"items": []any{
+			map[string]any{
+				"name": "llama-2-7b-q2k", "repo": "second-state/Llama-2-7B-Chat-GGUF",
+				"revision": "main", "registryId": 5, "state": "Ready", "format": "gguf",
+			},
+		},
+	})
+	for _, want := range []string{"NAME", "REPO", "STATE", "llama-2-7b-q2k", "Ready"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in model list, got: %s", want, out)
+		}
+	}
+}
+
+func TestFormatEdgeletAPIHuman_RegistryListShowsType(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/deploy/registries", map[string]any{
+		"items": []any{
+			map[string]any{"id": 5, "url": "https://huggingface.co", "type": "hf", "insecure": false, "isPublic": true},
+		},
+	})
+	for _, want := range []string{"TYPE", "INSECURE", "hf"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in registry list, got: %s", want, out)
+		}
+	}
+	if strings.Contains(out, "password") {
+		t.Fatalf("registry list must not print secrets, got: %s", out)
 	}
 }
 
