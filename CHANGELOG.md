@@ -5,6 +5,20 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Model artifacts:** first-class `kind: Model` — deploy, async pull (Hugging Face Hub and OCI), inspect, remove, and prune. CLI `edgelet model`. EdgeletAPI `/v1/models*`. Artifacts live under `{diskDirectory}/models/`, not the container-engine image store. Operator guide: [docs/edgelet/models.md](docs/edgelet/models.md).
+- **Registry `type`:** `oci` (default) or `hf`, plus optional `ca` and `insecure`. Image pull and microservice images accept `oci` only.
+- **Built-in Hugging Face Hub:** local registry id **3** (`https://huggingface.co`, `hf`). Built-in ids **1–3** cannot be edited or removed. First user-created registry id is **4**.
+- **Schema v2:** in-place SQLite upgrade for model tables and registry `type` / `ca` / `insecure`.
+
+### Changed
+
+- **Local registries:** next allocated id is after the three built-in rows (was after `docker.io` and `from_cache` only).
+- **Scheduled prune:** `pruningFrequency` and disk-threshold ticks also prune dangling model trees after unused-image prune. `edgelet system prune` still does not prune models.
+
 ## [1.0.3-rc.2] - September 2026
 
 ### Changed
