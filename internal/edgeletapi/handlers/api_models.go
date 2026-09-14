@@ -277,8 +277,13 @@ func modelRowToAPI(row *models.LocalModel) map[string]any {
 	if row == nil {
 		return map[string]any{}
 	}
+	source := strings.TrimSpace(row.Source)
+	if source == "" {
+		source = models.ModelSourceLocal
+	}
 	item := map[string]any{
 		"name":               row.Name,
+		"source":             source,
 		"repo":               row.Repo,
 		"revision":           row.Revision,
 		"registryId":         row.RegistryID,

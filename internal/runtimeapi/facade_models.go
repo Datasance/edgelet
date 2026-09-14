@@ -193,7 +193,18 @@ func (f *Facade) GetModel(name string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return localModelToAPI(row), nil
+	item := localModelToAPI(row)
+	if strings.EqualFold(strings.TrimSpace(row.Source), models.ModelSourceManaged) {
+		if cm, lookupErr := f.db.GetControllerModelByName(name); lookupErr == nil && cm != nil {
+			if uuid := strings.TrimSpace(cm.UUID); uuid != "" {
+				item["uuid"] = uuid
+			}
+		}
+	}
+	if n, countErr := f.db.CountModelRefs(name); countErr == nil {
+		item["bindRefCount"] = n
+	}
+	return item, nil
 }
 
 // RemoveModel deletes one local Model and its on-disk artifacts.
@@ -221,8 +232,13 @@ func localModelToAPI(m *models.LocalModel) map[string]any {
 	if m == nil {
 		return map[string]any{}
 	}
+	source := strings.TrimSpace(m.Source)
+	if source == "" {
+		source = models.ModelSourceLocal
+	}
 	item := map[string]any{
 		"name":               m.Name,
+		"source":             source,
 		"repo":               m.Repo,
 		"revision":           m.Revision,
 		"registryId":         m.RegistryID,

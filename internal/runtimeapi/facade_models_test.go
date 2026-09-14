@@ -151,6 +151,91 @@ spec:
 	}
 }
 
+func TestFacadeListGetModel_SourceAndInspectExtras(t *testing.T) {
+	f := NewFacade()
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+
+	local := &models.LocalModel{
+		Name:       "operator-model",
+		Source:     models.ModelSourceLocal,
+		Repo:       "org/local",
+		RegistryID: 1,
+		State:      models.ModelStateReady,
+	}
+	if err := f.db.UpsertLocalModel(local); err != nil {
+		t.Fatalf("upsert local: %v", err)
+	}
+	managed := &models.LocalModel{
+		Name:       "fleet-model",
+		Source:     models.ModelSourceManaged,
+		Repo:       "org/fleet",
+		RegistryID: 5,
+		State:      models.ModelStateReady,
+	}
+	if err := f.db.UpsertLocalModel(managed); err != nil {
+		t.Fatalf("upsert managed: %v", err)
+	}
+	if err := f.db.SaveControllerModels([]*models.ControllerModel{{
+		UUID:       "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f",
+		Name:       "fleet-model",
+		Repo:       "org/fleet",
+		RegistryID: 5,
+	}}); err != nil {
+		t.Fatalf("save controller model: %v", err)
+	}
+	if err := f.db.ReplaceWorkloadModelRefs("ms-1", []string{"fleet-model"}); err != nil {
+		t.Fatalf("bind ref: %v", err)
+	}
+
+	items, err := f.ListModels()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	sources := map[string]string{}
+	for _, item := range items {
+		name, ok := item["name"].(string)
+		if !ok {
+			t.Fatalf("expected name string, got %#v", item["name"])
+		}
+		source, ok := item["source"].(string)
+		if !ok {
+			t.Fatalf("expected source string, got %#v", item["source"])
+		}
+		sources[name] = source
+	}
+	if sources["operator-model"] != models.ModelSourceLocal || sources["fleet-model"] != models.ModelSourceManaged {
+		t.Fatalf("expected local and managed sources, got %#v", sources)
+	}
+
+	got, err := f.GetModel("fleet-model")
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if got["source"] != models.ModelSourceManaged {
+		t.Fatalf("expected managed source, got %#v", got)
+	}
+	if got["uuid"] != "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f" {
+		t.Fatalf("expected managed uuid, got %#v", got)
+	}
+	if got["bindRefCount"] != 1 {
+		t.Fatalf("expected bindRefCount 1, got %#v", got)
+	}
+
+	localInspect, err := f.GetModel("operator-model")
+	if err != nil {
+		t.Fatalf("local inspect: %v", err)
+	}
+	if localInspect["source"] != models.ModelSourceLocal {
+		t.Fatalf("expected local source, got %#v", localInspect)
+	}
+	if _, ok := localInspect["uuid"]; ok {
+		t.Fatalf("local inspect must omit uuid, got %#v", localInspect)
+	}
+}
+
 func TestFacadeParseAndValidateLocalModelManifests_RejectsHostRepo(t *testing.T) {
 	f := NewFacade()
 	if err := f.db.Open(t.TempDir()); err != nil {

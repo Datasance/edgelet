@@ -114,11 +114,145 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]any) string {
 	}
 }
 
+var msInspectOrder = []string{
+	"uuid",
+	"name",
+	"application",
+	"source",
+	"type",
+	"state",
+	"statusText",
+	"errorMessage",
+	"lastError",
+	"containerId",
+	"image",
+	"desiredState",
+	"runtimeState",
+	"healthStatus",
+	"percentage",
+	"restartCount",
+}
+
 func formatMSInspect(result map[string]any) string {
 	if len(result) == 0 {
 		return ""
 	}
-	return formatFlatMapWithOrder(result, nil)
+	if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
+		return ""
+	}
+	if _, hasRaw := result["raw"]; hasRaw {
+		// Full inspect includes nested engine state; empty human falls back to JSON.
+		return ""
+	}
+	var b strings.Builder
+	seen := make(map[string]bool, len(result))
+	for _, key := range msInspectOrder {
+		value, ok := result[key]
+		if !ok {
+			continue
+		}
+		if formatted, ok := formatInspectScalar(value); ok {
+			_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatted)
+			seen[key] = true
+		}
+	}
+	if catalog := formatCatalogInspect(result["models"]); catalog != "" {
+		_, _ = fmt.Fprint(&b, catalog)
+		seen["models"] = true
+	}
+	remaining := make([]string, 0, len(result))
+	for key := range result {
+		if seen[key] || key == "models" || key == "manifestYAML" {
+			continue
+		}
+		remaining = append(remaining, key)
+	}
+	slices.Sort(remaining)
+	for _, key := range remaining {
+		if formatted, ok := formatInspectScalar(result[key]); ok {
+			_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatted)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatCatalogInspect(raw any) string {
+	catalog, ok := raw.(map[string]any)
+	if !ok || len(catalog) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	if bind := MapValueAsRawString(catalog, "bindPath"); strings.TrimSpace(bind) != "" {
+		_, _ = fmt.Fprintf(&b, "models.bindPath: %s\n", bind)
+	}
+	if perms := MapValueAsRawString(catalog, "permissions"); strings.TrimSpace(perms) != "" {
+		_, _ = fmt.Fprintf(&b, "models.permissions: %s\n", perms)
+	}
+	if names := catalogItemNames(catalog["items"]); names != "" {
+		_, _ = fmt.Fprintf(&b, "models.items: %s\n", names)
+	}
+	return b.String()
+}
+
+func catalogItemNames(raw any) string {
+	switch items := raw.(type) {
+	case []any:
+		names := make([]string, 0, len(items))
+		for _, item := range items {
+			switch typed := item.(type) {
+			case map[string]any:
+				if name := strings.TrimSpace(MapValueAsRawString(typed, "name")); name != "" {
+					names = append(names, name)
+				}
+			case string:
+				if name := strings.TrimSpace(typed); name != "" {
+					names = append(names, name)
+				}
+			}
+		}
+		return strings.Join(names, ", ")
+	case []string:
+		return strings.Join(items, ", ")
+	default:
+		return ""
+	}
+}
+
+func formatInspectScalar(value any) (string, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return "", false
+	case map[string]any:
+		return "", false
+	case []any:
+		if len(typed) == 0 {
+			return "", false
+		}
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if _, isMap := item.(map[string]any); isMap {
+				return "", false
+			}
+			parts = append(parts, fmt.Sprintf("%v", item))
+		}
+		return strings.Join(parts, ", "), true
+	case []string:
+		if len(typed) == 0 {
+			return "", false
+		}
+		return strings.Join(typed, ", "), true
+	case *string:
+		if typed == nil {
+			return "", false
+		}
+		return *typed, true
+	default:
+		s := strings.TrimSpace(fmt.Sprintf("%v", typed))
+		if s == "" || s == "<nil>" {
+			return "", false
+		}
+		return s, true
+	}
 }
 
 func formatFlatMapWithOrder(result map[string]any, preferred []string) string {
@@ -252,7 +386,7 @@ func formatModelList(result map[string]any) string {
 		return "No models found."
 	}
 	rows := [][]string{
-		{"NAME", "REPO", "REVISION", "REGISTRY", "STATE", "FORMAT"},
+		{"NAME", "SOURCE", "REPO", "REVISION", "REGISTRY", "STATE", "FORMAT"},
 	}
 	for _, raw := range rawItems {
 		item, ok := raw.(map[string]any)
@@ -261,6 +395,7 @@ func formatModelList(result map[string]any) string {
 		}
 		rows = append(rows, []string{
 			MapValueAsString(item, "name"),
+			ValueOrDefault(MapValueAsString(item, "source"), "-"),
 			MapValueAsString(item, "repo"),
 			ValueOrDefault(MapValueAsString(item, "revision"), "-"),
 			MapValueAsString(item, "registryId"),
@@ -273,6 +408,9 @@ func formatModelList(result map[string]any) string {
 
 var modelInspectOrder = []string{
 	"name",
+	"source",
+	"uuid",
+	"bindRefCount",
 	"repo",
 	"revision",
 	"registryId",
@@ -296,7 +434,31 @@ func formatModelInspect(result map[string]any) string {
 	if status, ok := result["status"]; ok && fmt.Sprintf("%v", status) == "ok" {
 		return ""
 	}
-	return formatFlatMapWithOrder(result, modelInspectOrder)
+	var b strings.Builder
+	seen := make(map[string]bool, len(result))
+	for _, key := range modelInspectOrder {
+		value, ok := result[key]
+		if !ok {
+			continue
+		}
+		if formatted, ok := formatInspectScalar(value); ok {
+			_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatted)
+			seen[key] = true
+		}
+	}
+	remaining := make([]string, 0, len(result))
+	for key := range result {
+		if !seen[key] {
+			remaining = append(remaining, key)
+		}
+	}
+	slices.Sort(remaining)
+	for _, key := range remaining {
+		if formatted, ok := formatInspectScalar(result[key]); ok {
+			_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatted)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func formatBoolFlag(raw any) string {

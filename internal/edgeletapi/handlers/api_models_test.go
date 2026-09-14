@@ -49,8 +49,11 @@ type modelPullStatusEnvelope struct {
 }
 
 type modelInspectData struct {
-	State string `json:"state"`
-	Name  string `json:"name"`
+	State        string `json:"state"`
+	Name         string `json:"name"`
+	Source       string `json:"source"`
+	UUID         string `json:"uuid"`
+	BindRefCount int    `json:"bindRefCount"`
 }
 
 type modelInspectEnvelope struct {
@@ -278,6 +281,23 @@ func TestHandleModels_ListInspectPruneRemove(t *testing.T) {
 	}
 	if !strings.Contains(listRec.Body.String(), "llama-2-7b-q2k") {
 		t.Fatalf("expected model in list: %s", listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), `"source":"local"`) {
+		t.Fatalf("expected local source in list: %s", listRec.Body.String())
+	}
+
+	inspectReq := httptest.NewRequest(http.MethodGet, "/v1/models/llama-2-7b-q2k", nil)
+	inspectRec := httptest.NewRecorder()
+	handler.HandleModels(inspectRec, inspectReq)
+	if inspectRec.Code != http.StatusOK {
+		t.Fatalf("inspect: %d %s", inspectRec.Code, inspectRec.Body.String())
+	}
+	var inspect modelInspectEnvelope
+	if err := json.Unmarshal(inspectRec.Body.Bytes(), &inspect); err != nil {
+		t.Fatalf("decode inspect: %v", err)
+	}
+	if inspect.Data.Source != models.ModelSourceLocal {
+		t.Fatalf("expected local source on inspect, got %#v", inspect.Data)
 	}
 
 	rmReq := httptest.NewRequest(http.MethodDelete, "/v1/models/llama-2-7b-q2k", nil)

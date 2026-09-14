@@ -179,9 +179,72 @@ func TestFormatEdgeletAPIHuman_ModelListColumns(t *testing.T) {
 			},
 		},
 	})
-	for _, want := range []string{"NAME", "REPO", "STATE", "llama-2-7b-q2k", "Ready"} {
+	for _, want := range []string{"NAME", "SOURCE", "REPO", "STATE", "llama-2-7b-q2k", "Ready"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in model list, got: %s", want, out)
+		}
+	}
+}
+
+func TestFormatEdgeletAPIHuman_ModelListSourceColumn(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/models", map[string]any{
+		"items": []any{
+			map[string]any{
+				"name": "operator-model", "source": "local", "repo": "org/local",
+				"revision": "main", "registryId": 1, "state": "Ready", "format": "gguf",
+			},
+			map[string]any{
+				"name": "fleet-model", "source": "managed", "repo": "org/fleet",
+				"revision": "main", "registryId": 5, "state": "Pulling", "format": "gguf",
+			},
+		},
+	})
+	if !strings.Contains(out, "SOURCE") || !strings.Contains(out, "local") || !strings.Contains(out, "managed") {
+		t.Fatalf("expected source column with local and managed rows, got: %s", out)
+	}
+}
+
+func TestFormatEdgeletAPIHuman_ModelInspectSourceAndUUID(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/models/fleet-model", map[string]any{
+		"name": "fleet-model", "source": "managed", "uuid": "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f",
+		"bindRefCount": 2, "state": "Ready", "repo": "org/fleet",
+	})
+	for _, want := range []string{"source: managed", "uuid: 3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f", "bindRefCount: 2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in model inspect, got: %s", want, out)
+		}
+	}
+}
+
+func TestFormatEdgeletAPIHuman_MSInspectFullFallsBackToJSON(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/ms/ms-1", map[string]any{
+		"uuid": "ms-1", "name": "infer", "state": "queued",
+		"statusText": "waiting for model download: test-model (Pulling)",
+		"models": map[string]any{
+			"bindPath":    "/models",
+			"permissions": "ro",
+			"items":       []any{map[string]any{"name": "test-model"}},
+		},
+		"raw": map[string]any{"engineInspect": map[string]any{"id": "ctr"}},
+	})
+	if out != "" {
+		t.Fatalf("full inspect must leave human empty for JSON fallback, got: %s", out)
+	}
+}
+
+func TestFormatEdgeletAPIHuman_MSInspectSummaryCard(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/ms/ms-1", map[string]any{
+		"uuid": "ms-1", "name": "infer", "state": "queued",
+		"statusText": "waiting for model download: test-model (Pulling)",
+		"models": map[string]any{
+			"bindPath":    "/models",
+			"permissions": "ro",
+			"items":       []any{map[string]any{"name": "test-model"}},
+		},
+	})
+	for _, want := range []string{"uuid: ms-1", "models.bindPath: /models", "models.permissions: ro", "models.items: test-model", "test-model"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in summary inspect, got: %s", want, out)
 		}
 	}
 }
