@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -47,6 +48,16 @@ func Execute(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, r
 	}
 	if strings.TrimSpace(req.ManifestPath) == "" {
 		return nil, run.NewCLIError(run.CodeInvalidArgument, "usage: edgelet deploy -f <manifest.yaml>", nil)
+	}
+
+	docs, err := splitManifestDocuments(req.ManifestPath)
+	if err != nil {
+		return nil, run.NewCLIError(run.CodeInvalidArgument, err.Error(), err)
+	}
+	if mixed, mixedErr := modelThenMicroserviceDocs(docs); mixedErr != nil {
+		return nil, run.NewCLIError(run.CodeInvalidArgument, mixedErr.Error(), mixedErr)
+	} else if mixed != nil {
+		return executeModelThenMicroservice(ctx, api, uiProgress, req, mixed.models, mixed.microservices)
 	}
 
 	target, err := DetectTargetFromManifest(req.ManifestPath)
@@ -123,6 +134,95 @@ func Execute(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, r
 	default:
 		return nil, run.NewCLIError(run.CodeInternal, "unsupported deploy target", nil)
 	}
+}
+
+type modelThenMicroserviceSplit struct {
+	models        []manifestDocument
+	microservices []manifestDocument
+}
+
+func modelThenMicroserviceDocs(docs []manifestDocument) (*modelThenMicroserviceSplit, error) {
+	hasModel := false
+	hasMS := false
+	for _, doc := range docs {
+		switch {
+		case strings.EqualFold(doc.Kind, "Model"):
+			hasModel = true
+		case strings.EqualFold(doc.Kind, "Microservice"):
+			hasMS = true
+		}
+	}
+	if !hasModel || !hasMS {
+		return nil, nil
+	}
+	models, microservices, err := partitionManifestDocuments(docs)
+	if err != nil {
+		return nil, err
+	}
+	if len(models) == 0 || len(microservices) == 0 {
+		return nil, nil
+	}
+	return &modelThenMicroserviceSplit{models: models, microservices: microservices}, nil
+}
+
+func executeModelThenMicroservice(ctx context.Context, api run.EdgeletAPIClient, uiProgress *ui.UI, req Request, modelDocs, msDocs []manifestDocument) (*Result, error) {
+	modelPath, modelCleanup, err := writeTempManifest(joinManifestDocuments(modelDocs))
+	if err != nil {
+		return nil, run.NewCLIError(run.CodeInternal, err.Error(), err)
+	}
+	defer modelCleanup()
+	msPath, msCleanup, err := writeTempManifest(joinManifestDocuments(msDocs))
+	if err != nil {
+		return nil, run.NewCLIError(run.CodeInternal, err.Error(), err)
+	}
+	defer msCleanup()
+
+	modelResult, err := Execute(ctx, api, uiProgress, Request{
+		ManifestPath: modelPath,
+		SourceName:   req.SourceName,
+		DryRun:       req.DryRun,
+	})
+	if err != nil {
+		return nil, err
+	}
+	msReq := Request{
+		ManifestPath: msPath,
+		SourceName:   req.SourceName,
+		DryRun:       req.DryRun,
+	}
+	msResult, err := Execute(ctx, api, uiProgress, msReq)
+	if err != nil {
+		return nil, err
+	}
+	human := strings.TrimSpace(strings.TrimSpace(modelResult.Human) + "\n" + strings.TrimSpace(msResult.Human))
+	stages := append(append([]string{}, modelResult.Stages...), msResult.Stages...)
+	return &Result{
+		Data: map[string]any{
+			"models":        modelResult.Data,
+			"microservices": msResult.Data,
+		},
+		Stages: stages,
+		Human:  human,
+	}, nil
+}
+
+func writeTempManifest(content string) (string, func(), error) {
+	f, err := os.CreateTemp("", "edgelet-deploy-*.yaml")
+	if err != nil {
+		return "", func() {}, err
+	}
+	path := f.Name()
+	cleanup := func() { _ = os.Remove(path) }
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
 }
 
 func verifyControlPlaneRunning(api run.EdgeletAPIClient) error {
