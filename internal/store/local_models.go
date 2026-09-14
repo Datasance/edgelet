@@ -9,7 +9,7 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
-const localModelSelectColumns = `name, repo, revision, registry_id, files_json, format, state, last_error,
+const localModelSelectColumns = `name, source, repo, revision, registry_id, files_json, format, state, last_error,
 		generation, observed_generation, manifest_yaml, manifest_path, content_path,
 		resolved_revision, digest, revision_floating, total_bytes,
 		last_transition_at, last_reconcile_at, pulled_at`
@@ -32,16 +32,20 @@ func (d *DB) UpsertLocalModel(m *models.LocalModel) error {
 	if !models.ValidModelState(m.State) {
 		return fmt.Errorf("invalid model state %q", m.State)
 	}
+	if !models.ValidModelSource(m.Source) {
+		return fmt.Errorf("invalid model source %q", m.Source)
+	}
 
 	_, err := d.Conn().Exec(`INSERT INTO local_models (
-		name, repo, revision, registry_id, files_json, format, state, last_error,
+		name, source, repo, revision, registry_id, files_json, format, state, last_error,
 		generation, observed_generation, manifest_yaml, manifest_path, content_path,
 		resolved_revision, digest, revision_floating, total_bytes,
 		last_transition_at, last_reconcile_at, pulled_at, created_at, updated_at
 	) VALUES (
-		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,strftime('%s','now'),?
+		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,strftime('%s','now'),?
 	)
 	ON CONFLICT(name) DO UPDATE SET
+		source=excluded.source,
 		repo=excluded.repo,
 		revision=excluded.revision,
 		registry_id=excluded.registry_id,
@@ -62,7 +66,7 @@ func (d *DB) UpsertLocalModel(m *models.LocalModel) error {
 		last_reconcile_at=excluded.last_reconcile_at,
 		pulled_at=excluded.pulled_at,
 		updated_at=excluded.updated_at`,
-		m.Name, m.Repo, m.Revision, m.RegistryID, m.FilesJSON, m.Format, m.State, m.LastError,
+		m.Name, m.Source, m.Repo, m.Revision, m.RegistryID, m.FilesJSON, m.Format, m.State, m.LastError,
 		m.Generation, m.ObservedGeneration, m.ManifestYAML, m.ManifestPath, m.ContentPath,
 		m.ResolvedRevision, m.Digest, boolToInt(m.RevisionFloating), m.TotalBytes,
 		m.LastTransitionAt, m.LastReconcileAt, m.PulledAt, time.Now().Unix(),
@@ -115,7 +119,7 @@ func scanLocalModel(s interface{ Scan(dest ...any) error }) (*models.LocalModel,
 	item := &models.LocalModel{}
 	var revisionFloating int
 	if err := s.Scan(
-		&item.Name, &item.Repo, &item.Revision, &item.RegistryID, &item.FilesJSON, &item.Format,
+		&item.Name, &item.Source, &item.Repo, &item.Revision, &item.RegistryID, &item.FilesJSON, &item.Format,
 		&item.State, &item.LastError, &item.Generation, &item.ObservedGeneration,
 		&item.ManifestYAML, &item.ManifestPath, &item.ContentPath,
 		&item.ResolvedRevision, &item.Digest, &revisionFloating, &item.TotalBytes,

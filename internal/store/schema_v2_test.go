@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -20,9 +21,28 @@ func TestSchemaV2_ModelTablesExist(t *testing.T) {
 
 	localCols := tableColumns(t, db, "local_models")
 	assertHasColumns(t, "local_models", localCols, []string{
-		"name", "repo", "revision", "registry_id", "files_json", "format",
+		"name", "source", "repo", "revision", "registry_id", "files_json", "format",
 		"state", "generation", "observed_generation", "manifest_yaml",
 		"manifest_path", "content_path",
+	})
+
+	ctrlModelCols := tableColumns(t, db, "controller_models")
+	assertHasColumns(t, "controller_models", ctrlModelCols, []string{
+		"uuid", "name", "repo", "revision", "registry_id", "files_json", "format",
+	})
+	if ctrlModelCols["uuid"].pk != 1 {
+		t.Fatal("controller_models.uuid must be primary key")
+	}
+	assertAbsentColumns(t, "controller_models", ctrlModelCols, []string{"id"})
+
+	msCols := tableColumns(t, db, "controller_microservices")
+	assertHasColumns(t, "controller_microservices", msCols, []string{
+		"models", "sysctls", "ulimits", "devices", "tmpfs",
+		"entrypoint", "commands", "run_as_group", "read_only_root_filesystem",
+		"cpus", "memory_reservation", "memory_swap", "shm_size", "working_dir",
+	})
+	assertAbsentColumns(t, "controller_microservices", msCols, []string{
+		"models_json", "container_spec_json",
 	})
 	if localCols["name"].pk != 1 {
 		t.Fatal("local_models.name must be primary key")
@@ -79,6 +99,11 @@ func TestMigration002_UpgradeFromV1Fixture(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert v1 controller registry: %v", err)
 	}
+	if _, err := raw.Exec(
+		`INSERT INTO controller_microservices (uuid, image_name) VALUES ('ms-fixture', 'nginx:latest')`,
+	); err != nil {
+		t.Fatalf("insert v1 controller microservice: %v", err)
+	}
 	if err := raw.Close(); err != nil {
 		t.Fatalf("close fixture: %v", err)
 	}
@@ -118,5 +143,71 @@ func TestMigration002_UpgradeFromV1Fixture(t *testing.T) {
 
 	if !tableExists(t, db, "local_models") || !tableExists(t, db, "controller_models") {
 		t.Fatal("expected model tables after 002")
+	}
+
+	localCols := tableColumns(t, db, "local_models")
+	assertHasColumns(t, "local_models", localCols, []string{"source"})
+	ctrlModelCols := tableColumns(t, db, "controller_models")
+	assertHasColumns(t, "controller_models", ctrlModelCols, []string{"uuid"})
+	msCols := tableColumns(t, db, "controller_microservices")
+	assertHasColumns(t, "controller_microservices", msCols, []string{
+		"models", "sysctls", "ulimits", "devices", "tmpfs",
+		"entrypoint", "commands", "run_as_group", "read_only_root_filesystem",
+		"cpus", "memory_reservation", "memory_swap", "shm_size", "working_dir",
+	})
+	assertAbsentColumns(t, "controller_microservices", msCols, []string{
+		"models_json", "container_spec_json",
+	})
+
+	var (
+		modelsJSON, sysctlsJSON, devicesJSON string
+		readOnly                             int
+		entrypoint                           sql.NullString
+		cpus                                 sql.NullFloat64
+	)
+	if err := db.Conn().QueryRow(
+		`SELECT models, sysctls, devices, read_only_root_filesystem, entrypoint, cpus
+		 FROM controller_microservices WHERE uuid = ?`,
+		"ms-fixture",
+	).Scan(&modelsJSON, &sysctlsJSON, &devicesJSON, &readOnly, &entrypoint, &cpus); err != nil {
+		t.Fatalf("upgraded microservice columns: %v", err)
+	}
+	if modelsJSON != "{}" || sysctlsJSON != "{}" || devicesJSON != "[]" || readOnly != 0 {
+		t.Fatalf("expected column defaults, got models=%q sysctls=%q devices=%q ro=%d", modelsJSON, sysctlsJSON, devicesJSON, readOnly)
+	}
+	if entrypoint.Valid || cpus.Valid {
+		t.Fatalf("expected omitted entrypoint/cpus, got entrypoint=%v cpus=%v", entrypoint, cpus)
+	}
+
+	if tableExists(t, db, "schema_v3_placeholder") {
+		t.Fatal("unexpected extra schema table")
+	}
+}
+
+func TestSchemaVersionStaysAt2(t *testing.T) {
+	entries, err := migrationFiles.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, err := parseMigrationVersion(entry.Name())
+		if err != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), err)
+		}
+		if version > 2 {
+			t.Fatalf("schema version must stay at 2; found %s", entry.Name())
+		}
+	}
+
+	db := openFreshStoreDB(t)
+	var maxVersion int
+	if err := db.Conn().QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_versions`).Scan(&maxVersion); err != nil {
+		t.Fatalf("schema version: %v", err)
+	}
+	if maxVersion != 2 {
+		t.Fatalf("expected schema version 2, got %d", maxVersion)
 	}
 }

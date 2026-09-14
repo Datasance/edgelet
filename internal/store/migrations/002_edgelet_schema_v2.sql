@@ -1,4 +1,4 @@
--- Edgelet schema v2: registry type/TLS columns + model tables (in-place from v1)
+-- Edgelet schema v2: registry type/TLS, model tables, catalog bind, container columns (in-place from v1)
 
 ALTER TABLE local_registries ADD COLUMN type TEXT NOT NULL DEFAULT 'oci' CHECK(type IN ('oci','hf'))
 
@@ -14,6 +14,7 @@ ALTER TABLE controller_registries ADD COLUMN insecure INTEGER NOT NULL DEFAULT 0
 
 CREATE TABLE IF NOT EXISTS local_models (
     name                TEXT    PRIMARY KEY,
+    source              TEXT    NOT NULL DEFAULT 'local' CHECK(source IN ('local','managed')),
     repo                TEXT    NOT NULL DEFAULT '',
     revision            TEXT    NOT NULL DEFAULT '',
     registry_id         INTEGER NOT NULL,
@@ -42,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_local_models_state ON local_models(state)
 CREATE INDEX IF NOT EXISTS idx_local_models_registry ON local_models(registry_id)
 
 CREATE TABLE IF NOT EXISTS controller_models (
-    id          INTEGER PRIMARY KEY,
+    uuid        TEXT    PRIMARY KEY,
     name        TEXT    NOT NULL DEFAULT '',
     repo        TEXT    NOT NULL DEFAULT '',
     revision    TEXT    NOT NULL DEFAULT '',
@@ -51,6 +52,36 @@ CREATE TABLE IF NOT EXISTS controller_models (
     format      TEXT    NOT NULL DEFAULT '',
     updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 )
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_controller_models_name ON controller_models(name)
+
+ALTER TABLE controller_microservices ADD COLUMN models TEXT NOT NULL DEFAULT '{}'
+
+ALTER TABLE controller_microservices ADD COLUMN sysctls TEXT NOT NULL DEFAULT '{}'
+
+ALTER TABLE controller_microservices ADD COLUMN ulimits TEXT NOT NULL DEFAULT '{}'
+
+ALTER TABLE controller_microservices ADD COLUMN devices TEXT NOT NULL DEFAULT '[]'
+
+ALTER TABLE controller_microservices ADD COLUMN tmpfs TEXT NOT NULL DEFAULT '[]'
+
+ALTER TABLE controller_microservices ADD COLUMN entrypoint TEXT
+
+ALTER TABLE controller_microservices ADD COLUMN commands TEXT
+
+ALTER TABLE controller_microservices ADD COLUMN run_as_group TEXT
+
+ALTER TABLE controller_microservices ADD COLUMN read_only_root_filesystem INTEGER NOT NULL DEFAULT 0
+
+ALTER TABLE controller_microservices ADD COLUMN cpus REAL
+
+ALTER TABLE controller_microservices ADD COLUMN memory_reservation INTEGER
+
+ALTER TABLE controller_microservices ADD COLUMN memory_swap INTEGER
+
+ALTER TABLE controller_microservices ADD COLUMN shm_size INTEGER
+
+ALTER TABLE controller_microservices ADD COLUMN working_dir TEXT
 
 CREATE TABLE IF NOT EXISTS model_refs (
     model_name TEXT NOT NULL,
