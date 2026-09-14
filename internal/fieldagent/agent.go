@@ -15,6 +15,8 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/buildmeta"
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/modelmanager"
+	"github.com/eclipse-iofog/edgelet/internal/modelpull"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/serviceaccount"
@@ -55,6 +57,8 @@ type FieldAgent struct {
 	onRegistriesUpdate    func([]*models.Registry) error
 	onConfigsUpdate       func(changedUUIDs []string) error
 	processManager        *processmanager.ProcessManager
+	modelMgr              *modelmanager.Manager
+	modelLastUpdate       int64
 
 	// Microservice management (for MicroserviceManagerInterface)
 	latestMicroservices  []*models.Microservice
@@ -320,6 +324,40 @@ func (fa *FieldAgent) SetProcessManager(pm *processmanager.ProcessManager) {
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 	fa.processManager = pm
+}
+
+// SetModelManager sets the Model manager used for fleet-desired Model ingest.
+func (fa *FieldAgent) SetModelManager(m *modelmanager.Manager) {
+	fa.mu.Lock()
+	defer fa.mu.Unlock()
+	fa.modelMgr = m
+}
+
+func (fa *FieldAgent) modelManager() *modelmanager.Manager {
+	fa.mu.Lock()
+	defer fa.mu.Unlock()
+	if fa.modelMgr != nil {
+		return fa.modelMgr
+	}
+	disk := ""
+	if fa.config != nil {
+		disk = fa.config.DiskDirectory
+	}
+	fa.modelMgr = modelmanager.New(store.GetInstance(), modelpull.Root(disk))
+	fa.modelMgr.SetLiveConfig(fa.config)
+	return fa.modelMgr
+}
+
+func (fa *FieldAgent) setModelLastUpdate(ts int64) {
+	fa.mu.Lock()
+	fa.modelLastUpdate = ts
+	fa.mu.Unlock()
+}
+
+func (fa *FieldAgent) getModelLastUpdate() int64 {
+	fa.mu.RLock()
+	defer fa.mu.RUnlock()
+	return fa.modelLastUpdate
 }
 
 // SetControllerStatus updates the agent controller connection status.
@@ -954,6 +992,10 @@ func (fa *FieldAgent) clearSQLiteCacheTablesOnDeprovision(preserveLocal bool) {
 	if err := db.ClearControllerRegistries(); err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing controller_registries table: %v", err))
 	}
+	if err := db.ClearControllerModels(); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("Error clearing controller_models table: %v", err))
+	}
+	fa.setModelLastUpdate(0)
 	if !preserveLocal {
 		if err := db.ClearLocalWorkloads(); err != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("Error clearing local_workloads table: %v", err))

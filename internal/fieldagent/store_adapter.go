@@ -42,3 +42,11 @@ func loadControllerRegistriesFromStore() ([]*models.Registry, error) {
 	}
 	return db.LoadControllerRegistries()
 }
+
+func loadControllerModelsFromStore() ([]*models.ControllerModel, error) {
+	db := store.GetInstance()
+	if db.Conn() == nil {
+		return nil, errors.New("SQLite not open")
+	}
+	return db.LoadControllerModels()
+}

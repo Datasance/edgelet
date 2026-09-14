@@ -396,6 +396,11 @@ func (fa *FieldAgent) getFogStatus() map[string]any {
 		"availableRuntimes":         controllerRuntimes,
 	}
 
+	modelStatus, activeModels, modelLastUpdate := fa.fogManagedModelStatus()
+	status["modelStatus"] = modelStatus
+	status["activeModels"] = activeModels
+	status["modelLastUpdate"] = modelLastUpdate
+
 	if phase := runtimestate.GetState().AgentPhase(); phase != "" {
 		status["runtimeAgentPhase"] = phase
 	}

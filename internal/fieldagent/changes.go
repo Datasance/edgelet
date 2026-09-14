@@ -94,6 +94,19 @@ func (fa *FieldAgent) processChanges(changes map[string]any) bool {
 			}
 		}
 
+		// Process models change
+		if modelsFlag, ok := changes["models"].(bool); ok && (modelsFlag || initialization) {
+			if initialization && fa.shouldSkipInitReload() {
+				logging.LogDebug(moduleName, "skipping init models reload; reconnect reconcile already completed")
+			} else {
+				logging.LogDebug(moduleName, "Processing models change")
+				if err := fa.loadModels(false); err != nil {
+					logging.LogError(moduleName, "Unable to update models", err)
+					resetChanges = false
+				}
+			}
+		}
+
 		// Process microservice-related changes
 		microserviceConfig, ok := changes["microserviceConfig"].(bool)
 		if !ok {
