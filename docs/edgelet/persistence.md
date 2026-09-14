@@ -24,7 +24,7 @@ edgelet system info -o json | jq -r '.diskDirectory'
 
 On open, Edgelet creates `diskDirectory` with mode **0700** if missing. SQLite runs with **WAL** journal mode (`_journal_mode=WAL`).
 
-**Schema version:** fresh installs apply embedded migrations `001_edgelet_schema_v1.sql` then `002_edgelet_schema_v2.sql` and record version **2** in `schema_versions`. Nodes already on schema v1 upgrade **in place** to v2 on first start of a schema-v2 binary — no wipe. There is no in-place upgrade from **pre–schema-v1** databases (see [Wipe-only upgrade](#wipe-only-upgrade)).
+**Schema version:** fresh installs apply embedded migrations `001_edgelet_schema_v1.sql` then `002_edgelet_schema_v2.sql` and record version **2** in `schema_versions`. Nodes already on schema v1 upgrade **in place** to v2 on first start of a schema-v2 binary — no wipe. **Back up `edgelet.db` (and WAL sidecars) before that first start** — see [Backup runbook](#backup-runbook-r85). There is no in-place upgrade from **pre–schema-v1** databases (see [Wipe-only upgrade](#wipe-only-upgrade)).
 
 ---
 
@@ -34,7 +34,7 @@ Tables are grouped by **source prefix** (schema v2 extends v1):
 
 | Prefix | Examples | Contents |
 |--------|----------|----------|
-| `controller_*` | `controller_microservices`, `controller_registries`, `controller_volume_mounts`, `controller_models` | Pot controller snapshot (MS list, registries, volume mounts, model stub rows) |
+| `controller_*` | `controller_microservices`, `controller_registries`, `controller_volume_mounts`, `controller_models` | Pot controller snapshot (MS list, registries, volume mounts, fleet models) |
 | `agent_*` | `agent_credentials`, `agent_edgeguard_signature` | Agent identity and EdgeGuard material |
 | `local_*` | `local_workloads`, `local_registries`, `local_models`, `local_service_account_tokens`, … | EdgeletAPI deploy, local registries, local models, RBAC tokens |
 | `system_*` | `system_control_plane` | Singleton ControlPlane deployment row |
@@ -166,14 +166,17 @@ sudo systemctl start edgelet.service
 
 ## Schema v2 (in-place from v1)
 
-Schema v2 adds registry `type` / TLS columns and model tables. A schema-v2 binary applies migration `002_edgelet_schema_v2.sql` automatically. **No wipe** is required for v1 → v2.
+Schema v2 adds registry `type` / TLS columns, model tables, catalog bind columns, and expanded microservice container fields. A schema-v2 binary applies migration `002_edgelet_schema_v2.sql` automatically. **No wipe** is required for v1 → v2.
+
+**Before the first schema-v2 binary opens a v1 database:** stop `edgelet.service` (and `edgelet-containerd.service` when used) and copy `edgelet.db` plus any `-wal` / `-shm` sidecars off-node. The upgrade is in-place and does not delete rows, but a backup is the only rollback if the host fails mid-migration.
 
 | Change | Detail |
 |--------|--------|
 | `local_registries` / `controller_registries` | Columns `type` (`oci` \| `hf`, default `oci`), `ca_b64`, `insecure`. Local built-ins: id 1 `docker.io`, id 2 `from_cache`, id 3 `https://huggingface.co` (`hf`). Hugging Face Hub is not seeded on the controller table. |
-| `local_models` | Local `kind: Model` rows and pull state |
-| `controller_models` | Controller model snapshot stub (fleet sync not active yet) |
-| `model_refs` | Keep-alive refs so prune does not delete in-use artifacts |
+| `local_models` | Local `kind: Model` rows and pull state, plus **`source`** (`local` \| `managed`, default `local`) |
+| `controller_models` | Fleet snapshot. Primary key is **`uuid`**; **`name`** is unique. `getChanges` `models` replace-all + pull |
+| `controller_microservices` | Catalog JSON (`models`) and typed container columns (`run_as_group`, `cpus`, `memory_reservation`, `memory_swap`, `shm_size`, `working_dir`, `read_only_root_filesystem`, plus JSON text for `sysctls`, `ulimits`, `devices`, `tmpfs`, `entrypoint`, `commands`) |
+| `model_refs` | Catalog bind refs so prune and `model rm` do not delete in-use artifacts |
 
 Backup `{diskDirectory}/models/` in addition to `edgelet.db` if you need pulled weights without a re-download. See [models.md](models.md).
 

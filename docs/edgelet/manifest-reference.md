@@ -36,7 +36,7 @@ Legacy `apiVersion: v3` and Java-era kinds are rejected.
 
 Local or operator-managed workload deployed through Edgelet (not Pot controller snapshot).
 
-**Annotated reference:** [examples/microservice.yaml](examples/microservice.yaml) lists every YAML key with inline comments.
+**Annotated reference:** [examples/microservice.yaml](examples/microservice.yaml) lists every YAML key with inline comments. Catalog bind lifecycle: [models.md](models.md#bind-into-a-microservice). Engine coverage: [container-engine.md](container-engine.md).
 
 ### Schema vs implemented
 
@@ -44,9 +44,9 @@ Local or operator-managed workload deployed through Edgelet (not Pot controller 
 |-------|--------|
 | `metadata.namespace` | Parsed; **not used** — runtime application is always `edgelet` |
 | `spec.config` | Parsed; **not applied** |
-| `spec.container.annotations` | Parsed; **not applied** |
-| `spec.container.healthCheck` | Parsed; **not wired** in local deploy |
-| All other fields in the example | Applied via `BuildMicroserviceFromLocalManifest` |
+| All other fields in the example | **Applied** (`healthCheck` and `annotations` included) |
+
+`containerEngine: edgelet` and `docker` apply every container field below. `podman` reuses the Docker HostConfig mapping; `cdiDevices` is not wired on Podman — see [container-engine.md](container-engine.md#podman-field-coverage).
 
 ### Top-level shape
 
@@ -59,11 +59,28 @@ metadata:
   labels: {}                  # optional user labels (protected keys stripped)
 spec:
   image: <image-ref>          # required
-  registry: <id>            # optional registry row ID
+  registry: <id>              # optional registry row ID
+  models: { ... }             # optional catalog bind — see below
   container: { ... }          # see below
   schedule: <int>             # optional ordering hint
-  config: {}                  # optional opaque config map
+  config: {}                  # optional opaque config map (not applied)
 ```
+
+### `spec.models` (catalog bind)
+
+Omit `spec.models` (or use an empty `items` list) when the workload does not bind artifacts. When `items` is non-empty:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `bindPath` | string | **Required.** Absolute **container** path. The catalog is one bind of a per-microservice projection at this path. |
+| `permissions` | string | `ro` (default) or `rw`. Catalog-level only — no per-item mode. |
+| `items[].name` | string | DNS-1123 Model `metadata.name`. Duplicate names are a validate error. Never send a host content path. |
+
+In the container, each item appears at **`{bindPath}/{name}/`** and lists that model's Ready **`content/`** files. Example: `bindPath: /models` + `name: test-model` → `/models/test-model/`.
+
+`bindPath` and each `{bindPath}/{name}` must not collide with a volume `containerDestination` or `tmpfs.containerPath`.
+
+Local deploy binds **local** models only. The container starts only when every named item is **Ready**; unknown or Failed names are a validate error; Pending/Pulling persist the workload as **QUEUED** with wait text. Add/remove/re-pull of items updates the projection **in place** (no recreate). Changing `bindPath` or catalog `permissions` **does** recreate. `edgelet model rm` is refused while any microservice still names that model.
 
 ### `spec.container` (common fields)
 
@@ -71,7 +88,9 @@ spec:
 |-------|------|-------|
 | `hostNetworkMode` | bool | Host network — disables bridge DNS |
 | `isPrivileged` | bool | Privileged container |
-| `runAsUser` | string | User ID or name |
+| `runAsUser` | string | User ID or name. Must not contain `:` when `runAsGroup` is set |
+| `runAsGroup` | string | Group ID or name (separate from `runAsUser`) |
+| `readOnlyRootFilesystem` | bool | Applied. Edgelet does not auto-inject `/tmp`; add a `tmpfs` at `/tmp` if the image needs it |
 | `runtime` | string | OCI runtime name (embed engine + RuntimeClass) |
 | `cdiDevices` | []string | CDI device IDs (GPU, etc.); see [container-engine.md](container-engine.md#cdi-devices-gpu--accelerators) |
 | `platform` | string | Platform selector when pulling |
@@ -81,17 +100,41 @@ spec:
 | `extraHosts` | `{name,address}[]` or legacy strings | `/etc/hosts` + docker ExtraHosts |
 | `ports` | `{internal,external,protocol}[]` | Port mappings |
 | `volumes` | `{hostDestination,containerDestination,accessMode,type}[]` | `BIND`, `VOLUME`, or controller `VOLUME_MOUNT`. **Delete does not remove `VOLUME` data** on the embedded engine — see [volumes.md](volumes.md). |
-| `commands` | []string | Container command override |
+| `tmpfs` | `{containerPath,size?,mode?}[]` | In-memory mounts. `size` is MiB. Absolute `containerPath` required |
+| `sysctls` | string map | Kubernetes **safe sysctls** only (see allowlist below). `hostNetworkMode: true` rejects `net.*`. `ipcMode: host` rejects IPC-namespaced names (`kernel.shm*`, `kernel.msg*`, `kernel.sem*`, `fs.mqueue.*`). `pidMode: host` does not change sysctl validation |
+| `ulimits` | map of `{soft,hard}` | Keys are Docker/RLIMIT names (see allowlist). `-1` = unlimited. Nested `cpu` is RLIMIT_CPU (seconds), not `cpus`. If neither side is `-1`, `soft` must be `<= hard`; unlimited soft requires unlimited hard. Scalar values are rejected |
+| `devices` | `{hostPath,containerPath,permissions?}[]` | `hostPath` must be under **`/dev`**. `permissions` is Docker-style `r`/`w`/`m` (default `rwm`) |
+| `entrypoint` | []string | Omit or `[]` = image default ENTRYPOINT (empty argv is not sent to the engine) |
+| `commands` | []string | Omit or `[]` = image default CMD. Controller JSON may send `cmd` as an alias of `commands` |
+| `workingDir` | string | Absolute container working directory |
 | `cpuSetCpus` | string | cpuset |
-| `memoryLimit` | int64 | Memory limit (MiB) |
-| `healthCheck` | object | Healthcheck spec |
+| `cpus` | float | Docker `--cpus` (float CPU count). Not node `cpuLimit` percent |
+| `memoryLimit` | int64 | Memory limit (**MiB**) |
+| `memoryReservation` | int64 | Soft reservation (**MiB**). Allowed without `memoryLimit` |
+| `memorySwap` | int64 | **`-1`** unlimited; else MiB **memory+swap total** (Docker `--memory-swap`). Requires `memoryLimit` unless `-1` |
+| `shmSize` | int64 | `/dev/shm` size (**MiB**), not a generic tmpfs entry |
+| `annotations` | map | **Applied** as container annotations |
+| `healthCheck` | object | **Applied.** `test` argv; `interval`, `timeout`, `startPeriod`, `retries` in **seconds** |
+
+There is no per-microservice `stopSignal`. The image STOPSIGNAL and engine default SIGTERM apply.
+
+#### Sysctl allowlist
+
+`kernel.shm_rmid_forced`, `net.ipv4.ip_local_port_range`, `net.ipv4.tcp_syncookies`, `net.ipv4.ping_group_range`, `net.ipv4.ip_unprivileged_port_start`, `net.ipv4.ip_local_reserved_ports`, `net.ipv4.tcp_keepalive_time`, `net.ipv4.tcp_fin_timeout`, `net.ipv4.tcp_keepalive_intvl`, `net.ipv4.tcp_keepalive_probes`, `net.ipv4.tcp_rmem`, `net.ipv4.tcp_wmem`, `net.ipv4.tcp_slow_start_after_idle`, `net.ipv4.tcp_notsent_lowat`.
+
+#### Ulimit allowlist
+
+`core`, `cpu`, `data`, `fsize`, `locks`, `memlock`, `msgqueue`, `nice`, `nofile`, `nproc`, `rss`, `rtprio`, `rttime`, `sigpending`, `stack`. Omit unused names.
 
 ### Apply
 
 ```bash
 edgelet deploy -f examples/microservice.yaml
 edgelet ms ls --source local
+edgelet ms inspect <uuid-or-name>
 ```
+
+`edgelet ms inspect` prints the full inspect JSON by default (`models` catalog plus `raw.engineInspect`). `--summary` is the short card. Wait/fail `statusText` is on the object when a bound model is still downloading or Failed.
 
 DNS: [dns.md](dns.md) · Metadata: [workload-metadata.md](workload-metadata.md)
 
@@ -309,8 +352,9 @@ FQDNs derive from `metadata.namespace` + `metadata.name` — see [dns.md](dns.md
 
 ## Related docs
 
-- [models.md](models.md) — model pull, prune, on-disk layout
+- [models.md](models.md) — model pull, catalog bind, prune, on-disk layout
 - [installation.md](installation.md) — install and provisioning
 - [deployment.md](deployment.md) — production topology
 - [control-plane.md](control-plane.md) — operator guide
+- [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) — controller JSON and validation
 - [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) — HTTP contract

@@ -2,9 +2,7 @@
 
 Edgelet can pull, store, reconcile, and prune **AI model artifacts** on the node. Models are a first-class deploy kind (`kind: Model`), stored under `{diskDirectory}/models/` — parallel to container images, not routed through the container engine image pull.
 
-This page covers operator lifecycle: deploy, pull, prune, on-disk layout, and revision pinning. Manifest schema: [manifest-reference.md](manifest-reference.md). Examples: [examples/model.yaml](examples/model.yaml), [examples/registry.yaml](examples/registry.yaml).
-
-Model artifacts are **files on disk**. Binding them into a microservice container is a separate feature and is not part of this guide.
+This page covers operator lifecycle: deploy, pull, catalog bind into a microservice, prune, on-disk layout, and revision pinning. Manifest schema: [manifest-reference.md](manifest-reference.md). Examples: [examples/model.yaml](examples/model.yaml), [examples/registry.yaml](examples/registry.yaml), [examples/microservice.yaml](examples/microservice.yaml).
 
 ---
 
@@ -67,7 +65,7 @@ Delete:
 edgelet model rm llama-2-7b-q2k
 ```
 
-Remove is refused while a pull for that name is in progress.
+Remove is refused while a pull for that name is in progress, and while any microservice still lists that name in `spec.models.items`.
 
 ---
 
@@ -102,7 +100,64 @@ Progress (bytes and percent) is available on the async pull status API: `POST /v
 
 `Pending` → `Pulling` → **`Ready`** or **`Failed`**.
 
-On **`Ready`**, Edgelet always materializes **`content/`** under the model directory (OCI and HF). Inspect shows `state`, `resolvedRevision`, `digest`, `revisionFloating`, and `totalBytes`.
+On **`Ready`**, Edgelet always materializes **`content/`** under the model directory (OCI and HF). Inspect shows `source` (`local` \| `managed`), `state`, `resolvedRevision`, `digest`, `revisionFloating`, and `totalBytes`. Managed inspect also includes controller `uuid` and `bindRefCount`.
+
+---
+
+## Bind into a microservice
+
+Ready artifacts are files on disk. A microservice catalog bind makes them visible inside the container.
+
+```yaml
+spec:
+  models:
+    bindPath: /models
+    permissions: ro          # default; rw is an explicit opt-in
+    items:
+      - name: test-model     # Model metadata.name only — never a host path
+      - name: qwen3-8-27b
+```
+
+| Rule | Behavior |
+|------|----------|
+| Container path | Always **`{bindPath}/{name}/`** = that model's Ready **`content/`**. One directory per item; the catalog is never flattened |
+| Host source | `{diskDirectory}/models/{name}/content/`. Operators and the controller never send a host content path |
+| Projection | One bind of a per-microservice directory at `bindPath` with catalog `permissions`. Item add/remove/re-pull updates files in place |
+| Permissions | Catalog-level `ro` (default) or `rw`. No per-item mode |
+| Identity | Bind YAML/JSON uses **name** only (DNS-1123). No uuid in `items[]` |
+| Source scope | Local microservices bind **local** models only. Controller-managed microservices bind **managed** models only |
+| Name ownership | While the node is provisioned, a managed model **wins** that name (pull spec + on-disk tree). Local `kind: Model` apply for a managed name is rejected |
+| Collisions | Duplicate `items[].name`, or a catalog path that matches a volume `containerDestination` or `tmpfs.containerPath`, is a validate error |
+| Env | No model environment variables are injected |
+
+`bindPath` is required when `items` is non-empty and must be an absolute container path. Manifest schema: [manifest-reference.md](manifest-reference.md#specmodels-catalog-bind).
+
+### Start gate
+
+The container is created only when **every** named item is **Ready**.
+
+| Item state | Local apply | Runtime |
+|------------|-------------|---------|
+| Ready | Allowed | Start / stay running |
+| Pending or Pulling | Persist; microservice **QUEUED** | Wait text names the model and state (`waiting for model download: test-model (Pulling)`) |
+| Unknown or Failed | **Validate error** (Failed includes the model `lastError` when present) | **FAILED** with the same text |
+
+`edgelet ms inspect` prints the full inspect JSON by default, including catalog `models` (`bindPath`, `permissions`, item names) and `raw.engineInspect`. `--summary` is the short card. `statusText` is set when the start gate is waiting or failed.
+
+### In-place updates vs recreate
+
+| Change | Container |
+|--------|-----------|
+| Add or remove a catalog item | In-place projection — **no** recreate |
+| Model re-pull (new `content/`) | In-place — **no** recreate |
+| `bindPath` or catalog `permissions` | **Recreate** |
+| Image, env, ports, or other container spec drift | **Recreate** (same as today) |
+
+### Prune and remove while bound
+
+`model_refs` records every catalog name a microservice uses. `edgelet model rm` / `DELETE /v1/models/{name}` is refused while any microservice still references the name. Dangling prune unions those refs with deployed rows, so a bound artifact is not deleted.
+
+Local `kind: Model` apply for a name that is already **managed** (provisioned fleet model) is rejected.
 
 ---
 
@@ -202,7 +257,7 @@ edgelet model prune dangling
 edgelet model prune --mode dangling
 ```
 
-The only mode is **`dangling`**: remove on-disk model directories that have no deployed row (and no explicit ref), then drop unreferenced OCI blobs. Shared blobs stay if another model still needs them. Active pulls are skipped.
+The only mode is **`dangling`**: remove on-disk model directories that have no deployed row and no catalog bind (`model_refs`), then drop unreferenced OCI blobs. Shared blobs stay if another model still needs them. Active pulls are skipped. A name that a running or desired microservice still binds is kept.
 
 Scheduled image prune (`pruningFrequency`) also runs dangling model prune on the same tick.
 
@@ -230,8 +285,9 @@ Generated CLI pages: [../cli/generated/](../cli/generated/) (`edgelet_model*.md`
 
 | Document | Topic |
 |----------|--------|
-| [manifest-reference.md](manifest-reference.md) | Registry + Model YAML schema |
+| [manifest-reference.md](manifest-reference.md) | Registry + Model + Microservice catalog YAML |
 | [examples/model.yaml](examples/model.yaml) | HF GGUF + OCI tag/digest samples |
+| [examples/microservice.yaml](examples/microservice.yaml) | Catalog bind + container fields |
 | [persistence.md](persistence.md) | Schema v2 and `{diskDirectory}/models/` backup |
 | [edgelet-api-v1.md](edgelet-api-v1.md) | HTTP contract |
-| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller JSON shapes (fleet sync not implemented on the agent yet) |
+| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller Model / Registry / Microservice JSON and validation |

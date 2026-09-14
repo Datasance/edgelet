@@ -2028,6 +2028,16 @@ components:
       properties:
         name:
           type: string
+        source:
+          type: string
+          enum: [local, managed]
+          description: Provenance on this node. List and inspect both include source.
+        uuid:
+          type: string
+          description: Controller model uuid when source is managed (inspect only).
+        bindRefCount:
+          type: integer
+          description: Microservices that currently bind this name (inspect only).
         repo:
           type: string
         revision:
@@ -2180,6 +2190,25 @@ components:
             errorMessage:
               type: string
               nullable: true
+            models:
+              type: object
+              description: Catalog bind when the microservice lists model items
+              properties:
+                bindPath:
+                  type: string
+                permissions:
+                  type: string
+                  enum: [ro, rw]
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+            statusText:
+              type: string
+              description: Wait or fail text when a bound model is still downloading or Failed
     LogsResponse:
       type: object
       required: [entries]
@@ -2278,9 +2307,26 @@ components:
             registry:
               type: integer
               description: Optional local registry id from /v1/deploy/registries
+            models:
+              type: object
+              description: Catalog bind of Ready local models at bindPath/{name}/
+              properties:
+                bindPath:
+                  type: string
+                permissions:
+                  type: string
+                  enum: [ro, rw]
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
             container:
               type: object
-              description: Container runtime options (volumes, ports, env, etc.)
+              description: Container runtime options (volumes, ports, env, catalog-related fields, healthCheck, annotations)
             schedule:
               type: integer
             config:

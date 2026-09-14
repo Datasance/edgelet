@@ -207,7 +207,7 @@ Notable behaviors:
 Runtime view and lifecycle for workloads (managed, local, and control-plane sources):
 
 - `GET /v1/ms` — list microservices; **`source` query only**: `managed`, `local`, `controlplane`, or `all` (default). Pagination filters (`cursor`, `limit`, `application`, `name`, `state`) are not implemented.
-- `GET /v1/ms/{id}` — inspect (UUID or `namespace.name`)
+- `GET /v1/ms/{id}` — inspect (UUID or `namespace.name`). Includes catalog `models` (`bindPath`, `permissions`, `items[].name`) when bound, and `statusText` when the start gate is waiting for download or a bound model Failed.
 - Lifecycle: `start`, `stop`, `restart`, `kill`
 - Logs: `GET .../logs` (HTTP); `GET .../logs:stream` (WebSocket follow)
 - Exec: session create/get/delete; `GET .../exec/sessions/{sessionId}:attach` (interactive WebSocket). See [exec-sessions.md](exec-sessions.md) for multi-session behavior, the 15s start wait, and `EXEC_START_TIMEOUT`.
@@ -258,8 +258,8 @@ Model artifact operations (not container images). Operator guide: [models.md](mo
 
 | Route | Purpose |
 |-------|---------|
-| `GET /v1/models` | List deployed models |
-| `GET /v1/models/{name}` | Inspect |
+| `GET /v1/models` | List deployed models (`source` is `local` or `managed`) |
+| `GET /v1/models/{name}` | Inspect (`source`; managed rows also include `uuid` and `bindRefCount`) |
 | `POST /v1/models:pull` | Start async pull — HTTP 202. Body `{"name"}` retries an existing row; optional `repo`, `revision`, `registryId`, `files`, `format` upsert then pull |
 | `GET /v1/models:pull/{operationId}` | Pull progress / terminal status |
 | `POST /v1/models:prune` | Dangling prune (`?mode=dangling`) |

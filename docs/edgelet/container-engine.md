@@ -158,6 +158,16 @@ spec:
 
 Edgelet maps `cdiDevices` → CRI `CDIDevices` on the embedded engine and to Docker `DeviceRequest` (`driver: cdi`) when `containerEngine: docker`. **Podman** does not wire `cdiDevices` today.
 
+### Podman field coverage
+
+Podman create reuses the Docker HostConfig mapping (catalog bind, entrypoint/commands/workingDir, runAsGroup, read-only root, tmpfs, shm, cpus, memory reservation/swap, sysctls, ulimits, and `/dev` devices). Inspect shows whatever the Podman API stored; Edgelet does not invent applied state that inspect omitted.
+
+| Field | Podman |
+|-------|--------|
+| Catalog bind, process, resources, sysctls, ulimits, devices | Sent as Docker HostConfig (same as `containerEngine: docker`) |
+| `cdiDevices` | Not wired |
+| Engine recreate | Uses the stored apply snapshot (bindPath and catalog permissions, not catalog item membership) |
+
 | Mechanism | Purpose |
 |-----------|---------|
 | `cdiDevices` on the microservice | Which CDI devices to inject into **this** workload |

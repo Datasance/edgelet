@@ -12,12 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model artifacts:** first-class `kind: Model` — deploy, async pull (Hugging Face Hub and OCI), inspect, remove, and prune. CLI `edgelet model`. EdgeletAPI `/v1/models*`. Artifacts live under `{diskDirectory}/models/`, not the container-engine image store. Operator guide: [docs/edgelet/models.md](docs/edgelet/models.md).
 - **Registry `type`:** `oci` (default) or `hf`, plus optional `ca` and `insecure`. Image pull and microservice images accept `oci` only.
 - **Built-in Hugging Face Hub:** local registry id **3** (`https://huggingface.co`, `hf`). Built-in ids **1–3** cannot be edited or removed. First user-created registry id is **4**.
-- **Schema v2:** in-place SQLite upgrade for model tables and registry `type` / `ca` / `insecure`.
+- **Schema v2:** in-place SQLite upgrade for model tables, registry `type` / `ca` / `insecure`, catalog bind, and expanded container columns. Backup `edgelet.db` before upgrading from schema v1.
+- **Microservice catalog bind:** `spec.models.bindPath` plus `items[].name` mounts Ready model files at `{bindPath}/{name}/`. Start waits until every item is Ready; add/remove/re-pull is in-place; `model rm` is refused while a microservice still binds the name.
+- **Container fields:** `entrypoint`/`commands` (omit or `[]` = image default), `cpus`, memory reservation/swap, `shmSize`, `tmpfs`, `sysctls`, `ulimits`, `devices`, `runAsGroup`, `workingDir`, `readOnlyRootFilesystem`. Local `healthCheck` and `annotations` are applied the same way as controller workloads.
+- **Fleet models:** controller `getChanges` `models` plus `GET models` (uuid + name). Fog status includes `modelStatus`, `activeModels`, and `modelLastUpdate` for managed models only. Registry sync reads `type`, `ca`, and `insecure`.
 
 ### Changed
 
 - **Local registries:** next allocated id is after the three built-in rows (was after `docker.io` and `from_cache` only).
 - **Scheduled prune:** `pruningFrequency` and disk-threshold ticks also prune dangling model trees after unused-image prune. `edgelet system prune` still does not prune models.
+
+### Fixed
+
+- **Catalog projection:** reconcile no longer rewrites the per-microservice model bind when names and generations are unchanged; name symlinks are reused; the previous version directory is kept across a `..data` swing so in-container lookups stay valid.
+- **`edgelet ms inspect`:** default output is the full inspect JSON again (`raw.engineInspect` included). `--summary` remains the short card.
+- **Local recreate:** removing a previous container treats “already removing” / not found as success, and local deploy no longer publishes `starting` before that remove finishes.
+- **Local `ms rm`:** reconcile no longer re-inserts a `deleted` tombstone after the SQLite row is removed; `ms ls` omits gone local rows; apply of the same name allocates a new UUID.
 
 ## [1.0.3-rc.2] - September 2026
 

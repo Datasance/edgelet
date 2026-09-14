@@ -27,7 +27,7 @@ Operator and developer documentation for the Edgelet edge agent.
 | [control-plane.md](control-plane.md) | Local Datasance Controller deployment |
 | [exec-sessions.md](exec-sessions.md) | Multi-session exec (local CLI and controller-initiated) |
 | [manifest-reference.md](manifest-reference.md) | Deploy YAML (`Microservice`, `Registry`, `Model`, `RuntimeClass`, `ControlPlane`) |
-| [models.md](models.md) | Model artifact pull, prune, on-disk layout |
+| [models.md](models.md) | Model artifact pull, catalog bind, prune, on-disk layout |
 | [examples/](examples/) | Reference manifest YAML samples |
 
 ## EdgeletAPI
@@ -37,7 +37,7 @@ Operator and developer documentation for the Edgelet edge agent.
 | [edgelet-api-v1.md](edgelet-api-v1.md) | Operator guide — transport, auth, errors, route behavior |
 | [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) | OpenAPI 3.1 contract |
 | [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md) | RBAC resource/verb mapping |
-| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller registry/model JSON shapes |
+| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller registry, model, catalog, and fog status JSON |
 
 ## Migration
 
