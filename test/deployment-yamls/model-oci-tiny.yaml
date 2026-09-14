@@ -6,6 +6,7 @@
 # Hub tag for this digest: ai/smollm2:135m (also 135m-q4_K_M).
 # Apply:  edgelet deploy -f test/deployment-yamls/model-oci-tiny.yaml
 # Pull:   edgelet model pull smollm2-135m
+# Optional second catalog item for microservice-catalog-fields.yaml (in-place add).
 
 apiVersion: edgelet.iofog.org/v1
 kind: Model

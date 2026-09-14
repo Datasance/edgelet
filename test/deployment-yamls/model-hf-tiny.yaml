@@ -4,6 +4,7 @@
 # Built-in registry id 3 is https://huggingface.co (hf).
 # Apply:  edgelet deploy -f test/deployment-yamls/model-hf-tiny.yaml
 # Pull:   edgelet model pull tiny-gpt2
+# Bind:   edgelet deploy -f test/deployment-yamls/microservice-catalog-fields.yaml
 
 apiVersion: edgelet.iofog.org/v1
 kind: Model

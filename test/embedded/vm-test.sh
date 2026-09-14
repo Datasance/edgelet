@@ -2,7 +2,7 @@
 # test/embedded/vm-test.sh
 #
 # Runs the full embedded-containerd integration test suite inside the Lima VM.
-# Tests are grouped into 9 phases:
+# Tests are grouped into 10 phases:
 #
 #   Phase 1 — Extracted embedded binaries
 #   Phase 2 — containerd socket & health
@@ -13,6 +13,7 @@
 #   Phase 7 — Chaos gates (control restart; data plane stays up — runtime split)
 #   Phase 8 — RuntimeClass dual-shim (shim discovery + catalog data-plane restart storm)
 #   Phase 9 — Built-in registries + tiny HF and OCI model pulls
+#   Phase 10 — Catalog bind + expanded container fields (keeps Phase 9 models until cleanup)
 #
 # Usage:
 #   ./test/embedded/vm-test.sh [--vm-name=iofog-test]
@@ -1140,10 +1141,247 @@ assert_ok "tiny OCI model content materialized on disk" \
 test -d /var/lib/edgelet/models/smollm2-135m/content
 find /var/lib/edgelet/models/smollm2-135m/content -type f | grep -q ."
 
-assert_ok "remove tiny Hugging Face model" \
+###############################################################################
+# Phase 10 — Catalog bind + expanded container fields
+###############################################################################
+log_step "Phase 10: Catalog bind and expanded container fields"
+
+assert_ok "model ls source column lists local tiny-gpt2" \
+    R "set -e
+out=\$(edgelet model ls)
+echo \"\${out}\" | grep tiny-gpt2 | grep -q local"
+
+assert_ok "create catalog-fields microservice manifest" \
+    R "cat >/tmp/catalog-fields.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Microservice
+metadata:
+  name: catalog-fields-test
+  labels:
+    test: catalog-fields
+spec:
+  image: docker.io/library/alpine:3.19
+  registry: 1
+  models:
+    bindPath: /models
+    permissions: ro
+    items:
+      - name: tiny-gpt2
+  container:
+    runAsUser: \"0\"
+    runAsGroup: \"65534\"
+    readOnlyRootFilesystem: true
+    workingDir: /tmp
+    entrypoint:
+      - /bin/sh
+    commands:
+      - -lc
+      - sleep 14000
+    cpuSetCpus: \"0\"
+    cpus: 0.5
+    memoryLimit: 64
+    memoryReservation: 32
+    memorySwap: -1
+    shmSize: 16
+    annotations:
+      test.edgelet.io/suite: catalog-fields
+    sysctls:
+      net.ipv4.tcp_keepalive_time: \"600\"
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+    devices:
+      - hostPath: /dev/zero
+        containerPath: /dev/edgelet-zero
+        permissions: r
+    tmpfs:
+      - containerPath: /tmp
+        size: 16
+        mode: \"1777\"
+    healthCheck:
+      test: [\"CMD\", \"/bin/true\"]
+      interval: 30
+      timeout: 5
+      retries: 1
+  schedule: 50
+EOF"
+
+assert_contains "deploy catalog-fields microservice" "microservice manifest applied successfully" \
+    R "edgelet deploy -f /tmp/catalog-fields.yaml"
+
+assert_ok "catalog-fields microservice reaches running" \
+    R "set -e
+for i in \$(seq 1 90); do
+  inspect=\$(edgelet ms inspect edgelet.catalog-fields-test 2>/dev/null || true)
+  if echo \"\${inspect}\" | grep -Eq '^  \"state\": \"running\"' ; then
+    cid=\$(echo \"\${inspect}\" | sed -n 's/^  \"containerId\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1 | tr -d '[:space:]')
+    if [ -n \"\${cid}\" ] && [ \"\${cid}\" != '-' ]; then
+      echo \"\${inspect}\" | sed -n 's/^  \"uuid\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1 | tr -d '[:space:]' >/tmp/catalog-fields.uuid
+      echo \"\${cid}\" >/tmp/catalog-fields.cid
+      exit 0
+    fi
+  fi
+  sleep 2
+done
+echo 'catalog-fields-test not running' >&2
+edgelet ms inspect edgelet.catalog-fields-test 2>/dev/null || true
+exit 1"
+
+assert_contains "ms inspect shows catalog bindPath and item" "\"bindPath\": \"/models\"" \
+    R "edgelet ms inspect edgelet.catalog-fields-test"
+
+assert_contains "ms inspect lists tiny-gpt2 catalog item" "tiny-gpt2" \
+    R "edgelet ms inspect edgelet.catalog-fields-test"
+
+assert_contains "ms inspect shows catalog permissions" "\"permissions\": \"ro\"" \
+    R "edgelet ms inspect edgelet.catalog-fields-test"
+
+assert_ok "container sees catalog files and applied container fields" \
+    R "set -e
+uuid=\$(cat /tmp/catalog-fields.uuid)
+test -n \"\${uuid}\"
+edgelet ms exec \"\${uuid}\" -- test -f /models/tiny-gpt2/config.json
+pwd=\$(edgelet ms exec \"\${uuid}\" -- pwd)
+echo \"\${pwd}\" | grep -qx /tmp
+id_out=\$(edgelet ms exec \"\${uuid}\" -- id)
+echo \"\${id_out}\" | grep -q 'uid=0'
+echo \"\${id_out}\" | grep -q 'gid=65534'
+ps_out=\$(edgelet ms exec \"\${uuid}\" -- ps)
+echo \"\${ps_out}\" | grep -q sleep
+if edgelet ms exec \"\${uuid}\" -- touch /opt/should-fail 2>/dev/null; then
+  echo 'read-only root allowed write at /opt' >&2
+  exit 1
+fi
+edgelet ms exec \"\${uuid}\" -- touch /tmp/ok
+edgelet ms exec \"\${uuid}\" -- test -c /dev/edgelet-zero
+ka=\$(edgelet ms exec \"\${uuid}\" -- cat /proc/sys/net/ipv4/tcp_keepalive_time)
+echo \"\${ka}\" | grep -qx 600
+limits=\$(edgelet ms exec \"\${uuid}\" -- awk '/Max open files/{print \$4, \$5}' /proc/1/limits)
+echo \"\${limits}\" | grep -q '1024 2048'
+shm=\$(edgelet ms exec \"\${uuid}\" -- df -k /dev/shm | awk 'NR==2{print \$2}')
+test -n \"\${shm}\"
+test \"\${shm}\" -ge 14000
+test \"\${shm}\" -le 20000
+mounts=\$(edgelet ms exec \"\${uuid}\" -- cat /proc/mounts)
+echo \"\${mounts}\" | grep -E ' tmpfs /tmp | /tmp tmpfs'
+cg_cat() {
+  f=\$1
+  edgelet ms exec \"\${uuid}\" -- cat /sys/fs/cgroup/\$f 2>/dev/null && return 0
+  return 1
+}
+cpu_max=\$(cg_cat cpu.max)
+echo \"\${cpu_max}\" | grep -q '50000'
+echo \"\${cpu_max}\" | grep -q '100000'
+mem_max=\$(cg_cat memory.max)
+echo \"\${mem_max}\" | grep -qx 67108864
+cpus=\$(cg_cat cpuset.cpus || cg_cat cpuset.cpus.effective)
+echo \"\${cpus}\" | grep -Eq '^0\$|^0-0\$'
+mem_low=\$(cg_cat memory.low || true)
+if [ -n \"\${mem_low}\" ]; then echo \"\${mem_low}\" | grep -qx 33554432; fi"
+
+assert_ok "model rm tiny-gpt2 refused while microservice is bound" \
+    R "set -e
+out=\$(edgelet model rm tiny-gpt2 2>&1 || true)
+echo \"\${out}\" | grep -q bound"
+
+assert_ok "create catalog-fields two-item manifest" \
+    R "awk '/- name: tiny-gpt2/{print; print \"      - name: smollm2-135m\"; next}1' /tmp/catalog-fields.yaml >/tmp/catalog-fields-two.yaml
+grep -q smollm2-135m /tmp/catalog-fields-two.yaml"
+
+assert_contains "redeploy catalog with second item" "microservice manifest applied successfully" \
+    R "edgelet deploy -f /tmp/catalog-fields-two.yaml"
+
+assert_ok "adding a catalog item does not recreate the container" \
+    R "set -e
+sleep 3
+inspect=\$(edgelet ms inspect edgelet.catalog-fields-test)
+cid=\$(echo \"\${inspect}\" | sed -n 's/^  \"containerId\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1 | tr -d '[:space:]')
+old=\$(tr -d '[:space:]' </tmp/catalog-fields.cid)
+test -n \"\${cid}\"
+test \"\${cid}\" = \"\${old}\"
+uuid=\$(cat /tmp/catalog-fields.uuid)
+for i in \$(seq 1 20); do
+  if edgelet ms exec \"\${uuid}\" -- sh -c 'ls /models/smollm2-135m | grep -q .'; then
+    exit 0
+  fi
+  sleep 2
+done
+echo 'second catalog item not visible in container' >&2
+exit 1"
+
+assert_ok "create catalog-fields bindPath-change manifest" \
+    R "sed 's|bindPath: /models|bindPath: /weights|' /tmp/catalog-fields.yaml >/tmp/catalog-fields-weights.yaml
+grep -q 'bindPath: /weights' /tmp/catalog-fields-weights.yaml"
+
+assert_contains "redeploy catalog with bindPath change" "microservice manifest applied successfully" \
+    R "edgelet deploy -f /tmp/catalog-fields-weights.yaml"
+
+assert_ok_verbose "bindPath change recreates container and remounts catalog" \
+    R "set -e
+old=\$(tr -d '[:space:]' </tmp/catalog-fields.cid)
+uuid=\$(tr -d '[:space:]' </tmp/catalog-fields.uuid)
+for i in \$(seq 1 60); do
+  inspect=\$(edgelet ms inspect edgelet.catalog-fields-test 2>/dev/null || true)
+  if echo \"\${inspect}\" | grep -Eq '^  \"state\": \"running\"'; then
+    cid=\$(echo \"\${inspect}\" | sed -n 's/^  \"containerId\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1 | tr -d '[:space:]')
+    if [ -n \"\${cid}\" ] && [ \"\${cid}\" != \"\${old}\" ] && [ -n \"\${uuid}\" ]; then
+      if echo \"\${inspect}\" | grep -q '\"bindPath\": \"/weights\"' &&
+         edgelet ms exec \"\${uuid}\" -- test -f /weights/tiny-gpt2/config.json; then
+        echo \"\${cid}\" >/tmp/catalog-fields.cid
+        exit 0
+      fi
+    fi
+  fi
+  sleep 2
+done
+echo 'bindPath recreate did not produce a new running container' >&2
+echo \"old containerId=\${old}\" >&2
+edgelet ms inspect edgelet.catalog-fields-test 2>/dev/null || true
+exit 1"
+
+assert_ok "create unknown catalog item manifest" \
+    R "cat >/tmp/catalog-unknown.yaml <<'EOF'
+apiVersion: edgelet.iofog.org/v1
+kind: Microservice
+metadata:
+  name: catalog-unknown-test
+spec:
+  image: docker.io/library/alpine:3.19
+  registry: 1
+  models:
+    bindPath: /models
+    permissions: ro
+    items:
+      - name: missing-model
+  container:
+    commands:
+      - /bin/sh
+      - -lc
+      - sleep 14000
+  schedule: 50
+EOF"
+
+assert_ok "local apply rejects unknown catalog model name" \
+    R "set -e
+out=\$(edgelet deploy -f /tmp/catalog-unknown.yaml 2>&1 || true)
+echo \"\${out}\" | grep -q missing-model
+echo \"\${out}\" | grep -qi local"
+
+assert_ok "remove catalog-fields microservice" \
+    R "set -e
+uuid=\$(cat /tmp/catalog-fields.uuid)
+edgelet ms rm \"\${uuid}\""
+
+assert_ok "catalog-fields microservice is gone from ms ls after rm" \
+    R "set -e
+out=\$(edgelet ms ls)
+! echo \"\${out}\" | grep -q catalog-fields-test"
+
+assert_ok "remove tiny Hugging Face model after unbind" \
     R "edgelet model rm tiny-gpt2"
 
-assert_ok "remove tiny OCI model" \
+assert_ok "remove tiny OCI model after unbind" \
     R "edgelet model rm smollm2-135m"
 
 assert_ok "prune models after remove" \
