@@ -24,6 +24,7 @@ import (
 	v1stats "github.com/containerd/cgroups/v3/cgroup1/stats"
 	v2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/containers"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	dockerresolver "github.com/containerd/containerd/v2/core/remotes/docker"
@@ -40,6 +41,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet/internal/config"
 	"github.com/eclipse-iofog/edgelet/internal/constants"
+	"github.com/eclipse-iofog/edgelet/internal/containerapply"
 	"github.com/eclipse-iofog/edgelet/internal/containerexec"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 	"github.com/eclipse-iofog/edgelet/internal/runtimeops"
@@ -381,6 +383,17 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 
 	envVars := buildIofogContainerEnv(ms, cfg)
 
+	diskDir := ""
+	if cfg != nil {
+		diskDir = strings.TrimSpace(cfg.DiskDirectory)
+	}
+	if err := cri.PrepareHostTmpfs(diskDir, ms); err != nil {
+		return "", fmt.Errorf("prepare tmpfs for %s: %w", containerName, err)
+	}
+	if models.NeedsReadOnlyRootTmpfsWarning(ms.ReadOnlyRootFilesystem, ms.Tmpfs) {
+		log.Warn(models.ReadOnlyRootWithoutTmpfsWarning)
+	}
+
 	// Build /etc/hosts before RunPodSandbox (needed for ContainerConfig mounts).
 	hostsFilePath := ""
 	resolvFilePath := ""
@@ -454,6 +467,14 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 	}
 	e.emitCRISubstep(runtimeops.EventEngineCRIContainerCreated, "criCreateContainer", containerID, sandboxID, ms.ImageName, runtimeops.ReasonCreateFailed, containerStart, nil)
 
+	if err := e.applyOCIRlimits(ctx, containerID, ms); err != nil {
+		_ = e.criClient.StopContainer(ctx, containerID, 0)
+		_ = e.criClient.RemoveContainer(ctx, containerID)
+		_ = e.criClient.StopPodSandbox(ctx, sandboxID)
+		_ = e.criClient.RemovePodSandbox(ctx, sandboxID)
+		return "", fmt.Errorf("apply ulimits for %s: %w", containerName, err)
+	}
+
 	e.store.set(containerID, &containerState{
 		sandboxID: sandboxID,
 		ip:        ipAddr,
@@ -481,6 +502,29 @@ func (e *Engine) CreateContainer(ms *models.Microservice, hostname string) (stri
 		"hostNetwork":    networkSelection.HostNetwork,
 	})
 	return containerID, nil
+}
+
+func (e *Engine) applyOCIRlimits(ctx context.Context, containerID string, ms *models.Microservice) error {
+	if ms == nil || len(ms.Ulimits) == 0 {
+		return nil
+	}
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	spec, err := c.Spec(ctx)
+	if err != nil {
+		return err
+	}
+	cri.ApplyOCIRlimits(spec, ms)
+	return c.Update(ctx, func(_ context.Context, _ *client.Client, cntr *containers.Container) error {
+		anySpec, err := tuypeurl.MarshalAny(spec)
+		if err != nil {
+			return err
+		}
+		cntr.Spec = anySpec
+		return nil
+	})
 }
 
 // StartContainer starts the container via CRI. CRI manages logs; we only record start time.
@@ -600,12 +644,12 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 
 	removeStepStart := time.Now()
 	removeErr := e.criClient.RemoveContainer(ctx, containerID)
-	if removeErr != nil {
+	if removeErr != nil && !containerGone(removeErr) {
 		e.emitCRITeardownStep("criStopContainer", containerID, sandboxIDStr, stopStart, stopErr, false)
 		e.emitCRITeardownStep("criRemoveContainer", containerID, sandboxIDStr, removeStepStart, removeErr, false)
 		// Fallback path for non-CRI/manual containers (e.g. created via ctr run).
 		nativeStart := time.Now()
-		if err := e.removeContainerNative(ctx, containerID); err != nil {
+		if err := e.removeContainerNative(ctx, containerID); err != nil && !containerGone(err) {
 			e.emitEngineWarn(runtimeops.EventEngineContainerRemove, containerID, sandboxIDStr, "", runtimeops.ReasonRemoveFailed, "native fallback remove failed", removeStart, err, map[string]any{"step": "nativeFallback"})
 			return fmt.Errorf("remove container %s (CRI: %w, native fallback: %w)", containerID, removeErr, err)
 		}
@@ -652,6 +696,11 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 	_ = os.Remove(hostsFile)
 	resolvFile := filepath.Join(resolvDir, utils.EdgeletDockerContainerNamePrefix+msUUID+".conf")
 	_ = os.Remove(resolvFile)
+	diskDir := ""
+	if cfg := config.GetInstance(); cfg != nil {
+		diskDir = strings.TrimSpace(cfg.DiskDirectory)
+	}
+	cri.ReleaseHostTmpfs(diskDir, msUUID)
 
 	// Remove per-container log directory.
 	logPath := filepath.Join(e.logDir, msUUID)
@@ -664,6 +713,19 @@ func (e *Engine) RemoveContainer(containerID string, _ bool) error {
 		"msUUID": msUUID,
 	})
 	return nil
+}
+
+func containerGone(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errdefs.IsNotFound(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "no such container") ||
+		strings.Contains(msg, "already in removing")
 }
 
 func (e *Engine) ensureDNSResolver() {
@@ -1899,6 +1961,15 @@ func (e *Engine) AreMicroserviceAndContainerEqual(containerID string, ms *models
 	if ms.HostNetworkMode != storedHostNet {
 		log.Debugf("AreMicroserviceAndContainerEqual %s: network mismatch want hostNet=%v stored=%v",
 			shortID, ms.HostNetworkMode, storedHostNet)
+		return false
+	}
+
+	label := ""
+	if info.Labels != nil {
+		label = info.Labels[containerapply.LabelFingerprint]
+	}
+	if !containerapply.MatchesLabel(label, ms) {
+		log.Debugf("AreMicroserviceAndContainerEqual %s: apply fingerprint mismatch", shortID)
 		return false
 	}
 
