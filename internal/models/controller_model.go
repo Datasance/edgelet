@@ -5,10 +5,9 @@ import (
 	"strings"
 )
 
-// ControllerModel is a fleet-desired Model row stored for later sync.
-// Edgelet persists these rows when present; it does not process a getChanges models flag.
+// ControllerModel is a fleet-desired Model row. Identity is uuid plus unique name.
 type ControllerModel struct {
-	ID         int    `json:"id"`
+	UUID       string `json:"uuid"`
 	Name       string `json:"name"`
 	Repo       string `json:"repo"`
 	Revision   string `json:"revision,omitempty"`
@@ -22,6 +21,7 @@ func (m *ControllerModel) NormalizeDefaults() {
 	if m == nil {
 		return
 	}
+	m.UUID = strings.TrimSpace(m.UUID)
 	m.Name = strings.TrimSpace(m.Name)
 	m.Repo = strings.TrimSpace(m.Repo)
 	m.Revision = strings.TrimSpace(m.Revision)
@@ -67,6 +67,7 @@ func (m *ControllerModel) ToLocalModel() *LocalModel {
 	}
 	row := &LocalModel{
 		Name:       strings.TrimSpace(m.Name),
+		Source:     ModelSourceManaged,
 		Repo:       strings.TrimSpace(m.Repo),
 		Revision:   strings.TrimSpace(m.Revision),
 		RegistryID: m.RegistryID,

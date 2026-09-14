@@ -119,6 +119,9 @@ func TestLocalModelManifest_ToLocalModel(t *testing.T) {
 	if row.Name != "llama-2-7b-q2k" || row.RegistryID != 5 || row.State != ModelStatePending {
 		t.Fatalf("unexpected local model row: %+v", row)
 	}
+	if row.Source != ModelSourceLocal {
+		t.Fatalf("expected local source, got %q", row.Source)
+	}
 	files := row.Files()
 	if len(files) != 1 || files[0] != "llama-2-7b-chat.Q5_K_M.gguf" {
 		t.Fatalf("unexpected files: %v", files)

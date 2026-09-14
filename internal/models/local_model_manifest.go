@@ -107,6 +107,7 @@ func (m *LocalModelManifest) ToLocalModel() *LocalModel {
 	}
 	row := &LocalModel{
 		Name:       strings.TrimSpace(m.Metadata.Name),
+		Source:     ModelSourceLocal,
 		Repo:       strings.TrimSpace(m.Spec.Repo),
 		Revision:   strings.TrimSpace(m.Spec.Revision),
 		RegistryID: m.Spec.Registry,

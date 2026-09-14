@@ -27,6 +27,7 @@ const (
 // LocalModel is the persistent local Model row stored in SQLite.
 type LocalModel struct {
 	Name               string `json:"name"`
+	Source             string `json:"source,omitempty"`
 	Repo               string `json:"repo"`
 	Revision           string `json:"revision,omitempty"`
 	RegistryID         int    `json:"registryId"`
@@ -54,6 +55,10 @@ func (m *LocalModel) NormalizeDefaults() {
 		return
 	}
 	m.Name = strings.TrimSpace(m.Name)
+	m.Source = strings.ToLower(strings.TrimSpace(m.Source))
+	if m.Source == "" {
+		m.Source = ModelSourceLocal
+	}
 	m.Repo = strings.TrimSpace(m.Repo)
 	m.Revision = strings.TrimSpace(m.Revision)
 	m.Format = strings.ToLower(strings.TrimSpace(m.Format))
