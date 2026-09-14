@@ -225,6 +225,9 @@ func (m *Manager) ApplyManifest(doc *models.LocalModelManifest) (*models.LocalMo
 	if doc == nil {
 		return nil, errors.New("manifest is nil")
 	}
+	if err := m.rejectLocalApplyForManagedName(strings.TrimSpace(doc.Metadata.Name)); err != nil {
+		return nil, err
+	}
 	reg, err := m.resolveRegistry(doc.Spec.Registry)
 	if err != nil {
 		return nil, err
@@ -234,6 +237,32 @@ func (m *Manager) ApplyManifest(doc *models.LocalModelManifest) (*models.LocalMo
 	}
 	row := doc.ToLocalModel()
 	return m.UpsertDesired(row)
+}
+
+func (m *Manager) rejectLocalApplyForManagedName(name string) error {
+	if m == nil || m.db == nil || strings.TrimSpace(name) == "" {
+		return nil
+	}
+	if strings.TrimSpace(config.GetInstance().IOFogUUID) == "" {
+		return nil
+	}
+	existing, err := m.db.GetLocalModel(name)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if existing != nil && existing.Source == models.ModelSourceManaged {
+		return fmt.Errorf("cannot apply a local Model named %q while a controller-managed model occupies that name", name)
+	}
+	fleet, err := m.db.LoadControllerModels()
+	if err != nil {
+		return err
+	}
+	for _, item := range fleet {
+		if item != nil && item.Name == name {
+			return fmt.Errorf("cannot apply a local Model named %q while a controller-managed model occupies that name", name)
+		}
+	}
+	return nil
 }
 
 // UpsertDesired inserts or updates a local Model row, bumping generation on spec drift.
@@ -319,6 +348,33 @@ func (m *Manager) SaveControllerModels(items []*models.ControllerModel) error {
 		return errors.New("model manager is not initialized")
 	}
 	return m.db.SaveControllerModels(items)
+}
+
+// ApplyControllerModels replaces the fleet-desired Model snapshot and upserts
+// each row as a managed local Model. A managed Model occupies that on-disk name.
+func (m *Manager) ApplyControllerModels(ctx context.Context, items []*models.ControllerModel) error {
+	if m == nil || m.db == nil {
+		return errors.New("model manager is not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := m.SaveControllerModels(items); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		row := item.ToLocalModel()
+		if row == nil || strings.TrimSpace(row.Name) == "" {
+			continue
+		}
+		if _, err := m.UpsertDesired(row); err != nil {
+			logging.LogWarn(moduleName, fmt.Sprintf("managed model %s upsert failed: %v", row.Name, err))
+		}
+	}
+	return m.Reconcile(ctx)
 }
 
 // Reconcile compares desired local Models to on-disk state and starts pulls when needed.

@@ -109,6 +109,13 @@ func (m *Manager) Remove(name string) error {
 	if m.hasActivePull(name) {
 		return fmt.Errorf("model %s is currently pulling", name)
 	}
+	refs, err := m.db.CountModelRefs(name)
+	if err != nil {
+		return err
+	}
+	if refs > 0 {
+		return fmt.Errorf("model %s is bound to %d microservice(s)", name, refs)
+	}
 	if err := m.removeArtifacts(name); err != nil {
 		return err
 	}

@@ -475,7 +475,7 @@ func TestStartPull_RegistryTypeMismatchUsesMatchingAdapter(t *testing.T) {
 func TestSaveControllerModelsStub(t *testing.T) {
 	m, _, _ := newTestManager(t)
 	item := &models.ControllerModel{
-		ID:         12,
+		UUID:       "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f",
 		Name:       "llama-2-7b-q2k",
 		Repo:       "second-state/Llama-2-7B-Chat-GGUF",
 		Revision:   "main",
@@ -698,6 +698,23 @@ func TestPrune_SharedOCIBlobRetained(t *testing.T) {
 	}
 }
 
+func TestRemove_RefusedWhileBound(t *testing.T) {
+	m, _, _ := newTestManager(t)
+	if _, err := m.UpsertDesired(sampleModel("bound-model", "ai/bound", "latest", 1, nil)); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := m.db.ReplaceWorkloadModelRefs("ms-1", []string{"bound-model"}); err != nil {
+		t.Fatalf("bind ref: %v", err)
+	}
+	err := m.Remove("bound-model")
+	if err == nil || !strings.Contains(err.Error(), "bound") {
+		t.Fatalf("expected refuse while bound, got %v", err)
+	}
+	if _, err := m.db.GetLocalModel("bound-model"); err != nil {
+		t.Fatalf("model row must remain: %v", err)
+	}
+}
+
 func collectOps(m *Manager) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -771,5 +788,80 @@ func TestExampleModelsReachReadyWithContent(t *testing.T) {
 		if _, err := os.Stat(modelpull.ManifestPath(m.modelsRoot, ex.name)); err != nil {
 			t.Fatalf("expected on-disk manifest for %s: %v", ex.name, err)
 		}
+	}
+}
+
+func TestApplyControllerModels_UpsertsManagedAndWinsName(t *testing.T) {
+	m, _, hfPuller := newTestManager(t)
+
+	local := sampleModel("test-model", "org/old", "main", 5, []string{"old.gguf"})
+	if _, err := m.UpsertDesired(local); err != nil {
+		t.Fatalf("seed local: %v", err)
+	}
+
+	item := &models.ControllerModel{
+		UUID:       "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f",
+		Name:       "test-model",
+		Repo:       "second-state/Llama-2-7B-Chat-GGUF",
+		Revision:   "064fe43ea8c1e1f93477ef4a170bdc2b244ef02c",
+		RegistryID: 5,
+		Format:     models.ModelFormatGGUF,
+	}
+	item.SetFiles([]string{"llama-2-7b-chat.Q5_K_M.gguf"})
+	if err := m.ApplyControllerModels(context.Background(), []*models.ControllerModel{item}); err != nil {
+		t.Fatalf("apply controller models: %v", err)
+	}
+
+	got, err := m.db.GetLocalModel("test-model")
+	if err != nil {
+		t.Fatalf("get local: %v", err)
+	}
+	if got.Source != models.ModelSourceManaged {
+		t.Fatalf("expected managed source, got %q", got.Source)
+	}
+	if got.Repo != item.Repo {
+		t.Fatalf("expected controller repo to win, got %q", got.Repo)
+	}
+	ready := waitState(t, m, "test-model", models.ModelStateReady)
+	if ready.Source != models.ModelSourceManaged {
+		t.Fatalf("expected managed source after pull, got %q", ready.Source)
+	}
+	if hfPuller.callCount() < 1 {
+		t.Fatal("expected huggingface pull for managed model")
+	}
+}
+
+func TestApplyManifest_RejectsManagedNameWhileProvisioned(t *testing.T) {
+	m, _, _ := newTestManager(t)
+	cfg := config.GetInstance()
+	origUUID := cfg.IOFogUUID
+	cfg.IOFogUUID = "agent-uuid-managed-name"
+	t.Cleanup(func() { cfg.IOFogUUID = origUUID })
+
+	item := &models.ControllerModel{
+		UUID:       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		Name:       "fleet-model",
+		Repo:       "org/repo",
+		RegistryID: 5,
+	}
+	if err := m.SaveControllerModels([]*models.ControllerModel{item}); err != nil {
+		t.Fatalf("save controller models: %v", err)
+	}
+	if _, err := m.UpsertDesired(item.ToLocalModel()); err != nil {
+		t.Fatalf("upsert managed: %v", err)
+	}
+
+	doc := &models.LocalModelManifest{
+		APIVersion: "edgelet.iofog.org/v1",
+		Kind:       "Model",
+		Spec: models.LocalModelSpec{
+			Repo:     "org/other",
+			Registry: 5,
+		},
+	}
+	doc.Metadata.Name = "fleet-model"
+	_, err := m.ApplyManifest(doc)
+	if err == nil || !strings.Contains(err.Error(), "controller-managed") {
+		t.Fatalf("expected local apply to be rejected for managed name, got %v", err)
 	}
 }
