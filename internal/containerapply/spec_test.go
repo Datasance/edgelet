@@ -36,6 +36,30 @@ func TestFingerprintIgnoresCatalogItems(t *testing.T) {
 	}
 }
 
+func TestFingerprintEmptyVsNonemptyCatalog(t *testing.T) {
+	ms := models.NewMicroservice("ms-1", "alpine:3.19")
+	empty, err := Marshal(FromMicroservice(ms))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms.Models = &models.ModelCatalog{
+		BindPath:    "/models",
+		Permissions: "ro",
+		Items:       []models.ModelCatalogItem{{Name: "a"}},
+	}
+	if MatchesLabel(empty, ms) {
+		t.Fatal("adding a catalog must recreate")
+	}
+	withCatalog, err := Marshal(FromMicroservice(ms))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms.Models.Items = nil
+	if MatchesLabel(withCatalog, ms) {
+		t.Fatal("removing the last catalog item must recreate")
+	}
+}
+
 func TestMatchesLabelLegacyEmpty(t *testing.T) {
 	ms := models.NewMicroservice("ms-1", "alpine:3.19")
 	if !MatchesLabel("", ms) {

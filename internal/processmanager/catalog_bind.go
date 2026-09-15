@@ -45,7 +45,11 @@ func (pm *ProcessManager) prepareCatalog(ms *models.Microservice, forStart bool)
 }
 
 func (pm *ProcessManager) applyCatalogStartGate(ms *models.Microservice) (proceed bool) {
-	if ms == nil || !ms.Models.HasItems() {
+	if ms == nil {
+		return true
+	}
+	if !ms.Models.HasItems() {
+		pm.releaseCatalog(ms.MicroserviceUUID)
 		return true
 	}
 	res, err := pm.prepareCatalog(ms, true)
@@ -76,7 +80,7 @@ func (pm *ProcessManager) applyCatalogStartGate(ms *models.Microservice) (procee
 }
 
 func (pm *ProcessManager) refreshCatalogProjection(ms *models.Microservice) {
-	if ms == nil || !ms.Models.HasItems() {
+	if ms == nil {
 		return
 	}
 	res, err := pm.prepareCatalog(ms, false)
@@ -84,7 +88,9 @@ func (pm *ProcessManager) refreshCatalogProjection(ms *models.Microservice) {
 		pm.logger.Warnf("catalog refresh for %s: %v", ms.MicroserviceUUID, err)
 		return
 	}
-	if res.Decision == models.CatalogGateAllow && res.MountChanged {
+	// Item add/remove on an existing catalog stays in-place. Empty↔nonempty,
+	// bindPath, and catalog permissions still recreate.
+	if res.MountChanged {
 		ms.Rebuild = true
 	}
 }
@@ -110,7 +116,11 @@ func (cm *ContainerManager) catalogDiskDirectoryValue() string {
 }
 
 func (cm *ContainerManager) applyCatalogStartGate(ms *models.Microservice) error {
-	if ms == nil || !ms.Models.HasItems() {
+	if ms == nil {
+		return nil
+	}
+	if !ms.Models.HasItems() {
+		cm.releaseCatalog(ms.MicroserviceUUID)
 		return nil
 	}
 	res, err := modelcatalog.Prepare(cm.catalogDiskDirectoryValue(), store.GetInstance(), ms, requiredModelSource(ms.MicroserviceUUID), true)
@@ -128,7 +138,11 @@ func (cm *ContainerManager) releaseCatalog(msUUID string) {
 }
 
 func (pm *ProcessManager) gateLocalCatalog(ms *models.Microservice) error {
-	if ms == nil || !ms.Models.HasItems() {
+	if ms == nil {
+		return nil
+	}
+	if !ms.Models.HasItems() {
+		pm.releaseCatalog(ms.MicroserviceUUID)
 		return nil
 	}
 	res, err := pm.prepareCatalog(ms, true)
@@ -148,16 +162,12 @@ func (pm *ProcessManager) refreshLocalCatalogIfNeeded(item *models.LocalDeployed
 	}
 	image := doc.ManifestImage()
 	localMS := models.BuildMicroserviceFromLocalManifest(doc, item.LocalUUID, image)
-	if !localMS.Models.HasItems() {
-		pm.releaseCatalog(item.LocalUUID)
-		return false
-	}
 	res, err := pm.prepareCatalog(localMS, false)
 	if err != nil {
 		pm.logger.Warnf("local catalog refresh for %s: %v", item.LocalUUID, err)
 		return false
 	}
-	if res.Decision == models.CatalogGateAllow && res.MountChanged {
+	if res.MountChanged {
 		if recErr := pm.recreateLocalDeployment(item, false, now); recErr != nil {
 			pm.logger.Warnf("local catalog bindPath recreate for %s: %v", item.LocalUUID, recErr)
 		}

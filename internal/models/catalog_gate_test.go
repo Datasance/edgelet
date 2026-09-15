@@ -170,4 +170,15 @@ func TestCatalogMountNeedsRecreate(t *testing.T) {
 	if !CatalogMountNeedsRecreate(base, perms) {
 		t.Fatal("permissions change must recreate")
 	}
+
+	empty := &ModelCatalog{BindPath: "/models", Permissions: ModelCatalogPermRO}
+	if !CatalogMountNeedsRecreate(nil, base) {
+		t.Fatal("empty to nonempty catalog must recreate")
+	}
+	if !CatalogMountNeedsRecreate(base, empty) {
+		t.Fatal("removing the last catalog item must recreate")
+	}
+	if CatalogMountNeedsRecreate(nil, empty) {
+		t.Fatal("empty to empty must not recreate")
+	}
 }

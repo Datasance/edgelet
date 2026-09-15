@@ -63,16 +63,22 @@ func Prepare(diskDirectory string, db *store.DB, ms *models.Microservice, requir
 	}
 
 	if !ms.Models.HasItems() {
+		result := &PrepareResult{
+			Decision:     models.CatalogGateAllow,
+			HostDir:      hostDir,
+			MountChanged: mountChangedFromDisk(hostDir, ms.Models),
+		}
 		if err := db.DeleteWorkloadModelRefs(ms.MicroserviceUUID); err != nil {
 			return nil, err
 		}
-		if err := Cleanup(diskDirectory, ms.MicroserviceUUID); err != nil {
-			return nil, err
+		// Recreate drops the catalog bind. Keep the previous tree until then so a
+		// still-running container does not lose the mount mid-cycle.
+		if forStart {
+			if err := Cleanup(diskDirectory, ms.MicroserviceUUID); err != nil {
+				return nil, err
+			}
 		}
-		return &PrepareResult{
-			Decision: models.CatalogGateAllow,
-			HostDir:  hostDir,
-		}, nil
+		return result, nil
 	}
 
 	lookup := LookupFromStore(db)
@@ -97,9 +103,8 @@ func Prepare(diskDirectory string, db *store.DB, ms *models.Microservice, requir
 
 	if decision != models.CatalogGateAllow {
 		result.MountChanged = mountChangedFromDisk(hostDir, ms.Models)
-		if forStart {
-			return result, nil
-		}
+		// First start waits before creating. A running workload keeps the previous
+		// projection until every named item is Ready, then Project swings ..data.
 		return result, nil
 	}
 

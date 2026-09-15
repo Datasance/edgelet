@@ -98,6 +98,117 @@ func TestPrepare_SourceScopedBind(t *testing.T) {
 	assertRefCount(t, db, "fleet-model", 0)
 }
 
+func TestPrepare_RefreshKeepsProjectionUntilReady(t *testing.T) {
+	db := openCatalogTestDB(t)
+	disk := t.TempDir()
+	contentA := filepath.Join(disk, "models", "model-a", "content")
+	contentB := filepath.Join(disk, "models", "model-b", "content")
+	for _, dir := range []string{contentA, contentB} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "w.bin"), []byte("ok"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsertModel(t, db, "model-a", models.ModelSourceManaged, models.ModelStateReady, contentA, 1)
+	upsertModel(t, db, "model-b", models.ModelSourceManaged, models.ModelStatePulling, contentB, 1)
+
+	ms := models.NewMicroservice("ms-wait", "nginx:latest")
+	ms.Models = &models.ModelCatalog{
+		BindPath: "/models",
+		Items:    []models.ModelCatalogItem{{Name: "model-a"}},
+	}
+	first, err := Prepare(disk, db, ms, models.ModelSourceManaged, true)
+	if err != nil || first.Decision != models.CatalogGateAllow {
+		t.Fatalf("initial project: decision=%v err=%v", first.Decision, err)
+	}
+	before, err := os.ReadFile(filepath.Join(first.HostDir, "model-a", "w.bin")) // #nosec G304 -- test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ms.Models.Items = append(ms.Models.Items, models.ModelCatalogItem{Name: "model-b"})
+	waiting, err := Prepare(disk, db, ms, models.ModelSourceManaged, false)
+	if err != nil {
+		t.Fatalf("refresh while pulling: %v", err)
+	}
+	if waiting.Decision != models.CatalogGateWait {
+		t.Fatalf("expected wait, got %v", waiting.Decision)
+	}
+	if waiting.MountChanged {
+		t.Fatal("adding an item must not report a mount change")
+	}
+	got, err := os.ReadFile(filepath.Join(first.HostDir, "model-a", "w.bin")) // #nosec G304 -- test fixture
+	if err != nil {
+		t.Fatalf("previous projection must stay until Ready: %v", err)
+	}
+	if string(got) != string(before) {
+		t.Fatal("previous projection bytes changed before Ready")
+	}
+	if _, err := os.Lstat(filepath.Join(first.HostDir, "model-b")); !os.IsNotExist(err) {
+		t.Fatal("must not project the pending name until Ready")
+	}
+
+	upsertModel(t, db, "model-b", models.ModelSourceManaged, models.ModelStateReady, contentB, 1)
+	ready, err := Prepare(disk, db, ms, models.ModelSourceManaged, false)
+	if err != nil || ready.Decision != models.CatalogGateAllow {
+		t.Fatalf("refresh after Ready: decision=%v err=%v", ready.Decision, err)
+	}
+	if ready.MountChanged {
+		t.Fatal("in-place item add must not report a mount change")
+	}
+	if _, err := os.ReadFile(filepath.Join(ready.HostDir, "model-b", "w.bin")); err != nil { // #nosec G304 -- test fixture
+		t.Fatalf("Ready item must be projected: %v", err)
+	}
+}
+
+func TestPrepare_RefreshEmptyCatalogKeepsTree(t *testing.T) {
+	db := openCatalogTestDB(t)
+	disk := t.TempDir()
+	content := filepath.Join(disk, "models", "model-a", "content")
+	if err := os.MkdirAll(content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(content, "w.bin"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	upsertModel(t, db, "model-a", models.ModelSourceManaged, models.ModelStateReady, content, 1)
+
+	ms := models.NewMicroservice("ms-empty", "nginx:latest")
+	ms.Models = &models.ModelCatalog{
+		BindPath: "/models",
+		Items:    []models.ModelCatalogItem{{Name: "model-a"}},
+	}
+	first, err := Prepare(disk, db, ms, models.ModelSourceManaged, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ms.Models.Items = nil
+	refresh, err := Prepare(disk, db, ms, models.ModelSourceManaged, false)
+	if err != nil {
+		t.Fatalf("refresh empty: %v", err)
+	}
+	if !refresh.MountChanged {
+		t.Fatal("removing the last item must report a mount change")
+	}
+	if _, err := os.Stat(filepath.Join(first.HostDir, "model-a", "w.bin")); err != nil { // #nosec G304 -- test fixture
+		t.Fatalf("refresh must keep the previous tree until recreate: %v", err)
+	}
+
+	start, err := Prepare(disk, db, ms, models.ModelSourceManaged, true)
+	if err != nil {
+		t.Fatalf("start empty: %v", err)
+	}
+	if !start.MountChanged {
+		t.Fatal("recreate without a catalog must report a mount change")
+	}
+	if _, err := os.Stat(first.HostDir); !os.IsNotExist(err) {
+		t.Fatal("create without a catalog must remove the projection")
+	}
+}
+
 func openCatalogTestDB(t *testing.T) *store.DB {
 	t.Helper()
 	db := store.GetInstance()
