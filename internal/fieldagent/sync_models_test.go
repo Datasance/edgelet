@@ -193,6 +193,8 @@ func TestGetFogStatus_ReadyManagedModelIncludesUUIDNameState(t *testing.T) {
 		State:      models.ModelStateReady,
 	}
 	localOnly.NormalizeDefaults()
+	localOnly.LastTransitionAt = 1600000000
+	localOnly.LastReconcileAt = 1600000000
 	if err := store.GetInstance().UpsertLocalModel(localOnly); err != nil {
 		t.Fatalf("upsert local-only: %v", err)
 	}
@@ -213,11 +215,33 @@ func TestGetFogStatus_ReadyManagedModelIncludesUUIDNameState(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		t.Fatalf("parse modelStatus: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("expected local models omitted, got %#v", items)
+	if len(items) != 2 {
+		t.Fatalf("expected local and managed models, got %#v", items)
 	}
-	if items[0]["uuid"] != item.UUID || items[0]["name"] != "test-model" || items[0]["state"] != models.ModelStateReady {
-		t.Fatalf("unexpected modelStatus item: %#v", items[0])
+	byName := map[string]map[string]any{}
+	for _, item := range items {
+		name, ok := item["name"].(string)
+		if !ok {
+			t.Fatalf("expected name string, got %#v", item["name"])
+		}
+		byName[name] = item
+	}
+	managed := byName["test-model"]
+	if managed == nil {
+		t.Fatalf("missing managed model: %#v", items)
+	}
+	if managed["uuid"] != item.UUID || managed["source"] != models.ModelSourceManaged || managed["state"] != models.ModelStateReady {
+		t.Fatalf("unexpected managed modelStatus item: %#v", managed)
+	}
+	local := byName["operator-only"]
+	if local == nil {
+		t.Fatalf("missing local model: %#v", items)
+	}
+	if local["source"] != models.ModelSourceLocal {
+		t.Fatalf("expected source=local, got %#v", local)
+	}
+	if _, ok := local["uuid"]; ok {
+		t.Fatalf("local modelStatus must omit uuid, got %#v", local)
 	}
 	if status["modelLastUpdate"] != int64(1700000000) {
 		t.Fatalf("modelLastUpdate=%#v", status["modelLastUpdate"])
@@ -237,6 +261,9 @@ func TestLoadInitialControllerData_LoadsModelsBeforeMicroservices(t *testing.T) 
 		case strings.HasSuffix(r.URL.Path, "/agent/models"):
 			order = append(order, "models")
 			_, _ = w.Write(fixtureControllerModelsJSON())
+		case strings.HasSuffix(r.URL.Path, "/agent/runtimeClasses"):
+			order = append(order, "runtimeClasses")
+			_, _ = w.Write([]byte(`{"runtimeClasses":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/agent/microservices"):
 			order = append(order, "microservices")
 			_, _ = w.Write([]byte(`{"microservices":[]}`))
@@ -258,5 +285,43 @@ func TestLoadInitialControllerData_LoadsModelsBeforeMicroservices(t *testing.T) 
 	}
 	if modelsAt < 0 || msAt < 0 || modelsAt > msAt {
 		t.Fatalf("expected models before microservices, order=%v", order)
+	}
+}
+
+func TestGetFogStatus_LocalOnlyModelsOmitUUIDAndActiveModelsZero(t *testing.T) {
+	openFieldAgentTestDB(t)
+	localOnly := &models.LocalModel{
+		Name:       "operator-only",
+		Source:     models.ModelSourceLocal,
+		Repo:       "org/local",
+		RegistryID: 1,
+		State:      models.ModelStateReady,
+	}
+	localOnly.NormalizeDefaults()
+	if err := store.GetInstance().UpsertLocalModel(localOnly); err != nil {
+		t.Fatalf("upsert local-only: %v", err)
+	}
+
+	fa := &FieldAgent{
+		config: config.GetInstance(),
+		state:  NewState(),
+	}
+	status := fa.getFogStatus()
+	if status["activeModels"] != 0 {
+		t.Fatalf("expected activeModels 0 for local-only, got %#v", status["activeModels"])
+	}
+	raw, ok := status["modelStatus"].(string)
+	if !ok {
+		t.Fatalf("modelStatus type: %#v", status["modelStatus"])
+	}
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		t.Fatalf("parse modelStatus: %v", err)
+	}
+	if len(items) != 1 || items[0]["name"] != "operator-only" || items[0]["source"] != models.ModelSourceLocal {
+		t.Fatalf("unexpected local-only modelStatus: %#v", items)
+	}
+	if _, hasUUID := items[0]["uuid"]; hasUUID {
+		t.Fatalf("local item must omit uuid: %#v", items[0])
 	}
 }

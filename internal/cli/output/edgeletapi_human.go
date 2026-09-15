@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
 var statusOutputOrder = []string{
@@ -29,6 +31,8 @@ var statusOutputOrder = []string{
 	"systemTotalCpu",
 	"availableNetworkInterfaces",
 	"availableRuntimes",
+	"runtimeClasses",
+	"availableCdiDevices",
 }
 
 var infoOutputOrder = []string{
@@ -54,7 +58,6 @@ var infoOutputOrder = []string{
 	"logFilesCount",
 	"logLevel",
 	"upgradeScanFrequency",
-	"deviceScanFrequency",
 	"pruningFrequency",
 	"edgeGuardFrequency",
 	"gpsCoordinates",
@@ -75,7 +78,6 @@ var infoAliasToCanonical = map[string]string{
 	"diskLimit":            "diskUsageLimit",
 	"logLevel":             "logFilesLevel",
 	"upgradeScanFrequency": "readyToUpgradeScanFrequency",
-	"deviceScanFrequency":  "scanDevicesFrequency",
 }
 
 // FormatEdgeletAPIHuman renders human-readable output for a EdgeletAPI v1 route payload.
@@ -83,7 +85,7 @@ func FormatEdgeletAPIHuman(routePath string, result map[string]any) string {
 	routePath = stripQuery(routePath)
 	switch routePath {
 	case "/v1/system/status":
-		return formatFlatMapWithOrder(result, statusOutputOrder)
+		return formatStatusMap(result, statusOutputOrder)
 	case "/v1/system/info":
 		return formatInfoWithAliasOrder(result)
 	case "/v1/ms":
@@ -125,6 +127,7 @@ var msInspectOrder = []string{
 	"errorMessage",
 	"lastError",
 	"containerId",
+	"podId",
 	"image",
 	"desiredState",
 	"runtimeState",
@@ -252,6 +255,100 @@ func formatInspectScalar(value any) (string, bool) {
 			return "", false
 		}
 		return s, true
+	}
+}
+
+func formatStatusMap(result map[string]any, preferred []string) string {
+	if len(result) == 0 {
+		return ""
+	}
+	seen := make(map[string]bool, len(result))
+	var b strings.Builder
+	for _, key := range preferred {
+		value, ok := result[key]
+		if !ok {
+			continue
+		}
+		_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatStatusValue(key, value))
+		seen[key] = true
+	}
+	remaining := make([]string, 0, len(result))
+	for key := range result {
+		if !seen[key] {
+			remaining = append(remaining, key)
+		}
+	}
+	slices.Sort(remaining)
+	for _, key := range remaining {
+		_, _ = fmt.Fprintf(&b, "%s: %s\n", key, formatStatusValue(key, result[key]))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatStatusValue(key string, value any) string {
+	switch key {
+	case "runtimeClasses":
+		return formatRuntimeClassesStatusValue(value)
+	case "availableCdiDevices":
+		return formatJoinedStatusList(value)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func formatRuntimeClassesStatusValue(value any) string {
+	parts := make([]string, 0)
+	switch typed := value.(type) {
+	case []models.RuntimeClassStatus:
+		for _, item := range typed {
+			parts = append(parts, item.Display())
+		}
+	case []any:
+		for _, raw := range typed {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := strings.TrimSpace(MapValueAsRawString(item, "name"))
+			handler := strings.TrimSpace(MapValueAsRawString(item, "handler"))
+			source := strings.TrimSpace(MapValueAsRawString(item, "source"))
+			if name == "" {
+				continue
+			}
+			parts = append(parts, name+" ("+handler+", "+source+")")
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			name := strings.TrimSpace(MapValueAsRawString(item, "name"))
+			handler := strings.TrimSpace(MapValueAsRawString(item, "handler"))
+			source := strings.TrimSpace(MapValueAsRawString(item, "source"))
+			if name == "" {
+				continue
+			}
+			parts = append(parts, name+" ("+handler+", "+source+")")
+		}
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatJoinedStatusList(value any) string {
+	switch typed := value.(type) {
+	case []string:
+		return strings.Join(typed, ", ")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			s := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if s == "" {
+				continue
+			}
+			parts = append(parts, s)
+		}
+		return strings.Join(parts, ", ")
+	default:
+		return fmt.Sprintf("%v", value)
 	}
 }
 

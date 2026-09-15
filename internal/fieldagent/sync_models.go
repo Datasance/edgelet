@@ -1,10 +1,12 @@
 package fieldagent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -124,7 +126,7 @@ func parseControllerModel(data map[string]any) (*models.ControllerModel, error) 
 	return item, nil
 }
 
-func (fa *FieldAgent) fogManagedModelStatus() (modelStatus string, activeModels int, modelLastUpdate int64) {
+func (fa *FieldAgent) fogModelStatus() (modelStatus string, activeModels int, modelLastUpdate int64) {
 	defer func() {
 		if r := recover(); r != nil {
 			logging.LogWarn(moduleName, fmt.Sprintf("model status for fog report panicked: %v", r))
@@ -140,10 +142,9 @@ func (fa *FieldAgent) fogManagedModelStatus() (modelStatus string, activeModels 
 		return modelStatus, 0, 0
 	}
 	fleet, err := db.LoadControllerModels()
-	if err != nil || len(fleet) == 0 {
-		return modelStatus, 0, 0
+	if err != nil {
+		fleet = nil
 	}
-
 	locals, err := db.ListLocalModels()
 	if err != nil {
 		locals = nil
@@ -156,15 +157,20 @@ func (fa *FieldAgent) fogManagedModelStatus() (modelStatus string, activeModels 
 		localByName[row.Name] = row
 	}
 
-	payload := make([]map[string]any, 0, len(fleet))
+	payload := make([]map[string]any, 0, len(fleet)+len(locals))
 	lastUpdate := fa.getModelLastUpdate()
+	managedCount := 0
+	managedNames := make(map[string]struct{}, len(fleet))
 	for _, cm := range fleet {
 		if cm == nil {
 			continue
 		}
+		managedCount++
+		managedNames[cm.Name] = struct{}{}
 		item := map[string]any{
 			"uuid":             cm.UUID,
 			"name":             cm.Name,
+			"source":           models.ModelSourceManaged,
 			"state":            models.ModelStatePending,
 			"digest":           "",
 			"resolvedRevision": "",
@@ -189,9 +195,42 @@ func (fa *FieldAgent) fogManagedModelStatus() (modelStatus string, activeModels 
 		payload = append(payload, item)
 	}
 
+	localOnly := make([]*models.LocalModel, 0)
+	for _, row := range locals {
+		if row == nil || row.Source != models.ModelSourceLocal {
+			continue
+		}
+		if _, managed := managedNames[row.Name]; managed {
+			continue
+		}
+		localOnly = append(localOnly, row)
+	}
+	slices.SortFunc(localOnly, func(a, b *models.LocalModel) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, row := range localOnly {
+		item := map[string]any{
+			"name":             row.Name,
+			"source":           models.ModelSourceLocal,
+			"state":            row.State,
+			"digest":           row.Digest,
+			"resolvedRevision": row.ResolvedRevision,
+			"revisionFloating": row.RevisionFloating,
+			"totalBytes":       row.TotalBytes,
+			"lastError":        row.LastError,
+		}
+		if row.LastReconcileAt > lastUpdate {
+			lastUpdate = row.LastReconcileAt
+		}
+		if row.LastTransitionAt > lastUpdate {
+			lastUpdate = row.LastTransitionAt
+		}
+		payload = append(payload, item)
+	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "[]", 0, 0
 	}
-	return string(raw), len(payload), lastUpdate
+	return string(raw), managedCount, lastUpdate
 }

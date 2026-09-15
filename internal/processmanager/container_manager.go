@@ -776,6 +776,7 @@ func (cm *ContainerManager) createContainerWithPull(ctx context.Context, ms *mod
 		if msStatus := status.GetMicroserviceStatus(ms.MicroserviceUUID); msStatus != nil {
 			msStatus.StartTime = time.Now().UnixMilli()
 			msStatus.ContainerID = containerID
+			msStatus.ApplyPodID(cm.engineName, sandboxID)
 			if ms.ContainerIPAddress != nil {
 				msStatus.IPAddress = ms.ContainerIPAddress
 			}

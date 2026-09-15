@@ -59,6 +59,32 @@ func TestFormatEdgeletAPIHuman_StatusIncludesAvailableNetworkInterfacesAfterTota
 	}
 }
 
+func TestFormatEdgeletAPIHuman_StatusRuntimeClassesAndCDI(t *testing.T) {
+	out := FormatEdgeletAPIHuman("/v1/system/status", map[string]any{
+		"availableRuntimes": "crun, spin",
+		"runtimeClasses": []any{
+			map[string]any{"name": "nvidia", "handler": "nvidia", "source": "local"},
+			map[string]any{"name": "spin", "handler": "spin", "source": "managed"},
+		},
+		"availableCdiDevices": []any{"nvidia.com/gpu=0", "nvidia.com/gpu=1"},
+	})
+	if !strings.Contains(out, "availableRuntimes: crun, spin") {
+		t.Fatalf("expected availableRuntimes preserved, got: %s", out)
+	}
+	if !strings.Contains(out, "runtimeClasses: nvidia (nvidia, local), spin (spin, managed)") {
+		t.Fatalf("expected formatted runtime classes, got: %s", out)
+	}
+	if !strings.Contains(out, "availableCdiDevices: nvidia.com/gpu=0, nvidia.com/gpu=1") {
+		t.Fatalf("expected joined CDI list, got: %s", out)
+	}
+	runtimesIdx := strings.Index(out, "availableRuntimes:")
+	classesIdx := strings.Index(out, "runtimeClasses:")
+	cdiIdx := strings.Index(out, "availableCdiDevices:")
+	if runtimesIdx == -1 || classesIdx < runtimesIdx || cdiIdx < classesIdx {
+		t.Fatalf("expected new keys appended after availableRuntimes, got: %s", out)
+	}
+}
+
 func TestFormatProvisionSuccess(t *testing.T) {
 	withUUID := FormatProvisionSuccess("abc-123")
 	if withUUID != "agent provisioned successfully (uuid: abc-123)" {
