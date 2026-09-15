@@ -39,6 +39,31 @@ const runtimeAPIModuleName = "Runtime API Facade"
 
 var ErrRuntimeClassUnsupported = errors.New("runtimeclass is supported only when containerEngine=edgelet")
 
+// ErrRuntimeClassManagedName is returned when a local apply targets a name the
+// controller currently manages on this provisioned node.
+type ErrRuntimeClassManagedName struct {
+	Name string
+}
+
+func (e *ErrRuntimeClassManagedName) Error() string {
+	name := ""
+	if e != nil {
+		name = strings.TrimSpace(strings.ToLower(e.Name))
+	}
+	return fmt.Sprintf("cannot apply a local RuntimeClass named %q while a controller-managed runtime class occupies that name", name)
+}
+
+func (e *ErrRuntimeClassManagedName) Details() map[string]any {
+	name := ""
+	if e != nil {
+		name = strings.TrimSpace(strings.ToLower(e.Name))
+	}
+	return map[string]any{
+		"runtimeClassName": name,
+		"source":           models.RuntimeClassSourceManaged,
+	}
+}
+
 const (
 	RuntimeClassStageWriteConfig     = "write_config"
 	RuntimeClassStageStopRuntime     = "stop_runtime"
@@ -279,7 +304,10 @@ func (f *Facade) Prune(mode string) (map[string]any, error) {
 		result["deletedCount"] = deletedCount
 		result["spaceReclaimedBytes"] = reclaimed
 		result["spaceReclaimedHuman"] = humanBytes(reclaimed)
-		result["message"] = "pruned dangling images"
+		if err := f.attachUnusedLocalModelPrune(result); err != nil {
+			return nil, err
+		}
+		result["message"] = "pruned dangling images and unused local models"
 	case PruneModeContainers:
 		report, pruneErr := pm.PruneContainers()
 		if pruneErr != nil {
@@ -336,6 +364,10 @@ func (f *Facade) Prune(mode string) (map[string]any, error) {
 		} else {
 			imageReport = r
 		}
+		modelReport, modelErr := f.pruneUnusedLocalModels()
+		if modelErr != nil {
+			errorsByStep["models"] = modelErr.Error()
+		}
 		containerDeleted := make([]string, 0)
 		containerDeletedCount := 0
 		if containerReport != nil {
@@ -367,20 +399,57 @@ func (f *Facade) Prune(mode string) (map[string]any, error) {
 		result["volumesDeletedCount"] = volumeDeletedCount
 		result["imagesDeleted"] = imageDeleted
 		result["imagesDeletedCount"] = imageDeletedCount
-		result["deletedCount"] = containerDeletedCount + volumeDeletedCount + imageDeletedCount
+		attachModelPruneReport(result, modelReport)
+		result["deletedCount"] = containerDeletedCount + volumeDeletedCount + imageDeletedCount + modelRemovedCount(modelReport)
 		result["spaceReclaimedBytes"] = volumeReclaimed + imageReclaimed
 		result["spaceReclaimedHuman"] = humanBytes(volumeReclaimed + imageReclaimed)
 		if len(errorsByStep) > 0 {
 			result["status"] = "partial"
 			result["errors"] = errorsByStep
-			result["message"] = "pruned containers, volumes, and dangling images with partial failures"
+			result["message"] = "pruned containers, volumes, dangling images, and unused local models with partial failures"
 		} else {
-			result["message"] = "pruned containers, volumes, and dangling images"
+			result["message"] = "pruned containers, volumes, dangling images, and unused local models"
 		}
 	default:
 		return nil, fmt.Errorf("unsupported prune mode %q", normalizedMode)
 	}
 	return result, nil
+}
+
+func (f *Facade) pruneUnusedLocalModels() (*modelmanager.PruneReport, error) {
+	if f == nil {
+		return nil, errors.New("runtime facade is not initialized")
+	}
+	return f.modelManager().PruneDangling()
+}
+
+func (f *Facade) attachUnusedLocalModelPrune(result map[string]any) error {
+	report, err := f.pruneUnusedLocalModels()
+	if err != nil {
+		return err
+	}
+	attachModelPruneReport(result, report)
+	return nil
+}
+
+func attachModelPruneReport(result map[string]any, report *modelmanager.PruneReport) {
+	if result == nil {
+		return
+	}
+	removed := make([]string, 0)
+	if report != nil {
+		removed = append(removed, report.Removed...)
+	}
+	slices.Sort(removed)
+	result["modelsRemoved"] = removed
+	result["modelsRemovedCount"] = len(removed)
+}
+
+func modelRemovedCount(report *modelmanager.PruneReport) int {
+	if report == nil {
+		return 0
+	}
+	return len(report.Removed)
 }
 
 // ListImages returns normalized image list for local runtime engine.
@@ -600,6 +669,7 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]any {
 				"containerId": status.ContainerID,
 				"image":       image,
 			}
+			f.attachPodID(entry, status.ContainerID, status.PodID)
 			result = append(result, entry)
 		}
 	}
@@ -628,6 +698,7 @@ func (f *Facade) ListRuntimeMicroservices() []map[string]any {
 		if entry["source"] == "" {
 			entry["source"] = "local-cli"
 		}
+		f.attachPodID(entry, item.ContainerID, "")
 		result = append(result, entry)
 	}
 
@@ -695,6 +766,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]any, error) {
 				"inspectSchemaVersion": "v1",
 			},
 		}
+		f.attachPodID(item, local.ContainerID, "")
 		attachCatalogInspect(item, catalogFromLocalManifestYAML(local.ManifestYAML), models.ModelSourceLocal, modelcatalog.LookupFromStore(f.db), local.LastError)
 		return item, nil
 	}
@@ -739,6 +811,7 @@ func (f *Facade) GetRuntimeMicroservice(id string) (map[string]any, error) {
 			"inspectSchemaVersion": "v1",
 		},
 	}
+	f.attachPodID(item, status.ContainerID, status.PodID)
 	attachCatalogInspect(item, catalog, models.ModelSourceManaged, modelcatalog.LookupFromStore(f.db), storedStatus)
 	return item, nil
 }
@@ -769,6 +842,24 @@ func currentEngineName(cfg *config.Config) string {
 		engineName = "docker"
 	}
 	return engineName
+}
+
+func (f *Facade) attachPodID(entry map[string]any, containerID, statusPodID string) {
+	if entry == nil {
+		return
+	}
+	podID := strings.TrimSpace(statusPodID)
+	containerID = strings.TrimSpace(containerID)
+	if podID == "" {
+		sandboxID := ""
+		if id, err := processmanager.GetInstance().GetContainerSandboxID(containerID); err == nil {
+			sandboxID = id
+		}
+		podID = models.PodIDForEngine(currentEngineName(f.cfg), containerID, sandboxID)
+	}
+	if podID != "" {
+		entry["podId"] = podID
+	}
 }
 
 func shouldSuppressManagedRuntimeEntry(
@@ -1177,6 +1268,9 @@ func (f *Facade) ParseAndValidateLocalRuntimeClassManifest(manifest string) (*mo
 	if err := doc.Validate(); err != nil {
 		return nil, err
 	}
+	if err := f.rejectLocalApplyForManagedRuntimeClass(doc.Metadata.Name); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }
 
@@ -1189,9 +1283,10 @@ func (f *Facade) ApplyLocalRuntimeClassManifest(manifest string, dryRun bool) (*
 	item := &models.LocalRuntimeClass{
 		Name:    doc.Metadata.Name,
 		Handler: doc.Handler,
+		Source:  models.RuntimeClassSourceLocal,
 	}
+	item.Normalize()
 	if dryRun {
-		item.Normalize()
 		return item, nil
 	}
 	if _, getErr := f.db.GetLocalRuntimeClass(item.Name); getErr != nil && !errors.Is(getErr, sql.ErrNoRows) {
@@ -1200,8 +1295,44 @@ func (f *Facade) ApplyLocalRuntimeClassManifest(manifest string, dryRun bool) (*
 	if err := f.db.UpsertLocalRuntimeClass(item); err != nil {
 		return nil, wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
 	}
-	item.Normalize()
 	return item, nil
+}
+
+// ApplyControllerRuntimeClasses replaces the fleet-desired RuntimeClass snapshot
+// and applies it on the edgelet engine. Catalog handlers stay on the existing
+// metadata persist path and do not bounce the data plane.
+func (f *Facade) ApplyControllerRuntimeClasses(items []*models.ControllerRuntimeClass) error {
+	if f == nil || f.db == nil {
+		return errors.New("runtime facade is not initialized")
+	}
+	if err := f.db.SaveControllerRuntimeClasses(items); err != nil {
+		return wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
+	}
+	return fieldagent.ApplyDesiredRuntimeClasses(f.cfg, items)
+}
+
+func (f *Facade) rejectLocalApplyForManagedRuntimeClass(name string) error {
+	if f == nil || f.db == nil || strings.TrimSpace(name) == "" {
+		return nil
+	}
+	if strings.TrimSpace(config.GetInstance().IOFogUUID) == "" {
+		return nil
+	}
+	managed, err := f.db.IsManagedFleetRuntimeClass(name, true)
+	if err != nil {
+		return wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
+	}
+	if managed {
+		return &ErrRuntimeClassManagedName{Name: name}
+	}
+	existing, err := f.db.GetLocalRuntimeClass(name)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return wrapRuntimeClassOperationError(RuntimeClassStageWriteConfig, err)
+	}
+	if existing != nil && existing.Source == models.RuntimeClassSourceManaged {
+		return &ErrRuntimeClassManagedName{Name: name}
+	}
+	return nil
 }
 
 // ListRuntimeClasses returns persisted RuntimeClass entries.
@@ -1252,85 +1383,31 @@ func (f *Facade) DeleteRuntimeClass(name string) error {
 }
 
 func isReservedRuntimeName(name string) bool {
-	switch strings.TrimSpace(strings.ToLower(name)) {
-	case "crun":
-		return true
-	default:
-		return false
-	}
+	return models.IsReservedRuntimeClassName(name)
 }
 
 func (f *Facade) ensureRuntimeClassNotInUse(item *models.LocalRuntimeClass) error {
 	if item == nil {
 		return nil
 	}
-	items, err := f.db.ListLocalWorkloads()
+	locals, err := f.db.ListLocalWorkloads()
 	if err != nil {
 		return fmt.Errorf("failed to list local deployments while checking runtimeclass delete: %w", err)
 	}
-	runtimeNames := []string{strings.TrimSpace(item.RuntimeName)}
-	runtimeSet := make(map[string]struct{}, len(runtimeNames))
-	for _, name := range runtimeNames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		runtimeSet[name] = struct{}{}
+	controller, err := f.db.LoadControllerMicroservices()
+	if err != nil {
+		return fmt.Errorf("failed to list controller microservices while checking runtimeclass delete: %w", err)
 	}
-	if len(runtimeSet) == 0 {
+	blockingUUIDs := models.RuntimeClassBlockingUUIDs(item, locals, controller)
+	if len(blockingUUIDs) == 0 {
 		return nil
 	}
-
-	blockingSet := make(map[string]struct{})
-	for _, local := range items {
-		if local == nil || local.DeletedAt != nil {
-			continue
-		}
-		state := strings.TrimSpace(strings.ToLower(local.RuntimeState))
-		if state == "" {
-			state = strings.TrimSpace(strings.ToLower(local.State))
-		}
-		if state != "running" {
-			continue
-		}
-		runtime := runtimeFromManifestYAML(local.ManifestYAML)
-		if runtime == "" {
-			continue
-		}
-		if _, used := runtimeSet[runtime]; !used {
-			continue
-		}
-		if uuid := strings.TrimSpace(local.LocalUUID); uuid != "" {
-			blockingSet[uuid] = struct{}{}
-		}
-	}
-	if len(blockingSet) == 0 {
-		return nil
-	}
-	blockingUUIDs := make([]string, 0, len(blockingSet))
-	for uuid := range blockingSet {
-		blockingUUIDs = append(blockingUUIDs, uuid)
-	}
-	slices.Sort(blockingUUIDs)
+	runtimeNames := []string{strings.TrimSpace(item.RuntimeName), strings.TrimSpace(item.Name)}
 	return &ErrRuntimeClassInUse{
 		Name:                      item.Name,
 		RuntimeNames:              sortedUniqueNonEmpty(runtimeNames),
 		BlockingMicroserviceUuids: blockingUUIDs,
 	}
-}
-
-func runtimeFromManifestYAML(manifest string) string {
-	doc := struct {
-		Spec struct {
-			Container struct {
-				Runtime string `yaml:"runtime"`
-			} `yaml:"container"`
-		} `yaml:"spec"`
-	}{}
-	if err := yaml.Unmarshal([]byte(strings.TrimSpace(manifest)), &doc); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(strings.ToLower(doc.Spec.Container.Runtime))
 }
 
 func sortedUniqueNonEmpty(items []string) []string {

@@ -50,3 +50,19 @@ func loadControllerModelsFromStore() ([]*models.ControllerModel, error) {
 	}
 	return db.LoadControllerModels()
 }
+
+func saveControllerRuntimeClassesToStore(items []*models.ControllerRuntimeClass) error {
+	db := store.GetInstance()
+	if db.Conn() == nil {
+		return errors.New("SQLite not open")
+	}
+	return db.SaveControllerRuntimeClasses(items)
+}
+
+func loadControllerRuntimeClassesFromStore() ([]*models.ControllerRuntimeClass, error) {
+	db := store.GetInstance()
+	if db.Conn() == nil {
+		return nil, errors.New("SQLite not open")
+	}
+	return db.LoadControllerRuntimeClasses()
+}

@@ -770,6 +770,9 @@ func TestFacadePrune_AllModeReturnsPartialOnStepFailures(t *testing.T) {
 	if len(rawErrors) == 0 {
 		t.Fatal("expected partial error details, got none")
 	}
+	if _, ok := result["modelsRemoved"]; !ok {
+		t.Fatalf("expected unused local model prune in all mode, got %#v", result)
+	}
 }
 
 func TestApplyRuntimeClassManifest_MetadataOnlyPathDoesNotDependOnRuntimeCallback(t *testing.T) {
@@ -974,7 +977,7 @@ func TestListRuntimeMicroservices_HidesLocalTombstone(t *testing.T) {
 		f.sr.ResetProcessManagerStatus()
 	})
 	f.fa.Clear()
-	ts := time.Now().Unix()
+	deletedAtSec := time.Now().Unix()
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:        "local-tombstone",
 		ApplicationName:  "edgelet",
@@ -985,7 +988,7 @@ func TestListRuntimeMicroservices_HidesLocalTombstone(t *testing.T) {
 		DesiredState:     "deleted",
 		RuntimeState:     "deleted",
 		State:            "deleted",
-		DeletedAt:        &ts,
+		DeletedAt:        &deletedAtSec,
 	}
 	if err := f.db.UpsertLocalWorkload(item); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -1004,7 +1007,7 @@ func TestApplyLocalManifest_SkipsGoneTombstoneAndAllocatesNewUUID(t *testing.T) 
 		t.Fatalf("failed to open test db: %v", err)
 	}
 	t.Cleanup(func() { _ = f.db.Close() })
-	ts := time.Now().Unix()
+	deletedAtSec := time.Now().Unix()
 	tombstone := &models.LocalDeployedMicroservice{
 		LocalUUID:        "old-router-uuid",
 		ApplicationName:  "edgelet",
@@ -1015,7 +1018,7 @@ func TestApplyLocalManifest_SkipsGoneTombstoneAndAllocatesNewUUID(t *testing.T) 
 		DesiredState:     "deleted",
 		RuntimeState:     "deleted",
 		State:            "deleted",
-		DeletedAt:        &ts,
+		DeletedAt:        &deletedAtSec,
 	}
 	if err := f.db.UpsertLocalWorkload(tombstone); err != nil {
 		t.Fatalf("upsert tombstone: %v", err)
@@ -1049,7 +1052,7 @@ func TestApplyLocalManifest_RejectsDeletingName(t *testing.T) {
 		t.Fatalf("failed to open test db: %v", err)
 	}
 	t.Cleanup(func() { _ = f.db.Close() })
-	ts := time.Now().Unix()
+	deletedAtSec := time.Now().Unix()
 	item := &models.LocalDeployedMicroservice{
 		LocalUUID:        "deleting-router",
 		ApplicationName:  "edgelet",
@@ -1061,7 +1064,7 @@ func TestApplyLocalManifest_RejectsDeletingName(t *testing.T) {
 		RuntimeState:     "deleting",
 		State:            "deleting",
 		ContainerID:      "still-here",
-		DeletedAt:        &ts,
+		DeletedAt:        &deletedAtSec,
 	}
 	if err := f.db.UpsertLocalWorkload(item); err != nil {
 		t.Fatalf("upsert: %v", err)

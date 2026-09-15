@@ -50,7 +50,7 @@ func (fa *FieldAgent) runControllerReconcileAsync() {
 	}()
 }
 
-// controllerReconcile live-refreshes registries, volume mounts, models, and microservices from Pot.
+// controllerReconcile live-refreshes registries, volume mounts, models, runtime classes, and microservices from Pot.
 // Single-flight via reconcileMu; does not clear initialization.
 func (fa *FieldAgent) controllerReconcile() error {
 	if fa.controllerReconcileHook != nil {
@@ -83,6 +83,10 @@ func (fa *FieldAgent) controllerReconcile() error {
 
 	if err := fa.loadModels(false); err != nil {
 		logging.LogWarn(moduleName, fmt.Sprintf("controller reconcile: load models: %v", err))
+	}
+
+	if err := fa.loadRuntimeClasses(false); err != nil {
+		logging.LogWarn(moduleName, fmt.Sprintf("controller reconcile: load runtime classes: %v", err))
 	}
 
 	microservices, err := fa.loadMicroservices(false)
