@@ -12,15 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model artifacts:** first-class `kind: Model` — deploy, async pull (Hugging Face Hub and OCI), inspect, remove, and prune. CLI `edgelet model`. EdgeletAPI `/v1/models*`. Artifacts live under `{diskDirectory}/models/`, not the container-engine image store. Operator guide: [docs/edgelet/models.md](docs/edgelet/models.md).
 - **Registry `type`:** `oci` (default) or `hf`, plus optional `ca` and `insecure`. Image pull and microservice images accept `oci` only.
 - **Built-in Hugging Face Hub:** local registry id **3** (`https://huggingface.co`, `hf`). Built-in ids **1–3** cannot be edited or removed. First user-created registry id is **4**.
-- **Schema v2:** in-place SQLite upgrade for model tables, registry `type` / `ca` / `insecure`, catalog bind, and expanded container columns. Backup `edgelet.db` before upgrading from schema v1.
+- **Schema v2:** in-place SQLite upgrade for model tables, registry `type` / `ca` / `insecure`, catalog bind, expanded container columns, and fleet RuntimeClass rows (`controller_runtime_classes`, applied `source`). Backup `edgelet.db` before upgrading from schema v1.
 - **Microservice catalog bind:** `spec.models.bindPath` plus `items[].name` mounts Ready model files at `{bindPath}/{name}/`. Start waits until every item is Ready; add/remove/re-pull is in-place; `model rm` is refused while a microservice still binds the name.
 - **Container fields:** `entrypoint`/`commands` (omit or `[]` = image default), `cpus`, memory reservation/swap, `shmSize`, `tmpfs`, `sysctls`, `ulimits`, `devices`, `runAsGroup`, `workingDir`, `readOnlyRootFilesystem`. Local `healthCheck` and `annotations` are applied the same way as controller workloads.
-- **Fleet models:** controller `getChanges` `models` plus `GET models` (uuid + name). Fog status includes `modelStatus`, `activeModels`, and `modelLastUpdate` for managed models only. Registry sync reads `type`, `ca`, and `insecure`.
+- **Fleet models:** controller `getChanges` `models` plus `GET models` (uuid + name). Fog status `modelStatus` lists local and managed models with `source`; local items omit `uuid`. `activeModels` is the managed fleet count. Registry sync reads `type`, `ca`, and `insecure`.
+- **Fleet RuntimeClass:** controller `getChanges` `runtimeClasses` plus `GET runtimeClasses` (`name` + `handler`). While provisioned, a managed class wins that name. Apply only when `containerEngine` is `edgelet`; docker and podman keep the desired list without applying.
+- **Status surfaces:** fog `PUT status` and `GET /v1/system/status` include applied `runtimeClasses` (`name`, `handler`, `source`) and `availableCdiDevices` (fully-qualified names; empty on docker/podman/desktop). Microservice status includes `podId` when known (edgelet = pause/sandbox; docker/podman = `containerId`).
+- **Catalog-only updates:** `getChanges` `microserviceModels` reuses `GET microservices` (one GET when `microserviceList` is also true). Item add/remove with the same bind path stays in-place; a not-Ready add keeps the running projection until Ready.
 
 ### Changed
 
 - **Local registries:** next allocated id is after the three built-in rows (was after `docker.io` and `from_cache` only).
-- **Scheduled prune:** `pruningFrequency` and disk-threshold ticks also prune dangling model trees after unused-image prune. `edgelet system prune` still does not prune models.
+- **Host inventory:** Edgelet no longer posts hardware or USB inventory. `deviceScanFrequency` is removed from YAML, CLI, and config GET/PATCH. Edge Guard host fingerprint is unchanged.
+- **Image pull TLS:** the edgelet engine applies registry `ca` (additional trust) and `insecure` (`http://` and skip TLS verify) on container image pull. Docker and Podman still use daemon credentials only.
+- **Scheduled prune:** `pruningFrequency`, disk-threshold ticks, `edgelet model prune`, and controller `getChanges.prune` delete unused unbound local models (and dangling images on the prune flag). Unbound managed models stay. `edgelet system prune` still does not prune models.
+- **Watchdog:** when `watchdogEnabled` is on, Edgelet deletes all local models and refuses local `kind: Model` apply.
 
 ### Fixed
 
