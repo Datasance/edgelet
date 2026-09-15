@@ -47,9 +47,9 @@ When prune runs:
 1. Optional container prune hook
 2. Optional volume prune hook
 3. Image prune via engine — **excluding** protected microservice images
-4. Dangling model prune (unreferenced `{diskDirectory}/models/{name}/` and unused OCI blobs)
+4. Dangling model prune (unused **local** model rows/trees plus unreferenced OCI blobs; managed fleet names are kept)
 
-On-demand API prune follows similar engine delegation paths through `runtimeapi.Facade.Prune()`. Model prune: `POST /v1/models:prune` / `edgelet model prune` — see [../models.md](../models.md).
+On-demand API prune follows similar engine delegation paths through `runtimeapi.Facade.Prune()`. Model prune: `POST /v1/models:prune` / `edgelet model prune` — see [../models.md](../models.md). Controller `getChanges.prune` runs dangling images **and** unused local models.
 
 ## Configuration
 

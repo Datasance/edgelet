@@ -1666,7 +1666,10 @@ components:
               type: string
     SystemStatus:
       type: object
-      required: [daemonStatus, controllerConnection, engine, runningMicroservices]
+      description: >
+        GET /v1/system/status is a JSON object. Existing scalars stay strings.
+        runtimeClasses and availableCdiDevices are typed arrays (not comma-joined strings).
+      additionalProperties: true
       properties:
         daemonStatus:
           type: string
@@ -1684,6 +1687,32 @@ components:
           type: number
         uptimeSeconds:
           type: integer
+        availableRuntimes:
+          type: array
+          description: Discovered host runtime handler names
+          items:
+            type: string
+        runtimeClasses:
+          type: array
+          description: Applied RuntimeClass rows only, sorted by name
+          items:
+            $ref: "#/components/schemas/RuntimeClassStatus"
+        availableCdiDevices:
+          type: array
+          description: Unique sorted fully-qualified CDI device names (linux edgelet engine); empty on docker/podman/desktop
+          items:
+            type: string
+    RuntimeClassStatus:
+      type: object
+      required: [name, handler, source]
+      properties:
+        name:
+          type: string
+        handler:
+          type: string
+        source:
+          type: string
+          enum: [local, managed]
     ControlPlaneStatus:
       type: object
       required: [controllerUuid, namespace, name, runtimeState, source, type]
@@ -2161,6 +2190,11 @@ components:
           type: string
         containerId:
           type: string
+        podId:
+          type: string
+          description: >
+            Pause/sandbox id on the edgelet engine; same as containerId on docker/podman.
+            Omitted when unknown. Never an empty string.
     MicroserviceDetail:
       allOf:
         - $ref: "#/components/schemas/MicroserviceRef"

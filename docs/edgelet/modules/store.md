@@ -71,7 +71,7 @@ Baseline migration: `migrations/001_edgelet_schema_v1.sql`. `schema_versions` tr
 |-------|---------|
 | `local_workloads` | CLI/applied Microservice manifests |
 | `local_registries` | Local registry credentials |
-| `local_runtime_classes` | RuntimeClass handler map |
+| `local_runtime_classes` | Applied RuntimeClass handler map (`source` `local` \| `managed`) |
 | `system_control_plane` | Singleton ControlPlane deployment |
 | `local_service_account_tokens` | Issued SA JWT metadata |
 
@@ -90,7 +90,9 @@ In-place migration `migrations/002_edgelet_schema_v2.sql` (v1 → v2). No wipe.
 | `local_registries.type`, `ca_b64`, `insecure` | Registry kind (`oci` \| `hf`) and TLS |
 | `controller_registries.type`, `ca_b64`, `insecure` | Same on controller snapshot |
 | `local_models` | Local Model deploy + pull state |
-| `controller_models` | Controller model snapshot stub |
+| `controller_models` | Controller model snapshot |
+| `controller_runtime_classes` | Fleet RuntimeClass snapshot (`name` PK + `handler`, replace-all) |
+| `local_runtime_classes.source` | Applied class provenance `local` \| `managed` |
 | `model_refs` | Keep-alive refs for dangling prune |
 
 Operator backup of `{diskDirectory}/models/`: [../persistence.md](../persistence.md), [../models.md](../models.md).
@@ -107,8 +109,9 @@ Store exposes methods on `*DB` split by domain file:
 | `local_deployed_microservices.go` | Local workload CRUD |
 | `local_registries.go` | Local registry CRUD |
 | `local_models.go` | Local model CRUD |
-| `controller_models.go` | Controller model stub rows |
-| `local_runtime_classes.go` | RuntimeClass CRUD |
+| `controller_models.go` | Controller model rows |
+| `controller_runtime_classes.go` | Fleet RuntimeClass replace-all |
+| `local_runtime_classes.go` | Applied RuntimeClass CRUD |
 | `control_plane_deployments.go` | ControlPlane singleton |
 | `service_account_tokens.go` | SA token upsert/revoke/list |
 | `edgeguard_credentials.go` | Edge Guard signature |

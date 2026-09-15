@@ -34,9 +34,9 @@ Tables are grouped by **source prefix** (schema v2 extends v1):
 
 | Prefix | Examples | Contents |
 |--------|----------|----------|
-| `controller_*` | `controller_microservices`, `controller_registries`, `controller_volume_mounts`, `controller_models` | Pot controller snapshot (MS list, registries, volume mounts, fleet models) |
+| `controller_*` | `controller_microservices`, `controller_registries`, `controller_volume_mounts`, `controller_models`, `controller_runtime_classes` | Pot controller snapshot (MS list, registries, volume mounts, fleet models, fleet RuntimeClass) |
 | `agent_*` | `agent_credentials`, `agent_edgeguard_signature` | Agent identity and EdgeGuard material |
-| `local_*` | `local_workloads`, `local_registries`, `local_models`, `local_service_account_tokens`, … | EdgeletAPI deploy, local registries, local models, RBAC tokens |
+| `local_*` | `local_workloads`, `local_registries`, `local_models`, `local_runtime_classes`, `local_service_account_tokens`, … | EdgeletAPI deploy, local registries, local models, applied RuntimeClass, RBAC tokens |
 | `system_*` | `system_control_plane` | Singleton ControlPlane deployment row |
 | `runtime_*` | `runtime_container_refs` | CRI/Docker workload and sandbox IDs (`scope` = `controller` \| `local`) |
 | (unprefixed) | `model_refs` | Explicit keep-alive refs for model prune |
@@ -166,7 +166,7 @@ sudo systemctl start edgelet.service
 
 ## Schema v2 (in-place from v1)
 
-Schema v2 adds registry `type` / TLS columns, model tables, catalog bind columns, and expanded microservice container fields. A schema-v2 binary applies migration `002_edgelet_schema_v2.sql` automatically. **No wipe** is required for v1 → v2.
+Schema v2 adds registry `type` / TLS columns, model tables, catalog bind columns, expanded microservice container fields, fleet RuntimeClass snapshot, and RuntimeClass `source`. A schema-v2 binary applies migration `002_edgelet_schema_v2.sql` automatically. **No wipe** is required for v1 → v2. Schema version stays **2** (no `003`).
 
 **Before the first schema-v2 binary opens a v1 database:** stop `edgelet.service` (and `edgelet-containerd.service` when used) and copy `edgelet.db` plus any `-wal` / `-shm` sidecars off-node. The upgrade is in-place and does not delete rows, but a backup is the only rollback if the host fails mid-migration.
 
@@ -175,6 +175,8 @@ Schema v2 adds registry `type` / TLS columns, model tables, catalog bind columns
 | `local_registries` / `controller_registries` | Columns `type` (`oci` \| `hf`, default `oci`), `ca_b64`, `insecure`. Local built-ins: id 1 `docker.io`, id 2 `from_cache`, id 3 `https://huggingface.co` (`hf`). Hugging Face Hub is not seeded on the controller table. |
 | `local_models` | Local `kind: Model` rows and pull state, plus **`source`** (`local` \| `managed`, default `local`) |
 | `controller_models` | Fleet snapshot. Primary key is **`uuid`**; **`name`** is unique. `getChanges` `models` replace-all + pull |
+| `controller_runtime_classes` | Fleet RuntimeClass snapshot (`name` PK + `handler`). Replace-all like other controller tables |
+| `local_runtime_classes.source` | Applied class provenance: `local` \| `managed` (default `local`). Managed wins `name` while provisioned |
 | `controller_microservices` | Catalog JSON (`models`) and typed container columns (`run_as_group`, `cpus`, `memory_reservation`, `memory_swap`, `shm_size`, `working_dir`, `read_only_root_filesystem`, plus JSON text for `sysctls`, `ulimits`, `devices`, `tmpfs`, `entrypoint`, `commands`) |
 | `model_refs` | Catalog bind refs so prune and `model rm` do not delete in-use artifacts |
 

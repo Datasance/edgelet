@@ -37,7 +37,7 @@ Operator and developer documentation for the Edgelet edge agent.
 | [edgelet-api-v1.md](edgelet-api-v1.md) | Operator guide — transport, auth, errors, route behavior |
 | [edgelet-api-v1-openapi.yaml](edgelet-api-v1-openapi.yaml) | OpenAPI 3.1 contract |
 | [edgelet-api-v1-rbac-resources.md](edgelet-api-v1-rbac-resources.md) | RBAC resource/verb mapping |
-| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller registry, model, catalog, and fog status JSON |
+| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller contract: HAL drop, RuntimeClass, status keys, catalog flag, image TLS, prune |
 
 ## Migration
 

@@ -37,8 +37,9 @@ A Model always references a **registry row id** (`spec.registry`). Registry `typ
 - **`edgelet image pull`** and microservice image pull accept **`type: oci` only**. An `hf` registry id is rejected.
 - Private **oci**: `username` + `password` required.
 - Private **hf**: `password` is the Hub token; `username` is optional.
-- **`spec.ca`**: optional base64 PEM CA, used for both types.
+- **`spec.ca`**: optional base64 PEM CA, used for both types. Extra trust only — it does not replace the system CA pool.
 - **`spec.insecure`**: default `false`. When `true`, allow `http://` and skip TLS certificate verification for `https://`.
+- Container **image** pull honors `ca` / `insecure` when `containerEngine` is **edgelet**. Docker and Podman image pull use daemon credentials only and do not apply those fields.
 
 Built-in rows (cannot be edited or removed): **id 1** `docker.io` (`oci`), **id 2** `from_cache` (`oci`, not for remote pulls), **id 3** `https://huggingface.co` (`hf`). Add a user `hf` row (id 4+) for a private Hub token or enterprise host. See [manifest-reference.md](manifest-reference.md#registry).
 
@@ -148,14 +149,24 @@ The container is created only when **every** named item is **Ready**.
 
 | Change | Container |
 |--------|-----------|
-| Add or remove a catalog item | In-place projection — **no** recreate |
+| Add or remove a catalog item (catalog already non-empty; same `bindPath` + permissions) | In-place projection — **no** recreate |
+| Newly added item not Ready | Keep the **running** container and the **old** projection until Ready, then atomic swing |
 | Model re-pull (new `content/`) | In-place — **no** recreate |
+| Empty catalog → first items, or last item removed | **Recreate** |
 | `bindPath` or catalog `permissions` | **Recreate** |
 | Image, env, ports, or other container spec drift | **Recreate** (same as today) |
 
 ### Prune and remove while bound
 
-`model_refs` records every catalog name a microservice uses. `edgelet model rm` / `DELETE /v1/models/{name}` is refused while any microservice still references the name. Dangling prune unions those refs with deployed rows, so a bound artifact is not deleted.
+`model_refs` records every catalog name a microservice uses. `edgelet model rm` / `DELETE /v1/models/{name}` is refused while any microservice still references the name.
+
+Dangling prune **keeps**:
+
+- Every **managed** fleet model name (even unbound)
+- Every `model_refs` name
+- Active pulls
+
+Unbound **local** Model rows and on-disk trees are **deleted**. A bound local artifact is kept.
 
 Local `kind: Model` apply for a name that is already **managed** (provisioned fleet model) is rejected.
 
@@ -257,9 +268,25 @@ edgelet model prune dangling
 edgelet model prune --mode dangling
 ```
 
-The only mode is **`dangling`**: remove on-disk model directories that have no deployed row and no catalog bind (`model_refs`), then drop unreferenced OCI blobs. Shared blobs stay if another model still needs them. Active pulls are skipped. A name that a running or desired microservice still binds is kept.
+The only mode is **`dangling`**: remove unused **local** model rows and trees, then drop unreferenced OCI blobs. Keep set: managed fleet names (even unbound), catalog binds (`model_refs`), and active pulls. Shared blobs stay if another model still needs them.
 
-Scheduled image prune (`pruningFrequency`) also runs dangling model prune on the same tick.
+Scheduled image prune (`pruningFrequency`) also runs dangling model prune on the same tick. Controller `getChanges.prune` runs dangling **images** and unused local models together.
+
+---
+
+## Watchdog
+
+When `watchdogEnabled` is on, Edgelet treats local models like local workloads: **out of scope**.
+
+| Action | Behavior |
+|--------|----------|
+| Existing local models | Rows and on-disk trees are deleted |
+| `edgelet deploy -f model.yaml` / local Model apply | **Refused** (`local models are disabled while watchdog is enabled`) |
+| Managed fleet models | Unchanged |
+
+Disable watchdog to deploy local `kind: Model` documents again.
+
+Controller need not send local Model CRUD while watchdog is on. See [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md).
 
 ---
 
@@ -290,4 +317,4 @@ Generated CLI pages: [../cli/generated/](../cli/generated/) (`edgelet_model*.md`
 | [examples/microservice.yaml](examples/microservice.yaml) | Catalog bind + container fields |
 | [persistence.md](persistence.md) | Schema v2 and `{diskDirectory}/models/` backup |
 | [edgelet-api-v1.md](edgelet-api-v1.md) | HTTP contract |
-| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller Model / Registry / Microservice JSON and validation |
+| [CONTROLLER-HANDOFF-MODELS.md](CONTROLLER-HANDOFF-MODELS.md) | Controller contract: HAL drop, RuntimeClass, status, catalog, TLS, prune |
