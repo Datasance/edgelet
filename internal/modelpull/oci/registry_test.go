@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/registrytls"
 )
 
 func TestParseRegistryEndpoint(t *testing.T) {
@@ -52,7 +53,7 @@ func TestTLSConfig_InsecureAndCA(t *testing.T) {
 		SetURL("https://registry.example").
 		SetInsecure(true).
 		Build()
-	cfg, err := tlsConfigForRegistry(insecure)
+	cfg, err := registrytls.TLSConfig(insecure)
 	if err != nil {
 		t.Fatalf("tls insecure: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestTLSConfig_InsecureAndCA(t *testing.T) {
 		SetURL("https://registry.example").
 		SetCAB64(base64.StdEncoding.EncodeToString(certPEM)).
 		Build()
-	cfg, err = tlsConfigForRegistry(withCA)
+	cfg, err = registrytls.TLSConfig(withCA)
 	if err != nil {
 		t.Fatalf("tls ca: %v", err)
 	}

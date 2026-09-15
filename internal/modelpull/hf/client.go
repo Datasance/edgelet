@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet/internal/models"
+	"github.com/eclipse-iofog/edgelet/internal/registrytls"
 )
 
 const (
@@ -85,7 +86,7 @@ func newHubClient(reg *models.Registry, httpClient *http.Client) (*hubClient, er
 		return nil, err
 	}
 	if httpClient == nil {
-		httpClient, err = httpClientForRegistry(reg)
+		httpClient, err = registrytls.HTTPClient(reg)
 		if err != nil {
 			return nil, err
 		}

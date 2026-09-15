@@ -306,10 +306,31 @@ func (e *Engine) GetContainerByID(containerID string) (*engine.Container, error)
 }
 
 func (e *Engine) GetContainerSandboxID(containerID string) (string, error) {
-	if st, ok := e.store.get(containerID); ok && st.sandboxID != "" {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return "", nil
+	}
+	if st, ok := e.store.get(containerID); ok && strings.TrimSpace(st.sandboxID) != "" {
 		return st.sandboxID, nil
 	}
-	return "", nil
+	if e.client == nil {
+		return "", nil
+	}
+	ctx := e.ctx()
+	c, err := e.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return "", nil
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		return "", nil
+	}
+	st := stateFromLabels(info.Labels)
+	if st == nil || strings.TrimSpace(st.sandboxID) == "" {
+		return "", nil
+	}
+	e.store.set(containerID, st)
+	return st.sandboxID, nil
 }
 
 func (e *Engine) GetRunningContainers() ([]engine.Container, error) {
@@ -866,17 +887,13 @@ func (e *Engine) PullImage(imageRef string, registry *models.Registry, opts *eng
 	}
 
 	var remoteOpts []client.RemoteOpt
-	if registry != nil && !registry.IsPublic {
-		expectedHost := imageref.SanitizeRegistryHost(registry.URL)
-		resolver := dockerresolver.NewResolver(dockerresolver.ResolverOptions{
-			Credentials: func(host string) (string, string, error) {
-				if expectedHost != "" && imageref.SanitizeRegistryHost(host) != expectedHost {
-					return "", "", nil
-				}
-				return registry.UserName, registry.Password, nil
-			},
-		})
-		remoteOpts = append(remoteOpts, client.WithResolver(resolver))
+	resolverOpts, useResolver, err := imagePullResolverOptions(registry)
+	if err != nil {
+		e.emitEngineWarn(runtimeops.EventEngineImagePulled, "", "", imageRef, runtimeops.ReasonPullFailed, "image pull failed", pullStart, err, nil)
+		return fmt.Errorf("pull image %s: %w", imageRef, err)
+	}
+	if useResolver {
+		remoteOpts = append(remoteOpts, client.WithResolver(dockerresolver.NewResolver(resolverOpts)))
 	}
 	if platform != "" {
 		remoteOpts = append(remoteOpts, client.WithPlatform(platform))
@@ -1242,6 +1259,9 @@ func (e *Engine) GetContainerStatus(containerID, _ string) (*models.Microservice
 
 	status := models.NewMicroserviceStatus()
 	status.ContainerID = containerID
+	if sandboxID, _ := e.GetContainerSandboxID(containerID); sandboxID != "" {
+		status.PodID = sandboxID
+	}
 
 	task, err := c.Task(ctx, nil)
 	if err != nil {
