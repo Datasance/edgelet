@@ -13,11 +13,19 @@ import (
 
 func TestSchemaV2_ModelTablesExist(t *testing.T) {
 	db := openFreshStoreDB(t)
-	for _, table := range []string{"local_models", "controller_models", "model_refs"} {
+	for _, table := range []string{"local_models", "controller_models", "model_refs", "controller_runtime_classes"} {
 		if !tableExists(t, db, table) {
 			t.Fatalf("missing v2 table %q", table)
 		}
 	}
+
+	rcCols := tableColumns(t, db, "controller_runtime_classes")
+	assertHasColumns(t, "controller_runtime_classes", rcCols, []string{"name", "handler", "updated_at"})
+	if rcCols["name"].pk != 1 {
+		t.Fatal("controller_runtime_classes.name must be primary key")
+	}
+	localRCCols := tableColumns(t, db, "local_runtime_classes")
+	assertHasColumns(t, "local_runtime_classes", localRCCols, []string{"source"})
 
 	localCols := tableColumns(t, db, "local_models")
 	assertHasColumns(t, "local_models", localCols, []string{
@@ -144,6 +152,11 @@ func TestMigration002_UpgradeFromV1Fixture(t *testing.T) {
 	if !tableExists(t, db, "local_models") || !tableExists(t, db, "controller_models") {
 		t.Fatal("expected model tables after 002")
 	}
+	if !tableExists(t, db, "controller_runtime_classes") {
+		t.Fatal("expected controller_runtime_classes after 002")
+	}
+	localRCCols := tableColumns(t, db, "local_runtime_classes")
+	assertHasColumns(t, "local_runtime_classes", localRCCols, []string{"source"})
 
 	localCols := tableColumns(t, db, "local_models")
 	assertHasColumns(t, "local_models", localCols, []string{"source"})

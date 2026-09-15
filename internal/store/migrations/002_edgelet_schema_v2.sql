@@ -91,3 +91,13 @@ CREATE TABLE IF NOT EXISTS model_refs (
 )
 
 CREATE INDEX IF NOT EXISTS idx_model_refs_name ON model_refs(model_name)
+
+-- fleet RuntimeClass snapshot from the controller
+CREATE TABLE IF NOT EXISTS controller_runtime_classes (
+    name       TEXT    PRIMARY KEY,
+    handler    TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+)
+
+-- applied RuntimeClass provenance: local operator vs controller fleet
+ALTER TABLE local_runtime_classes ADD COLUMN source TEXT NOT NULL DEFAULT 'local'

@@ -298,6 +298,7 @@ func TestSchemaV1_LocalRuntimeClassesKeyColumns(t *testing.T) {
 	assertHasColumns(t, "local_runtime_classes", cols, []string{
 		"name",
 		"handler",
+		"source",
 		"created_at",
 		"updated_at",
 	})
