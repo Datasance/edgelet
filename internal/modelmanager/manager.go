@@ -225,6 +225,9 @@ func (m *Manager) ApplyManifest(doc *models.LocalModelManifest) (*models.LocalMo
 	if doc == nil {
 		return nil, errors.New("manifest is nil")
 	}
+	if err := refuseLocalModelApply(); err != nil {
+		return nil, err
+	}
 	if err := m.rejectLocalApplyForManagedName(strings.TrimSpace(doc.Metadata.Name)); err != nil {
 		return nil, err
 	}
@@ -394,6 +397,9 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	}
 	for _, row := range local {
 		if row == nil {
+			continue
+		}
+		if err := refuseLocalSourcePull(row.Source); err != nil {
 			continue
 		}
 		needed, needErr := m.needsPull(row)

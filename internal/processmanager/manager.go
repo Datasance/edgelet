@@ -65,6 +65,8 @@ type ProcessManager struct {
 	controlPlanePullOnRecreate   bool
 	controlPlanePullOnRecreateMu sync.Mutex
 	execRegistry                 *ExecSessionRegistry
+	watchdogLocalModelsMu        sync.Mutex
+	watchdogLocalModelsFn        func()
 }
 
 // LocalDeployProgressCallback reports local deployment runtime stage transitions.
@@ -489,6 +491,29 @@ func (pm *ProcessManager) GetLatestMicroservices() []*models.Microservice {
 	return pm.microserviceManager.GetLatestMicroservices()
 }
 
+// SetWatchdogLocalModelsCallback runs when watchdog is on so local Model rows
+// and trees are removed (fleet-desired models are kept).
+func (pm *ProcessManager) SetWatchdogLocalModelsCallback(fn func()) {
+	if pm == nil {
+		return
+	}
+	pm.watchdogLocalModelsMu.Lock()
+	defer pm.watchdogLocalModelsMu.Unlock()
+	pm.watchdogLocalModelsFn = fn
+}
+
+func (pm *ProcessManager) cleanupLocalModelsForWatchdog() {
+	if pm == nil || !LocalWorkloadsOutOfScope(config.GetInstance().WatchdogEnabled) {
+		return
+	}
+	pm.watchdogLocalModelsMu.Lock()
+	fn := pm.watchdogLocalModelsFn
+	pm.watchdogLocalModelsMu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 // Update notifies the ProcessManager of changes
 // updates registries and notifies monitor thread
 func (pm *ProcessManager) Update() {
@@ -558,6 +583,7 @@ func (pm *ProcessManager) containersMonitor() {
 		pm.handleLatestMicroservices(reconcileStats)
 		pm.reconcileLocalDeployments()
 		pm.deleteRemainingMicroservices()
+		pm.cleanupLocalModelsForWatchdog()
 		pm.pruneStaleProcessManagerStatuses()
 		pm.updateRunningMicroservicesCount()
 		pm.updateCurrentMicroservices()
@@ -580,6 +606,9 @@ func (pm *ProcessManager) containersMonitor() {
 }
 
 func (pm *ProcessManager) reconcileLocalDeployments() {
+	if LocalWorkloadsOutOfScope(config.GetInstance().WatchdogEnabled) {
+		return
+	}
 	items, err := store.GetInstance().ListLocalWorkloads()
 	if err != nil {
 		pm.logger.Warnf("local reconcile list deployments failed: %v", err)
@@ -2080,6 +2109,14 @@ func (pm *ProcessManager) InspectContainerRaw(containerID string) (map[string]an
 		return nil, errors.New("process manager engine is not initialized")
 	}
 	return pm.engine.InspectContainerRaw(containerID)
+}
+
+// GetContainerSandboxID returns the pause / sandbox id for a workload container.
+func (pm *ProcessManager) GetContainerSandboxID(containerID string) (string, error) {
+	if pm.engine == nil {
+		return "", errors.New("process manager engine is not initialized")
+	}
+	return pm.engine.GetContainerSandboxID(containerID)
 }
 
 // LaunchLocalMicroservice creates and starts a locally deployed microservice.

@@ -10,14 +10,26 @@ import (
 const ModelRefKindWorkload = "workload"
 
 // ListReferencedModelNames returns names that must be kept during dangling prune:
-// deployed local model rows plus any explicit model_refs rows (workload binds).
+// fleet-desired controller model names plus any explicit model_refs rows.
+// Unbound local model rows are not kept just because they exist.
 func (d *DB) ListReferencedModelNames() ([]string, error) {
-	rows, err := d.Conn().Query(`
-		SELECT name FROM local_models
+	return d.ListPruneKeepModelNames(true)
+}
+
+// ListPruneKeepModelNames returns names prune must keep on disk and as rows.
+// Fleet-desired controller model names are always kept. Workload binds are
+// included only when includeWorkloadRefs is true (watchdog excludes them).
+func (d *DB) ListPruneKeepModelNames(includeWorkloadRefs bool) ([]string, error) {
+	query := `SELECT name FROM controller_models`
+	if includeWorkloadRefs {
+		query = `
+		SELECT name FROM controller_models
 		UNION
-		SELECT model_name FROM model_refs`)
+		SELECT model_name FROM model_refs`
+	}
+	rows, err := d.Conn().Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list referenced model names: %w", err)
+		return nil, fmt.Errorf("failed to list prune keep model names: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()
@@ -27,7 +39,7 @@ func (d *DB) ListReferencedModelNames() ([]string, error) {
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("failed to scan referenced model name: %w", err)
+			return nil, fmt.Errorf("failed to scan prune keep model name: %w", err)
 		}
 		name = strings.TrimSpace(name)
 		if name == "" {

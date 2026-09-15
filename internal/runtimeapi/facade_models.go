@@ -67,6 +67,9 @@ func (f *Facade) ParseAndValidateLocalModelManifests(manifest string) ([]*models
 // Persist is synchronous. Artifact download is started by the apply handler
 // (or POST /v1/models:pull) after every document is written.
 func (f *Facade) ApplyLocalModelManifests(manifest string, dryRun bool) ([]*models.LocalModel, error) {
+	if err := modelmanager.RefuseLocalModelApply(); err != nil {
+		return nil, err
+	}
 	docs, err := f.ParseAndValidateLocalModelManifests(manifest)
 	if err != nil {
 		return nil, err

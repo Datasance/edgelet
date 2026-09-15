@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet/internal/modelpull"
@@ -23,8 +24,8 @@ type PruneReport struct {
 	StaleCleaned int      `json:"staleCleaned"`
 }
 
-// PruneDangling removes on-disk models that are not referenced by a deployed
-// local model row or an explicit model_refs entry, then drops unreferenced blobs.
+// PruneDangling removes unused local models (rows and on-disk trees) that are
+// not in the keep set, then drops unreferenced blobs.
 func (m *Manager) PruneDangling() (*PruneReport, error) {
 	return m.Prune(PruneModeDangling)
 }
@@ -33,6 +34,9 @@ func (m *Manager) PruneDangling() (*PruneReport, error) {
 func (m *Manager) Prune(mode string) (*PruneReport, error) {
 	if m == nil || m.db == nil {
 		return nil, errors.New("model manager is not initialized")
+	}
+	if m.db.Conn() == nil {
+		return nil, errors.New("store is not initialized")
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
@@ -59,7 +63,7 @@ func (m *Manager) Prune(mode string) (*PruneReport, error) {
 		return nil, err
 	}
 
-	removed := make([]string, 0)
+	removedSet := make(map[string]struct{})
 	entries, err := os.ReadDir(m.modelsRoot)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("list model directory: %w", err)
@@ -82,8 +86,45 @@ func (m *Manager) Prune(mode string) (*PruneReport, error) {
 		if err := m.removeArtifacts(name); err != nil {
 			return nil, err
 		}
+		removedSet[name] = struct{}{}
+	}
+
+	rows, err := m.db.ListLocalModels()
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		name := strings.TrimSpace(row.Name)
+		if name == "" {
+			continue
+		}
+		if _, kept := referenced[name]; kept {
+			continue
+		}
+		if m.hasActivePull(name) {
+			logging.LogInfo(moduleName, fmt.Sprintf("skip prune of %s: pull in progress", name))
+			continue
+		}
+		if err := m.removeArtifacts(name); err != nil {
+			return nil, err
+		}
+		if err := m.db.DeleteModelRefs(name); err != nil {
+			return nil, err
+		}
+		if err := m.db.DeleteLocalModel(name); err != nil {
+			return nil, err
+		}
+		removedSet[name] = struct{}{}
+	}
+
+	removed := make([]string, 0, len(removedSet))
+	for name := range removedSet {
 		removed = append(removed, name)
 	}
+	slices.Sort(removed)
 
 	blobsRemoved, err := m.collectUnusedBlobs()
 	if err != nil {
@@ -132,7 +173,7 @@ func (m *Manager) Remove(name string) error {
 }
 
 func (m *Manager) referencedNames() (map[string]struct{}, error) {
-	names, err := m.db.ListReferencedModelNames()
+	names, err := m.db.ListPruneKeepModelNames(!localModelsDisabled())
 	if err != nil {
 		return nil, err
 	}

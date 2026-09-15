@@ -23,7 +23,6 @@ import (
 	"github.com/eclipse-iofog/edgelet/internal/processmanager"
 	"github.com/eclipse-iofog/edgelet/internal/pruning"
 	"github.com/eclipse-iofog/edgelet/internal/resourceconsumption"
-	"github.com/eclipse-iofog/edgelet/internal/resourcemanager"
 	"github.com/eclipse-iofog/edgelet/internal/runtimestate"
 	"github.com/eclipse-iofog/edgelet/internal/statusreporter"
 	"github.com/eclipse-iofog/edgelet/internal/store"
@@ -76,7 +75,6 @@ type Supervisor struct {
 	resourceConsumptionManager *resourceconsumption.Manager
 	fieldAgent                 *fieldagent.FieldAgent
 	processManager             *processmanager.ProcessManager
-	resourceManager            *resourcemanager.Manager
 	gpsManager                 *gps.Manager
 	localAPI                   *edgeletapi.EdgeletAPI
 	dockerPruningManager       *pruning.Manager
@@ -263,12 +261,6 @@ func (s *Supervisor) Start() error {
 		})
 	}
 
-	// Start Resource Manager
-	s.resourceManager = resourcemanager.GetInstance()
-	if err := s.startModule(s.resourceManager); err != nil {
-		return err
-	}
-
 	// Start GPS Manager
 	s.gpsManager = gps.GetInstance()
 	if err := s.startModule(s.gpsManager); err != nil {
@@ -289,15 +281,17 @@ func (s *Supervisor) Start() error {
 		return names
 	})
 	s.dockerPruningManager.SetEngine(eng)
-	s.dockerPruningManager.SetPruneModelsCallback(func() {
+	pruneUnusedLocalModels := func() {
 		modelsRoot := modelpull.Root(s.config.DiskDirectory)
 		mm := modelmanager.New(store.GetInstance(), modelsRoot)
 		mm.SetLiveConfig(s.config)
 		mm.SetDiskPolicy(s.config.DiskDirectory, s.config.AvailableDiskThreshold, nil)
 		if _, err := mm.PruneDangling(); err != nil {
-			logging.LogError(moduleName, "Error pruning unreferenced models", err)
+			logging.LogError(moduleName, "Error pruning unused local models", err)
 		}
-	})
+	}
+	s.dockerPruningManager.SetPruneModelsCallback(pruneUnusedLocalModels)
+	s.processManager.SetWatchdogLocalModelsCallback(pruneUnusedLocalModels)
 	if err := s.dockerPruningManager.Start(); err != nil {
 		logging.LogError(moduleName, "Failed to start Pruning Manager", err)
 	}
@@ -528,12 +522,6 @@ func (s *Supervisor) Stop() error {
 	if s.gpsManager != nil {
 		if err := s.gpsManager.Stop(); err != nil {
 			logging.LogError(moduleName, "Error stopping GPS Manager", err)
-		}
-	}
-
-	if s.resourceManager != nil {
-		if err := s.resourceManager.Stop(); err != nil {
-			logging.LogError(moduleName, "Error stopping Resource Manager", err)
 		}
 	}
 
@@ -782,10 +770,6 @@ func (s *Supervisor) reloadHotConfig() error {
 
 	if s.resourceConsumptionManager != nil {
 		s.resourceConsumptionManager.InstanceConfigUpdated()
-	}
-
-	if s.resourceManager != nil {
-		s.resourceManager.InstanceConfigUpdated()
 	}
 
 	if s.networkInterfaceManager != nil {

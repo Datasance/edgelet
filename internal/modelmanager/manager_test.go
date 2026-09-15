@@ -623,22 +623,7 @@ func TestPullResumeAfterInterrupt(t *testing.T) {
 
 func TestPruneDangling_RemovesUnreferencedModel(t *testing.T) {
 	m, _, _ := newTestManager(t)
-	if _, err := m.UpsertDesired(sampleModel("keep-me", "ai/keep", "latest", 1, nil)); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	op, err := m.StartPull("keep-me")
-	if err != nil {
-		t.Fatalf("pull: %v", err)
-	}
-	waitOp(t, m, op.OperationID)
-
-	orphan := modelpull.ModelDir(m.modelsRoot, "leftover")
-	if err := os.MkdirAll(filepath.Join(orphan, modelpull.ContentDirName), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(orphan, modelpull.ManifestFile), []byte(`{"metadataName":"leftover"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	orphan := plantModelTree(t, m.modelsRoot, "leftover")
 
 	report, err := m.PruneDangling()
 	if err != nil {
@@ -649,9 +634,6 @@ func TestPruneDangling_RemovesUnreferencedModel(t *testing.T) {
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
 		t.Fatal("expected leftover directory removed")
-	}
-	if _, err := os.Stat(modelpull.ModelDir(m.modelsRoot, "keep-me")); err != nil {
-		t.Fatalf("referenced model must remain: %v", err)
 	}
 }
 

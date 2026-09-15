@@ -30,6 +30,9 @@ func (m *Manager) StartPull(name string) (*PullOperation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("model %s not found", name)
 	}
+	if err := refuseLocalSourcePull(row.Source); err != nil {
+		return nil, err
+	}
 
 	m.mu.Lock()
 	if opID, ok := m.active[name]; ok {

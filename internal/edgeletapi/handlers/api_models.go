@@ -108,6 +108,10 @@ func (h *EdgeletAPIHandler) HandleModelPull(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		if _, err := h.facade.UpsertLocalModelSpec(name, repo, revision, req.RegistryID, req.Files, format); err != nil {
+			if errors.Is(err, modelmanager.ErrLocalModelsDisabled) {
+				writeAPIError(w, http.StatusConflict, ErrCodeConflict, err.Error(), nil)
+				return
+			}
 			if strings.Contains(err.Error(), "not found") {
 				writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, err.Error(), nil)
 				return
@@ -119,6 +123,10 @@ func (h *EdgeletAPIHandler) HandleModelPull(w http.ResponseWriter, r *http.Reque
 	logging.LogInfo(apiHandlerModuleName, fmt.Sprintf("model pull requested name=%s", name))
 	op, err := h.facade.StartModelPull(name)
 	if err != nil {
+		if errors.Is(err, modelmanager.ErrLocalModelsDisabled) {
+			writeAPIError(w, http.StatusConflict, ErrCodeConflict, err.Error(), nil)
+			return
+		}
 		if strings.Contains(err.Error(), "not found") {
 			writeAPIError(w, http.StatusNotFound, ErrCodeNotFound, err.Error(), nil)
 			return
@@ -187,6 +195,10 @@ func (h *EdgeletAPIHandler) HandleDeployModelsApply(w http.ResponseWriter, r *ht
 	rows, err := h.facade.ApplyLocalModelManifests(manifest, dryRun)
 	if err != nil {
 		logging.LogWarn(apiHandlerModuleName, fmt.Sprintf("local model apply failed dryRun=%v err=%v", dryRun, err))
+		if errors.Is(err, modelmanager.ErrLocalModelsDisabled) {
+			writeAPIError(w, http.StatusConflict, ErrCodeConflict, err.Error(), nil)
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, ErrCodeInvalidArgument, err.Error(), nil)
 		return
 	}

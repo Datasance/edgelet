@@ -1,9 +1,12 @@
 package runtimeapi
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/eclipse-iofog/edgelet/internal/config"
+	"github.com/eclipse-iofog/edgelet/internal/modelmanager"
 	"github.com/eclipse-iofog/edgelet/internal/models"
 )
 
@@ -279,5 +282,34 @@ func TestFacadeModelManager_AppliesLiveDiskThresholdAfterConfigChange(t *testing
 	f.cfg.AvailableDiskThreshold = 1
 	if err := mm.Ensure(50); err != nil {
 		t.Fatalf("config change to 1%% must apply without recreating the manager, got %v", err)
+	}
+}
+
+func TestFacadeApplyLocalModelManifests_RefusedWhenWatchdogEnabled(t *testing.T) {
+	f := NewFacade()
+	if err := f.db.Open(t.TempDir()); err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Close() })
+	if err := f.db.EnsureDefaultLocalRegistries(); err != nil {
+		t.Fatalf("seed registries: %v", err)
+	}
+
+	cfg := config.GetInstance()
+	orig := cfg.WatchdogEnabled
+	cfg.WatchdogEnabled = true
+	t.Cleanup(func() { cfg.WatchdogEnabled = orig })
+
+	_, err := f.ApplyLocalModelManifests(`
+apiVersion: edgelet.iofog.org/v1
+kind: Model
+metadata:
+  name: llama-2-7b-q2k
+spec:
+  repo: org/repo
+  registry: 1
+`, true)
+	if !errors.Is(err, modelmanager.ErrLocalModelsDisabled) {
+		t.Fatalf("expected local Model apply refused while watchdog is on, got %v", err)
 	}
 }

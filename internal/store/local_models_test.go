@@ -236,10 +236,10 @@ func TestControllerModelReplaceAll(t *testing.T) {
 	}
 }
 
-func TestListReferencedModelNames_UnionsDeployedAndRefs(t *testing.T) {
+func TestListReferencedModelNames_UnionsControllerAndRefs(t *testing.T) {
 	db := openFreshStoreDB(t)
 	row := &models.LocalModel{
-		Name:       "deployed",
+		Name:       "unbound-local",
 		Repo:       "org/repo",
 		RegistryID: 1,
 		State:      models.ModelStateReady,
@@ -247,6 +247,14 @@ func TestListReferencedModelNames_UnionsDeployedAndRefs(t *testing.T) {
 	row.NormalizeDefaults()
 	if err := db.UpsertLocalModel(row); err != nil {
 		t.Fatalf("upsert: %v", err)
+	}
+	if err := db.SaveControllerModels([]*models.ControllerModel{{
+		UUID:       "3f2c8a1e-2b64-4c0d-9f11-0a1b2c3d4e5f",
+		Name:       "fleet-model",
+		Repo:       "org/fleet",
+		RegistryID: 5,
+	}}); err != nil {
+		t.Fatalf("save controller model: %v", err)
 	}
 	if _, err := db.Conn().Exec(
 		`INSERT INTO model_refs (model_name, kind, ref_id) VALUES ('bound-only', 'workload', 'ms-1')`,
@@ -261,8 +269,26 @@ func TestListReferencedModelNames_UnionsDeployedAndRefs(t *testing.T) {
 	for _, name := range names {
 		seen[name] = true
 	}
-	if !seen["deployed"] || !seen["bound-only"] {
-		t.Fatalf("expected deployed row and explicit ref, got %v", names)
+	if !seen["fleet-model"] || !seen["bound-only"] {
+		t.Fatalf("expected controller model and explicit ref, got %v", names)
+	}
+	if seen["unbound-local"] {
+		t.Fatalf("unbound local row must not be kept just because it exists, got %v", names)
+	}
+
+	withoutRefs, err := db.ListPruneKeepModelNames(false)
+	if err != nil {
+		t.Fatalf("list keep without refs: %v", err)
+	}
+	keepSeen := map[string]bool{}
+	for _, name := range withoutRefs {
+		keepSeen[name] = true
+	}
+	if !keepSeen["fleet-model"] {
+		t.Fatalf("expected fleet model kept without refs, got %v", withoutRefs)
+	}
+	if keepSeen["bound-only"] {
+		t.Fatalf("workload binds must be omitted when includeWorkloadRefs is false, got %v", withoutRefs)
 	}
 }
 
