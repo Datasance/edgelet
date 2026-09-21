@@ -18,6 +18,8 @@ Operator YAML: [manifest-reference.md](manifest-reference.md) · [models.md](mod
 
 The agent already consumes every shape below. Controller CRUD and UI can implement against this page without reading internal specs.
 
+**Knowledge artifacts** (documents, datasets, vector indexes) are a separate kind and contract: [CONTROLLER-HANDOFF-KNOWLEDGE.md](CONTROLLER-HANDOFF-KNOWLEDGE.md). Do not reuse `GET models` or `spec.models` for those files.
+
 ---
 
 ## Identity and paths
