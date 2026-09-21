@@ -153,7 +153,7 @@ If `microserviceList` and `microserviceKnowledge` are both true: **one GET**.
 |-----|------|--------|
 | `knowledgeStatus` | string | JSON **string** (not a raw array) of status items |
 | `activeKnowledge` | number | Count of **managed** Knowledge only |
-| `knowledgeLastUpdate` | number | Unix ms |
+| `knowledgeLastUpdate` | number | Unix milliseconds; same clock as `modelLastUpdate` |
 
 When the controller has no Knowledge (or no `knowledge` flag), send `knowledgeStatus: "[]"`, `activeKnowledge: 0`, `knowledgeLastUpdate: 0`. **Never fail** `PUT status` because these keys are unknown on an older console.
 

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Fog catalog clocks:** `modelLastUpdate` is Unix milliseconds, the same unit as `knowledgeLastUpdate` and the other fog status timestamps (`lastStatusTime`, `volumeMountLastUpdate`). Model row times in SQLite stay Unix seconds; the posted value is scaled.
 - **Scheduled prune:** `pruningFrequency`, disk-threshold ticks, `edgelet knowledge prune`, and controller `getChanges.prune` also delete unused unbound local Knowledge (plus unused local models and dangling images on the prune flag). Unbound managed Knowledge stays. `edgelet system prune` still does not prune Knowledge.
 - **Watchdog:** when `watchdogEnabled` is on, Edgelet deletes all local Knowledge and refuses local `kind: Knowledge` apply. Managed Knowledge is unchanged.
 

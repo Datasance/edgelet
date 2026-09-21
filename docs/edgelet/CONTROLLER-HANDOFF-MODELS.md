@@ -464,7 +464,7 @@ No new `getChanges` flags. No new REST paths. `PUT status` top-level keys are un
 |-------|------|--------|
 | `modelStatus` | string | JSON **string** (not a raw array) of status items |
 | `activeModels` | integer | Count of **managed** fleet models (`controller_models` length) — **not** total status rows |
-| `modelLastUpdate` | integer | Unix seconds; `0` when the list is empty |
+| `modelLastUpdate` | integer | Unix milliseconds; `0` when the list is empty. Same clock as `knowledgeLastUpdate` |
 
 When the controller has no models (or no `models` flag), send `modelStatus: "[]"`, `activeModels: 0`, `modelLastUpdate: 0`.
 
