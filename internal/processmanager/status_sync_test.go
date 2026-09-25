@@ -337,6 +337,63 @@ func TestSyncMicroserviceStatusToReporter_HealthyRunningInspectDoesNotReattachEx
 	}
 }
 
+func TestSyncMicroserviceStatusToReporter_PreservesUsageWhenRunningSameContainer(t *testing.T) {
+	pmStatus := models.NewProcessManagerStatus()
+	prev := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
+	prev.ContainerID = "cid-1"
+	prev.CPUUsage = 12.5
+	prev.MemoryUsage = 987654
+	pmStatus.SetMicroservicesStatus("ms-1", prev)
+
+	runtimeStatus := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
+	runtimeStatus.ContainerID = "cid-1"
+	syncMicroserviceStatusToReporter(pmStatus, "ms-1", runtimeStatus)
+
+	got := pmStatus.GetMicroserviceStatus("ms-1")
+	if got.CPUUsage != 12.5 {
+		t.Fatalf("cpu = %v want 12.5", got.CPUUsage)
+	}
+	if got.MemoryUsage != 987654 {
+		t.Fatalf("memory = %d want 987654", got.MemoryUsage)
+	}
+}
+
+func TestSyncMicroserviceStatusToReporter_DoesNotPreserveUsageWhenContainerChanges(t *testing.T) {
+	pmStatus := models.NewProcessManagerStatus()
+	prev := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
+	prev.ContainerID = "cid-old"
+	prev.CPUUsage = 12.5
+	prev.MemoryUsage = 987654
+	pmStatus.SetMicroservicesStatus("ms-1", prev)
+
+	runtimeStatus := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
+	runtimeStatus.ContainerID = "cid-new"
+	syncMicroserviceStatusToReporter(pmStatus, "ms-1", runtimeStatus)
+
+	got := pmStatus.GetMicroserviceStatus("ms-1")
+	if got.CPUUsage != 0 || got.MemoryUsage != 0 {
+		t.Fatalf("expected usage cleared for new container, got cpu=%v memory=%d", got.CPUUsage, got.MemoryUsage)
+	}
+}
+
+func TestSyncMicroserviceStatusToReporter_DoesNotPreserveUsageWhenNotRunning(t *testing.T) {
+	pmStatus := models.NewProcessManagerStatus()
+	prev := models.NewMicroserviceStatusWithState(models.MicroserviceStateRunning)
+	prev.ContainerID = "cid-1"
+	prev.CPUUsage = 12.5
+	prev.MemoryUsage = 987654
+	pmStatus.SetMicroservicesStatus("ms-1", prev)
+
+	exiting := models.NewMicroserviceStatusWithState(models.MicroserviceStateExiting)
+	exiting.ContainerID = "cid-1"
+	syncMicroserviceStatusToReporter(pmStatus, "ms-1", exiting)
+
+	got := pmStatus.GetMicroserviceStatus("ms-1")
+	if got.CPUUsage != 0 || got.MemoryUsage != 0 {
+		t.Fatalf("expected usage omitted when not running, got cpu=%v memory=%d", got.CPUUsage, got.MemoryUsage)
+	}
+}
+
 func TestSyncControlPlaneProcessManagerStatus_FirstRunningUsesGrace(t *testing.T) {
 	withStatusSyncClock(t)
 	sr := statusreporter.GetInstance()

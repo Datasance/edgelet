@@ -161,5 +161,25 @@ func syncMicroserviceStatusToReporter(pmStatus *models.ProcessManagerStatus, uui
 		}
 	}
 
+	preserveUsageFromPrevious(prev, status)
+
 	pmStatus.SetMicroservicesStatus(uuid, status)
+}
+
+// preserveUsageFromPrevious keeps the last CPU and memory sample on the status
+// object when reconcile refreshes runtime state without re-sampling usage.
+func preserveUsageFromPrevious(prev, next *models.MicroserviceStatus) {
+	if prev == nil || next == nil {
+		return
+	}
+	if next.Status != models.MicroserviceStateRunning {
+		return
+	}
+	nextCID := strings.TrimSpace(next.ContainerID)
+	prevCID := strings.TrimSpace(prev.ContainerID)
+	if nextCID == "" || nextCID != prevCID {
+		return
+	}
+	next.CPUUsage = prev.CPUUsage
+	next.MemoryUsage = prev.MemoryUsage
 }

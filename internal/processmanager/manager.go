@@ -1627,7 +1627,7 @@ func (pm *ProcessManager) reconcileControllerMicroservices(only map[string]struc
 					stuckMsg := stuckInRestartErrorMessage(ms.MicroserviceUUID, fmt.Sprintf("Container repeatedly failing to start: %v", startErr))
 					status.ErrorMessage = &stuckMsg
 					statusreporter.GetInstance().UpdateProcessManagerStatus(func(pmStatus *models.ProcessManagerStatus) {
-						pmStatus.SetMicroservicesStatus(ms.MicroserviceUUID, status)
+						syncMicroserviceStatusToReporter(pmStatus, ms.MicroserviceUUID, status)
 					})
 					continue
 				}

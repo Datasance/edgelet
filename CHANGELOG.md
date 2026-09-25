@@ -5,6 +5,15 @@ All notable changes to Edgelet are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0-rc.8]
+
+### Changed
+- **Go dependencies:** patch/minor bumps — `google.golang.org/grpc` **v1.84.0**, `modernc.org/sqlite` **v1.59.0**.
+
+### Fixed
+
+- Reconcile no longer clears microservice CPU and memory in status sent to the controller; the last usage sample is kept until the usage refresh loop updates it.
+
 ## [v1.1.0-rc.7]
 
 ### Fixed
