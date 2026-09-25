@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v1.1.0-rc.8]
 
 ### Changed
-- **Go dependencies:** patch/minor bumps — `google.golang.org/grpc` **v1.84.0**, `modernc.org/sqlite` **v1.59.0**.
+- **Go dependencies:** patch/minor bump, `modernc.org/sqlite` **v1.59.0**.
 
 ### Fixed
 
