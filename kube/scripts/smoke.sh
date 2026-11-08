@@ -48,6 +48,55 @@ fi
 cmp -s "$fat" "${extracted[0]}"
 [ -x "${extracted[0]}" ]
 
+bindir=$(dirname "${extracted[0]}")
+root=$(dirname "$bindir")
+echo "bundle members:"
+(
+	cd "$root"
+	find . -print | sed 's|^\./||' | LC_ALL=C sort
+)
+require_file() {
+	if [ ! -f "$1" ] || [ -L "$1" ]; then
+		echo "missing $1" >&2
+		exit 1
+	fi
+}
+require_link() {
+	if [ ! -L "$1" ]; then
+		echo "missing link $1" >&2
+		exit 1
+	fi
+	got=$(readlink "$1")
+	if [ "$got" != "$2" ]; then
+		echo "$1 -> $got, want $2" >&2
+		exit 1
+	fi
+}
+require_file "$bindir/edgelet-kube"
+require_file "$bindir/containerd-shim-runc-v2"
+require_file "$bindir/crun"
+require_file "$bindir/cni"
+require_file "$bindir/ip"
+require_file "$bindir/busybox"
+require_file "$bindir/aux/xtables-legacy-multi"
+require_link "$bindir/aux/iptables" xtables-legacy-multi
+require_link "$bindir/modprobe" busybox
+for name in bridge host-local loopback portmap; do
+	require_link "$bindir/$name" cni
+done
+mapfile -t top < <(find "$bindir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+want_top="aux bridge busybox cni containerd-shim-runc-v2 crun edgelet-kube host-local ip loopback modprobe portmap"
+got_top="${top[*]}"
+if [ "$got_top" != "$want_top" ]; then
+	echo "bin members: $got_top" >&2
+	exit 1
+fi
+if find "$root" \( -name 'pause.tar' -o -name 'pause.tar.gz' -o -name 'oci-layout' -o -name 'index.json' -o -name 'manifest.json' -o -path '*/images/*' -o -path '*/blobs/*' -o -name 'flannel' \) | grep -q .; then
+	echo "bundle contains an OCI image or flannel" >&2
+	find "$root" \( -name 'pause.tar' -o -name 'pause.tar.gz' -o -name 'oci-layout' -o -name 'index.json' -o -name 'manifest.json' -o -path '*/images/*' -o -path '*/blobs/*' -o -name 'flannel' \) >&2
+	exit 1
+fi
+
 for name in kubectl ctr crictl; do
 	link="$data/$name"
 	ln -s "$(pwd)/$thin" "$link"

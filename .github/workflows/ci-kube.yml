@@ -39,6 +39,9 @@ jobs:
         working-directory: kube
         run: go test ./internal/...
 
+      - name: Aux build dependencies
+        run: sudo TARGETARCH=amd64 ./scripts/install-embed-build-deps
+
       - name: Build linux/amd64
         working-directory: kube
         run: bash scripts/build.sh
