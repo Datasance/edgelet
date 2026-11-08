@@ -1,0 +1,48 @@
+//go:build linux && cgo
+
+package containerd
+
+// Register the in-process containerd plugins: CRI, the overlay snapshotter,
+// and the gRPC server. There is no standalone containerd executable.
+import (
+	_ "github.com/containerd/containerd/v2/core/runtime/v2"
+	_ "github.com/containerd/containerd/v2/plugins/content/local/plugin"
+	_ "github.com/containerd/containerd/v2/plugins/cri"
+	_ "github.com/containerd/containerd/v2/plugins/cri/images"
+	_ "github.com/containerd/containerd/v2/plugins/cri/runtime"
+	_ "github.com/containerd/containerd/v2/plugins/diff/walking/plugin"
+	_ "github.com/containerd/containerd/v2/plugins/events"
+	_ "github.com/containerd/containerd/v2/plugins/gc"
+	_ "github.com/containerd/containerd/v2/plugins/imageverifier"
+	_ "github.com/containerd/containerd/v2/plugins/leases"
+	_ "github.com/containerd/containerd/v2/plugins/metadata"
+	_ "github.com/containerd/containerd/v2/plugins/mount"
+	_ "github.com/containerd/containerd/v2/plugins/nri"
+	_ "github.com/containerd/containerd/v2/plugins/restart"
+	_ "github.com/containerd/containerd/v2/plugins/sandbox"
+	_ "github.com/containerd/containerd/v2/plugins/server/debug"
+	_ "github.com/containerd/containerd/v2/plugins/server/grpc"
+	_ "github.com/containerd/containerd/v2/plugins/server/metrics"
+	_ "github.com/containerd/containerd/v2/plugins/server/ttrpc"
+	_ "github.com/containerd/containerd/v2/plugins/services/containers"
+	_ "github.com/containerd/containerd/v2/plugins/services/content"
+	_ "github.com/containerd/containerd/v2/plugins/services/diff"
+	_ "github.com/containerd/containerd/v2/plugins/services/events"
+	_ "github.com/containerd/containerd/v2/plugins/services/healthcheck"
+	_ "github.com/containerd/containerd/v2/plugins/services/images"
+	_ "github.com/containerd/containerd/v2/plugins/services/introspection"
+	_ "github.com/containerd/containerd/v2/plugins/services/leases"
+	_ "github.com/containerd/containerd/v2/plugins/services/mounts"
+	_ "github.com/containerd/containerd/v2/plugins/services/namespaces"
+	_ "github.com/containerd/containerd/v2/plugins/services/opt"
+	_ "github.com/containerd/containerd/v2/plugins/services/sandbox"
+	_ "github.com/containerd/containerd/v2/plugins/services/snapshots"
+	_ "github.com/containerd/containerd/v2/plugins/services/streaming"
+	_ "github.com/containerd/containerd/v2/plugins/services/tasks"
+	_ "github.com/containerd/containerd/v2/plugins/services/transfer"
+	_ "github.com/containerd/containerd/v2/plugins/services/version"
+	_ "github.com/containerd/containerd/v2/plugins/services/warning"
+	_ "github.com/containerd/containerd/v2/plugins/snapshots/overlay/plugin"
+	_ "github.com/containerd/containerd/v2/plugins/streaming"
+	_ "github.com/containerd/containerd/v2/plugins/transfer"
+)

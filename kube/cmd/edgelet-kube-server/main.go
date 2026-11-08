@@ -1,6 +1,7 @@
 //go:build linux && cgo
 
 // Package main is the fat runtime. server returns without opening the API port.
+// The containerd child serves containerd and returns.
 // kubectl, ctr, and crictl are recognized from argv0.
 package main
 
@@ -16,19 +17,41 @@ import (
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/bundle"
+	"github.com/eclipse-iofog/edgelet-kube/internal/containerd"
 	"github.com/eclipse-iofog/edgelet-kube/internal/dispatch"
 )
 
 const readyLine = "edgelet-kube runtime"
 
 func main() {
+	// Keep cgo linked into the fat runtime.
+	C.edgeletKubeRuntime()
+	if handled, err := containerd.MaybeRunChild(os.Args); handled {
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "edgelet-kube: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	name, ok := commandName(os.Args)
 	if !ok {
 		_, _ = fmt.Fprintf(os.Stderr, "edgelet-kube: %v\n", dispatch.ErrUsage)
 		os.Exit(2)
 	}
-	// Keep cgo linked into the fat runtime.
-	C.edgeletKubeRuntime()
+	if containerd.WantsClient(name, os.Args) {
+		var err error
+		switch name {
+		case "ctr":
+			err = containerd.RunCtr(os.Args[1:])
+		case "crictl":
+			err = containerd.RunCrictl(os.Args[1:])
+		}
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "edgelet-kube: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	_, _ = fmt.Printf("%s %s\n", readyLine, name)
 }
 
