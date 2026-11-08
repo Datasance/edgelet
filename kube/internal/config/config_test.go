@@ -439,6 +439,76 @@ func TestDefaultPauseImageMatchesAirgapList(t *testing.T) {
 	}
 }
 
+func TestSystemDefaultRegistryPrefixesPause(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, path, "system-default-registry: registry.example\n")
+	got, err := Load([]string{"--config", path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PauseImage != "registry.example/"+DefaultPauseImage {
+		t.Fatalf("pause %s", got.PauseImage)
+	}
+	writeFile(t, path, "system-default-registry: \"\"\npause-image: registry.k8s.io/pause:3.10.2\n")
+	got, err = Load([]string{"--config", path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PauseImage != DefaultPauseImage {
+		t.Fatalf("empty registry pause %s", got.PauseImage)
+	}
+	writeFile(t, path, "system-default-registry: registry.example\npause-image: registry.k8s.io/pause:3.10.2\n")
+	got, err = Load([]string{"--config", path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PauseImage != "registry.example/registry.k8s.io/pause:3.10.2" {
+		t.Fatalf("listed pause %s", got.PauseImage)
+	}
+}
+
+func TestKubeletPauseArg(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	got := loadPath(t, path, "# defaults\n")
+	pause := DefaultPauseImage
+	if got.KubeletPauseArg() != "--pod-infra-container-image="+pause {
+		t.Fatalf("pause flag %s", got.KubeletPauseArg())
+	}
+	if !strings.HasPrefix(airgapPause(t), pause+"@sha256:") {
+		t.Fatalf("pause %s is not the pin-list name", pause)
+	}
+
+	got = loadPath(t, path, "system-default-registry: registry.example\n")
+	flag := got.KubeletPauseArg()
+	if flag != "--pod-infra-container-image=registry.example/"+pause {
+		t.Fatalf("prefixed pause flag %s", flag)
+	}
+	if !strings.Contains(flag, "registry.example/") {
+		t.Fatalf("prefix missing from %s", flag)
+	}
+
+	got = loadPath(t, path, "system-default-registry: \"\"\n")
+	if got.KubeletPauseArg() != "--pod-infra-container-image="+pause {
+		t.Fatalf("empty registry flag %s", got.KubeletPauseArg())
+	}
+}
+
+func airgapPause(t *testing.T) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("..", "..", "scripts", "airgap", "image-list.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "/pause:") {
+			return line
+		}
+	}
+	t.Fatal("pin list has no pause image")
+	return ""
+}
+
 func TestDefaults(t *testing.T) {
 	got := Defaults()
 	if got.DataDir != bundle.DefaultDataDir {

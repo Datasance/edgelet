@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
+	"github.com/eclipse-iofog/edgelet-kube/internal/registries"
 	"github.com/pelletier/go-toml"
 )
 
@@ -37,6 +39,14 @@ type Settings struct {
 	Snapshotter string
 	// LogLevel is the containerd log level.
 	LogLevel string
+	// RegistryFile is the registries file. A missing file leaves containerd on upstream endpoints.
+	RegistryFile string
+	// RegistryDir is the containerd hosts directory.
+	RegistryDir string
+	// DisableDefaultEndpoint omits the upstream registry for names listed in RegistryFile.
+	DisableDefaultEndpoint bool
+	// PauseImage is the sandbox image.
+	PauseImage string
 }
 
 // ParseChildArgs reads the containerd child command line.
@@ -73,6 +83,16 @@ func ParseChildArgs(args []string) (Settings, error) {
 			settings.Snapshotter = value
 		case "log-level":
 			settings.LogLevel = value
+		case "private-registry":
+			settings.RegistryFile = value
+		case "pause-image":
+			settings.PauseImage = value
+		case "disable-default-registry-endpoint":
+			flag, err := strconv.ParseBool(value)
+			if err != nil {
+				return Settings{}, fmt.Errorf("disable-default-registry-endpoint requires true or false")
+			}
+			settings.DisableDefaultEndpoint = flag
 		default:
 			return Settings{}, fmt.Errorf("unknown containerd child flag %q", name)
 		}
@@ -142,6 +162,12 @@ func (s *Settings) applyDefaults() error {
 	if s.LogLevel == "" {
 		s.LogLevel = "warn"
 	}
+	if s.PauseImage == "" {
+		s.PauseImage = config.DefaultPauseImage
+	}
+	if s.RegistryDir == "" {
+		s.RegistryDir = filepath.Join(s.Root, "certs.d")
+	}
 	var errAbs error
 	s.Socket, errAbs = absPath(s.Socket)
 	if errAbs != nil {
@@ -172,6 +198,14 @@ func (s *Settings) applyDefaults() error {
 		return errAbs
 	}
 	s.CNIConfDir, errAbs = absPath(s.CNIConfDir)
+	if errAbs != nil {
+		return errAbs
+	}
+	s.RegistryDir, errAbs = absPath(s.RegistryDir)
+	if errAbs != nil {
+		return errAbs
+	}
+	s.RegistryFile, errAbs = absPath(s.RegistryFile)
 	return errAbs
 }
 
@@ -225,11 +259,22 @@ func (s Settings) validate() error {
 
 // WriteConfig writes the containerd config for these settings.
 // crun is the CRI runtime and SystemdCgroup is enabled.
+// A missing registries file leaves the hosts directory empty so containerd uses upstream endpoints.
 func WriteConfig(s Settings) error {
 	if err := s.validate(); err != nil {
 		return err
 	}
-	tree, err := toml.TreeFromMap(configMap(s))
+	if s.PauseImage == "" {
+		s.PauseImage = config.DefaultPauseImage
+	}
+	if s.RegistryDir == "" {
+		return fmt.Errorf("registry config directory is required")
+	}
+	auths, err := registries.Prepare(s.RegistryDir, s.RegistryFile, s.DisableDefaultEndpoint)
+	if err != nil {
+		return err
+	}
+	tree, err := toml.TreeFromMap(configMap(s, auths))
 	if err != nil {
 		return fmt.Errorf("containerd config: %w", err)
 	}
@@ -246,7 +291,7 @@ func WriteConfig(s Settings) error {
 	return nil
 }
 
-func configMap(s Settings) map[string]any {
+func configMap(s Settings, auths map[string]registries.Auth) map[string]any {
 	runtimes := map[string]any{
 		RuntimeName: crunRuntime(s),
 	}
@@ -271,13 +316,7 @@ func configMap(s Settings) map[string]any {
 			"io.containerd.nri.v1.nri": map[string]any{
 				"disable": true,
 			},
-			"io.containerd.cri.v1.images": map[string]any{
-				"snapshotter":                  s.Snapshotter,
-				"disable_snapshot_annotations": true,
-				"pinned_images": map[string]any{
-					"sandbox": config.DefaultPauseImage,
-				},
-			},
+			"io.containerd.cri.v1.images": imagePlugin(s, auths),
 			"io.containerd.cri.v1.runtime": map[string]any{
 				"enable_selinux": false,
 				"containerd": map[string]any{
@@ -298,6 +337,45 @@ func configMap(s Settings) map[string]any {
 				"slow_chown": false,
 			},
 		},
+	}
+}
+
+func imagePlugin(s Settings, auths map[string]registries.Auth) map[string]any {
+	registry := map[string]any{
+		"config_path": s.RegistryDir,
+	}
+	if len(auths) > 0 {
+		configs := map[string]any{}
+		for host, auth := range auths {
+			if host == "" {
+				continue
+			}
+			entry := map[string]any{}
+			if auth.Username != "" {
+				entry["username"] = auth.Username
+			}
+			if auth.Password != "" {
+				entry["password"] = auth.Password
+			}
+			if auth.Token != "" {
+				entry["auth"] = auth.Token
+			}
+			if len(entry) == 0 {
+				continue
+			}
+			configs[host] = map[string]any{"auth": entry}
+		}
+		if len(configs) > 0 {
+			registry["configs"] = configs
+		}
+	}
+	return map[string]any{
+		"snapshotter":                  s.Snapshotter,
+		"disable_snapshot_annotations": true,
+		"pinned_images": map[string]any{
+			"sandbox": s.PauseImage,
+		},
+		"registry": registry,
 	}
 }
 

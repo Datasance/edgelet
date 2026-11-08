@@ -162,6 +162,116 @@ func TestWriteConfigUsesCrun(t *testing.T) {
 	}
 }
 
+func TestMissingRegistriesFileUsesUpstream(t *testing.T) {
+	dir := t.TempDir()
+	settings := childSettings(t, dir)
+	settings.RegistryFile = filepath.Join(dir, "missing.yaml")
+	if err := WriteConfig(settings); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(settings.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), settings.RegistryDir) {
+		t.Fatalf("config path missing\n%s", body)
+	}
+	entries, err := os.ReadDir(settings.RegistryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("hosts written for a missing file: %d", len(entries))
+	}
+	if !strings.Contains(string(body), config.DefaultPauseImage) {
+		t.Fatalf("pause image missing\n%s", body)
+	}
+}
+
+func TestRegistriesAndPauseImageReachContainerd(t *testing.T) {
+	dir := t.TempDir()
+	registriesFile := filepath.Join(dir, "registries.yaml")
+	if err := os.WriteFile(registriesFile, []byte(`
+mirrors:
+  docker.io:
+    endpoint:
+      - https://mirror.example.com
+configs:
+  mirror.example.com:
+    auth:
+      username: user
+      password: secret
+      auth: dXNlcjpwYXNz
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings := childSettings(t, dir)
+	settings.RegistryFile = registriesFile
+	settings.DisableDefaultEndpoint = true
+	settings.PauseImage = "registry.example/registry.k8s.io/pause:3.10.2"
+	if err := WriteConfig(settings); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(settings.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := toml.LoadBytes(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := tree.GetPath([]string{"plugins", "io.containerd.cri.v1.images"})
+	plugin, ok := images.(*toml.Tree)
+	if !ok {
+		t.Fatalf("images plugin %#v", images)
+	}
+	if got := plugin.GetPath([]string{"registry", "config_path"}); got != settings.RegistryDir {
+		t.Fatalf("config_path %v", got)
+	}
+	if got := plugin.GetPath([]string{"pinned_images", "sandbox"}); got != settings.PauseImage {
+		t.Fatalf("sandbox %v", got)
+	}
+	auth := plugin.GetPath([]string{"registry", "configs", "mirror.example.com", "auth"})
+	authTree, ok := auth.(*toml.Tree)
+	if !ok {
+		t.Fatalf("auth %#v\n%s", auth, body)
+	}
+	if authTree.Get("username") != "user" || authTree.Get("password") != "secret" || authTree.Get("auth") != "dXNlcjpwYXNz" {
+		t.Fatalf("auth %#v", authTree.ToMap())
+	}
+	mirror := filepath.Join(settings.RegistryDir, "docker.io", "hosts.toml")
+	hosts, err := os.ReadFile(mirror)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(hosts), "registry-1.docker.io") {
+		t.Fatalf("upstream fallback still present\n%s", hosts)
+	}
+	if !strings.Contains(string(hosts), "https://mirror.example.com/v2") {
+		t.Fatalf("mirror missing\n%s", hosts)
+	}
+}
+
+func childSettings(t *testing.T, dir string) Settings {
+	t.Helper()
+	hideDiscoveredRuntimes(t)
+	settings, err := ParseChildArgs([]string{
+		"edgelet-kube",
+		ChildArg,
+		"--address", filepath.Join(dir, "containerd.sock"),
+		"--root", filepath.Join(dir, "root"),
+		"--state", filepath.Join(dir, "state"),
+		"--crun", filepath.Join(dir, "crun"),
+		"--shim", filepath.Join(dir, "containerd-shim-runc-v2"),
+		"--cni-bin-dir", filepath.Join(dir, "bin"),
+		"--cni-conf-dir", filepath.Join(dir, "net.d"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return settings
+}
+
 func TestParseChildRejectsHostPaths(t *testing.T) {
 	dir := t.TempDir()
 	_, err := ParseChildArgs([]string{

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/bundle"
+	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
 )
 
 const (
@@ -100,7 +101,8 @@ type Server struct {
 	ClusterDomain string
 	// ServiceNodePortRange is the NodePort range.
 	ServiceNodePortRange string
-	// PauseImage is the pause image name.
+	// PauseImage is the pause image kubelet uses. When system-default-registry
+	// is set and this name is on the pin list, the registry is prefixed.
 	PauseImage string
 
 	// DatastoreEndpoint is the database endpoint. Empty selects SQLite.
@@ -273,6 +275,7 @@ func (s *Server) applyDefaults(loadedFrom string) error {
 	if !s.present["pause-image"] {
 		s.PauseImage = DefaultPauseImage
 	}
+	s.PauseImage = airgap.Resolve(s.SystemDefaultRegistry, s.PauseImage)
 	if !s.present["default-local-storage-path"] {
 		s.DefaultLocalStoragePath = DefaultLocalStoragePath
 	}
@@ -286,4 +289,10 @@ func (s *Server) applyDefaults(loadedFrom string) error {
 		s.PrivateRegistry = DefaultPrivateRegistry
 	}
 	return nil
+}
+
+// KubeletPauseArg is the kubelet flag for the sandbox image.
+// The value is PauseImage. A set system-default-registry is already in that name.
+func (s Server) KubeletPauseArg() string {
+	return "--pod-infra-container-image=" + s.PauseImage
 }
