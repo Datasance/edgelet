@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
 	"github.com/eclipse-iofog/edgelet/pkg/untar"
 )
 
@@ -74,6 +75,46 @@ func TestPackKeepsSelectiveAux(t *testing.T) {
 	}
 	if !strings.Contains(got, "bin/aux/iptables -> xtables-legacy-multi\n") {
 		t.Fatalf("bundle members:\n%s", got)
+	}
+}
+
+func TestEmbeddedRuntimeHasNoImage(t *testing.T) {
+	matches, err := filepath.Glob(filepath.Join("..", "..", "cmd", "edgelet-kube", "embed", "*.tar.zst"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("embed archives %v", matches)
+	}
+	if strings.Contains(filepath.Base(matches[0]), "airgap") {
+		t.Fatalf("embed name %s", matches[0])
+	}
+	body, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	members, err := Contents(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) == 0 {
+		t.Fatal("embed archive is empty")
+	}
+	for _, member := range members {
+		if imageMember(member.Name) || strings.Contains(member.Name, "airgap") || strings.Contains(member.Name, "pause") {
+			t.Fatalf("image in bundle: %s", member.Name)
+		}
+	}
+}
+
+func TestPackRejectsAirgapArchive(t *testing.T) {
+	dir := writeStage(t)
+	if err := os.WriteFile(filepath.Join(dir, "bin", airgap.AssetAMD64), []byte("images"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Pack(dir)
+	if err == nil || !strings.Contains(err.Error(), "OCI image") {
+		t.Fatalf("got %v", err)
 	}
 }
 
