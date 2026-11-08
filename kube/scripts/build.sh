@@ -2,6 +2,7 @@
 # Build the thin edgelet-kube binary and the fat runtime it extracts.
 # Thin is CGO_ENABLED=0. Fat is CGO_ENABLED=1.
 # The zstd bundle holds the fat runtime and the aux binaries. It holds no OCI image.
+# The airgap image archive is published beside this binary. It is not embedded here.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
