@@ -11,6 +11,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/bundle"
 	"github.com/eclipse-iofog/edgelet-kube/internal/dispatch"
+	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
 )
 
 func main() {
@@ -27,6 +28,9 @@ func run(args []string) error {
 	}
 	dir, err := extract(cmd.DataDir)
 	if err != nil {
+		return err
+	}
+	if _, err := paths.Place(dir); err != nil {
 		return err
 	}
 	fat := filepath.Join(dir, "bin", bundle.FatName)
