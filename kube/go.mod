@@ -5,6 +5,7 @@ go 1.26.10
 require (
 	github.com/eclipse-iofog/edgelet v0.0.0
 	github.com/klauspost/compress v1.20.3
+	go.yaml.in/yaml/v3 v3.0.5
 )
 
 require (
