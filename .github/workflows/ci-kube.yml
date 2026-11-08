@@ -1,0 +1,48 @@
+name: edgelet-kube CI
+
+on:
+  push:
+    branches: [ main, develop, edgelet-kube/** ]
+    paths:
+      - 'kube/**'
+      - '.github/workflows/ci-kube.yml'
+  pull_request:
+    branches: [ main, develop, edgelet-kube/** ]
+    paths:
+      - 'kube/**'
+      - '.github/workflows/ci-kube.yml'
+  workflow_dispatch:
+
+permissions: read-all
+
+env:
+  GO_VERSION: '1.26.10'
+  GOWORK: 'off'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: kube/go.sum
+
+      - name: No Go workspace
+        run: test ! -f go.work
+
+      - name: Test dispatch
+        working-directory: kube
+        run: go test ./internal/...
+
+      - name: Build linux/amd64
+        working-directory: kube
+        run: bash scripts/build.sh
+
+      - name: Extract and exec
+        working-directory: kube
+        run: bash scripts/smoke.sh
