@@ -58,13 +58,11 @@ type RuntimeInfo struct {
 	RuntimeAPIVersion string
 }
 
-// RuntimeVersion calls the CRI version method on socket.
-func RuntimeVersion(ctx context.Context, socket string) (RuntimeInfo, error) {
+// Dial opens a gRPC connection to the containerd socket.
+func Dial(socket string) (*grpc.ClientConn, error) {
 	if err := checkSocket(socket); err != nil {
-		return RuntimeInfo{}, err
+		return nil, err
 	}
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	conn, err := grpc.NewClient("passthrough:///containerd",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
@@ -73,7 +71,18 @@ func RuntimeVersion(ctx context.Context, socket string) (RuntimeInfo, error) {
 		}),
 	)
 	if err != nil {
-		return RuntimeInfo{}, fmt.Errorf("dial cri: %w", err)
+		return nil, fmt.Errorf("dial cri: %w", err)
+	}
+	return conn, nil
+}
+
+// RuntimeVersion calls the CRI version method on socket.
+func RuntimeVersion(ctx context.Context, socket string) (RuntimeInfo, error) {
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := Dial(socket)
+	if err != nil {
+		return RuntimeInfo{}, err
 	}
 	defer func() {
 		_ = conn.Close()

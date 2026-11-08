@@ -19,6 +19,9 @@ const (
 	// CNIConfDir is the CNI configuration directory.
 	// Kubelet receives it as --cni-conf-dir.
 	CNIConfDir = "/var/lib/edgelet-kube/agent/etc/cni/net.d"
+	// ImagesDir is the directory of image archives imported into containerd.
+	// An empty directory pulls the pinned image list.
+	ImagesDir = "/var/lib/edgelet-kube/agent/images"
 )
 
 // Layout is the runtime directories for one extracted bundle.

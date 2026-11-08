@@ -7,6 +7,12 @@ import (
 	"testing"
 )
 
+func TestImagesDir(t *testing.T) {
+	if ImagesDir != "/var/lib/edgelet-kube/agent/images" {
+		t.Fatal(ImagesDir)
+	}
+}
+
 func TestFromBundleRecordsKubeletCNI(t *testing.T) {
 	dir := t.TempDir()
 	layout, err := FromBundle(dir)
