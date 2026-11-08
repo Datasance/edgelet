@@ -1,0 +1,5 @@
+kubernetes v1.36.6
+cri-api k8s.io/cri-api v0.36.6
+traefik 40.1.7+up40.1.0
+traefik-crd 40.1.7+up40.1.0
+cert-manager v1.21.3
