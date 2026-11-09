@@ -8,12 +8,15 @@ require (
 	github.com/containernetworking/plugins v1.9.1
 	github.com/eclipse-iofog/edgelet v0.0.0
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/k3s-io/helm-controller v0.17.9
 	github.com/k3s-io/kine v0.17.5
 	github.com/klauspost/compress v1.20.3
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/selinux v1.13.1
 	github.com/pelletier/go-toml v1.9.5
+	github.com/rancher/lasso v0.2.7
+	github.com/rancher/wrangler/v3 v3.5.1
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/pflag v1.0.10
 	go.yaml.in/yaml/v3 v3.0.5
@@ -25,7 +28,7 @@ require (
 	k8s.io/component-base v0.37.0
 	k8s.io/cri-api v0.36.6
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kube-aggregator v0.0.0
+	k8s.io/kube-aggregator v0.35.0
 	k8s.io/kubectl v0.36.6
 	k8s.io/kubernetes v1.36.6
 	k8s.io/metrics v0.36.6
@@ -98,12 +101,14 @@ require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/euank/go-kmsg-parser v2.0.0+incompatible // indirect
+	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
 	github.com/expr-lang/expr v1.17.8 // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -276,8 +281,9 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.0.0 // indirect
+	k8s.io/apiextensions-apiserver v0.35.8 // indirect
 	k8s.io/cli-runtime v0.36.6 // indirect
 	k8s.io/cloud-provider v0.36.6 // indirect
 	k8s.io/cluster-bootstrap v0.0.0 // indirect
