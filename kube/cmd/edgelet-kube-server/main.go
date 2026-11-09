@@ -3,7 +3,9 @@
 // Package main is the fat runtime.
 // server starts containerd, imports images, opens the datastore, and then
 // starts kube-apiserver, the bridge conflist, kube-controller-manager,
-// kube-scheduler, kubelet, and kube-proxy.
+// kube-scheduler, kubelet, and kube-proxy. Addon manifests are applied
+// after the API server is ready. The load balancer controller starts then
+// and writes the node IP onto LoadBalancer Services.
 // The containerd child serves containerd and returns.
 // kubectl, ctr, and crictl are recognized from argv0.
 package main
@@ -84,6 +86,8 @@ func main() {
 // serve starts containerd and imports images before the datastore opens.
 // The bridge conflist is written before kubelet. kubelet and kube-proxy start
 // with kube-controller-manager and kube-scheduler, after image import returns.
+// Addon manifests are applied once the API server is ready. The load
+// balancer controller starts with them.
 // Without permission to create the runtime directories, serve returns after
 // the ready line and does not open the API port.
 func serve() error {

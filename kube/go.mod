@@ -18,14 +18,17 @@ require (
 	github.com/spf13/pflag v1.0.10
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/grpc v1.85.0
+	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
 	k8s.io/apiserver v0.37.0
 	k8s.io/client-go v0.37.0
 	k8s.io/component-base v0.37.0
 	k8s.io/cri-api v0.36.6
 	k8s.io/klog/v2 v2.140.0
+	k8s.io/kube-aggregator v0.0.0
 	k8s.io/kubectl v0.36.6
 	k8s.io/kubernetes v1.36.6
+	k8s.io/metrics v0.36.6
 )
 
 require (
@@ -274,7 +277,6 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.37.0 // indirect
 	k8s.io/apiextensions-apiserver v0.0.0 // indirect
 	k8s.io/cli-runtime v0.36.6 // indirect
 	k8s.io/cloud-provider v0.36.6 // indirect
@@ -288,13 +290,11 @@ require (
 	k8s.io/endpointslice v0.0.0 // indirect
 	k8s.io/externaljwt v0.0.0 // indirect
 	k8s.io/kms v0.36.6 // indirect
-	k8s.io/kube-aggregator v0.0.0 // indirect
 	k8s.io/kube-controller-manager v0.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/kube-proxy v0.0.0 // indirect
 	k8s.io/kube-scheduler v0.0.0 // indirect
 	k8s.io/kubelet v0.36.6 // indirect
-	k8s.io/metrics v0.36.6 // indirect
 	k8s.io/mount-utils v0.0.0 // indirect
 	k8s.io/pod-security-admission v0.0.0 // indirect
 	k8s.io/streaming v0.37.0 // indirect

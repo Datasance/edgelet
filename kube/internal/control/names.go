@@ -28,11 +28,18 @@ func advertiseAddress(srv config.Server) (string, error) {
 		}
 		return srv.AdvertiseAddress, nil
 	}
+	return nodeIP(srv)
+}
+
+// nodeIP is the address published on LoadBalancer Services.
+// It is node-ip when that is set, otherwise the address kubelet uses.
+func nodeIP(srv config.Server) (string, error) {
 	if srv.NodeIP != "" {
-		if net.ParseIP(srv.NodeIP) == nil {
+		ip := net.ParseIP(srv.NodeIP)
+		if ip == nil {
 			return "", fmt.Errorf("node-ip %q is not an IP", srv.NodeIP)
 		}
-		return srv.NodeIP, nil
+		return ip.String(), nil
 	}
 	name, err := nodeName(srv)
 	if err != nil {

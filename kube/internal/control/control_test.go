@@ -14,8 +14,10 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
 	"github.com/eclipse-iofog/edgelet-kube/internal/network"
+	"github.com/eclipse-iofog/edgelet-kube/internal/stage"
 	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
 	"github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -149,7 +151,13 @@ func TestReadyz(t *testing.T) {
 	srv.BindAddress = "127.0.0.1"
 	srv.HTTPSListenPort = freePort(t)
 	srv.NodeIP = "192.0.2.10"
-	srv.Disable = []string{"metrics-server"}
+	srv.ClusterCIDR = "10.20.0.0/16"
+	srv.ServiceCIDR = "10.50.0.0/16"
+	srv.ClusterDNS = "10.50.0.25"
+	srv.ClusterDomain = "example.test"
+	srv.NodePodCIDR = "10.20.0.0/24"
+	srv.DefaultLocalStoragePath = filepath.Join(dir, "volumes")
+	extra := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: caller-addon\n  namespace: kube-system\ndata:\n  ok: \"true\"\n")
 	cniConf := filepath.Join(dir, "net.d")
 	cniBin := filepath.Join(dir, "bin")
 	origKubelet := startKubelet
@@ -182,6 +190,7 @@ func TestReadyz(t *testing.T) {
 		Store:      store,
 		CNIConfDir: cniConf,
 		CNIBinDir:  cniBin,
+		Manifests:  extra,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -285,6 +294,37 @@ func TestReadyz(t *testing.T) {
 	}
 	if kubeletRunning() {
 		t.Fatal("kubelet is running")
+	}
+
+	addons := kubeClient(t, rt.Kubeconfig)
+	if _, err := addons.kube.CoreV1().ConfigMaps("kube-system").Get(ctx, "caller-addon", metav1.GetOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	assertAddons(t, addons, srv, true, true, true)
+	assertMetricsTop(t, addons, rt.Kubeconfig)
+	for _, name := range []string{"coredns", "local-storage", "metrics-server"} {
+		disabled := srv
+		disabled.Disable = []string{name}
+		if err := stage.Apply(ctx, rt.Kubeconfig, disabled, extra); err != nil {
+			t.Fatal(err)
+		}
+		assertAddons(t, addons, srv, name != "coredns", name != "local-storage", name != "metrics-server")
+		if _, err := addons.kube.CoreV1().ConfigMaps("kube-system").Get(ctx, "caller-addon", metav1.GetOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if name == "metrics-server" {
+			still, err := addons.kube.Discovery().RESTClient().Get().AbsPath("/apis/apiregistration.k8s.io/v1").DoRaw(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(still), "APIService") {
+				t.Fatalf("aggregation API %s", still)
+			}
+		}
+		if err := stage.Apply(ctx, rt.Kubeconfig, srv, extra); err != nil {
+			t.Fatal(err)
+		}
+		assertAddons(t, addons, srv, true, true, true)
 	}
 }
 

@@ -14,6 +14,8 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
 	"github.com/eclipse-iofog/edgelet-kube/internal/network"
 	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
+	"github.com/eclipse-iofog/edgelet-kube/internal/servicelb"
+	"github.com/eclipse-iofog/edgelet-kube/internal/stage"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -32,6 +34,9 @@ type Config struct {
 	// PodNetwork writes the conflist. Nil writes the bridge conflist.
 	// The function does not wait on the apiserver.
 	PodNetwork func(dir, podCIDR string) error
+	// Manifests are additional YAML documents applied after the built-in addons.
+	// Chart objects are supplied by the caller.
+	Manifests []byte
 }
 
 // Runtime is the running API processes.
@@ -65,6 +70,10 @@ func (r *Runtime) Stop() {
 // conflist, then starts kube-controller-manager, kube-scheduler, kubelet,
 // and kube-proxy. Image import has already finished. The conflist write does
 // not wait on the apiserver and finishes before kubelet creates a sandbox.
+// Addon manifests are applied after those processes, once the apiserver is ready.
+// The load balancer controller starts with that apply and writes the node IP
+// onto LoadBalancer Services. kube-proxy programs forwarding. When servicelb
+// is disabled, the controller does not start and those Services stay pending.
 func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := CheckSELinux(cfg.Server.SELinux); err != nil {
 		return nil, err
@@ -142,7 +151,31 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := waitPort(ctx, schedulerPort, errCh); err != nil {
 		return stop(fmt.Errorf("kube-scheduler: %w", err))
 	}
+	if err := stage.Apply(ctx, paths.AdminKubeconfig, cfg.Server, cfg.Manifests); err != nil {
+		return stop(err)
+	}
+	if !addonDisabled(cfg.Server.Disable, "servicelb") {
+		address, err := nodeIP(cfg.Server)
+		if err != nil {
+			return stop(err)
+		}
+		rt.launch(ctx, "servicelb", errCh, func(ctx context.Context) error {
+			return startLoadBalancer(ctx, paths.AdminKubeconfig, address)
+		})
+	}
 	return rt, nil
+}
+
+// startLoadBalancer runs the in-process controller.
+var startLoadBalancer = servicelb.Run
+
+func addonDisabled(names []string, name string) bool {
+	for _, item := range names {
+		if item == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runtime) launch(ctx context.Context, name string, errCh chan<- error, run func(context.Context) error) {
