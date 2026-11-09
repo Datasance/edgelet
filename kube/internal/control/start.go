@@ -12,6 +12,7 @@ import (
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
+	"github.com/eclipse-iofog/edgelet-kube/internal/helm"
 	"github.com/eclipse-iofog/edgelet-kube/internal/network"
 	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
 	"github.com/eclipse-iofog/edgelet-kube/internal/servicelb"
@@ -71,9 +72,14 @@ func (r *Runtime) Stop() {
 // and kube-proxy. Image import has already finished. The conflist write does
 // not wait on the apiserver and finishes before kubelet creates a sandbox.
 // Addon manifests are applied after those processes, once the apiserver is ready.
-// The load balancer controller starts with that apply and writes the node IP
-// onto LoadBalancer Services. kube-proxy programs forwarding. When servicelb
-// is disabled, the controller does not start and those Services stay pending.
+// The Helm controller starts after that apply, and only once the HelmChart API
+// is served. The load balancer controller starts after the Helm controller and
+// writes the node IP onto LoadBalancer Services. kube-proxy programs forwarding.
+// When servicelb is disabled, the load balancer does not start and those
+// Services stay pending. When the Helm controller is disabled, its CRD is not
+// applied, chart objects are not staged, and the controller does not start.
+// The cluster issuer is applied after the chart objects and retries until
+// cert-manager serves its CRDs. An empty email writes nothing.
 func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := CheckSELinux(cfg.Server.SELinux); err != nil {
 		return nil, err
@@ -106,7 +112,7 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	rt := &Runtime{Kubeconfig: paths.AdminKubeconfig, cancel: cancel}
-	errCh := make(chan error, 8)
+	errCh := make(chan error, 9)
 	stop := func(err error) (*Runtime, error) {
 		cancel()
 		rt.Stop()
@@ -154,6 +160,13 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := stage.Apply(ctx, paths.AdminKubeconfig, cfg.Server, cfg.Manifests); err != nil {
 		return stop(err)
 	}
+	if !cfg.Server.DisableHelmController {
+		kubeconfig := paths.AdminKubeconfig
+		server := cfg.Server
+		rt.launch(ctx, "helm-controller", errCh, func(ctx context.Context) error {
+			return startHelm(ctx, kubeconfig, server)
+		})
+	}
 	if !addonDisabled(cfg.Server.Disable, "servicelb") {
 		address, err := nodeIP(cfg.Server)
 		if err != nil {
@@ -163,11 +176,19 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 			return startLoadBalancer(ctx, paths.AdminKubeconfig, address)
 		})
 	}
+	kubeconfig := paths.AdminKubeconfig
+	server := cfg.Server
+	rt.launch(ctx, "cluster-issuer", errCh, func(ctx context.Context) error {
+		return stage.ApplyIssuer(ctx, kubeconfig, server)
+	})
 	return rt, nil
 }
 
 // startLoadBalancer runs the in-process controller.
 var startLoadBalancer = servicelb.Run
+
+// startHelm runs the in-process Helm controller after its CRD is applied.
+var startHelm = helm.Run
 
 func addonDisabled(names []string, name string) bool {
 	for _, item := range names {

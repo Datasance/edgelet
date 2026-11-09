@@ -2,17 +2,24 @@ package control
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/eclipse-iofog/edgelet-kube/internal/charts"
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
+	"github.com/eclipse-iofog/edgelet-kube/internal/helm"
 	"github.com/eclipse-iofog/edgelet-kube/internal/network"
 	"github.com/eclipse-iofog/edgelet-kube/internal/stage"
 	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
@@ -157,15 +164,32 @@ func TestReadyz(t *testing.T) {
 	srv.ClusterDomain = "example.test"
 	srv.NodePodCIDR = "10.20.0.0/24"
 	srv.DefaultLocalStoragePath = filepath.Join(dir, "volumes")
-	extra := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: caller-addon\n  namespace: kube-system\ndata:\n  ok: \"true\"\n")
+	chartNames, err := charts.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: caller-addon\n  namespace: kube-system\ndata:\n  ok: \"true\"\n---\napiVersion: helm.cattle.io/v1\nkind: HelmChart\nmetadata:\n  name: chart-order\n  namespace: kube-system\n  annotations:\n    helmcharts.helm.cattle.io/unmanaged: \"true\"\nspec:\n  chart: https://kubernetes.default.svc" + charts.Prefix + chartNames[0] + "\n")
 	cniConf := filepath.Join(dir, "net.d")
 	cniBin := filepath.Join(dir, "bin")
 	origKubelet := startKubelet
 	origProxy := startKubeProxy
+	origHelm := startHelm
+	helmErr := make(chan error, 1)
 	t.Cleanup(func() {
 		startKubelet = origKubelet
 		startKubeProxy = origProxy
+		startHelm = origHelm
 	})
+	startHelm = func(ctx context.Context, kubeconfig string, srv config.Server) error {
+		err := origHelm(ctx, kubeconfig, srv)
+		if err != nil && ctx.Err() == nil {
+			select {
+			case helmErr <- err:
+			default:
+			}
+		}
+		return err
+	}
 	kubeletStarted := make(chan struct{})
 	proxyStarted := make(chan struct{})
 	var kubeletArgsSeen []string
@@ -300,6 +324,23 @@ func TestReadyz(t *testing.T) {
 	if _, err := addons.kube.CoreV1().ConfigMaps("kube-system").Get(ctx, "caller-addon", metav1.GetOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	chart, err := client.Discovery().RESTClient().Get().AbsPath("/apis/helm.cattle.io/v1/namespaces/kube-system/helmcharts/chart-order").DoRaw(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(chart), "chart-order") {
+		t.Fatalf("helm chart %s", chart)
+	}
+	assertCharts(t, rt.Kubeconfig, chartNames)
+	assertStagedCharts(t, client)
+	waitHelmLease(t, client)
+	waitHelmJob(t, client, "helm-install-traefik")
+	waitHelmJob(t, client, "helm-install-cert-manager")
+	select {
+	case err := <-helmErr:
+		t.Fatal(err)
+	case <-time.After(10 * time.Second):
+	}
 	assertAddons(t, addons, srv, true, true, true)
 	assertMetricsTop(t, addons, rt.Kubeconfig)
 	for _, name := range []string{"coredns", "local-storage", "metrics-server"} {
@@ -326,6 +367,7 @@ func TestReadyz(t *testing.T) {
 		}
 		assertAddons(t, addons, srv, true, true, true)
 	}
+	assertIssuerRetries(t, ctx, rt.Kubeconfig, srv)
 }
 
 func TestKubeletAndProxyUseNodeNetwork(t *testing.T) {
@@ -510,6 +552,150 @@ func TestPreferBundledIptables(t *testing.T) {
 	}
 	if got != filepath.Join(host, "iptables") {
 		t.Fatalf("host iptables %s", got)
+	}
+}
+
+func assertCharts(t *testing.T, kubeconfig string, names []string) {
+	t.Helper()
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(cfg.CAData) {
+		t.Fatal("cluster CA was not in the client config")
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	base := strings.TrimRight(cfg.Host, "/")
+	for _, name := range names {
+		resp, err := client.Get(base + charts.Prefix + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status %d", name, resp.StatusCode)
+		}
+		want, err := charts.Read(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != string(want) {
+			t.Fatalf("%s returned %d bytes", name, len(body))
+		}
+	}
+	resp, err := client.Get(base + "/api/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated api status %d", resp.StatusCode)
+	}
+}
+
+func assertStagedCharts(t *testing.T, client kubernetes.Interface) {
+	t.Helper()
+	ctx := t.Context()
+	names, err := charts.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"traefik-crd", "traefik", "cert-manager"} {
+		raw, err := client.Discovery().RESTClient().Get().AbsPath("/apis/helm.cattle.io/v1/namespaces/kube-system/helmcharts/" + name).DoRaw(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var obj struct {
+			Spec struct {
+				Chart           string `json:"chart"`
+				ValuesContent   string `json:"valuesContent"`
+				TargetNamespace string `json:"targetNamespace"`
+			} `json:"spec"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			t.Fatal(err)
+		}
+		var file string
+		for _, candidate := range names {
+			if strings.HasPrefix(candidate, name+"-") && strings.HasSuffix(candidate, ".tgz") {
+				if name == "traefik" && strings.HasPrefix(candidate, "traefik-crd-") {
+					continue
+				}
+				file = candidate
+			}
+		}
+		want := "https://kubernetes.default.svc" + charts.Prefix + file
+		if obj.Spec.Chart != want {
+			t.Fatalf("%s chart %s", name, obj.Spec.Chart)
+		}
+		if name == "traefik" {
+			if !strings.Contains(obj.Spec.ValuesContent, "type: LoadBalancer") {
+				t.Fatalf("traefik values %s", obj.Spec.ValuesContent)
+			}
+			if !strings.Contains(obj.Spec.ValuesContent, "exposedPort: 80") || !strings.Contains(obj.Spec.ValuesContent, "exposedPort: 443") {
+				t.Fatalf("traefik ports %s", obj.Spec.ValuesContent)
+			}
+		}
+		if name == "cert-manager" {
+			if obj.Spec.TargetNamespace != "cert-manager" || !strings.Contains(obj.Spec.ValuesContent, "enabled: true") {
+				t.Fatalf("cert-manager %#v", obj.Spec)
+			}
+		}
+	}
+	err = client.Discovery().RESTClient().Get().AbsPath("/apis/cert-manager.io/v1/clusterissuers/letsencrypt-prod").Do(ctx).Error()
+	if err == nil {
+		t.Fatal("cluster issuer was written without an email")
+	}
+}
+
+func waitHelmJob(t *testing.T, client kubernetes.Interface, name string) {
+	t.Helper()
+	ctx := t.Context()
+	deadline := time.NewTimer(60 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	var last error
+	for {
+		_, last = client.BatchV1().Jobs("kube-system").Get(ctx, name, metav1.GetOptions{})
+		if last == nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-deadline.C:
+			t.Fatalf("helm job %s: %v", name, last)
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitHelmLease(t *testing.T, client kubernetes.Interface) {
+	t.Helper()
+	ctx := t.Context()
+	deadline := time.NewTimer(60 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	var last error
+	for {
+		_, last = client.CoordinationV1().Leases("kube-system").Get(ctx, helm.LeaseName, metav1.GetOptions{})
+		if last == nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-deadline.C:
+			t.Fatalf("helm controller lease: %v", last)
+		case <-ticker.C:
+		}
 	}
 }
 
