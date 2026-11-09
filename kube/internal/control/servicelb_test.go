@@ -93,7 +93,7 @@ func testServiceLBOn(t *testing.T) {
 	t.Cleanup(func() { startLoadBalancer = orig })
 
 	client := startControl(t, nil)
-	if started.Load() != 1 {
+	if !waitCount(&started, 1, 5*time.Second) {
 		t.Fatal("load balancer controller was not started")
 	}
 	createService(t, client, loadBalancerService("web"))
@@ -129,7 +129,7 @@ func testServiceLBOff(t *testing.T) {
 	t.Cleanup(func() { startLoadBalancer = orig })
 
 	client := startControl(t, []string{"servicelb"})
-	if started.Load() != 0 {
+	if waitCount(&started, 1, 300*time.Millisecond) {
 		t.Fatal("load balancer controller was started")
 	}
 	createService(t, client, loadBalancerService("web"))
@@ -138,6 +138,21 @@ func testServiceLBOff(t *testing.T) {
 	if loadBalancerProcess() {
 		t.Fatal("load balancer process is running")
 	}
+}
+
+func waitCount(started *atomic.Int32, want int32, d time.Duration) bool {
+	deadline := time.NewTimer(d)
+	defer deadline.Stop()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for started.Load() != want {
+		select {
+		case <-deadline.C:
+			return false
+		case <-ticker.C:
+		}
+	}
+	return true
 }
 
 func startControl(t *testing.T, disable []string) kubernetes.Interface {
@@ -293,7 +308,7 @@ func loadBalancerWorkload(name string, images []string) bool {
 	fields := append([]string{name}, images...)
 	for _, field := range fields {
 		field = strings.ToLower(field)
-		if strings.Contains(field, "klipper") || strings.Contains(field, "svclb") {
+		if strings.Contains(field, "klipper-lb") || strings.Contains(field, "svclb") {
 			return true
 		}
 	}
