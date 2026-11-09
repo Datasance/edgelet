@@ -91,6 +91,8 @@ func TestParseUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"edgelet-kube"},
 		{"edgelet-kube", "version"},
+		{"edgelet-kube", "rotate"},
+		{"edgelet-kube", "reencrypt"},
 		nil,
 	} {
 		_, err := Parse(args, "")
