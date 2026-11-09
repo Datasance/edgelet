@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
+	"github.com/eclipse-iofog/edgelet-kube/internal/network"
+	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -20,10 +24,14 @@ type Config struct {
 	Server config.Server
 	// Store is the open datastore. The API processes use its endpoint.
 	Store *datastore.Store
-	// PodNetwork runs after kube-apiserver is serving and before
-	// kube-controller-manager and kube-scheduler. The pod network is not
-	// written when this is nil.
-	PodNetwork func(context.Context) error
+	// CNIConfDir is the conflist directory. Empty uses the installed directory.
+	CNIConfDir string
+	// CNIBinDir is the CNI plugin directory in the extracted bundle.
+	// Empty uses the directory of this executable.
+	CNIBinDir string
+	// PodNetwork writes the conflist. Nil writes the bridge conflist.
+	// The function does not wait on the apiserver.
+	PodNetwork func(dir, podCIDR string) error
 }
 
 // Runtime is the running API processes.
@@ -53,8 +61,10 @@ func (r *Runtime) Stop() {
 	r.cancel = nil
 }
 
-// Start runs kube-apiserver against the open datastore, then
-// kube-controller-manager and kube-scheduler. Kubelet and kube-proxy are not started.
+// Start runs kube-apiserver against the open datastore, writes the bridge
+// conflist, then starts kube-controller-manager, kube-scheduler, kubelet,
+// and kube-proxy. Image import has already finished. The conflist write does
+// not wait on the apiserver and finishes before kubelet creates a sandbox.
 func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := CheckSELinux(cfg.Server.SELinux); err != nil {
 		return nil, err
@@ -77,6 +87,14 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	kArgs, err := kubeletArgs(cfg.Server, advertise, paths, cfg.CNIConfDir, cfg.CNIBinDir)
+	if err != nil {
+		return nil, err
+	}
+	pArgs, err := kubeProxyArgs(cfg.Server, advertise, paths)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	rt := &Runtime{Kubeconfig: paths.AdminKubeconfig, cancel: cancel}
 	errCh := make(chan error, 8)
@@ -88,13 +106,15 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	rt.launch(ctx, "kube-apiserver", errCh, func(ctx context.Context) error {
 		return runAPIServer(ctx, apiServerArgs(cfg.Server, cfg.Store.Endpoint, advertise, encPath, paths))
 	})
-	if err := waitReady(ctx, paths.AdminKubeconfig, errCh); err != nil {
+	write := cfg.PodNetwork
+	if write == nil {
+		write = network.Write
+	}
+	if err := write(flagValue(kArgs, "cni-conf-dir"), cfg.Server.NodePodCIDR); err != nil {
 		return stop(err)
 	}
-	if cfg.PodNetwork != nil {
-		if err := cfg.PodNetwork(ctx); err != nil {
-			return stop(err)
-		}
+	if err := waitReady(ctx, paths.AdminKubeconfig, errCh); err != nil {
+		return stop(err)
 	}
 	controllerPort, schedulerPort := componentPorts(cfg.Server.HTTPSListenPort, 0, 0)
 	controllerArgs, err := controllerManagerArgs(cfg.Server, cfg.Store.LeaderElect, controllerPort, paths)
@@ -106,6 +126,15 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	})
 	rt.launch(ctx, "kube-scheduler", errCh, func(ctx context.Context) error {
 		return runScheduler(ctx, schedulerArgs(cfg.Server, cfg.Store.LeaderElect, schedulerPort, paths))
+	})
+	if err := applyBundledPath(cfg.Server.PreferBundledBin, flagValue(kArgs, "cni-bin-dir")); err != nil {
+		return stop(err)
+	}
+	rt.launch(ctx, "kubelet", errCh, func(ctx context.Context) error {
+		return startKubelet(ctx, kArgs)
+	})
+	rt.launch(ctx, "kube-proxy", errCh, func(ctx context.Context) error {
+		return startKubeProxy(ctx, pArgs)
 	})
 	if err := waitPort(ctx, controllerPort, errCh); err != nil {
 		return stop(fmt.Errorf("kube-controller-manager: %w", err))
@@ -140,6 +169,24 @@ func encryptionConfig(srv config.Server) (string, error) {
 		return "", err
 	}
 	return enc.ProviderConfig, nil
+}
+
+// PreferBundledBin sets PATH before containerd starts.
+// The bridge plugin is executed by that child and locates iptables from the child's PATH.
+// When prefer is true, the bundled xtables-legacy directory comes first.
+func PreferBundledBin(prefer bool) error {
+	return applyBundledPath(prefer, "")
+}
+
+// applyBundledPath sets PATH for kubelet, kube-proxy, and the containerd child.
+// prefer puts the bundle aux directory first, so iptables resolves to xtables-legacy.
+func applyBundledPath(prefer bool, cniBinDir string) error {
+	_, bin, err := cniDirs("", cniBinDir)
+	if err != nil {
+		return err
+	}
+	path := (paths.Layout{BundledBin: filepath.Join(bin, "aux")}).BinPath(prefer, os.Getenv("PATH"))
+	return os.Setenv("PATH", path)
 }
 
 func requireServer(srv config.Server) error {

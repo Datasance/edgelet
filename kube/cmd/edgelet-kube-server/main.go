@@ -2,7 +2,8 @@
 
 // Package main is the fat runtime.
 // server starts containerd, imports images, opens the datastore, and then
-// starts kube-apiserver, kube-controller-manager, and kube-scheduler.
+// starts kube-apiserver, the bridge conflist, kube-controller-manager,
+// kube-scheduler, kubelet, and kube-proxy.
 // The containerd child serves containerd and returns.
 // kubectl, ctr, and crictl are recognized from argv0.
 package main
@@ -80,10 +81,9 @@ func main() {
 	_, _ = fmt.Printf("%s %s\n", readyLine, name)
 }
 
-// serve starts containerd, imports images, and opens the datastore.
-// kube-apiserver starts once the datastore is open. The pod network is not
-// written. kube-controller-manager and kube-scheduler start after the
-// apiserver. kubelet and kube-proxy are not started.
+// serve starts containerd and imports images before the datastore opens.
+// The bridge conflist is written before kubelet. kubelet and kube-proxy start
+// with kube-controller-manager and kube-scheduler, after image import returns.
 // Without permission to create the runtime directories, serve returns after
 // the ready line and does not open the API port.
 func serve() error {
@@ -94,6 +94,10 @@ func serve() error {
 		return err
 	}
 	if err := control.CheckSELinux(loaded.SELinux); err != nil {
+		return err
+	}
+	// The containerd child inherits PATH. The bridge plugin looks up iptables there.
+	if err := control.PreferBundledBin(loaded.PreferBundledBin); err != nil {
 		return err
 	}
 	var store *datastore.Store

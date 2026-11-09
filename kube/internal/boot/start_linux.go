@@ -76,8 +76,8 @@ func (p *Process) Stop() {
 // Start starts the containerd child, imports and pins images, then opens the
 // datastore when Config.Datastore is set. An empty images directory pulls the
 // pinned list. Start returns after that import and the datastore open. The
-// images directory stays watched until ctx is canceled. Kubelet and
-// kube-apiserver are not started.
+// images directory stays watched until ctx is canceled. Image import finishes
+// before Start returns. Kubelet is not started.
 func Start(ctx context.Context, cfg Config) (*Process, error) {
 	socket, root, state, cniConf, imagesDir := cfg.paths()
 	for _, dir := range []string{root, state, cniConf, filepath.Dir(socket), imagesDir} {

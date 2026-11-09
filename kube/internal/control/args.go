@@ -3,11 +3,15 @@ package control
 import (
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/eclipse-iofog/edgelet-kube/internal/bundle"
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
+	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
 	"github.com/eclipse-iofog/edgelet-kube/internal/version"
 )
 
@@ -127,6 +131,146 @@ func schedulerArgs(srv config.Server, leader bool, port int, paths certPaths) []
 		values["vmodule"] = srv.VModule
 	}
 	return flagArgs(values, srv.KubeSchedulerArg)
+}
+
+func kubeletArgs(srv config.Server, nodeIP string, certs certPaths, cniConfDir, cniBinDir string) ([]string, error) {
+	confDir, binDir, err := cniDirs(cniConfDir, cniBinDir)
+	if err != nil {
+		return nil, err
+	}
+	name, err := nodeName(srv)
+	if err != nil {
+		return nil, err
+	}
+	dataDir := srv.DataDir
+	if dataDir == "" {
+		dataDir = bundle.DefaultDataDir
+	}
+	root := filepath.Join(dataDir, "agent", "kubelet")
+	values := map[string]string{
+		"kubeconfig":                 certs.KubeletKubeconfig,
+		"container-runtime-endpoint": runtimeEndpoint(),
+		"hostname-override":          name,
+		"node-ip":                    nodeIP,
+		"cluster-dns":                srv.ClusterDNS,
+		"cluster-domain":             srv.ClusterDomain,
+		"root-dir":                   root,
+		"cert-dir":                   filepath.Join(root, "pki"),
+		"read-only-port":             "0",
+		"register-node":              "true",
+	}
+	if srv.ResolvConf != "" {
+		values["resolv-conf"] = srv.ResolvConf
+	}
+	if len(srv.NodeLabel) > 0 {
+		values["node-labels"] = strings.Join(srv.NodeLabel, ",")
+	}
+	if len(srv.NodeTaint) > 0 {
+		values["register-with-taints"] = strings.Join(srv.NodeTaint, ",")
+	}
+	if srv.V != 0 {
+		values["v"] = strconv.Itoa(srv.V)
+	}
+	if srv.VModule != "" {
+		values["vmodule"] = srv.VModule
+	}
+	for _, arg := range (paths.Layout{CNIConfDir: confDir, CNIBinDir: binDir}).KubeletCNIArgs() {
+		key, value := splitArg(arg)
+		values[key] = value
+	}
+	pauseKey, pauseValue := splitArg(srv.KubeletPauseArg())
+	values[pauseKey] = pauseValue
+	// The cgroup driver is systemd, matching crun.
+	// protect-kernel-defaults is passed when that setting is enabled.
+	extra, err := kubeletExtra(srv.KubeletArg)
+	if err != nil {
+		return nil, err
+	}
+	values["cgroup-driver"] = "systemd"
+	if srv.ProtectKernelDefaults {
+		values["protect-kernel-defaults"] = "true"
+	}
+	return flagArgs(values, extra), nil
+}
+
+// kubeletExtra drops arguments that would select another cgroup driver or
+// override protect-kernel-defaults. The server setting decides that flag.
+func kubeletExtra(extra []string) ([]string, error) {
+	if len(extra) == 0 {
+		return nil, nil
+	}
+	kept := make([]string, 0, len(extra))
+	for _, raw := range extra {
+		key, value := splitArg(raw)
+		switch key {
+		case "cgroup-driver":
+			if value != "systemd" {
+				return nil, fmt.Errorf("kubelet cgroup driver is systemd")
+			}
+		case "protect-kernel-defaults":
+		default:
+			kept = append(kept, raw)
+		}
+	}
+	return kept, nil
+}
+
+func kubeProxyArgs(srv config.Server, nodeIP string, certs certPaths) ([]string, error) {
+	name, err := nodeName(srv)
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]string{
+		"proxy-mode":           "iptables",
+		"kubeconfig":           certs.KubeProxyKubeconfig,
+		"cluster-cidr":         srv.ClusterCIDR,
+		"hostname-override":    name,
+		"bind-address":         nodeIP,
+		"healthz-bind-address": "127.0.0.1:10256",
+		"profiling":            "false",
+	}
+	if srv.V != 0 {
+		values["v"] = strconv.Itoa(srv.V)
+	}
+	if srv.VModule != "" {
+		values["vmodule"] = srv.VModule
+	}
+	return flagArgs(values, srv.KubeProxyArg), nil
+}
+
+func cniDirs(confDir, binDir string) (string, string, error) {
+	if confDir == "" {
+		confDir = paths.CNIConfDir
+	}
+	if binDir == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", "", fmt.Errorf("resolve executable: %w", err)
+		}
+		binDir = filepath.Dir(exe)
+	}
+	if filepath.Clean(binDir) == "/opt/cni/bin" {
+		return "", "", fmt.Errorf("unsupported cni binary directory %s", binDir)
+	}
+	return confDir, binDir, nil
+}
+
+func runtimeEndpoint() string {
+	socket := paths.ContainerdSocket
+	if strings.HasPrefix(socket, "unix://") {
+		return socket
+	}
+	return "unix://" + socket
+}
+
+func flagValue(args []string, name string) string {
+	prefix := "--" + name + "="
+	for _, arg := range args {
+		if value, ok := strings.CutPrefix(arg, prefix); ok {
+			return value
+		}
+	}
+	return ""
 }
 
 func prefixSize(cidr string) (string, error) {
