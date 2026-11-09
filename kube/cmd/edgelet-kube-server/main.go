@@ -1,7 +1,8 @@
 //go:build linux && cgo
 
 // Package main is the fat runtime.
-// server starts containerd, imports images, and does not open the API port.
+// server starts containerd, imports images, opens the datastore, and then
+// starts kube-apiserver, kube-controller-manager, and kube-scheduler.
 // The containerd child serves containerd and returns.
 // kubectl, ctr, and crictl are recognized from argv0.
 package main
@@ -25,8 +26,10 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/internal/bundle"
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"github.com/eclipse-iofog/edgelet-kube/internal/containerd"
+	"github.com/eclipse-iofog/edgelet-kube/internal/control"
 	"github.com/eclipse-iofog/edgelet-kube/internal/datastore"
 	"github.com/eclipse-iofog/edgelet-kube/internal/dispatch"
+	"github.com/eclipse-iofog/edgelet-kube/internal/kubectl"
 )
 
 const readyLine = "edgelet-kube runtime"
@@ -60,6 +63,13 @@ func main() {
 		}
 		return
 	}
+	if name == "kubectl" {
+		if err := kubectl.Run(os.Args[1:]); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "edgelet-kube: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if name == bundle.ServerCommand {
 		if err := serve(); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "edgelet-kube: %v\n", err)
@@ -71,14 +81,19 @@ func main() {
 }
 
 // serve starts containerd, imports images, and opens the datastore.
-// It does not open the API port. Without permission to create the runtime
-// directories, it returns after the ready line so the process does not open
-// that port.
+// kube-apiserver starts once the datastore is open. The pod network is not
+// written. kube-controller-manager and kube-scheduler start after the
+// apiserver. kubelet and kube-proxy are not started.
+// Without permission to create the runtime directories, serve returns after
+// the ready line and does not open the API port.
 func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	loaded, err := config.Load(os.Args, os.LookupEnv)
 	if err != nil {
+		return err
+	}
+	if err := control.CheckSELinux(loaded.SELinux); err != nil {
 		return err
 	}
 	var store *datastore.Store
@@ -116,6 +131,11 @@ func serve() error {
 	}
 	defer proc.Stop()
 	defer store.Close()
+	api, err := control.Start(ctx, control.Config{Server: loaded, Store: store})
+	if err != nil {
+		return err
+	}
+	defer api.Stop()
 	_, _ = fmt.Printf("%s %s\n", readyLine, bundle.ServerCommand)
 	<-ctx.Done()
 	return nil

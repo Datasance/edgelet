@@ -97,7 +97,15 @@ if find "$root" \( -name 'pause.tar' -o -name 'pause.tar.gz' -o -name 'oci-layou
 	exit 1
 fi
 
-for name in kubectl ctr crictl; do
+k8s_version=$(awk '$1 == "kubernetes" { print $2; exit }' scripts/airgap/pins.txt)
+kubectl_link="$data/kubectl"
+ln -s "$(pwd)/$thin" "$kubectl_link"
+got=$(timeout 30s "$kubectl_link" --data-dir "$data/work" version --client)
+printf '%s\n' "$got" | grep -q "$k8s_version"
+sub=$(timeout 30s "$thin" kubectl version --client --data-dir "$data/work")
+printf '%s\n' "$sub" | grep -q "$k8s_version"
+
+for name in ctr crictl; do
 	link="$data/$name"
 	ln -s "$(pwd)/$thin" "$link"
 	got=$(timeout 15s "$link" --data-dir "$data/work")
