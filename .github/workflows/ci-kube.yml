@@ -37,7 +37,13 @@ jobs:
 
       - name: Test dispatch
         working-directory: kube
-        run: go test ./internal/...
+        run: go test ./internal/... -skip '^TestChildUsesRuntimePaths$'
+
+      - name: Test containerd runtime paths
+        working-directory: kube
+        run: |
+          go test -c -o /tmp/containerd.test ./internal/containerd/
+          sudo /tmp/containerd.test -test.count=1 -test.v -test.run '^TestChildUsesRuntimePaths$'
 
       - name: Aux build dependencies
         run: sudo TARGETARCH=amd64 ./scripts/install-embed-build-deps
