@@ -47,6 +47,26 @@ func TestFromBundleRecordsKubeletCNI(t *testing.T) {
 	}
 }
 
+func TestBinPathPrefersBundledIptables(t *testing.T) {
+	layout := Layout{BundledBin: "/var/lib/edgelet-kube/data/bin/aux"}
+	host := "/usr/sbin:/sbin"
+	prefer := layout.BinPath(true, host)
+	if !strings.HasPrefix(prefer, layout.BundledBin+string(os.PathListSeparator)) {
+		t.Fatalf("PATH %s", prefer)
+	}
+	if strings.Index(prefer, layout.BundledBin) > strings.Index(prefer, "/usr/sbin") {
+		t.Fatalf("PATH %s", prefer)
+	}
+	hostFirst := layout.BinPath(false, host)
+	if !strings.HasPrefix(hostFirst, "/usr/sbin") || !strings.HasSuffix(hostFirst, layout.BundledBin) {
+		t.Fatalf("PATH %s", hostFirst)
+	}
+	again := layout.BinPath(true, prefer)
+	if again != prefer {
+		t.Fatalf("repeated PATH %s", again)
+	}
+}
+
 func TestFromBundleRejectsHostCNI(t *testing.T) {
 	if _, err := FromBundle("/opt/cni"); err == nil {
 		t.Fatal("accepted the host cni directory")

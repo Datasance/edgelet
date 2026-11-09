@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -65,6 +66,30 @@ func (l Layout) KubeletCNIArgs() []string {
 		"--cni-conf-dir=" + l.CNIConfDir,
 		"--cni-bin-dir=" + l.CNIBinDir,
 	}
+}
+
+// BinPath is PATH for kubelet and kube-proxy.
+// prefer puts BundledBin first, where iptables links to xtables-legacy.
+// When prefer is false, host directories stay first and BundledBin is appended.
+func (l Layout) BinPath(prefer bool, hostPath string) string {
+	bundled := filepath.Clean(l.BundledBin)
+	if bundled == "" || bundled == "." {
+		return hostPath
+	}
+	sep := string(os.PathListSeparator)
+	host := make([]string, 0)
+	if hostPath != "" {
+		for _, part := range strings.Split(hostPath, sep) {
+			if part == "" || filepath.Clean(part) == bundled {
+				continue
+			}
+			host = append(host, part)
+		}
+	}
+	if !prefer {
+		return strings.Join(append(host, bundled), sep)
+	}
+	return strings.Join(append([]string{bundled}, host...), sep)
 }
 
 func (l Layout) check() error {
