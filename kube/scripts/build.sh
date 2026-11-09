@@ -13,13 +13,19 @@ root="$(cd .. && pwd)"
 bash scripts/bundle-stage.sh ensure "$root" "$arch"
 
 mkdir -p build
+k8s_version=$(awk '$1 == "kubernetes" { print $2; exit }' scripts/airgap/pins.txt)
+k8s_rest=${k8s_version#v}
+k8s_major=${k8s_rest%%.*}
+k8s_minor=${k8s_rest#*.}
+k8s_minor=${k8s_minor%%.*}
+version_ldflags="-X k8s.io/component-base/version.gitVersion=${k8s_version} -X k8s.io/component-base/version.gitMajor=${k8s_major} -X k8s.io/component-base/version.gitMinor=${k8s_minor} -X k8s.io/client-go/pkg/version.gitVersion=${k8s_version} -X k8s.io/client-go/pkg/version.gitMajor=${k8s_major} -X k8s.io/client-go/pkg/version.gitMinor=${k8s_minor}"
 # A non-Linux host needs a Linux C compiler for the fat runtime.
 if [ "$(uname -s)" != "Linux" ] && [ "$arch" = "amd64" ]; then
 	CC="${CC:-x86_64-linux-gnu-gcc}" CGO_ENABLED=1 GOOS=linux GOARCH="$arch" \
-		go build -trimpath -o build/edgelet-kube-server ./cmd/edgelet-kube-server
+		go build -trimpath -ldflags "${version_ldflags}" -o build/edgelet-kube-server ./cmd/edgelet-kube-server
 else
 	CGO_ENABLED=1 GOOS=linux GOARCH="$arch" \
-		go build -trimpath -o build/edgelet-kube-server ./cmd/edgelet-kube-server
+		go build -trimpath -ldflags "${version_ldflags}" -o build/edgelet-kube-server ./cmd/edgelet-kube-server
 fi
 
 stage="$(mktemp -d)"
