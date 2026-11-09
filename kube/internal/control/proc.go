@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/eclipse-iofog/edgelet-kube/internal/charts"
 	"github.com/spf13/pflag"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
@@ -41,7 +42,25 @@ func runAPIServer(ctx context.Context, args []string) error {
 	if errs := completed.Validate(); len(errs) > 0 {
 		return utilerrors.NewAggregate(errs)
 	}
-	return apiapp.Run(ctx, completed)
+	cfg, err := apiapp.NewConfig(completed)
+	if err != nil {
+		return err
+	}
+	finished, err := cfg.Complete()
+	if err != nil {
+		return err
+	}
+	server, err := apiapp.CreateServerChain(finished)
+	if err != nil {
+		return err
+	}
+	prepared, err := server.PrepareRun()
+	if err != nil {
+		return err
+	}
+	handler := server.GenericAPIServer.Handler
+	handler.FullHandlerChain = charts.Handler(handler.FullHandlerChain)
+	return prepared.Run(ctx)
 }
 
 func runControllerManager(ctx context.Context, args []string) error {
