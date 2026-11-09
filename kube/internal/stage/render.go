@@ -10,7 +10,7 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 )
 
-//go:embed coredns.yaml local-path.yaml metrics-server.yaml
+//go:embed coredns.yaml local-path.yaml metrics-server.yaml helmchart-crd.yaml
 var files embed.FS
 
 type manifest struct {

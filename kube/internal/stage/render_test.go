@@ -125,6 +125,72 @@ func TestDisableDropsOnlyThatAddon(t *testing.T) {
 	}
 }
 
+func TestHelmChartCRDPrecedesChartObjects(t *testing.T) {
+	srv := config.Defaults()
+	crd, err := HelmChartCRD(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifests, err := addonManifests(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := []byte("apiVersion: helm.cattle.io/v1\nkind: HelmChart\nmetadata:\n  name: sample\n  namespace: kube-system\nspec:\n  chart: https://kubernetes.default/static/charts/sample.tgz\n")
+	var sawCRD bool
+	var sawChart bool
+	charts, err := helmChartManifests(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range enabledBodies(manifests, crd, charts, extra) {
+		objs, err := decode(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, obj := range objs {
+			switch {
+			case obj.GetKind() == "HelmChart":
+				if !sawCRD {
+					t.Fatal("HelmChart was applied before its CRD")
+				}
+				sawChart = true
+			case obj.GetKind() == "CustomResourceDefinition" && obj.GetName() == "helmcharts.helm.cattle.io":
+				if sawChart {
+					t.Fatal("HelmChart CRD followed a HelmChart")
+				}
+				if obj.GetAPIVersion() != "apiextensions.k8s.io/v1" {
+					t.Fatalf("crd version %s", obj.GetAPIVersion())
+				}
+				sawCRD = true
+			}
+		}
+	}
+	if !sawCRD || !sawChart {
+		t.Fatalf("crd %v chart %v", sawCRD, sawChart)
+	}
+	disabled := srv
+	disabled.DisableHelmController = true
+	crd, err = HelmChartCRD(disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(crd) != 0 {
+		t.Fatal("helm chart API was embedded while the controller is disabled")
+	}
+	charts, err = helmChartManifests(disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(charts) != 0 {
+		t.Fatal("disabled controller still stages charts")
+	}
+	for _, body := range enabledBodies(manifests, crd, charts, nil) {
+		if strings.Contains(string(body), "helm.cattle.io") {
+			t.Fatal("disabled controller still stages the helm chart API")
+		}
+	}
+}
+
 func TestIPv6ClusterDNS(t *testing.T) {
 	srv := config.Defaults()
 	srv.ClusterDNS = "2001:db8::10"

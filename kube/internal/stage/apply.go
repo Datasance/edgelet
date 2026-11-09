@@ -23,14 +23,24 @@ import (
 
 const fieldManager = "edgelet-kube"
 
-// Apply writes the built-in addon manifests to the API server, then extra.
-// extra is additional YAML supplied by the caller. Chart objects are passed here.
-// A disabled addon is deleted. Disabling the metrics server does not change API aggregation.
+// Apply writes the built-in addon manifests to the API server, then the
+// HelmChart CRD, then the HelmChart objects, then extra. extra is additional
+// YAML supplied by the caller. A disabled addon is deleted. Disabling the
+// metrics server does not change API aggregation. The HelmChart CRD and the
+// HelmChart objects are omitted when the Helm controller is disabled.
 func Apply(ctx context.Context, kubeconfig string, srv config.Server, extra []byte) error {
 	if kubeconfig == "" {
 		return errors.New("kubeconfig is empty")
 	}
 	manifests, err := addonManifests(srv)
+	if err != nil {
+		return err
+	}
+	crd, err := HelmChartCRD(srv)
+	if err != nil {
+		return err
+	}
+	charts, err := helmChartManifests(srv)
 	if err != nil {
 		return err
 	}
@@ -44,7 +54,7 @@ func Apply(ctx context.Context, kubeconfig string, srv config.Server, extra []by
 	defer ticker.Stop()
 	var last error
 	for {
-		last = client.syncAll(ctx, manifests, extra)
+		last = client.syncAll(ctx, manifests, crd, charts, extra)
 		if last == nil {
 			return nil
 		}
@@ -108,7 +118,7 @@ func newApplier(kubeconfig string) (*applier, error) {
 	}, nil
 }
 
-func (a *applier) syncAll(ctx context.Context, manifests []manifest, extra []byte) error {
+func (a *applier) syncAll(ctx context.Context, manifests []manifest, crd []byte, charts []manifest, extra []byte) error {
 	a.cache.Invalidate()
 	a.mapper.Reset()
 	for _, doc := range manifests {
@@ -119,18 +129,54 @@ func (a *applier) syncAll(ctx context.Context, manifests []manifest, extra []byt
 			return err
 		}
 	}
-	for _, doc := range manifests {
-		if !doc.enabled {
+	for _, doc := range charts {
+		if doc.enabled {
 			continue
 		}
-		if err := a.sync(ctx, doc.body, true); err != nil {
+		if err := a.sync(ctx, doc.body, false); err != nil {
 			return err
 		}
 	}
-	if len(bytes.TrimSpace(extra)) == 0 {
-		return nil
+	for _, body := range enabledBodies(manifests, crd, charts, extra) {
+		if err := a.sync(ctx, body, true); err != nil {
+			return err
+		}
 	}
-	return a.sync(ctx, extra, true)
+	return nil
+}
+
+func enabledBodies(manifests []manifest, crd []byte, charts []manifest, extra []byte) [][]byte {
+	out := make([][]byte, 0, len(manifests)+len(charts)+2)
+	for _, doc := range manifests {
+		if doc.enabled {
+			out = append(out, doc.body)
+		}
+	}
+	if len(bytes.TrimSpace(crd)) > 0 {
+		out = append(out, crd)
+	}
+	for _, doc := range charts {
+		if doc.enabled {
+			out = append(out, doc.body)
+		}
+	}
+	if len(bytes.TrimSpace(extra)) > 0 {
+		out = append(out, extra)
+	}
+	return out
+}
+
+// HelmChartCRD is the embedded helm.cattle.io/v1 chart API.
+// It is empty when the Helm controller is disabled.
+func HelmChartCRD(srv config.Server) ([]byte, error) {
+	if srv.DisableHelmController {
+		return nil, nil
+	}
+	body, err := files.ReadFile("helmchart-crd.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("read helm chart API: %w", err)
+	}
+	return body, nil
 }
 
 func (a *applier) sync(ctx context.Context, body []byte, enabled bool) error {
