@@ -1,3 +1,3 @@
-// Package boot starts containerd and then imports images.
-// Kubelet is not started.
+// Package boot starts containerd, imports images, and then opens the datastore.
+// Kubelet and kube-apiserver are not started.
 package boot

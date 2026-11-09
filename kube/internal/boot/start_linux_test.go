@@ -63,6 +63,7 @@ func TestEmptyDirectoryPinsListBeforeKubelet(t *testing.T) {
 		t.Fatalf("got %d images", len(want))
 	}
 	var pulled []string
+	importedBeforeDatastore := false
 	proc, err := Start(ctx, Config{
 		Socket:     sock,
 		Root:       filepath.Join(dir, "root"),
@@ -75,12 +76,19 @@ func TestEmptyDirectoryPinsListBeforeKubelet(t *testing.T) {
 			pulled = append(pulled, ref)
 			return seedImage(ctx, sock, ref)
 		},
+		Datastore: func(context.Context) error {
+			importedBeforeDatastore = imagePinned(t, sock, want[0])
+			return nil
+		},
 	})
 	if err != nil {
 		body, _ := os.ReadFile(logFile.Name())
 		t.Fatalf("start: %v\n%s", err, body)
 	}
 	t.Cleanup(proc.Stop)
+	if !importedBeforeDatastore {
+		t.Fatal("datastore opened before image import")
+	}
 	if strings.Join(pulled, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("pulled %v", pulled)
 	}

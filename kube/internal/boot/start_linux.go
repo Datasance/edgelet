@@ -44,6 +44,9 @@ type Config struct {
 	Settle time.Duration
 	// Log receives containerd output. A nil Log uses standard output and error.
 	Log io.Writer
+	// Datastore opens the database after image import. Nil leaves it unopened.
+	// Kube-apiserver is not started.
+	Datastore func(ctx context.Context) error
 }
 
 // Process is the containerd child started before image import.
@@ -70,10 +73,11 @@ func (p *Process) Stop() {
 	})
 }
 
-// Start starts the containerd child, then imports and pins images.
-// An empty images directory pulls the pinned list. Start returns after that
-// import. The images directory stays watched until ctx is canceled.
-// Kubelet is not started.
+// Start starts the containerd child, imports and pins images, then opens the
+// datastore when Config.Datastore is set. An empty images directory pulls the
+// pinned list. Start returns after that import and the datastore open. The
+// images directory stays watched until ctx is canceled. Kubelet and
+// kube-apiserver are not started.
 func Start(ctx context.Context, cfg Config) (*Process, error) {
 	socket, root, state, cniConf, imagesDir := cfg.paths()
 	for _, dir := range []string{root, state, cniConf, filepath.Dir(socket), imagesDir} {
@@ -104,6 +108,12 @@ func Start(ctx context.Context, cfg Config) (*Process, error) {
 	}); err != nil {
 		proc.Stop()
 		return nil, err
+	}
+	if cfg.Datastore != nil {
+		if err := cfg.Datastore(ctx); err != nil {
+			proc.Stop()
+			return nil, err
+		}
 	}
 	go func() {
 		<-ctx.Done()
