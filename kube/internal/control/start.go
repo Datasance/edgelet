@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -78,8 +79,9 @@ func (r *Runtime) Stop() {
 // When servicelb is disabled, the load balancer does not start and those
 // Services stay pending. When the Helm controller is disabled, its CRD is not
 // applied, chart objects are not staged, and the controller does not start.
-// The cluster issuer is applied after the chart objects and retries until
-// cert-manager serves its CRDs. An empty email writes nothing.
+// The cluster issuers are applied after the chart objects and retry until
+// cert-manager serves its CRDs. selfsigned is written whenever cert-manager
+// is staged. An empty email writes no letsencrypt-prod.
 func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err := CheckSELinux(cfg.Server.SELinux); err != nil {
 		return nil, err
@@ -88,7 +90,7 @@ func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 		return nil, err
 	}
 	if cfg.Store == nil || cfg.Store.Endpoint == "" {
-		return nil, fmt.Errorf("datastore endpoint is empty")
+		return nil, errors.New("datastore endpoint is empty")
 	}
 	encPath, err := encryptionConfig(cfg.Server)
 	if err != nil {
@@ -227,13 +229,14 @@ func encryptionConfig(srv config.Server) (string, error) {
 
 // PreferBundledBin sets PATH before containerd starts.
 // The bridge plugin is executed by that child and locates iptables from the child's PATH.
-// When prefer is true, the bundled xtables-legacy directory comes first.
+// When prefer is true, the bundled aux directory comes first.
 func PreferBundledBin(prefer bool) error {
 	return applyBundledPath(prefer, "")
 }
 
 // applyBundledPath sets PATH for kubelet, kube-proxy, and the containerd child.
-// prefer puts the bundle aux directory first, so iptables resolves to xtables-legacy.
+// prefer puts the bundle aux directory first. iptables, iptables-save, and
+// iptables-restore there name xtables-nft-multi.
 func applyBundledPath(prefer bool, cniBinDir string) error {
 	_, bin, err := cniDirs("", cniBinDir)
 	if err != nil {
@@ -245,10 +248,10 @@ func applyBundledPath(prefer bool, cniBinDir string) error {
 
 func requireServer(srv config.Server) error {
 	if srv.ClusterCIDR == "" || srv.ServiceCIDR == "" || srv.ClusterDomain == "" || srv.NodePodCIDR == "" {
-		return fmt.Errorf("cluster network is not configured")
+		return errors.New("cluster network is not configured")
 	}
 	if srv.BindAddress == "" || srv.HTTPSListenPort == 0 {
-		return fmt.Errorf("API bind address is not configured")
+		return errors.New("API bind address is not configured")
 	}
 	return nil
 }
@@ -317,7 +320,7 @@ func readyz(ctx context.Context, kubeconfig string) error {
 		return err
 	}
 	if string(body) != "ok" && len(body) == 0 {
-		return fmt.Errorf("readyz returned an empty body")
+		return errors.New("readyz returned an empty body")
 	}
 	return nil
 }

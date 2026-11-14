@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 		<-ctx.Done()
 		return nil
 	}
-	os.Exit(m.Run())
+	m.Run()
 }
 
 func TestSELinuxRejectedWithoutHostSupport(t *testing.T) {
@@ -83,6 +83,8 @@ func TestArgumentsUseConfiguredNetworks(t *testing.T) {
 		AdminKubeconfig:      "/tmp/certs/admin.kubeconfig",
 		ControllerKubeconfig: "/tmp/certs/controller-manager.kubeconfig",
 		SchedulerKubeconfig:  "/tmp/certs/scheduler.kubeconfig",
+		APIServerCert:        "/tmp/certs/client-kube-apiserver.crt",
+		APIServerKey:         "/tmp/certs/client-kube-apiserver.key",
 	}
 	api := strings.Join(apiServerArgs(srv, "unix:///tmp/kine.sock", "10.20.0.8", "", paths), "\n")
 	controller, err := controllerManagerArgs(srv, false, 10257, paths)
@@ -103,6 +105,8 @@ func TestArgumentsUseConfiguredNetworks(t *testing.T) {
 		"--requestheader-client-ca-file=/tmp/certs/front-proxy-ca.crt",
 		"--enable-aggregator-routing=true",
 		"--advertise-address=10.20.0.8",
+		"--kubelet-client-certificate=/tmp/certs/client-kube-apiserver.crt",
+		"--kubelet-client-key=/tmp/certs/client-kube-apiserver.key",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s\n%s", want, joined)
@@ -117,9 +121,6 @@ func TestArgumentsUseConfiguredNetworks(t *testing.T) {
 		if strings.Contains(joined, absent) {
 			t.Fatalf("argument list contains %s", absent)
 		}
-	}
-	if strings.Contains(joined, "kubelet") && strings.Contains(joined, "--kubelet-client-certificate=") {
-		t.Fatal("kubelet client certificate was configured")
 	}
 }
 
@@ -367,7 +368,7 @@ func TestReadyz(t *testing.T) {
 		}
 		assertAddons(t, addons, srv, true, true, true)
 	}
-	assertIssuerRetries(t, ctx, rt.Kubeconfig, srv)
+	assertIssuerRetries(ctx, t, rt.Kubeconfig, srv)
 }
 
 func TestKubeletAndProxyUseNodeNetwork(t *testing.T) {
@@ -383,9 +384,10 @@ func TestKubeletAndProxyUseNodeNetwork(t *testing.T) {
 	srv.PauseImage = "registry.example/pause:test"
 	srv.NodeLabel = []string{"disk=ssd"}
 	srv.ResolvConf = "/etc/resolv.conf"
-	certs := certPaths{
-		KubeletKubeconfig:   filepath.Join(srv.DataDir, "kubelet.kubeconfig"),
-		KubeProxyKubeconfig: filepath.Join(srv.DataDir, "kube-proxy.kubeconfig"),
+	srv.WriteKubeconfig = filepath.Join(srv.DataDir, "edgelet-kube.yaml")
+	certs, err := ensureCerts(srv)
+	if err != nil {
+		t.Fatal(err)
 	}
 	cniConf := filepath.Join(srv.DataDir, "net.d")
 	cniBin := filepath.Join(srv.DataDir, "bin")
@@ -409,6 +411,9 @@ func TestKubeletAndProxyUseNodeNetwork(t *testing.T) {
 		"--hostname-override=node-a",
 		"--node-labels=disk=ssd",
 		"--resolv-conf=/etc/resolv.conf",
+		"--tls-cert-file=" + certs.KubeletServingCert,
+		"--tls-private-key-file=" + certs.KubeletServingKey,
+		"--client-ca-file=" + certs.CACert,
 		"--proxy-mode=iptables",
 		"--cluster-cidr=10.20.0.0/16",
 		"--cgroup-driver=systemd",
@@ -507,10 +512,10 @@ func TestPreferBundledIptables(t *testing.T) {
 	if err := os.MkdirAll(host, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(aux, "xtables-legacy-multi"), []byte("iptables"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(aux, "xtables-nft-multi"), []byte("iptables"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("xtables-legacy-multi", filepath.Join(aux, "iptables")); err != nil {
+	if err := os.Symlink("xtables-nft-multi", filepath.Join(aux, "iptables")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(host, "iptables"), []byte("host"), 0o755); err != nil {
@@ -536,7 +541,7 @@ func TestPreferBundledIptables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target != "xtables-legacy-multi" {
+	if target != "xtables-nft-multi" {
 		t.Fatalf("iptables -> %s", target)
 	}
 	if !strings.HasPrefix(os.Getenv("PATH"), aux+string(os.PathListSeparator)) {
@@ -598,6 +603,16 @@ func assertCharts(t *testing.T, kubeconfig string, names []string) {
 	}
 }
 
+type helmChartSpec struct {
+	Chart           string `json:"chart"`
+	ValuesContent   string `json:"valuesContent"`
+	TargetNamespace string `json:"targetNamespace"`
+}
+
+type helmChartObject struct {
+	Spec helmChartSpec `json:"spec"`
+}
+
 func assertStagedCharts(t *testing.T, client kubernetes.Interface) {
 	t.Helper()
 	ctx := t.Context()
@@ -605,18 +620,12 @@ func assertStagedCharts(t *testing.T, client kubernetes.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"traefik-crd", "traefik", "cert-manager"} {
+	for _, name := range []string{"traefik-crd", "traefik", "gateway-api-crd", "cert-manager"} {
 		raw, err := client.Discovery().RESTClient().Get().AbsPath("/apis/helm.cattle.io/v1/namespaces/kube-system/helmcharts/" + name).DoRaw(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var obj struct {
-			Spec struct {
-				Chart           string `json:"chart"`
-				ValuesContent   string `json:"valuesContent"`
-				TargetNamespace string `json:"targetNamespace"`
-			} `json:"spec"`
-		}
+		var obj helmChartObject
 		if err := json.Unmarshal(raw, &obj); err != nil {
 			t.Fatal(err)
 		}
@@ -649,7 +658,7 @@ func assertStagedCharts(t *testing.T, client kubernetes.Interface) {
 	}
 	err = client.Discovery().RESTClient().Get().AbsPath("/apis/cert-manager.io/v1/clusterissuers/letsencrypt-prod").Do(ctx).Error()
 	if err == nil {
-		t.Fatal("cluster issuer was written without an email")
+		t.Fatal("letsencrypt cluster issuer was written without an email")
 	}
 }
 

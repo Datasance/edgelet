@@ -55,11 +55,24 @@ bins_ready() {
 aux_ready() {
 	local machine="$1"
 	local staged="$2"
+	local name
 	matches_arch "$staged/ip" "$machine" || return 1
 	matches_arch "$staged/busybox" "$machine" || return 1
-	matches_arch "$staged/aux/xtables-legacy-multi" "$machine" || return 1
-	link_is "$staged/aux/iptables" xtables-legacy-multi || return 1
+	matches_arch "$staged/aux/xtables-nft-multi" "$machine" || return 1
+	for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+		link_is "$staged/aux/$name" xtables-nft-multi || return 1
+	done
 	link_is "$staged/modprobe" busybox || return 1
+}
+
+align_iptables_nft() {
+	local aux="$1/aux"
+	local name
+	[ -f "$aux/xtables-nft-multi" ] || return 1
+	for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+		rm -f "$aux/$name"
+		ln -s xtables-nft-multi "$aux/$name"
+	done
 }
 
 deps_present() {
@@ -120,8 +133,12 @@ ensure_aux() {
 		mkdir -p "$staged"
 		env -u GOOS -u GOARCH ARCH="$arch" bash "$root/scripts/download-root"
 		env -u GOOS -u GOARCH ARCH="$arch" bash "$root/scripts/stage-root-aux"
+		# The agent stage points iptables at xtables-legacy-multi and leaves
+		# iptables-save and iptables-restore on xtables-nft-multi. kube-proxy
+		# uses all three, so this bundle keeps the k3s-root nft links.
+		align_iptables_nft "$staged" || true
 		if ! aux_ready "$machine" "$staged"; then
-			echo "agent source-build did not produce linux/$arch ip, busybox, and xtables-legacy" >&2
+			echo "agent source-build did not produce linux/$arch ip, busybox, and xtables-nft" >&2
 			exit 1
 		fi
 	fi

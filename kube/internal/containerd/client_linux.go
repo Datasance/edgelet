@@ -4,6 +4,7 @@ package containerd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -97,7 +98,7 @@ func RuntimeVersion(ctx context.Context, socket string) (RuntimeInfo, error) {
 		RuntimeAPIVersion: resp.GetRuntimeApiVersion(),
 	}
 	if info.RuntimeName == "" && info.RuntimeVersion == "" {
-		return RuntimeInfo{}, fmt.Errorf("cri version response was empty")
+		return RuntimeInfo{}, errors.New("cri version response was empty")
 	}
 	return info, nil
 }

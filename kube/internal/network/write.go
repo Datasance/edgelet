@@ -77,12 +77,12 @@ func Write(dir, podCIDR string) error {
 		return err
 	}
 	body = append(body, '\n')
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- CNI reads this config directory
 		return fmt.Errorf("create cni config directory: %w", err)
 	}
 	path := filepath.Join(dir, FileName)
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o644); err != nil {
+	if err := os.WriteFile(tmp, body, 0o644); err != nil { // #nosec G306 -- bridge conflist is not secret
 		return fmt.Errorf("write cni config: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {

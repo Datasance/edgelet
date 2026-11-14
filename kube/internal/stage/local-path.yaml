@@ -6,7 +6,7 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: local-path-provisioner
+  name: local-path-provisioner-service-account
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -37,7 +37,7 @@ roleRef:
   name: local-path-provisioner
 subjects:
   - kind: ServiceAccount
-    name: local-path-provisioner
+    name: local-path-provisioner-service-account
     namespace: kube-system
 ---
 apiVersion: v1
@@ -84,7 +84,7 @@ spec:
       labels:
         app: local-path-provisioner
     spec:
-      serviceAccountName: local-path-provisioner
+      serviceAccountName: local-path-provisioner-service-account
       tolerations:
         - key: CriticalAddonsOnly
           operator: Exists

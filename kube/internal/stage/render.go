@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
@@ -79,7 +80,7 @@ func addonManifests(srv config.Server) ([]manifest, error) {
 		}
 		out = append(out, manifest{
 			name:    file.addon,
-			enabled: !disabled(srv.Disable, file.addon),
+			enabled: !addonOff(srv.Disable, file.addon),
 			body:    rendered,
 		})
 	}
@@ -97,6 +98,10 @@ var addonFiles = []addonFile{
 	{addon: "metrics-server", name: "metrics-server.yaml"},
 }
 
+// stageArch selects addons that are not published for one architecture.
+// riscv64 does not stage metrics-server or cert-manager.
+var stageArch = runtime.GOARCH
+
 func disabled(names []string, name string) bool {
 	for _, item := range names {
 		if item == name {
@@ -104,4 +109,11 @@ func disabled(names []string, name string) bool {
 		}
 	}
 	return false
+}
+
+func addonOff(names []string, name string) bool {
+	if disabled(names, name) {
+		return true
+	}
+	return stageArch == "riscv64" && (name == "metrics-server" || name == "cert-manager")
 }

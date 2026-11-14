@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
+	"golang.org/x/sys/unix"
 )
 
 func TestMain(m *testing.M) {
@@ -20,11 +21,11 @@ func TestMain(m *testing.M) {
 	if handled {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "containerd child: %v\n", err)
-			os.Exit(1)
+			unix.Exit(1)
 		}
-		os.Exit(0)
+		unix.Exit(0)
 	}
-	os.Exit(m.Run())
+	m.Run()
 }
 
 func TestChildServesCRI(t *testing.T) {

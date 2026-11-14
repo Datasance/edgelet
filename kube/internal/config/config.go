@@ -3,7 +3,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +39,8 @@ const (
 	// DefaultServiceNodePortRange is the NodePort range.
 	DefaultServiceNodePortRange = "30000-32767"
 	// DefaultPauseImage is the pause image on the airgap list, without the digest.
-	DefaultPauseImage = "registry.k8s.io/pause:3.10.2"
+	// It is the portainer/pause image the Edgelet agent imports.
+	DefaultPauseImage = "docker.io/portainer/pause:latest"
 
 	// DefaultSnapshotter is the container snapshot driver.
 	DefaultSnapshotter = "overlayfs"
@@ -229,14 +229,14 @@ func configPath(args []string, lookupEnv func(string) (string, bool)) (string, e
 			return filepath.Clean(path), nil
 		case arg == "--config":
 			if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "-") {
-				return "", fmt.Errorf("config requires a path")
+				return "", errors.New("config requires a path")
 			}
 			i++
 			path = args[i]
 		case strings.HasPrefix(arg, "--config="):
 			value := strings.TrimPrefix(arg, "--config=")
 			if value == "" {
-				return "", fmt.Errorf("config requires a path")
+				return "", errors.New("config requires a path")
 			}
 			path = value
 		}

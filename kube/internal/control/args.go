@@ -1,11 +1,12 @@
 package control
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,10 @@ func apiServerArgs(srv config.Server, endpoint, advertise, encryptionFile string
 		"enable-admission-plugins":           "NodeRestriction",
 		"profiling":                          "false",
 		"cert-dir":                           paths.Dir,
+	}
+	if paths.APIServerCert != "" && paths.APIServerKey != "" {
+		values["kubelet-client-certificate"] = paths.APIServerCert
+		values["kubelet-client-key"] = paths.APIServerKey
 	}
 	if advertise != "" {
 		values["advertise-address"] = advertise
@@ -159,8 +164,19 @@ func kubeletArgs(srv config.Server, nodeIP string, certs certPaths, cniConfDir, 
 		"read-only-port":             "0",
 		"register-node":              "true",
 	}
-	if srv.ResolvConf != "" {
-		values["resolv-conf"] = srv.ResolvConf
+	resolv := srv.ResolvConf
+	if resolv == "" {
+		resolv = hostResolvConf("")
+	}
+	if resolv != "" {
+		values["resolv-conf"] = resolv
+	}
+	if certs.KubeletServingCert != "" && certs.KubeletServingKey != "" {
+		values["tls-cert-file"] = certs.KubeletServingCert
+		values["tls-private-key-file"] = certs.KubeletServingKey
+	}
+	if certs.CACert != "" {
+		values["client-ca-file"] = certs.CACert
 	}
 	if len(srv.NodeLabel) > 0 {
 		values["node-labels"] = strings.Join(srv.NodeLabel, ",")
@@ -205,7 +221,7 @@ func kubeletExtra(extra []string) ([]string, error) {
 		switch key {
 		case "cgroup-driver":
 			if value != "systemd" {
-				return nil, fmt.Errorf("kubelet cgroup driver is systemd")
+				return nil, errors.New("kubelet cgroup driver is systemd")
 			}
 		case "protect-kernel-defaults":
 		default:
@@ -298,7 +314,7 @@ func flagArgs(values map[string]string, extra []string) []string {
 	for key := range merged {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	args := make([]string, 0, len(keys))
 	for _, key := range keys {
 		args = append(args, "--"+key+"="+merged[key])

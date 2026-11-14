@@ -69,7 +69,8 @@ func (l Layout) KubeletCNIArgs() []string {
 }
 
 // BinPath is PATH for kubelet and kube-proxy.
-// prefer puts BundledBin first, where iptables links to xtables-legacy.
+// prefer puts BundledBin first. iptables, iptables-save, and iptables-restore
+// in that directory name xtables-nft-multi.
 // When prefer is false, host directories stay first and BundledBin is appended.
 func (l Layout) BinPath(prefer bool, hostPath string) string {
 	bundled := filepath.Clean(l.BundledBin)
@@ -135,10 +136,49 @@ func placeBundled(bin, aux string) error {
 	if err := ensureLink(bin, "modprobe", "busybox"); err != nil {
 		return err
 	}
-	if err := requireFile(filepath.Join(aux, "xtables-legacy-multi")); err != nil {
+	return alignIptables(aux)
+}
+
+// iptablesNames are the commands kube-proxy and the bridge plugin exec.
+// They name one binary so a chain check and a rule restore use the same table.
+var iptablesNames = []string{
+	"iptables", "iptables-save", "iptables-restore",
+	"ip6tables", "ip6tables-save", "ip6tables-restore",
+}
+
+// alignIptables points the iptables family at xtables-nft-multi.
+// The k3s-root tree ships those names on that binary. A link that was
+// aimed at xtables-legacy-multi is replaced.
+func alignIptables(aux string) error {
+	if err := requireFile(filepath.Join(aux, "xtables-nft-multi")); err != nil {
 		return err
 	}
-	return ensureLink(aux, "iptables", "xtables-legacy-multi")
+	for _, name := range iptablesNames {
+		if err := retargetLink(aux, name, "xtables-nft-multi"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func retargetLink(dir, name, target string) error {
+	path := filepath.Join(dir, name)
+	got, err := os.Readlink(path)
+	if err == nil && got == target {
+		return nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("bundled binary %s: %w", path, err)
+	}
+	if err == nil {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("place %s: %w", path, err)
+		}
+	}
+	if err := os.Symlink(target, path); err != nil {
+		return fmt.Errorf("place %s: %w", path, err)
+	}
+	return nil
 }
 
 func requireFile(path string) error {

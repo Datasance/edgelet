@@ -4,12 +4,11 @@ package version
 import (
 	"strings"
 	"sync/atomic"
+	_ "unsafe" // go:linkname
 
 	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
+	_ "k8s.io/client-go/pkg/version" // go:linkname client gitVersion
 	baseversion "k8s.io/component-base/version"
-
-	_ "k8s.io/client-go/pkg/version"
-	_ "unsafe"
 )
 
 //go:linkname dynamicGitVersion k8s.io/component-base/version.dynamicGitVersion

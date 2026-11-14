@@ -208,7 +208,7 @@ configs:
 	settings := childSettings(t, dir)
 	settings.RegistryFile = registriesFile
 	settings.DisableDefaultEndpoint = true
-	settings.PauseImage = "registry.example/registry.k8s.io/pause:3.10.2"
+	settings.PauseImage = "registry.example/docker.io/portainer/pause:latest"
 	if err := WriteConfig(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -360,8 +360,8 @@ func TestWriteConfigRegistersDiscoveredRuntimes(t *testing.T) {
 	if got := crunOpts.Get("BinaryName"); got != settings.CrunBinary {
 		t.Fatalf("crun binary %v", got)
 	}
-	if got := crunOpts.Get("SystemdCgroup"); got != true {
-		t.Fatalf("crun SystemdCgroup %v", got)
+	if got, ok := crunOpts.Get("SystemdCgroup").(bool); !ok || !got {
+		t.Fatalf("crun SystemdCgroup %v", crunOpts.Get("SystemdCgroup"))
 	}
 	nvidia, ok := runtimes.Get("nvidia").(*toml.Tree)
 	if !ok {
@@ -374,8 +374,8 @@ func TestWriteConfigRegistersDiscoveredRuntimes(t *testing.T) {
 	if got := nvidiaOpts.Get("BinaryName"); got != "/usr/bin/nvidia-container-runtime" {
 		t.Fatalf("nvidia binary %v", got)
 	}
-	if got := nvidiaOpts.Get("SystemdCgroup"); got != true {
-		t.Fatalf("nvidia SystemdCgroup %v", got)
+	if got, ok := nvidiaOpts.Get("SystemdCgroup").(bool); !ok || !got {
+		t.Fatalf("nvidia SystemdCgroup %v", nvidiaOpts.Get("SystemdCgroup"))
 	}
 	spin, ok := runtimes.Get("spin").(*toml.Tree)
 	if !ok {

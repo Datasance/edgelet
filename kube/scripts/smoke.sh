@@ -78,8 +78,10 @@ require_file "$bindir/crun"
 require_file "$bindir/cni"
 require_file "$bindir/ip"
 require_file "$bindir/busybox"
-require_file "$bindir/aux/xtables-legacy-multi"
-require_link "$bindir/aux/iptables" xtables-legacy-multi
+require_file "$bindir/aux/xtables-nft-multi"
+for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+	require_link "$bindir/aux/$name" xtables-nft-multi
+done
 require_link "$bindir/modprobe" busybox
 for name in bridge host-local loopback portmap; do
 	require_link "$bindir/$name" cni

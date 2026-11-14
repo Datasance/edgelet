@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ func main() {
 
 func pack(stage, out string) error {
 	if stage == "" || out == "" {
-		return fmt.Errorf("stage and out are required")
+		return errors.New("stage and out are required")
 	}
 	packed, err := bundle.Pack(stage)
 	if err != nil {

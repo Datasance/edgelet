@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,6 +31,57 @@ func TestDataDirFlagIsRemoved(t *testing.T) {
 	got = withoutRuntimeFlags([]string{"--data-dir=/tmp/work", "get", "nodes"})
 	if strings.Join(got, " ") != "get nodes" {
 		t.Fatalf("args %v", got)
+	}
+}
+
+func TestAdminKubeconfigIsUsedWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edgelet-kube.yaml")
+	if err := os.WriteFile(path, []byte("apiVersion: v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := adminKubeconfig
+	adminKubeconfig = path
+	t.Cleanup(func() { adminKubeconfig = old })
+	t.Setenv("KUBECONFIG", "")
+	if err := useAdminKubeconfig([]string{"get", "nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("KUBECONFIG") != path {
+		t.Fatalf("KUBECONFIG %s", os.Getenv("KUBECONFIG"))
+	}
+}
+
+func TestKubeconfigFlagAndEnvWin(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edgelet-kube.yaml")
+	if err := os.WriteFile(path, []byte("apiVersion: v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := adminKubeconfig
+	adminKubeconfig = path
+	t.Cleanup(func() { adminKubeconfig = old })
+
+	t.Setenv("KUBECONFIG", "")
+	if err := useAdminKubeconfig([]string{"--kubeconfig", "/tmp/other", "get", "nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("KUBECONFIG") != "" {
+		t.Fatalf("KUBECONFIG %s", os.Getenv("KUBECONFIG"))
+	}
+	if err := useAdminKubeconfig([]string{"--kubeconfig=/tmp/other", "get", "nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("KUBECONFIG") != "" {
+		t.Fatalf("KUBECONFIG %s", os.Getenv("KUBECONFIG"))
+	}
+
+	t.Setenv("KUBECONFIG", "/tmp/already")
+	if err := useAdminKubeconfig([]string{"get", "nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("KUBECONFIG") != "/tmp/already" {
+		t.Fatalf("KUBECONFIG %s", os.Getenv("KUBECONFIG"))
 	}
 }
 

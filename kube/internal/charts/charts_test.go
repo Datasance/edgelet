@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,7 @@ func TestChartsMatchPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(names) != 3 {
+	if len(names) != 4 {
 		t.Fatalf("charts %v", names)
 	}
 	entries, err := files.ReadDir(".")
@@ -46,7 +47,7 @@ func TestChartsMatchPins(t *testing.T) {
 		version := chartVersion(t, body)
 		chart := strings.TrimSuffix(name, ".tgz")
 		pinName := chart
-		for _, candidate := range []string{"traefik-crd", "traefik", "cert-manager"} {
+		for _, candidate := range []string{"traefik-crd", "traefik", "gateway-api-crd", "cert-manager"} {
 			if strings.HasPrefix(chart, candidate+"-") {
 				pinName = candidate
 				break
@@ -119,7 +120,7 @@ func chartVersion(t *testing.T, body []byte) string {
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

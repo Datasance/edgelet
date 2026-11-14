@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,7 +35,7 @@ const (
 // A containerd export records the same names on its index.
 func WriteTar(w io.Writer, refs []string) error {
 	if len(refs) == 0 {
-		return fmt.Errorf("archive has no images")
+		return errors.New("archive has no images")
 	}
 	index, err := indexBytes(refs)
 	if err != nil {
@@ -132,7 +133,7 @@ func List(r io.Reader) ([]string, error) {
 	sawIndex := false
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -160,7 +161,7 @@ func List(r io.Reader) ([]string, error) {
 	if len(repoTags) > 0 {
 		return repoTags, nil
 	}
-	return nil, fmt.Errorf("archive contains no images")
+	return nil, errors.New("archive contains no images")
 }
 
 func indexBytes(refs []string) ([]byte, error) {
@@ -168,7 +169,7 @@ func indexBytes(refs []string) ([]byte, error) {
 	for _, ref := range refs {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
-			return nil, fmt.Errorf("archive image name is empty")
+			return nil, errors.New("archive image name is empty")
 		}
 		sum := sha256.Sum256([]byte(ref))
 		manifests = append(manifests, map[string]any{
@@ -208,11 +209,13 @@ func writeMember(tw *tar.Writer, name string, body []byte, mod time.Time) error 
 	return nil
 }
 
+type indexManifest struct {
+	Annotations map[string]string `json:"annotations"`
+}
+
 func namesFromIndex(r io.Reader) ([]string, error) {
 	var index struct {
-		Manifests []struct {
-			Annotations map[string]string `json:"annotations"`
-		} `json:"manifests"`
+		Manifests []indexManifest `json:"manifests"`
 	}
 	if err := decodeJSON(r, &index); err != nil {
 		return nil, fmt.Errorf("read index: %w", err)
@@ -268,12 +271,9 @@ func decodeJSON(r io.Reader, dest any) error {
 		return fmt.Errorf("json exceeds %d bytes", jsonLimit)
 	}
 	if len(body) == 0 {
-		return fmt.Errorf("json is empty")
+		return errors.New("json is empty")
 	}
-	if err := json.Unmarshal(body, dest); err != nil {
-		return err
-	}
-	return nil
+	return json.Unmarshal(body, dest)
 }
 
 func openArchive(file string) (io.ReadCloser, error) {
@@ -283,7 +283,7 @@ func openArchive(file string) (io.ReadCloser, error) {
 	}
 	var magic [4]byte
 	n, err := io.ReadFull(f, magic[:])
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		_ = f.Close()
 		return nil, err
 	}

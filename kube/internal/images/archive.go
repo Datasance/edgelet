@@ -27,7 +27,7 @@ func isArchive(path string) bool {
 }
 
 func openArchive(path string) (io.ReadCloser, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is an image archive chosen for import
 	if err != nil {
 		return nil, err
 	}

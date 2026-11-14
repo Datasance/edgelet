@@ -5,6 +5,7 @@ package servicelb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -27,7 +28,7 @@ func Run(ctx context.Context, kubeconfig, address string) error {
 		return fmt.Errorf("node IP %q is not an IP", address)
 	}
 	if kubeconfig == "" {
-		return fmt.Errorf("kubeconfig is empty")
+		return errors.New("kubeconfig is empty")
 	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -53,8 +54,8 @@ func run(ctx context.Context, client kubernetes.Interface, address string) error
 		queue:   queue,
 	}
 	if _, err := services.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { c.enqueue(obj) },
-		UpdateFunc: func(_, obj interface{}) { c.enqueue(obj) },
+		AddFunc:    func(obj any) { c.enqueue(obj) },
+		UpdateFunc: func(_, obj any) { c.enqueue(obj) },
 	}); err != nil {
 		return err
 	}
@@ -63,7 +64,7 @@ func run(ctx context.Context, client kubernetes.Interface, address string) error
 		if ctx.Err() != nil {
 			return nil
 		}
-		return fmt.Errorf("services were not listed")
+		return errors.New("services were not listed")
 	}
 	go func() {
 		<-ctx.Done()
@@ -81,7 +82,7 @@ type controller struct {
 	queue   workqueue.TypedRateLimitingInterface[string]
 }
 
-func (c *controller) enqueue(obj interface{}) {
+func (c *controller) enqueue(obj any) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return

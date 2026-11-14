@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +15,6 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/internal/paths"
 	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
 	"github.com/fsnotify/fsnotify"
-	"slices"
 )
 
 // Config selects the images directory and the containerd socket.
@@ -83,7 +84,7 @@ func (p *pullFunc) Pull(ctx context.Context, ref string) error {
 }
 
 func run(ctx context.Context, dir string, settle time.Duration, log io.Writer, store Store, registry string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- image import directory is operator-visible
 		_ = store.Close()
 		return fmt.Errorf("create images directory: %w", err)
 	}
@@ -154,7 +155,7 @@ func (r *runner) scan(ctx context.Context) error {
 }
 
 func (r *runner) pullList(ctx context.Context) error {
-	for _, ref := range airgap.Images() {
+	for _, ref := range airgap.ImagesFor(runtime.GOARCH) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

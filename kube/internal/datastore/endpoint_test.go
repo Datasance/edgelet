@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -173,7 +174,7 @@ func TestAbsentFlagsDoNotQueryBus(t *testing.T) {
 		PreferGo: true,
 		Dial: func(context.Context, string, string) (net.Conn, error) {
 			queried = true
-			return nil, fmt.Errorf("network query")
+			return nil, errors.New("network query")
 		},
 	}
 	t.Cleanup(func() { net.DefaultResolver = prev })

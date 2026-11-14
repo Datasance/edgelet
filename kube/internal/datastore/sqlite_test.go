@@ -14,7 +14,7 @@ import (
 
 func TestMain(m *testing.M) {
 	logrus.SetOutput(io.Discard)
-	os.Exit(m.Run())
+	m.Run()
 }
 
 func TestEmptyEndpointOpensSQLite(t *testing.T) {

@@ -15,7 +15,7 @@ func KubernetesVersion() string {
 }
 
 // ChartVersion is the pinned chart version for name.
-// name is traefik, traefik-crd, or cert-manager.
+// name is traefik, traefik-crd, gateway-api-crd, or cert-manager.
 func ChartVersion(name string) string {
 	return pin(name)
 }

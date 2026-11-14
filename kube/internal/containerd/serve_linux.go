@@ -16,7 +16,7 @@ func serveChild(args []string) error {
 		return err
 	}
 	for _, dir := range []string{settings.Root, settings.State, settings.CNIConfDir, filepath.Dir(settings.Socket)} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- containerd and CNI traverse these directories
 			return fmt.Errorf("create containerd directory: %w", err)
 		}
 	}

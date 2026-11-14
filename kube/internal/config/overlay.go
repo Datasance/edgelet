@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -161,6 +161,6 @@ func knownKeys() []string {
 	for key := range setters {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }

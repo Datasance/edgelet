@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
 
 func mergeFile(srv *Server, path string) error {
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) // #nosec G304 -- path is the config file or a drop-in
 	if err != nil {
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
@@ -31,7 +31,7 @@ func mergeFile(srv *Server, path string) error {
 	for key := range doc {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		if err := apply(srv, path, key, doc[key]); err != nil {
 			return err
@@ -60,7 +60,7 @@ func dropIns(configFile string) ([]string, error) {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	paths := make([]string, len(names))
 	for i, name := range names {
 		paths[i] = filepath.Join(dir, name)

@@ -79,7 +79,7 @@ func writeEncryptionConfig(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create encryption config directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- directory must be owner-traversable
 		return fmt.Errorf("create encryption config directory: %w", err)
 	}
 	body, err := encryptionDocument()
@@ -122,9 +122,11 @@ type encryptionResource struct {
 	Providers []encryptionProvider `json:"providers"`
 }
 
+type identityProvider struct{}
+
 type encryptionProvider struct {
-	AESCBC   *aesCBC   `json:"aescbc,omitempty"`
-	Identity *struct{} `json:"identity,omitempty"`
+	AESCBC   *aesCBC           `json:"aescbc,omitempty"`
+	Identity *identityProvider `json:"identity,omitempty"`
 }
 
 type aesCBC struct {
@@ -151,7 +153,7 @@ func encryptionDocument() ([]byte, error) {
 					Name:   "aescbckey",
 					Secret: base64.StdEncoding.EncodeToString(key),
 				}}}},
-				{Identity: &struct{}{}},
+				{Identity: &identityProvider{}},
 			},
 		}},
 	}

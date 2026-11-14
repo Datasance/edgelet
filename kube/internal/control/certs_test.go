@@ -45,6 +45,8 @@ func TestRestartReusesCertificates(t *testing.T) {
 	adminCert := mustRead(t, first.AdminCert)
 	front := mustRead(t, first.FrontProxyCert)
 	kubelet := mustRead(t, first.KubeletCert)
+	kubeletServing := mustRead(t, first.KubeletServingCert)
+	apiServer := mustRead(t, first.APIServerCert)
 	proxy := mustRead(t, first.KubeProxyCert)
 
 	srv.TLSSan = []string{"other.example.test"}
@@ -66,6 +68,8 @@ func TestRestartReusesCertificates(t *testing.T) {
 		{"admin", second.AdminCert, adminCert},
 		{"front-proxy", second.FrontProxyCert, front},
 		{"kubelet", second.KubeletCert, kubelet},
+		{"kubelet-serving", second.KubeletServingCert, kubeletServing},
+		{"apiserver", second.APIServerCert, apiServer},
 		{"kube-proxy", second.KubeProxyCert, proxy},
 	} {
 		if got := mustRead(t, pair.path); !bytes.Equal(got, pair.want) {
@@ -73,8 +77,8 @@ func TestRestartReusesCertificates(t *testing.T) {
 		}
 	}
 	assertAdmin(t, second.AdminKubeconfig)
-	if masters := mastersCount(t, second.Dir); masters != 1 {
-		t.Fatalf("admin principals %d", masters)
+	if masters := mastersCount(t, second.Dir); masters != 2 {
+		t.Fatalf("privileged principals %d", masters)
 	}
 	kubeletCert := mustCert(t, second.KubeletCert)
 	if kubeletCert.Subject.CommonName != "system:node:node-a" {
@@ -112,8 +116,8 @@ func TestServingNames(t *testing.T) {
 	if hasIP(secureCert, other) {
 		t.Fatal("host address is present")
 	}
-	if !hasIP(secureCert, node) || !hasIP(secureCert, net.ParseIP("127.0.0.1")) {
-		t.Fatal("node or loopback address is absent")
+	if !hasIP(secureCert, node) || !hasIP(secureCert, net.ParseIP("127.0.0.1")) || !hasIP(secureCert, net.ParseIP("10.43.0.1")) {
+		t.Fatal("node, loopback, or service address is absent")
 	}
 	if !hasDNS(secureCert, "san.example.test") || !hasDNS(secureCert, "localhost") || !hasDNS(secureCert, "node-a") {
 		t.Fatalf("dns %v", secureCert.DNSNames)
@@ -130,13 +134,39 @@ func TestServingNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	openCert := mustCert(t, openPaths.ServingCert)
-	if !hasIP(openCert, other) {
-		t.Fatal("host address is absent")
+	if !hasIP(openCert, other) || !hasIP(openCert, net.ParseIP("10.43.0.1")) {
+		t.Fatal("host or service address is absent")
 	}
 	if !hasDNS(openCert, "san.example.test") {
 		t.Fatal("tls-san is absent")
 	}
 	assertAdmin(t, openPaths.AdminKubeconfig)
+}
+
+func TestKubeletServingCert(t *testing.T) {
+	srv := testServer(t)
+	paths, err := ensureCerts(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := mustCert(t, paths.CACert)
+	cert := mustCert(t, paths.KubeletServingCert)
+	if err := cert.CheckSignatureFrom(ca); err != nil {
+		t.Fatal(err)
+	}
+	if !hasDNS(cert, "node-a") || !hasIP(cert, net.ParseIP("10.1.0.9")) {
+		t.Fatalf("names %v %v", cert.DNSNames, cert.IPAddresses)
+	}
+	if cert.Subject.CommonName != "node-a" {
+		t.Fatalf("common name %s", cert.Subject.CommonName)
+	}
+	client := mustCert(t, paths.APIServerCert)
+	if err := client.CheckSignatureFrom(ca); err != nil {
+		t.Fatal(err)
+	}
+	if client.Subject.CommonName != "system:apiserver" || !sameOrg(client, "system:masters") {
+		t.Fatalf("apiserver client %s %v", client.Subject.CommonName, client.Subject.Organization)
+	}
 }
 
 func TestAdvertiseAddressUnset(t *testing.T) {

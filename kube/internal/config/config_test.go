@@ -449,7 +449,7 @@ func TestSystemDefaultRegistryPrefixesPause(t *testing.T) {
 	if got.PauseImage != "registry.example/"+DefaultPauseImage {
 		t.Fatalf("pause %s", got.PauseImage)
 	}
-	writeFile(t, path, "system-default-registry: \"\"\npause-image: registry.k8s.io/pause:3.10.2\n")
+	writeFile(t, path, "system-default-registry: \"\"\npause-image: docker.io/portainer/pause:latest\n")
 	got, err = Load([]string{"--config", path}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -457,12 +457,12 @@ func TestSystemDefaultRegistryPrefixesPause(t *testing.T) {
 	if got.PauseImage != DefaultPauseImage {
 		t.Fatalf("empty registry pause %s", got.PauseImage)
 	}
-	writeFile(t, path, "system-default-registry: registry.example\npause-image: registry.k8s.io/pause:3.10.2\n")
+	writeFile(t, path, "system-default-registry: registry.example\npause-image: docker.io/portainer/pause:latest\n")
 	got, err = Load([]string{"--config", path}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.PauseImage != "registry.example/registry.k8s.io/pause:3.10.2" {
+	if got.PauseImage != "registry.example/"+DefaultPauseImage {
 		t.Fatalf("listed pause %s", got.PauseImage)
 	}
 }
@@ -564,6 +564,13 @@ func TestDefaultNetwork(t *testing.T) {
 	}
 	if dns != got.ClusterDNS {
 		t.Fatalf("derived dns %s stored %s", dns, got.ClusterDNS)
+	}
+	api, err := FirstServiceAddress(got.ServiceCIDR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api != "10.43.0.1" {
+		t.Fatalf("service address %s", api)
 	}
 	pod, err := nodePodCIDR(got.ClusterCIDR)
 	if err != nil {
@@ -707,8 +714,8 @@ func TestDisableUnknownName(t *testing.T) {
 
 func TestDisableNames(t *testing.T) {
 	got := loadPath(t, filepath.Join(t.TempDir(), "config.yaml"),
-		"disable: [coredns, servicelb, traefik, local-storage, metrics-server, cert-manager]\n")
-	want := []string{"coredns", "servicelb", "traefik", "local-storage", "metrics-server", "cert-manager"}
+		"disable: [coredns, servicelb, traefik, gateway-api-crd, local-storage, metrics-server, cert-manager, runtimes]\n")
+	want := []string{"coredns", "servicelb", "traefik", "gateway-api-crd", "local-storage", "metrics-server", "cert-manager", "runtimes"}
 	if !reflect.DeepEqual(got.Disable, want) {
 		t.Fatalf("disable %#v", got.Disable)
 	}

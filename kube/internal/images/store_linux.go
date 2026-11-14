@@ -26,7 +26,7 @@ type criStore struct {
 
 func openStore(socket string) (Store, error) {
 	if socket == "" {
-		return nil, fmt.Errorf("containerd socket is required")
+		return nil, errors.New("containerd socket is required")
 	}
 	client, err := containerd.New(socket, containerd.WithDefaultNamespace(Namespace))
 	if err != nil {
@@ -58,10 +58,7 @@ func (s *criStore) Pull(ctx context.Context, ref string) error {
 	}
 	// The image service records the tag and the digest separately. Keep the
 	// requested name, and the tag without a digest, so a later retag can find it.
-	if err := s.keepNames(ctx, ref); err != nil {
-		return err
-	}
-	return nil
+	return s.keepNames(ctx, ref)
 }
 
 func (s *criStore) keepNames(ctx context.Context, ref string) error {

@@ -3,6 +3,7 @@ package control
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -58,7 +59,7 @@ func nodeName(srv config.Server) (string, error) {
 	}
 	name, err := os.Hostname()
 	if err != nil || name == "" {
-		return "", fmt.Errorf("node name is empty")
+		return "", errors.New("node name is empty")
 	}
 	return name, nil
 }
@@ -94,6 +95,17 @@ func servingCertificate(srv config.Server) (*x509.Certificate, error) {
 			return nil, err
 		}
 	}
+	cidr := srv.ServiceCIDR
+	if cidr == "" {
+		cidr = config.DefaultServiceCIDR
+	}
+	serviceIP, err := config.FirstServiceAddress(cidr)
+	if err != nil {
+		return nil, err
+	}
+	if err := names.addRequiredIP("service-cidr", serviceIP); err != nil {
+		return nil, err
+	}
 	for _, dns := range kubernetesServiceNames(srv.ClusterDomain) {
 		names.addDNS(dns)
 	}
@@ -110,6 +122,36 @@ func servingCertificate(srv config.Server) (*x509.Certificate, error) {
 		}
 	}
 	return names.certificate(), nil
+}
+
+// kubeletServingCertificate is the certificate kubelet presents on its port.
+// The API verifies it with the cluster CA, so the node name and node address
+// are the names the API dials.
+func kubeletServingCertificate(srv config.Server) (*x509.Certificate, error) {
+	names := newNameSet()
+	name, err := nodeName(srv)
+	if err != nil {
+		return nil, err
+	}
+	if ip := net.ParseIP(name); ip != nil {
+		names.addIP(ip)
+	} else {
+		names.addDNS(name)
+	}
+	node := srv.NodeIP
+	if node == "" {
+		ip, err := nodeIPForKubelet(name)
+		if err != nil {
+			return nil, err
+		}
+		node = ip.String()
+	}
+	if err := names.addRequiredIP("node-ip", node); err != nil {
+		return nil, err
+	}
+	cert := names.certificate()
+	cert.Subject.CommonName = name
+	return cert, nil
 }
 
 func kubernetesServiceNames(domain string) []string {

@@ -24,8 +24,10 @@ import (
 const fieldManager = "edgelet-kube"
 
 // Apply writes the built-in addon manifests to the API server, then the
-// HelmChart CRD, then the HelmChart objects, then extra. extra is additional
-// YAML supplied by the caller. A disabled addon is deleted. Disabling the
+// RuntimeClass objects for handlers this node registers, then the HelmChart
+// CRD, then the HelmChart objects, then extra. extra is additional YAML
+// supplied by the caller. A disabled addon is deleted. A catalog handler
+// whose binary is absent has its RuntimeClass deleted. Disabling the
 // metrics server does not change API aggregation. The HelmChart CRD and the
 // HelmChart objects are omitted when the Helm controller is disabled.
 func Apply(ctx context.Context, kubeconfig string, srv config.Server, extra []byte) error {
@@ -36,6 +38,11 @@ func Apply(ctx context.Context, kubeconfig string, srv config.Server, extra []by
 	if err != nil {
 		return err
 	}
+	runtimes, err := runtimeManifests(srv)
+	if err != nil {
+		return err
+	}
+	manifests = append(manifests, runtimes...)
 	crd, err := HelmChartCRD(srv)
 	if err != nil {
 		return err

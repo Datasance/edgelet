@@ -17,8 +17,13 @@ func TestPackListsMembers(t *testing.T) {
 	got := listMembers(t, packed)
 	const want = `bin/
 bin/aux/
-bin/aux/iptables -> xtables-legacy-multi
-bin/aux/xtables-legacy-multi
+bin/aux/ip6tables -> xtables-nft-multi
+bin/aux/ip6tables-restore -> xtables-nft-multi
+bin/aux/ip6tables-save -> xtables-nft-multi
+bin/aux/iptables -> xtables-nft-multi
+bin/aux/iptables-restore -> xtables-nft-multi
+bin/aux/iptables-save -> xtables-nft-multi
+bin/aux/xtables-nft-multi
 bin/bridge -> cni
 bin/busybox
 bin/cni
@@ -49,7 +54,9 @@ bin/portmap -> cni
 	if err := untar.Untar(bytes.NewReader(packed), dir); err != nil {
 		t.Fatal(err)
 	}
-	assertLink(t, filepath.Join(dir, "bin", "aux", "iptables"), "xtables-legacy-multi")
+	assertLink(t, filepath.Join(dir, "bin", "aux", "iptables"), "xtables-nft-multi")
+	assertLink(t, filepath.Join(dir, "bin", "aux", "iptables-save"), "xtables-nft-multi")
+	assertLink(t, filepath.Join(dir, "bin", "aux", "iptables-restore"), "xtables-nft-multi")
 	assertLink(t, filepath.Join(dir, "bin", "modprobe"), "busybox")
 	for _, name := range []string{"bridge", "host-local", "loopback", "portmap"} {
 		assertLink(t, filepath.Join(dir, "bin", name), "cni")
@@ -73,7 +80,7 @@ func TestPackKeepsSelectiveAux(t *testing.T) {
 	if !strings.Contains(got, "bin/aux/iptables-apply\n") {
 		t.Fatalf("bundle members:\n%s", got)
 	}
-	if !strings.Contains(got, "bin/aux/iptables -> xtables-legacy-multi\n") {
+	if !strings.Contains(got, "bin/aux/iptables -> xtables-nft-multi\n") {
 		t.Fatalf("bundle members:\n%s", got)
 	}
 }
@@ -189,7 +196,7 @@ func writeStage(t *testing.T) string {
 		"cni",
 		"ip",
 		"busybox",
-		filepath.Join("aux", "xtables-legacy-multi"),
+		filepath.Join("aux", "xtables-nft-multi"),
 	}
 	for _, name := range files {
 		path := filepath.Join(bin, name)
@@ -203,7 +210,12 @@ func writeStage(t *testing.T) string {
 		{"loopback", "cni"},
 		{"portmap", "cni"},
 		{"modprobe", "busybox"},
-		{filepath.Join("aux", "iptables"), "xtables-legacy-multi"},
+		{filepath.Join("aux", "iptables"), "xtables-nft-multi"},
+		{filepath.Join("aux", "iptables-save"), "xtables-nft-multi"},
+		{filepath.Join("aux", "iptables-restore"), "xtables-nft-multi"},
+		{filepath.Join("aux", "ip6tables"), "xtables-nft-multi"},
+		{filepath.Join("aux", "ip6tables-save"), "xtables-nft-multi"},
+		{filepath.Join("aux", "ip6tables-restore"), "xtables-nft-multi"},
 	}
 	for _, link := range links {
 		if err := os.Symlink(link.target, filepath.Join(bin, link.name)); err != nil {

@@ -85,7 +85,7 @@ func TestPlaceBundledBins(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(aux, "xtables-legacy-multi"), []byte("iptables"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(aux, "xtables-nft-multi"), []byte("iptables"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,7 +97,12 @@ func TestPlaceBundledBins(t *testing.T) {
 		assertLink(t, filepath.Join(bin, name), "cni")
 	}
 	assertLink(t, filepath.Join(bin, "modprobe"), "busybox")
-	assertLink(t, filepath.Join(aux, "iptables"), "xtables-legacy-multi")
+	for _, name := range []string{
+		"iptables", "iptables-save", "iptables-restore",
+		"ip6tables", "ip6tables-save", "ip6tables-restore",
+	} {
+		assertLink(t, filepath.Join(aux, name), "xtables-nft-multi")
+	}
 	if layout.CNIBinDir != bin || layout.BundledBin != aux {
 		t.Fatalf("layout %+v", layout)
 	}
@@ -111,7 +116,7 @@ func TestPlaceBundledBins(t *testing.T) {
 	}
 }
 
-func TestPlaceRejectsWrongLink(t *testing.T) {
+func TestPlaceAlignsIptablesFamily(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
 	aux := filepath.Join(bin, "aux")
@@ -123,14 +128,46 @@ func TestPlaceRejectsWrongLink(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(aux, "xtables-legacy-multi"), []byte("iptables"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(aux, "xtables-nft-multi"), []byte("iptables"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("busybox", filepath.Join(aux, "iptables")); err != nil {
+	if err := os.Symlink("xtables-legacy-multi", filepath.Join(aux, "iptables")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("xtables-nft-multi", filepath.Join(aux, "iptables-save")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("xtables-nft-multi", filepath.Join(aux, "iptables-restore")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Place(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"iptables", "iptables-save", "iptables-restore"} {
+		assertLink(t, filepath.Join(aux, name), "xtables-nft-multi")
+	}
+}
+
+func TestPlaceRejectsWrongCNILink(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	aux := filepath.Join(bin, "aux")
+	if err := os.MkdirAll(aux, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"cni", "ip", "busybox"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(aux, "xtables-nft-multi"), []byte("iptables"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("busybox", filepath.Join(bin, "bridge")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Place(dir); err == nil {
-		t.Fatal("accepted iptables pointing away from xtables-legacy")
+		t.Fatal("accepted bridge pointing away from cni")
 	}
 }
 

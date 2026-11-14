@@ -233,30 +233,30 @@ func assertAESCBC(t *testing.T, body []byte) {
 	if doc["kind"] != "EncryptionConfiguration" || doc["apiVersion"] != "apiserver.config.k8s.io/v1" {
 		t.Fatalf("document %#v", doc)
 	}
-	resources, _ := doc["resources"].([]any)
+	resources := valueAs[[]any](t, doc["resources"])
 	if len(resources) != 1 {
 		t.Fatalf("resources %#v", doc["resources"])
 	}
-	resource, _ := resources[0].(map[string]any)
-	names, _ := resource["resources"].([]any)
+	resource := valueAs[map[string]any](t, resources[0])
+	names := valueAs[[]any](t, resource["resources"])
 	if len(names) != 1 || names[0] != "secrets" {
 		t.Fatalf("resources %#v", resource["resources"])
 	}
-	providers, _ := resource["providers"].([]any)
+	providers := valueAs[[]any](t, resource["providers"])
 	if len(providers) != 2 {
 		t.Fatalf("providers %#v", resource["providers"])
 	}
-	first, _ := providers[0].(map[string]any)
-	aescbc, _ := first["aescbc"].(map[string]any)
-	keys, _ := aescbc["keys"].([]any)
+	first := valueAs[map[string]any](t, providers[0])
+	aescbc := valueAs[map[string]any](t, first["aescbc"])
+	keys := valueAs[[]any](t, aescbc["keys"])
 	if len(keys) != 1 {
 		t.Fatalf("aescbc %#v", first["aescbc"])
 	}
-	key, _ := keys[0].(map[string]any)
+	key := valueAs[map[string]any](t, keys[0])
 	if key["name"] != "aescbckey" {
 		t.Fatalf("key %#v", key)
 	}
-	secret, _ := key["secret"].(string)
+	secret := valueAs[string](t, key["secret"])
 	raw, err := base64.StdEncoding.DecodeString(secret)
 	if err != nil {
 		t.Fatal(err)
@@ -264,11 +264,21 @@ func assertAESCBC(t *testing.T, body []byte) {
 	if len(raw) != 32 {
 		t.Fatalf("key length %d", len(raw))
 	}
-	second, _ := providers[1].(map[string]any)
+	second := valueAs[map[string]any](t, providers[1])
 	if _, ok := second["identity"]; !ok {
 		t.Fatalf("providers %#v", providers)
 	}
 	if bytes.Contains(body, []byte("secretbox")) {
 		t.Fatalf("document %s", body)
 	}
+}
+
+func valueAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	got, ok := v.(T)
+	if !ok {
+		var zero T
+		t.Fatalf("got %T, want %T", v, zero)
+	}
+	return got
 }

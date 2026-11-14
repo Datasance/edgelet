@@ -2,12 +2,18 @@ package stage
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/eclipse-iofog/edgelet-kube/internal/config"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+func TestMain(m *testing.M) {
+	stageArch = "amd64"
+	os.Exit(m.Run())
+}
 
 func TestManifestsUseClusterNetworkAndPinnedImages(t *testing.T) {
 	srv := config.Defaults()
@@ -66,6 +72,14 @@ func TestManifestsUseClusterNetworkAndPinnedImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	account := find(t, local, "ServiceAccount", "local-path-provisioner-service-account")
+	if account.GetNamespace() != "kube-system" {
+		t.Fatalf("service account %#v", account.Object)
+	}
+	deploy := find(t, local, "Deployment", "local-path-provisioner")
+	if nestedString(t, deploy, "spec", "template", "spec", "serviceAccountName") != account.GetName() {
+		t.Fatalf("provisioner account %#v", deploy.Object)
+	}
 	class := find(t, local, "StorageClass", "local-path")
 	if nestedString(t, class, "metadata", "annotations", "storageclass.kubernetes.io/is-default-class") != "true" {
 		t.Fatalf("storage class %#v", class.Object)
@@ -88,6 +102,49 @@ func TestManifestsUseClusterNetworkAndPinnedImages(t *testing.T) {
 	api := find(t, metrics, "APIService", "v1beta1.metrics.k8s.io")
 	if nestedString(t, api, "spec", "group") != "metrics.k8s.io" || nestedString(t, api, "spec", "version") != "v1beta1" {
 		t.Fatalf("metrics api %#v", api.Object)
+	}
+}
+
+func TestRISCVSkipsMetricsAndCertManager(t *testing.T) {
+	prev := stageArch
+	stageArch = "riscv64"
+	t.Cleanup(func() { stageArch = prev })
+
+	srv := config.Defaults()
+	docs, err := addonManifests(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, doc := range docs {
+		on := doc.name != "metrics-server"
+		if doc.enabled != on {
+			t.Fatalf("%s enabled %v", doc.name, doc.enabled)
+		}
+	}
+	charts, err := helmChartManifests(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, doc := range charts {
+		on := doc.name != "cert-manager"
+		if doc.enabled != on {
+			t.Fatalf("%s enabled %v", doc.name, doc.enabled)
+		}
+	}
+	body, skip, err := clusterIssuer(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skip || len(strings.TrimSpace(string(body))) != 0 {
+		t.Fatalf("issuer %q skip %v", body, skip)
+	}
+	srv.ClusterIssuerEmail = "ops@example.com"
+	body, skip, err = clusterIssuer(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !skip || len(strings.TrimSpace(string(body))) != 0 {
+		t.Fatalf("issuer %q skip %v", body, skip)
 	}
 }
 

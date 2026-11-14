@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/eclipse-iofog/edgelet-kube/scripts/airgap"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sys/unix"
 )
 
 func TestMain(m *testing.M) {
@@ -30,11 +32,11 @@ func TestMain(m *testing.M) {
 	if handled {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "containerd child: %v\n", err)
-			os.Exit(1)
+			unix.Exit(1)
 		}
-		os.Exit(0)
+		unix.Exit(0)
 	}
-	os.Exit(m.Run())
+	m.Run()
 }
 
 func TestEmptyDirectoryPinsListBeforeKubelet(t *testing.T) {
@@ -58,10 +60,7 @@ func TestEmptyDirectoryPinsListBeforeKubelet(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	want := airgap.Images()
-	if len(want) != 12 {
-		t.Fatalf("got %d images", len(want))
-	}
+	want := airgap.ImagesFor(runtime.GOARCH)
 	var pulled []string
 	importedBeforeDatastore := false
 	proc, err := Start(ctx, Config{
@@ -108,10 +107,7 @@ func TestEmptyDirectoryPinsListBeforeKubelet(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(15 * time.Second)
-	for {
-		if imagePinned(t, sock, added) {
-			break
-		}
+	for !imagePinned(t, sock, added) {
 		if time.Now().After(deadline) {
 			body, _ := os.ReadFile(logFile.Name())
 			names := imageNames(t, sock)

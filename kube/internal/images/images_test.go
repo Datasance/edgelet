@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -36,7 +37,7 @@ func TestPinList(t *testing.T) {
 	if len(got) != 12 {
 		t.Fatalf("got %d images", len(got))
 	}
-	if !strings.HasPrefix(got[0], "registry.k8s.io/pause:3.10.2@sha256:") {
+	if !strings.HasPrefix(got[0], "docker.io/portainer/pause:latest@sha256:df6d2fb5") {
 		t.Fatal(got[0])
 	}
 }
@@ -49,10 +50,11 @@ func TestEmptyDirectoryPullsAndPins(t *testing.T) {
 	if err := run(ctx, dir, time.Second, io.Discard, store, ""); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(store.pulled(), airgap.Images()) {
+	want := airgap.ImagesFor(runtime.GOARCH)
+	if !slices.Equal(store.pulled(), want) {
 		t.Fatalf("pulled %v", store.pulled())
 	}
-	for _, ref := range airgap.Images() {
+	for _, ref := range want {
 		if !store.isPinned(ref) {
 			t.Fatalf("%s is not pinned", ref)
 		}
@@ -162,13 +164,14 @@ func TestPrefixRetagsPinList(t *testing.T) {
 	if err := run(ctx, t.TempDir(), time.Second, io.Discard, store, registry); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(store.pulled(), airgap.Images()) {
+	pulled := airgap.ImagesFor(runtime.GOARCH)
+	if !slices.Equal(store.pulled(), pulled) {
 		t.Fatalf("pulled %v", store.pulled())
 	}
 	if len(airgap.Images()) != 12 {
 		t.Fatalf("got %d images", len(airgap.Images()))
 	}
-	for _, ref := range airgap.Images() {
+	for _, ref := range pulled {
 		for _, name := range airgap.PrefixedNames(registry, ref) {
 			if !store.isPinned(name) {
 				t.Fatalf("%s is not pinned", name)
@@ -178,8 +181,9 @@ func TestPrefixRetagsPinList(t *testing.T) {
 			t.Fatalf("resolve %s", airgap.Resolve(registry, ref))
 		}
 	}
-	pause := airgap.Resolve(registry, "registry.k8s.io/pause:3.10.2")
-	if pause != "registry.example/registry.k8s.io/pause:3.10.2" || !store.isPinned(pause) {
+	pauseName, _, _ := strings.Cut(airgap.Images()[0], "@")
+	pause := airgap.Resolve(registry, pauseName)
+	if pause != registry+"/"+pauseName || !store.isPinned(pause) {
 		t.Fatalf("pause %s pinned %v", pause, store.isPinned(pause))
 	}
 }
@@ -196,10 +200,11 @@ func TestEmptyRegistryLeavesPinList(t *testing.T) {
 	if err := run(ctx, t.TempDir(), time.Second, io.Discard, store, ""); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(store.pulled(), airgap.Images()) {
+	want := airgap.ImagesFor(runtime.GOARCH)
+	if !slices.Equal(store.pulled(), want) {
 		t.Fatalf("pulled %v", store.pulled())
 	}
-	for _, ref := range airgap.Images() {
+	for _, ref := range want {
 		if !store.isPinned(ref) {
 			t.Fatalf("%s is not pinned", ref)
 		}
@@ -275,17 +280,18 @@ func TestEmptyDirectoryAndArchivePinTheSameNames(t *testing.T) {
 	if !slices.Equal(empty, seeded) {
 		t.Fatalf("empty %v archive %v", empty, seeded)
 	}
-	want := slices.Clone(airgap.Images())
+	want := slices.Clone(airgap.ImagesFor(runtime.GOARCH))
 	slices.Sort(want)
-	if !slices.Equal(empty, want) || len(empty) != 12 {
+	if !slices.Equal(empty, want) {
 		t.Fatalf("pinned %v", empty)
 	}
 }
 
 func TestRegistryPauseNameIsPinnedOnBothPaths(t *testing.T) {
 	const registry = "registry.example"
-	pause := airgap.Resolve(registry, "registry.k8s.io/pause:3.10.2")
-	if pause != registry+"/registry.k8s.io/pause:3.10.2" {
+	pauseName, _, _ := strings.Cut(airgap.Images()[0], "@")
+	pause := airgap.Resolve(registry, pauseName)
+	if pause != registry+"/"+pauseName {
 		t.Fatalf("pause %s", pause)
 	}
 	empty := pinnedNames(t, t.TempDir(), registry)
@@ -318,7 +324,7 @@ func pinnedNames(t *testing.T, dir, registry string) []string {
 func writeAirgapArchive(t *testing.T, dir string) {
 	t.Helper()
 	var raw bytes.Buffer
-	if err := airgap.WriteTar(&raw, airgap.Images()); err != nil {
+	if err := airgap.WriteTar(&raw, airgap.ImagesFor(runtime.GOARCH)); err != nil {
 		t.Fatal(err)
 	}
 	if err := airgap.Compress(filepath.Join(dir, airgap.AssetAMD64), bytes.NewReader(raw.Bytes())); err != nil {

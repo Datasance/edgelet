@@ -3,13 +3,14 @@ package bundle
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -61,8 +62,8 @@ func Contents(packed []byte) ([]Member, error) {
 			Dir:  hdr.FileInfo().IsDir(),
 		})
 	}
-	sort.Slice(members, func(i, j int) bool {
-		return members[i].Name < members[j].Name
+	slices.SortFunc(members, func(a, b Member) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 	return members, nil
 }
@@ -121,8 +122,8 @@ func collect(stageDir string) ([]entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].name < entries[j].name
+	slices.SortFunc(entries, func(a, b entry) int {
+		return cmp.Compare(a.name, b.name)
 	})
 	return entries, nil
 }
@@ -174,7 +175,10 @@ func validate(entries []entry) error {
 
 func archive(entries []entry) ([]byte, error) {
 	var buf bytes.Buffer
-	zw, err := zstd.NewWriter(&buf)
+	zw, err := zstd.NewWriter(&buf,
+		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(16)),
+		zstd.WithWindowSize(1<<25),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("zstd writer: %w", err)
 	}
@@ -241,7 +245,7 @@ var requiredFiles = []string{
 	"bin/containerd-shim-runc-v2",
 	"bin/crun",
 	"bin/cni",
-	"bin/aux/xtables-legacy-multi",
+	"bin/aux/xtables-nft-multi",
 	"bin/ip",
 	"bin/busybox",
 }
@@ -251,7 +255,12 @@ var requiredLinks = []linkSpec{
 	{name: "bin/host-local", target: "cni"},
 	{name: "bin/loopback", target: "cni"},
 	{name: "bin/portmap", target: "cni"},
-	{name: "bin/aux/iptables", target: "xtables-legacy-multi"},
+	{name: "bin/aux/iptables", target: "xtables-nft-multi"},
+	{name: "bin/aux/iptables-save", target: "xtables-nft-multi"},
+	{name: "bin/aux/iptables-restore", target: "xtables-nft-multi"},
+	{name: "bin/aux/ip6tables", target: "xtables-nft-multi"},
+	{name: "bin/aux/ip6tables-save", target: "xtables-nft-multi"},
+	{name: "bin/aux/ip6tables-restore", target: "xtables-nft-multi"},
 	{name: "bin/modprobe", target: "busybox"},
 }
 

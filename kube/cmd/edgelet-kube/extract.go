@@ -34,7 +34,7 @@ func extract(dataDir string) (string, error) {
 	if bundleReady(dir) {
 		return dir, nil
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil { // #nosec G301 -- data root must be traversable
 		return "", fmt.Errorf("mkdir data root: %w", err)
 	}
 	lock, err := flock.Acquire(filepath.Join(root, ".lock"))
@@ -73,7 +73,7 @@ func unpack(asset, dir string) (out string, err error) {
 	if !ok {
 		return "", fmt.Errorf("runtime is not an ELF binary")
 	}
-	if err = os.Chmod(fat, 0o755); err != nil {
+	if err = os.Chmod(fat, 0o755); err != nil { // #nosec G302 -- runtime binary must be executable
 		return "", fmt.Errorf("chmod runtime: %w", err)
 	}
 	if err = os.RemoveAll(dir); err != nil {

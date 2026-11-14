@@ -21,7 +21,7 @@ func TestHelmChartsUseLocalURLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) != 2 {
+	if len(docs) != 3 {
 		t.Fatalf("charts %d", len(docs))
 	}
 	body := map[string]string{}
@@ -125,7 +125,7 @@ func TestDisableSkipsOnlyThatChart(t *testing.T) {
 			t.Fatalf("%s disabled by servicelb", doc.name)
 		}
 	}
-	for _, name := range []string{"traefik", "cert-manager"} {
+	for _, name := range []string{"traefik", "gateway-api-crd", "cert-manager"} {
 		srv := base
 		srv.Disable = []string{name}
 		docs, err := helmChartManifests(srv)
@@ -164,8 +164,17 @@ func TestClusterIssuerRules(t *testing.T) {
 
 	empty := config.Defaults()
 	empty.ClusterIssuerEmail = "  "
-	if err := ApplyIssuer(t.Context(), "", empty); err != nil {
+	body, skip, err := clusterIssuer(empty)
+	if err != nil || skip {
+		t.Fatalf("skip %v err %v", skip, err)
+	}
+	objs, err := decode(body)
+	if err != nil {
 		t.Fatal(err)
+	}
+	assertSelfSigned(t, objs)
+	if issuerNamed(objs, "letsencrypt-prod") != nil {
+		t.Fatal("letsencrypt issuer written without an email")
 	}
 	klog.Flush()
 	if buf.Len() != 0 {
@@ -180,25 +189,34 @@ func TestClusterIssuerRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	klog.Flush()
-	if strings.Count(buf.String(), "cluster issuer was skipped") != 1 {
+	if strings.Count(buf.String(), "letsencrypt cluster issuer was skipped") != 1 {
 		t.Fatalf("log %q", buf.String())
 	}
 
 	buf.Reset()
 	onlyTraefik := skipped
 	onlyTraefik.Disable = []string{"traefik"}
-	if err := ApplyIssuer(t.Context(), "", onlyTraefik); err != nil {
+	body, skip, err = clusterIssuer(onlyTraefik)
+	if err != nil || !skip {
+		t.Fatalf("skip %v err %v", skip, err)
+	}
+	objs, err = decode(body)
+	if err != nil {
 		t.Fatal(err)
 	}
-	klog.Flush()
-	if strings.Count(buf.String(), "cluster issuer was skipped") != 1 {
-		t.Fatalf("log %q", buf.String())
+	assertSelfSigned(t, objs)
+	if issuerNamed(objs, "letsencrypt-prod") != nil {
+		t.Fatal("letsencrypt issuer written with traefik disabled")
 	}
 
 	buf.Reset()
 	helmOff := empty
 	helmOff.ClusterIssuerEmail = "ops@example.com"
 	helmOff.DisableHelmController = true
+	body, skip, err = clusterIssuer(helmOff)
+	if err != nil || skip || len(bytes.TrimSpace(body)) != 0 {
+		t.Fatalf("skip %v body %d err %v", skip, len(body), err)
+	}
 	if err := ApplyIssuer(t.Context(), "", helmOff); err != nil {
 		t.Fatal(err)
 	}
@@ -211,17 +229,18 @@ func TestClusterIssuerRules(t *testing.T) {
 	loadBalancerOff := empty
 	loadBalancerOff.ClusterIssuerEmail = "ops@example.com"
 	loadBalancerOff.Disable = []string{"servicelb"}
-	body, skip, err := clusterIssuer(loadBalancerOff)
+	body, skip, err = clusterIssuer(loadBalancerOff)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if skip || len(body) == 0 || buf.Len() != 0 {
 		t.Fatalf("skip %v body %d log %q", skip, len(body), buf.String())
 	}
-	objs, err := decode(body)
+	objs, err = decode(body)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertSelfSigned(t, objs)
 	issuer := find(t, objs, "ClusterIssuer", "letsencrypt-prod")
 	if issuer.GetAPIVersion() != "cert-manager.io/v1" {
 		t.Fatalf("version %s", issuer.GetAPIVersion())
@@ -258,7 +277,7 @@ func TestChartVersionsMatchPins(t *testing.T) {
 	for _, doc := range docs {
 		text += string(doc.body)
 	}
-	for _, chart := range []string{"traefik", "traefik-crd", "cert-manager"} {
+	for _, chart := range []string{"traefik", "traefik-crd", "gateway-api-crd", "cert-manager"} {
 		version := airgap.ChartVersion(chart)
 		if version == "" || !strings.Contains(text, chart+"-"+version+".tgz") {
 			t.Fatalf("chart %s version %s", chart, version)
@@ -266,26 +285,34 @@ func TestChartVersionsMatchPins(t *testing.T) {
 	}
 }
 
+type chartImageRef struct {
+	Registry   string `yaml:"registry"`
+	Repository string `yaml:"repository"`
+	Tag        string `yaml:"tag"`
+	Digest     string `yaml:"digest"`
+}
+
+type serviceTypeSpec struct {
+	Type string `yaml:"type"`
+}
+
+type serviceSpecBody struct {
+	Spec serviceTypeSpec `yaml:"spec"`
+}
+
+type exposedPort struct {
+	ExposedPort int `yaml:"exposedPort"`
+}
+
+type traefikPorts struct {
+	Web       exposedPort `yaml:"web"`
+	Websecure exposedPort `yaml:"websecure"`
+}
+
 type traefikChartValues struct {
-	Image struct {
-		Registry   string `yaml:"registry"`
-		Repository string `yaml:"repository"`
-		Tag        string `yaml:"tag"`
-		Digest     string `yaml:"digest"`
-	} `yaml:"image"`
-	Service struct {
-		Spec struct {
-			Type string `yaml:"type"`
-		} `yaml:"spec"`
-	} `yaml:"service"`
-	Ports struct {
-		Web struct {
-			ExposedPort int `yaml:"exposedPort"`
-		} `yaml:"web"`
-		Websecure struct {
-			ExposedPort int `yaml:"exposedPort"`
-		} `yaml:"websecure"`
-	} `yaml:"ports"`
+	Image   chartImageRef   `yaml:"image"`
+	Service serviceSpecBody `yaml:"service"`
+	Ports   traefikPorts    `yaml:"ports"`
 }
 
 type chartImageValue struct {
@@ -294,23 +321,42 @@ type chartImageValue struct {
 	Digest     string `yaml:"digest"`
 }
 
+type crdToggle struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type chartImageHolder struct {
+	Image chartImageValue `yaml:"image"`
+}
+
 type certManagerChartValues struct {
-	CRDs struct {
-		Enabled bool `yaml:"enabled"`
-	} `yaml:"crds"`
-	Image   chartImageValue `yaml:"image"`
-	Webhook struct {
-		Image chartImageValue `yaml:"image"`
-	} `yaml:"webhook"`
-	Cainjector struct {
-		Image chartImageValue `yaml:"image"`
-	} `yaml:"cainjector"`
-	Startup struct {
-		Image chartImageValue `yaml:"image"`
-	} `yaml:"startupapicheck"`
-	Solver struct {
-		Image chartImageValue `yaml:"image"`
-	} `yaml:"acmesolver"`
+	CRDs       crdToggle        `yaml:"crds"`
+	Image      chartImageValue  `yaml:"image"`
+	Webhook    chartImageHolder `yaml:"webhook"`
+	Cainjector chartImageHolder `yaml:"cainjector"`
+	Startup    chartImageHolder `yaml:"startupapicheck"`
+	Solver     chartImageHolder `yaml:"acmesolver"`
+}
+
+func assertSelfSigned(t *testing.T, objs []*unstructured.Unstructured) {
+	t.Helper()
+	issuer := find(t, objs, "ClusterIssuer", "selfsigned")
+	if issuer.GetAPIVersion() != "cert-manager.io/v1" {
+		t.Fatalf("version %s", issuer.GetAPIVersion())
+	}
+	spec, found, err := unstructured.NestedMap(issuer.Object, "spec", "selfSigned")
+	if err != nil || !found || len(spec) != 0 {
+		t.Fatalf("selfSigned %#v %v", issuer.Object, err)
+	}
+}
+
+func issuerNamed(objs []*unstructured.Unstructured, name string) *unstructured.Unstructured {
+	for _, obj := range objs {
+		if obj.GetKind() == "ClusterIssuer" && obj.GetName() == name {
+			return obj
+		}
+	}
+	return nil
 }
 
 func assertChartURL(t *testing.T, got string, names []string, chart string) {

@@ -2,6 +2,7 @@ package containerd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ func ParseChildArgs(args []string) (Settings, error) {
 		case "disable-default-registry-endpoint":
 			flag, err := strconv.ParseBool(value)
 			if err != nil {
-				return Settings{}, fmt.Errorf("disable-default-registry-endpoint requires true or false")
+				return Settings{}, errors.New("disable-default-registry-endpoint requires true or false")
 			}
 			settings.DisableDefaultEndpoint = flag
 		default:
@@ -222,37 +223,37 @@ func absPath(path string) (string, error) {
 
 func (s Settings) validate() error {
 	if s.Socket == "" {
-		return fmt.Errorf("containerd socket is required")
+		return errors.New("containerd socket is required")
 	}
 	if err := checkSocket(s.Socket); err != nil {
 		return err
 	}
 	if s.Root == "" {
-		return fmt.Errorf("containerd root is required")
+		return errors.New("containerd root is required")
 	}
 	if s.State == "" {
-		return fmt.Errorf("containerd state is required")
+		return errors.New("containerd state is required")
 	}
 	if s.ConfigFile == "" {
-		return fmt.Errorf("containerd config is required")
+		return errors.New("containerd config is required")
 	}
 	if s.CrunBinary == "" {
-		return fmt.Errorf("crun binary is required")
+		return errors.New("crun binary is required")
 	}
 	if s.ShimBinary == "" {
-		return fmt.Errorf("containerd shim is required")
+		return errors.New("containerd shim is required")
 	}
 	if s.CNIBinDir == "" {
-		return fmt.Errorf("cni binary directory is required")
+		return errors.New("cni binary directory is required")
 	}
 	if err := checkCNIBin(s.CNIBinDir); err != nil {
 		return err
 	}
 	if s.CNIConfDir == "" {
-		return fmt.Errorf("cni config directory is required")
+		return errors.New("cni config directory is required")
 	}
 	if s.Snapshotter == "" {
-		return fmt.Errorf("snapshotter is required")
+		return errors.New("snapshotter is required")
 	}
 	return nil
 }
@@ -268,7 +269,7 @@ func WriteConfig(s Settings) error {
 		s.PauseImage = config.DefaultPauseImage
 	}
 	if s.RegistryDir == "" {
-		return fmt.Errorf("registry config directory is required")
+		return errors.New("registry config directory is required")
 	}
 	auths, err := registries.Prepare(s.RegistryDir, s.RegistryFile, s.DisableDefaultEndpoint)
 	if err != nil {
@@ -282,10 +283,11 @@ func WriteConfig(s Settings) error {
 	if _, err := tree.WriteTo(&buf); err != nil {
 		return fmt.Errorf("render containerd config: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(s.ConfigFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.ConfigFile), 0o755); err != nil { // #nosec G301 -- containerd root must be traversable
 		return fmt.Errorf("create containerd config directory: %w", err)
 	}
-	if err := os.WriteFile(s.ConfigFile, buf.Bytes(), 0o644); err != nil {
+	// The file can hold registry credentials.
+	if err := os.WriteFile(s.ConfigFile, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write containerd config: %w", err)
 	}
 	return nil

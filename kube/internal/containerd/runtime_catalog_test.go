@@ -3,6 +3,7 @@ package containerd
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,6 +66,40 @@ func TestBuildRuntimeCatalogUsesNvidiaExperimentalBinary(t *testing.T) {
 	}
 	if got.Binary != "nvidia-container-runtime-experimental" {
 		t.Fatalf("binary %q", got.Binary)
+	}
+}
+
+func TestRegisteredRuntimeHandlersAlwaysIncludeCrun(t *testing.T) {
+	prev := lookPathForRuntimeCatalog
+	t.Cleanup(func() { lookPathForRuntimeCatalog = prev })
+	lookPathForRuntimeCatalog = func(file string) (string, error) {
+		switch file {
+		case "nvidia-container-runtime.cdi":
+			return "/usr/bin/nvidia-container-runtime.cdi", nil
+		case "containerd-shim-edgelet-v2":
+			return "/opt/edgelet/containerd-shim-edgelet-v2", nil
+		default:
+			return "", errors.New("not found")
+		}
+	}
+
+	got := RegisteredRuntimeHandlers()
+	want := []string{"crun", "edgelet-wasmtime", "nvidia-cdi"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("handlers %v", got)
+	}
+	for _, name := range []string{"wasmer", "runc", "nvidia"} {
+		for _, gotName := range got {
+			if gotName == name {
+				t.Fatalf("unregistered handler %s was listed", name)
+			}
+		}
+	}
+	known := KnownRuntimeHandlers()
+	for _, name := range []string{"crun", "runc", "nvidia-cdi", "edgelet-wasmtime", "wasmer"} {
+		if !slices.Contains(known, name) {
+			t.Fatalf("known handlers %v missing %s", known, name)
+		}
 	}
 }
 

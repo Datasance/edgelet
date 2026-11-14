@@ -45,7 +45,11 @@ type certPaths struct {
 	SchedulerKubeconfig  string
 	KubeletCert          string
 	KubeletKey           string
+	KubeletServingCert   string
+	KubeletServingKey    string
 	KubeletKubeconfig    string
+	APIServerCert        string
+	APIServerKey         string
 	KubeProxyCert        string
 	KubeProxyKey         string
 	KubeProxyKubeconfig  string
@@ -65,7 +69,7 @@ func ensureCerts(srv config.Server) (certPaths, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return certPaths{}, fmt.Errorf("create certificate directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- directory must be owner-traversable
 		return certPaths{}, fmt.Errorf("create certificate directory: %w", err)
 	}
 	admin := srv.WriteKubeconfig
@@ -93,6 +97,20 @@ func ensureCerts(srv config.Server) (certPaths, error) {
 			return nil, nil, err
 		}
 		return sign(caCert, caKey, tmpl)
+	}); err != nil {
+		return certPaths{}, err
+	}
+	if _, _, err := ensurePair(paths.KubeletServingCert, paths.KubeletServingKey, func() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+		tmpl, err := kubeletServingCertificate(srv)
+		if err != nil {
+			return nil, nil, err
+		}
+		return sign(caCert, caKey, tmpl)
+	}); err != nil {
+		return certPaths{}, err
+	}
+	if _, _, err := ensurePair(paths.APIServerCert, paths.APIServerKey, func() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+		return sign(caCert, caKey, clientTemplate("system:apiserver", []string{"system:masters"}))
 	}); err != nil {
 		return certPaths{}, err
 	}
@@ -170,7 +188,11 @@ func certPathsFor(dir, admin string) certPaths {
 		SchedulerKubeconfig:  filepath.Join(dir, "scheduler.kubeconfig"),
 		KubeletCert:          filepath.Join(dir, "client-kubelet.crt"),
 		KubeletKey:           filepath.Join(dir, "client-kubelet.key"),
+		KubeletServingCert:   filepath.Join(dir, "kubelet-serving.crt"),
+		KubeletServingKey:    filepath.Join(dir, "kubelet-serving.key"),
 		KubeletKubeconfig:    filepath.Join(dir, "kubelet.kubeconfig"),
+		APIServerCert:        filepath.Join(dir, "client-kube-apiserver.crt"),
+		APIServerKey:         filepath.Join(dir, "client-kube-apiserver.key"),
 		KubeProxyCert:        filepath.Join(dir, "client-kube-proxy.crt"),
 		KubeProxyKey:         filepath.Join(dir, "client-kube-proxy.key"),
 		KubeProxyKubeconfig:  filepath.Join(dir, "kube-proxy.kubeconfig"),
@@ -250,7 +272,7 @@ func fileMode(raw string) (os.FileMode, error) {
 }
 
 func writeKubeconfig(path string, ca, cert *x509.Certificate, key *ecdsa.PrivateKey, server string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- kubeconfig parent must be traversable
 		return fmt.Errorf("create kubeconfig directory: %w", err)
 	}
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
@@ -374,7 +396,7 @@ func loadPair(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, e
 }
 
 func loadCert(path string) (*x509.Certificate, error) {
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) // #nosec G304 -- path is a certificate under the server tls directory
 	if err != nil {
 		return nil, fmt.Errorf("read certificate %s: %w", path, err)
 	}
@@ -390,7 +412,7 @@ func loadCert(path string) (*x509.Certificate, error) {
 }
 
 func loadKey(path string) (*ecdsa.PrivateKey, error) {
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) // #nosec G304 -- path is a key under the server tls directory
 	if err != nil {
 		return nil, fmt.Errorf("read key %s: %w", path, err)
 	}
@@ -414,7 +436,7 @@ func writePair(certPath, keyPath string, cert *x509.Certificate, key *ecdsa.Priv
 
 func writeCert(path string, cert *x509.Certificate) error {
 	body := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	if err := os.WriteFile(path, body, 0o644); err != nil { // #nosec G306 -- certificate PEM is not a private key
 		return fmt.Errorf("write certificate %s: %w", path, err)
 	}
 	return nil

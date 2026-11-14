@@ -109,12 +109,14 @@ var listFields = map[string]func(*Server) *[]string{}
 
 // disableNames are the addon names the disable key accepts.
 var disableNames = map[string]struct{}{
-	"coredns":        {},
-	"servicelb":      {},
-	"traefik":        {},
-	"local-storage":  {},
-	"metrics-server": {},
-	"cert-manager":   {},
+	"coredns":         {},
+	"servicelb":       {},
+	"traefik":         {},
+	"local-storage":   {},
+	"metrics-server":  {},
+	"cert-manager":    {},
+	"gateway-api-crd": {},
+	"runtimes":        {},
 }
 
 var setters = map[string]setter{

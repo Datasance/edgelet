@@ -2,11 +2,12 @@ package registries
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -71,7 +72,7 @@ type hostSpec struct {
 // rewrites are written into the host files.
 func Prepare(dir, filePath string, disableDefault bool) (map[string]Auth, error) {
 	if dir == "" || dir == "/" || dir == "." {
-		return nil, fmt.Errorf("registry config directory is required")
+		return nil, errors.New("registry config directory is required")
 	}
 	if err := resetDir(dir); err != nil {
 		return nil, err
@@ -79,7 +80,7 @@ func Prepare(dir, filePath string, disableDefault bool) (map[string]Auth, error)
 	if filePath == "" {
 		return nil, nil
 	}
-	body, err := os.ReadFile(filePath)
+	body, err := os.ReadFile(filePath) // #nosec G304 -- path is the configured registries file
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -101,17 +102,17 @@ func Prepare(dir, filePath string, disableDefault bool) (map[string]Auth, error)
 	for name := range hosts {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		spec := hosts[name]
 		if !spec.worthWriting() {
 			continue
 		}
 		hostDir := filepath.Join(dir, hostDirectory(name))
-		if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		if err := os.MkdirAll(hostDir, 0o755); err != nil { // #nosec G301 -- containerd reads this host directory
 			return nil, fmt.Errorf("create registry config %s: %w", hostDir, err)
 		}
-		if err := os.WriteFile(filepath.Join(hostDir, "hosts.toml"), render(spec), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(hostDir, "hosts.toml"), render(spec), 0o644); err != nil { // #nosec G306 -- hosts.toml holds endpoints, not credentials
 			return nil, fmt.Errorf("write registry config %s: %w", hostDir, err)
 		}
 	}
@@ -125,7 +126,7 @@ func resetDir(dir string) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("reset registry config %s: %w", dir, err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- containerd reads the registry config directory
 		return fmt.Errorf("create registry config %s: %w", dir, err)
 	}
 	return nil
@@ -340,7 +341,7 @@ func render(spec hostSpec) []byte {
 			for key := range ep.rewrites {
 				keys = append(keys, key)
 			}
-			sort.Strings(keys)
+			slices.Sort(keys)
 			for _, key := range keys {
 				b.WriteString("    ")
 				b.WriteString(strconv.Quote(key))

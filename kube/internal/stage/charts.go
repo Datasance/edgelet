@@ -2,6 +2,7 @@ package stage
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -35,9 +36,10 @@ type chartSpec struct {
 	ValuesContent   string `yaml:"valuesContent,omitempty"`
 }
 
-// helmChartManifests renders the Traefik and cert-manager releases.
+// helmChartManifests renders the Traefik, Gateway API CRD, and cert-manager releases.
 // The chart URLs point at this apiserver. Nothing is returned when the Helm
-// controller is disabled.
+// controller is disabled. The Gateway API chart installs CRDs only. Traefik
+// stays an Ingress controller.
 func helmChartManifests(srv config.Server) ([]manifest, error) {
 	if srv.DisableHelmController {
 		return nil, nil
@@ -58,6 +60,10 @@ func helmChartManifests(srv config.Server) ([]manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	gateway, err := chartDocument(names, "gateway-api-crd", "", false, nil)
+	if err != nil {
+		return nil, err
+	}
 	certValues, err := certManagerValues(srv)
 	if err != nil {
 		return nil, err
@@ -73,8 +79,13 @@ func helmChartManifests(srv config.Server) ([]manifest, error) {
 			body:    joinYAML(traefikCRD, traefik),
 		},
 		{
+			name:    "gateway-api-crd",
+			enabled: !disabled(srv.Disable, "gateway-api-crd"),
+			body:    gateway,
+		},
+		{
 			name:    "cert-manager",
-			enabled: !disabled(srv.Disable, "cert-manager"),
+			enabled: !addonOff(srv.Disable, "cert-manager"),
 			body:    cert,
 		},
 	}, nil
@@ -134,7 +145,7 @@ func traefikValues(srv config.Server) (map[string]any, error) {
 	}
 	registry, name, ok := strings.Cut(repository, "/")
 	if !ok || registry == "" || name == "" {
-		return nil, fmt.Errorf("pinned image library/traefik has no registry")
+		return nil, errors.New("pinned image library/traefik has no registry")
 	}
 	return map[string]any{
 		"image": map[string]any{

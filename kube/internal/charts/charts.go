@@ -20,7 +20,7 @@ const Prefix = "/static/charts/"
 // Names returns the embedded chart file names. The versions come from the pin file.
 func Names() ([]string, error) {
 	var names []string
-	for _, chart := range []string{"traefik", "traefik-crd", "cert-manager"} {
+	for _, chart := range []string{"traefik", "traefik-crd", "gateway-api-crd", "cert-manager"} {
 		version := airgap.ChartVersion(chart)
 		if version == "" {
 			return nil, fmt.Errorf("chart %s has no pinned version", chart)
@@ -69,7 +69,7 @@ func Handler(next http.Handler) http.Handler {
 		if r.Method == http.MethodHead {
 			return
 		}
-		_, _ = w.Write(body)
+		_, _ = w.Write(body) // #nosec G705 -- response is an embedded chart archive, not HTML
 	})
 }
 

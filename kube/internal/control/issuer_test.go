@@ -39,14 +39,17 @@ func TestHelmControllerDisabledKeepsManifestAddons(t *testing.T) {
 		t.Fatal("helm chart API is served")
 	}
 	if err := client.kube.Discovery().RESTClient().Get().AbsPath("/apis/cert-manager.io/v1/clusterissuers/letsencrypt-prod").Do(ctx).Error(); err == nil {
-		t.Fatal("cluster issuer was written")
+		t.Fatal("letsencrypt cluster issuer was written")
+	}
+	if err := client.kube.Discovery().RESTClient().Get().AbsPath("/apis/cert-manager.io/v1/clusterissuers/selfsigned").Do(ctx).Error(); err == nil {
+		t.Fatal("selfsigned cluster issuer was written")
 	}
 	fmt.Println(helmOffChecked)
 }
 
 const helmOffChecked = "helm-controller-disabled-checked"
 
-func assertIssuerRetries(t *testing.T, ctx context.Context, kubeconfig string, srv config.Server) {
+func assertIssuerRetries(ctx context.Context, t *testing.T, kubeconfig string, srv config.Server) {
 	t.Helper()
 	withEmail := srv
 	withEmail.ClusterIssuerEmail = "ops@example.com"
@@ -92,6 +95,13 @@ func assertIssuerRetries(t *testing.T, ctx context.Context, kubeconfig string, s
 		if !strings.Contains(raw, want) {
 			t.Fatalf("issuer missing %s\n%s", want, raw)
 		}
+	}
+	signed, err := client.Discovery().RESTClient().Get().AbsPath("/apis/cert-manager.io/v1/clusterissuers/selfsigned").DoRaw(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(signed), "selfSigned") {
+		t.Fatalf("selfsigned issuer\n%s", signed)
 	}
 }
 

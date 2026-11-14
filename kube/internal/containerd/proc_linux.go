@@ -18,7 +18,7 @@ func StartChild(args []string, stdout, stderr io.Writer) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve executable: %w", err)
 	}
-	cmd := exec.Command(exe, append([]string{ChildArg}, args...)...)
+	cmd := exec.Command(exe, append([]string{ChildArg}, args...)...) // #nosec G204 -- re-exec this binary as the containerd child
 	if stdout == nil {
 		stdout = os.Stdout
 	}

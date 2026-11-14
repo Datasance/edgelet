@@ -38,8 +38,8 @@ func TestListKeepsIndexNames(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	mod := time.Unix(0, 0)
-	index := []byte(`{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1,"annotations":{"io.containerd.image.name":"registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4","org.opencontainers.image.ref.name":"3.10.2"}}]}`)
-	manifest := []byte(`[{"Config":"blobs/sha256/abc","RepoTags":["pause:3.10.2"],"Layers":[]}]`)
+	index := []byte(`{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1,"annotations":{"io.containerd.image.name":"docker.io/portainer/pause:latest@sha256:df6d2fb5cff97c4070a12953a34a56422879f1e02b43400f1caf1cbd530458b1","org.opencontainers.image.ref.name":"latest"}}]}`)
+	manifest := []byte(`[{"Config":"blobs/sha256/abc","RepoTags":["pause:old"],"Layers":[]}]`)
 	for _, member := range []struct {
 		name string
 		body []byte
@@ -63,7 +63,7 @@ func TestListKeepsIndexNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"}
+	want := []string{"docker.io/portainer/pause:latest@sha256:df6d2fb5cff97c4070a12953a34a56422879f1e02b43400f1caf1cbd530458b1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("names %v", got)
 	}

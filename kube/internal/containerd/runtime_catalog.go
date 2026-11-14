@@ -138,6 +138,39 @@ func (e *ErrRuntimeHandlerUnavailable) Unwrap() error {
 	return errRuntimeHandlerUnavailable
 }
 
+// RegisteredRuntimeHandlers returns the CRI handlers written into the
+// containerd config. crun is always included because it is the default
+// runtime. Every other name is a catalog runtime whose binary was found.
+func RegisteredRuntimeHandlers() []string {
+	handlers := map[string]struct{}{RuntimeName: {}}
+	for _, entry := range BuildRuntimeCatalog() {
+		if entry.Handler == "" || entry.Handler == RuntimeName {
+			continue
+		}
+		handlers[entry.Handler] = struct{}{}
+	}
+	return sortedHandlers(handlers)
+}
+
+// KnownRuntimeHandlers returns every handler the catalog can register, plus crun.
+// A name in this list that is not registered is removed from the API.
+func KnownRuntimeHandlers() []string {
+	handlers := map[string]struct{}{RuntimeName: {}}
+	for name := range runtimeSpecs {
+		handlers[name] = struct{}{}
+	}
+	return sortedHandlers(handlers)
+}
+
+func sortedHandlers(handlers map[string]struct{}) []string {
+	out := make([]string, 0, len(handlers))
+	for name := range handlers {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
 // BuildRuntimeCatalog discovers supported runtimes from PATH.
 // Only discovered handlers are returned.
 func BuildRuntimeCatalog() []RuntimeCatalogEntry {

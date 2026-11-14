@@ -34,7 +34,7 @@ func run(args []string) error {
 		return err
 	}
 	fat := filepath.Join(dir, "bin", bundle.FatName)
-	if err := syscall.Exec(fat, cmd.Args, os.Environ()); err != nil {
+	if err := syscall.Exec(fat, cmd.Args, os.Environ()); err != nil { // #nosec G204 -- fat is the extracted runtime
 		return fmt.Errorf("exec runtime: %w", err)
 	}
 	return nil

@@ -8,7 +8,7 @@ import (
 )
 
 func TestKubernetesVersion(t *testing.T) {
-	if got := KubernetesVersion(); got != "v1.36.6" {
+	if got := KubernetesVersion(); got != "v1.37.2" {
 		t.Fatalf("kubernetes version %q", got)
 	}
 }

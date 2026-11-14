@@ -81,7 +81,7 @@ func (p *Process) Stop() {
 func Start(ctx context.Context, cfg Config) (*Process, error) {
 	socket, root, state, cniConf, imagesDir := cfg.paths()
 	for _, dir := range []string{root, state, cniConf, filepath.Dir(socket), imagesDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- containerd and CNI traverse these directories
 			return nil, fmt.Errorf("create runtime directory %s: %w", dir, err)
 		}
 	}

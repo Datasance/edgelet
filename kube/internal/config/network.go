@@ -54,24 +54,46 @@ func nodePodCIDR(cluster string) (string, error) {
 	return (&net.IPNet{IP: pod, Mask: mask}).String(), nil
 }
 
+// FirstServiceAddress is the first host address of cidr.
+// Kubernetes assigns that address to the kubernetes API service.
+// The default service network 10.43.0.0/16 yields 10.43.0.1.
+func FirstServiceAddress(cidr string) (string, error) {
+	ip, network, err := offsetAddress(cidr, 1)
+	if err != nil {
+		return "", err
+	}
+	if !network.Contains(ip) {
+		return "", fmt.Errorf("service-cidr %q has no service address", cidr)
+	}
+	return ip.String(), nil
+}
+
 // tenthAddress is the address ten steps from the start of cidr.
 // The default service network 10.43.0.0/16 yields 10.43.0.10.
 func tenthAddress(cidr string) (string, error) {
-	_, network, err := net.ParseCIDR(cidr)
+	ip, network, err := offsetAddress(cidr, 10)
 	if err != nil {
-		return "", fmt.Errorf("service-cidr %q is not a network", cidr)
-	}
-	ip := make(net.IP, len(network.IP))
-	copy(ip, network.IP)
-	for i := 0; i < 10; i++ {
-		if !incIP(ip) {
-			return "", fmt.Errorf("service-cidr %q has no 10th address", cidr)
-		}
+		return "", err
 	}
 	if !network.Contains(ip) {
 		return "", fmt.Errorf("service-cidr %q has no 10th address", cidr)
 	}
 	return ip.String(), nil
+}
+
+func offsetAddress(cidr string, steps int) (net.IP, *net.IPNet, error) {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("service-cidr %q is not a network", cidr)
+	}
+	ip := make(net.IP, len(network.IP))
+	copy(ip, network.IP)
+	for i := 0; i < steps; i++ {
+		if !incIP(ip) {
+			return nil, nil, fmt.Errorf("service-cidr %q has no service address", cidr)
+		}
+	}
+	return ip, network, nil
 }
 
 func clusterDNSInService(dns, cidr string) error {

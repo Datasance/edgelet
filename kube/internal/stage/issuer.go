@@ -13,19 +13,19 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ApplyIssuer writes the letsencrypt-prod ClusterIssuer when an email is
-// configured and neither traefik nor cert-manager is disabled. It retries
-// until cert-manager serves the ClusterIssuer CRD. An empty email writes
-// nothing. When the email is set and either of those addons is disabled, the
-// issuer is not written and one line is logged.
+// ApplyIssuer writes the selfsigned ClusterIssuer whenever cert-manager is
+// staged. It also writes letsencrypt-prod when an email is configured and
+// traefik is staged. It retries until cert-manager serves the ClusterIssuer
+// CRD. An empty email writes no letsencrypt-prod. When the email is set and
+// traefik or cert-manager is disabled, letsencrypt-prod is not written and
+// one line is logged.
 func ApplyIssuer(ctx context.Context, kubeconfig string, srv config.Server) error {
 	body, skip, err := clusterIssuer(srv)
 	if err != nil {
 		return err
 	}
 	if skip {
-		klog.Info("cluster issuer was skipped because traefik or cert-manager is disabled")
-		return nil
+		klog.Info("letsencrypt cluster issuer was skipped because traefik or cert-manager is disabled")
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil
@@ -60,20 +60,46 @@ func ApplyIssuer(ctx context.Context, kubeconfig string, srv config.Server) erro
 
 func clusterIssuer(srv config.Server) ([]byte, bool, error) {
 	email := strings.TrimSpace(srv.ClusterIssuerEmail)
-	if email == "" {
-		return nil, false, nil
+	certOff := addonOff(srv.Disable, "cert-manager")
+	traefikOff := disabled(srv.Disable, "traefik")
+	skip := email != "" && (certOff || traefikOff)
+	if srv.DisableHelmController || certOff {
+		return nil, skip, nil
 	}
-	if disabled(srv.Disable, "traefik") || disabled(srv.Disable, "cert-manager") {
-		return nil, true, nil
-	}
-	if srv.DisableHelmController {
-		return nil, false, nil
-	}
-	body, err := yaml.Marshal(issuerDoc(email))
+	selfSigned, err := yaml.Marshal(selfSignedDoc())
 	if err != nil {
 		return nil, false, err
 	}
-	return body, false, nil
+	docs := [][]byte{selfSigned}
+	if email != "" && !traefikOff {
+		letsEncrypt, err := yaml.Marshal(issuerDoc(email))
+		if err != nil {
+			return nil, false, err
+		}
+		docs = append(docs, letsEncrypt)
+	}
+	return joinYAML(docs...), skip, nil
+}
+
+type selfSignedIssuer struct {
+	APIVersion string         `yaml:"apiVersion"`
+	Kind       string         `yaml:"kind"`
+	Metadata   issuerMeta     `yaml:"metadata"`
+	Spec       selfSignedSpec `yaml:"spec"`
+}
+
+type emptyObject struct{}
+
+type selfSignedSpec struct {
+	SelfSigned emptyObject `yaml:"selfSigned"`
+}
+
+func selfSignedDoc() selfSignedIssuer {
+	return selfSignedIssuer{
+		APIVersion: "cert-manager.io/v1",
+		Kind:       "ClusterIssuer",
+		Metadata:   issuerMeta{Name: "selfsigned"},
+	}
 }
 
 type issuerObject struct {
