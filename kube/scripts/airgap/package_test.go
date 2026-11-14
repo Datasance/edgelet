@@ -11,11 +11,21 @@ import (
 )
 
 func TestPackageScriptWritesPinList(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64", "arm", "riscv64"} {
+		t.Run(arch, func(t *testing.T) {
+			packageScriptWritesPinList(t, arch)
+		})
+	}
+}
+
+func packageScriptWritesPinList(t *testing.T, arch string) {
+	t.Helper()
 	root := kubeRoot(t)
 	dir := t.TempDir()
 	tarPath := filepath.Join(dir, "images.tar")
+	wantImages := ImagesFor(arch)
 	var raw bytes.Buffer
-	if err := WriteTar(&raw, Images()); err != nil {
+	if err := WriteTar(&raw, wantImages); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(tarPath, raw.Bytes(), 0o644); err != nil {
@@ -42,11 +52,11 @@ exit 1
 	if err := os.WriteFile(ctrPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, AssetAMD64)
+	out := filepath.Join(dir, "edgelet-kube-airgap-images-"+arch+".tar.zst")
 	cmd := exec.Command("bash", filepath.Join(root, "scripts", "package-airgap"))
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
-		"ARCH=amd64",
+		"ARCH="+arch,
 		"OUT="+out,
 		"CTR="+ctrPath,
 		"CTR_LOG="+logPath,
@@ -61,26 +71,26 @@ exit 1
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(names, Images()) || len(names) != 12 {
+	if !slices.Equal(names, wantImages) {
 		t.Fatalf("archive %v", names)
 	}
 	log, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertCtrExportsPinList(t, string(log))
+	assertCtrExportsPinList(t, string(log), arch)
 }
 
 func TestPackageScriptRefusesOtherArch(t *testing.T) {
 	root := kubeRoot(t)
 	cmd := exec.Command("bash", filepath.Join(root, "scripts", "package-airgap"))
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "ARCH=arm64", "GOWORK=off")
+	cmd.Env = append(os.Environ(), "ARCH=ppc64le", "GOWORK=off")
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatal("other architectures were built")
+		t.Fatal("unsupported architecture was built")
 	}
-	if !strings.Contains(string(output), "only amd64") {
+	if !strings.Contains(string(output), "unsupported architecture") {
 		t.Fatalf("output %s", output)
 	}
 }
@@ -133,32 +143,34 @@ func TestRuntimeBuildOmitsAirgapAsset(t *testing.T) {
 	}
 }
 
-func assertCtrExportsPinList(t *testing.T, log string) {
+func assertCtrExportsPinList(t *testing.T, log, arch string) {
 	t.Helper()
+	platform := "--platform=linux/" + arch
+	if arch == "arm" {
+		platform = "--platform=linux/arm/v7"
+	}
 	var pulled []string
 	var exported []string
 	for _, line := range strings.Split(strings.TrimSpace(log), "\n") {
 		fields := strings.Fields(line)
-		if strings.Contains(line, "linux/arm") || strings.Contains(line, "linux/riscv") {
-			t.Fatalf("other architecture %s", line)
-		}
 		switch {
 		case len(fields) >= 4 && fields[0] == "-n" && fields[1] == "k8s.io" && fields[2] == "images" && fields[3] == "pull":
-			if fields[4] != "--platform=linux/amd64" {
+			if fields[4] != platform {
 				t.Fatalf("pull %s", line)
 			}
 			pulled = append(pulled, fields[len(fields)-1])
 		case len(fields) >= 6 && fields[0] == "-n" && fields[1] == "k8s.io" && fields[2] == "images" && fields[3] == "export":
-			if fields[4] != "--platform=linux/amd64" {
+			if fields[4] != platform {
 				t.Fatalf("export %s", line)
 			}
 			exported = fields[6:]
 		}
 	}
-	if !slices.Equal(pulled, Images()) {
+	want := ImagesFor(arch)
+	if !slices.Equal(pulled, want) {
 		t.Fatalf("pulled %v", pulled)
 	}
-	if !slices.Equal(exported, Images()) {
+	if !slices.Equal(exported, want) {
 		t.Fatalf("exported %v", exported)
 	}
 }
